@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Creative Ops Tracker</title>
+<meta name="description" content="Fastrr Creative Studio: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+<script>try { var t = localStorage.getItem('co.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+</head>
+<body>
+<div class="co">
+  <header class="co-head" id="top">
+    <div class="co-head-text">
+      <p class="co-eyebrow"><i></i>Fastrr Creative Studio</p>
+      <h1 class="co-title">Creative Ops Tracker</h1>
+      <p class="co-take"><b data-draw="t-open">—</b> tasks open with designers right now: <b class="bad" data-draw="t-overdue">—</b> overdue, <b data-draw="t-today">—</b> due today and <b data-draw="t-wip">—</b> in progress. <b data-draw="t-delivered">—</b> creatives delivered so far this month.</p>
+    </div>
+    <div class="co-head-side">
+      <span class="co-date" data-draw="today-date">—</span>
+      <div class="co-sync">
+        <span class="co-sync-dot" data-draw="sync-dot"></span>
+        <span data-draw="sync-text">Not connected</span>
+        <button class="co-btn" id="btn-refresh" type="button">Refresh</button>
+        <button class="co-btn" id="btn-settings" type="button">Connection</button>
+        <button class="co-btn" id="btn-theme" type="button">Dark theme</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="co-banner" id="banner" hidden>
+    <div>
+      <strong data-draw="banner-title">Connect the dashboard to your sheets</strong>
+      <p data-draw="banner-text">Paste the web app URL and key from the Apps Script set-up. They are kept in this browser only.</p>
+    </div>
+    <button class="co-btn primary" id="btn-connect" type="button">Connect</button>
+  </div>
+
+  <div class="co-bar">
+    <div class="co-tabs" role="tablist" aria-label="Views">
+      <button class="co-tab" role="tab" data-tab="today" aria-selected="true">Today</button>
+      <button class="co-tab" role="tab" data-tab="standup" aria-selected="false">Stand-up</button>
+      <button class="co-tab" role="tab" data-tab="tasks" aria-selected="false">All tasks</button>
+      <button class="co-tab" role="tab" data-tab="team" aria-selected="false">Team</button>
+      <button class="co-tab" role="tab" data-tab="reports" aria-selected="false">Reports</button>
+      <button class="co-tab" role="tab" data-tab="health" aria-selected="false">Sheet health</button>
+    </div>
+    <div class="co-filters">
+      <select class="co-select co-f" id="f-src" data-param="src" aria-label="Sheet">
+        <option value="">Both sheets</option>
+        <option value="Paid">Paid (client)</option>
+        <option value="Marketing">Marketing team</option>
+      </select>
+      <select class="co-select co-f" id="f-designer" data-param="designer" data-draw="f-designer" aria-label="Designer"></select>
+      <select class="co-select co-f" id="f-brand" data-param="brand" data-draw="f-brand" aria-label="Brand"></select>
+      <select class="co-select co-f" id="f-type" data-param="type" data-draw="f-type" aria-label="Creative type"></select>
+      <button class="co-link" id="f-reset" type="button">Reset filters</button>
+    </div>
+  </div>
+
+  <!-- TODAY -->
+  <section class="co-panel" id="today" data-panel="today">
+    <div class="co-kpis">
+      <button class="co-kpi" data-go="open" type="button"><span class="co-kpi-label">Open with designers</span><span class="co-kpi-val" data-draw="kpi" data-kpi="open">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="open">—</span></button>
+      <button class="co-kpi" data-go="wip" type="button"><span class="co-kpi-label">In progress (WIP)</span><span class="co-kpi-val" data-draw="kpi" data-kpi="wip">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="wip">—</span></button>
+      <button class="co-kpi is-bad" data-go="overdue" type="button"><span class="co-kpi-label">Overdue</span><span class="co-kpi-val" data-draw="kpi" data-kpi="overdue">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="overdue">—</span></button>
+      <button class="co-kpi is-warn" data-go="today" type="button"><span class="co-kpi-label">Due today</span><span class="co-kpi-val" data-draw="kpi" data-kpi="today">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="today">—</span></button>
+      <button class="co-kpi" data-go="review" type="button"><span class="co-kpi-label">Under review</span><span class="co-kpi-val" data-draw="kpi" data-kpi="review">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="review">—</span></button>
+      <button class="co-kpi" data-go="delivered-month" type="button"><span class="co-kpi-label">Creatives delivered this month</span><span class="co-kpi-val" data-draw="kpi" data-kpi="delivered">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="delivered">—</span></button>
+    </div>
+
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">Needs attention</h2>
+        <p class="co-note">Overdue, due today or tomorrow, and changes requested. Oldest deadline first.</p>
+      </div>
+      <div class="co-tablewrap short">
+        <table class="co-table">
+          <thead><tr><th>When</th><th>ID</th><th>Brand</th><th>Creative</th><th>Type</th><th class="n">Qty</th><th>Designer</th><th>Status</th><th>ETA</th><th class="co-hide-sm">Links</th></tr></thead>
+          <tbody data-draw="attention"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="co-grid">
+      <div class="co-card">
+        <div class="co-card-head">
+          <h2 class="co-h2">Workload by designer</h2>
+          <p class="co-note">Open creatives each active designer holds. Click a bar to see their tasks.</p>
+        </div>
+        <div class="co-legend"><span><i style="background: var(--bad)"></i>Overdue</span><span><i style="background: var(--warn)"></i>Due in 7 days</span><span><i style="background: var(--chart-muted)"></i>Later or no ETA</span></div>
+        <div class="co-chart" data-draw="workload"></div>
+      </div>
+      <div class="co-card">
+        <div class="co-card-head">
+          <h2 class="co-h2">Work in the pipeline</h2>
+          <p class="co-note">Everything not yet delivered or dropped, by design status. Click one to list it.</p>
+        </div>
+        <div data-draw="pipeline"></div>
+      </div>
+    </div>
+
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">Coming up next</h2>
+        <p class="co-note">Open tasks due in the next 14 days, plus open tasks that have no ETA yet.</p>
+      </div>
+      <div class="co-tablewrap short">
+        <table class="co-table">
+          <thead><tr><th>ETA</th><th>ID</th><th>Brand</th><th>Creative</th><th>Type</th><th class="n">Qty</th><th>Designer</th><th>Status</th><th>Sheet</th></tr></thead>
+          <tbody data-draw="upcoming"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- STAND-UP -->
+  <section class="co-panel" id="standup" data-panel="standup" hidden>
+    <div class="co-card-head">
+      <div>
+        <h2 class="co-h2">Daily stand-up</h2>
+        <p class="co-note">One card per active team member: what is late, due today, in progress and up next. Green cards have no open work and can take new tasks.</p>
+      </div>
+      <select class="co-select" id="su-sort" aria-label="Order cards">
+        <option value="urgent">Most urgent first</option>
+        <option value="load">Heaviest load first</option>
+        <option value="name">A to Z</option>
+      </select>
+    </div>
+    <div class="co-board" data-draw="standup"></div>
+  </section>
+
+  <!-- ALL TASKS -->
+  <section class="co-panel" id="tasks" data-panel="tasks" hidden>
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">All tasks</h2>
+        <p class="co-note"><span data-draw="task-count">—</span> tasks match. Click a column to sort.</p>
+      </div>
+      <div class="co-tools">
+        <input class="co-input co-search" id="t-search" type="search" placeholder="Search ID, brand, creative, owner…" aria-label="Search tasks">
+        <select class="co-select" id="t-stage" aria-label="Status">
+          <option value="active">Not delivered yet</option>
+          <option value="open">Open with designers</option>
+          <option value="tbp">To be planned (TBP)</option>
+          <option value="wip">In progress (WIP)</option>
+          <option value="changes">Changes requested</option>
+          <option value="overdue">Overdue</option>
+          <option value="today">Due today</option>
+          <option value="week">Due in next 7 days</option>
+          <option value="noeta">Open, no ETA</option>
+          <option value="review">Under review</option>
+          <option value="awaiting">Awaiting brief</option>
+          <option value="hold">On hold</option>
+          <option value="delivered">Delivered</option>
+          <option value="delivered-month">Delivered this month</option>
+          <option value="delivered-range">Delivered in report period</option>
+          <option value="dropped">Dropped or rejected</option>
+          <option value="all">All statuses</option>
+        </select>
+        <button class="co-btn" id="t-csv" type="button">Download CSV</button>
+      </div>
+      <div class="co-tablewrap">
+        <table class="co-table" id="task-table">
+          <thead><tr>
+            <th data-sort="id"><button type="button">ID</button></th>
+            <th data-sort="source"><button type="button">Sheet</button></th>
+            <th data-sort="brand"><button type="button">Brand</button></th>
+            <th data-sort="topic"><button type="button">Creative</button></th>
+            <th data-sort="type"><button type="button">Type</button></th>
+            <th data-sort="qty" class="n"><button type="button">Qty</button></th>
+            <th data-sort="designers"><button type="button">Designer</button></th>
+            <th data-sort="priority"><button type="button">Priority</button></th>
+            <th data-sort="req"><button type="button">Requested</button></th>
+            <th data-sort="eta" aria-sort="ascending"><button type="button">ETA</button></th>
+            <th data-sort="stage"><button type="button">Status</button></th>
+            <th data-sort="owner" class="co-hide-sm"><button type="button">Content owner</button></th>
+            <th data-sort="live_status" class="co-hide-sm"><button type="button">Live</button></th>
+            <th>Links</th>
+          </tr></thead>
+          <tbody data-draw="tasks"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- TEAM -->
+  <section class="co-panel" id="team" data-panel="team" hidden>
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">Team</h2>
+        <select class="co-select" id="team-who" aria-label="Members shown">
+          <option value="active">Active members</option>
+          <option value="all">All members, including inactive</option>
+        </select>
+      </div>
+      <p class="co-note">Current load and output per person. A task shared by two designers counts for both. Click a name to open their tasks. Switch someone to Inactive to take them off the stand-up and workload views; their past deliveries still count in reports. Anyone new who appears in the task sheets shows up here automatically, marked New. Changes save to the Creative Team List sheet.</p>
+      <div class="co-tablewrap">
+        <table class="co-table">
+          <thead><tr><th>Designer</th><th>Status</th><th class="n">Open</th><th class="n">WIP</th><th class="n">Overdue</th><th class="n">Due 7 days</th><th class="n">Under review</th><th class="n">Delivered this month</th><th class="n">Last month</th><th class="n">Monthly average</th><th class="co-hide-sm">Main brands</th><th class="co-hide-sm">Type mix (delivered)</th></tr></thead>
+          <tbody data-draw="team"></tbody>
+        </table>
+      </div>
+      <div class="co-legend" data-draw="team-legend"></div>
+      <form class="co-add" id="add-member" autocomplete="off">
+        <strong>Add a team member</strong>
+        <input class="co-input" id="add-name" type="text" placeholder="Full name, as written in the sheets" aria-label="Name" required maxlength="80">
+        <input class="co-input" id="add-role" type="text" placeholder="Role (optional)" aria-label="Role" maxlength="60">
+        <button class="co-btn primary" type="submit">Add as Active</button>
+        <span class="co-note" id="add-msg" role="status"></span>
+      </form>
+    </div>
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">Creatives delivered per designer per month</h2>
+        <p class="co-note">By delivery month. Darker means more. Click a cell to open that month in Reports.</p>
+      </div>
+      <div class="co-tablewrap">
+        <table class="co-table co-heat" data-draw="heat"></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- REPORTS -->
+  <section class="co-panel" id="reports" data-panel="reports" hidden>
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">Delivery report</h2>
+        <p class="co-note" data-draw="r-period">—</p>
+      </div>
+      <div class="co-tools">
+        <select class="co-select" id="r-preset" aria-label="Period">
+          <option value="this-month">This month</option>
+          <option value="last-month">Last month</option>
+          <option value="last-3">Last 3 full months</option>
+          <option value="this-quarter">This quarter</option>
+          <option value="last-quarter">Last quarter</option>
+          <option value="ytd">This year to date</option>
+          <option value="last-12">Last 12 months</option>
+          <option value="all">All time</option>
+          <option value="custom">Custom dates</option>
+        </select>
+        <label class="co-range">From <input class="co-input" id="r-from" type="date" min="2020-01-01" max="2099-12-31"></label>
+        <label class="co-range">To <input class="co-input" id="r-to" type="date" min="2020-01-01" max="2099-12-31"></label>
+        <button class="co-btn" id="r-csv" type="button">Download report CSV</button>
+      </div>
+      <p class="co-note">Sheet, designer, brand and type filters above apply to every number here. Each period is compared with the period of the same length just before it.</p>
+    </div>
+    <div class="co-kpis">
+      <div class="co-kpi"><span class="co-kpi-label">Creatives delivered</span><span class="co-kpi-val" data-draw="rkpi" data-kpi="total">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="total">—</span></div>
+      <div class="co-kpi"><span class="co-kpi-label">Tasks closed</span><span class="co-kpi-val" data-draw="rkpi" data-kpi="tasks">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="tasks">—</span></div>
+      <div class="co-kpi"><span class="co-kpi-label">Paid (client)</span><span class="co-kpi-val" data-draw="rkpi" data-kpi="paid">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="paid">—</span></div>
+      <div class="co-kpi"><span class="co-kpi-label">Marketing team</span><span class="co-kpi-val" data-draw="rkpi" data-kpi="mkt">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="mkt">—</span></div>
+      <div class="co-kpi"><span class="co-kpi-label">Brands served</span><span class="co-kpi-val" data-draw="rkpi" data-kpi="brands">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="brands">—</span></div>
+      <div class="co-kpi"><span class="co-kpi-label">Per designer, per month</span><span class="co-kpi-val" data-draw="rkpi" data-kpi="per">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="per">—</span></div>
+    </div>
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">Creatives delivered by month</h2>
+        <p class="co-note">Stacked by creative type; the report period is highlighted. Click a month to report on it.</p>
+      </div>
+      <div class="co-legend" data-draw="r-legend"></div>
+      <div class="co-chart" data-draw="r-chart"></div>
+    </div>
+    <div class="co-grid">
+      <div class="co-card">
+        <div class="co-card-head"><h2 class="co-h2">By brand</h2><p class="co-note">Creatives delivered in the period, by type.</p></div>
+        <div class="co-tablewrap short"><table class="co-table" data-draw="r-brand"></table></div>
+      </div>
+      <div class="co-card">
+        <div class="co-card-head"><h2 class="co-h2">By designer</h2><p class="co-note">Creatives delivered in the period, by type.</p></div>
+        <div class="co-tablewrap short"><table class="co-table" data-draw="r-designer"></table></div>
+      </div>
+    </div>
+    <div class="co-card">
+      <div class="co-card-head"><h2 class="co-h2">By creative type</h2><p class="co-note">Creatives delivered in the period, against the previous period.</p></div>
+      <div class="co-tablewrap short"><table class="co-table" data-draw="r-type"></table></div>
+    </div>
+    <details class="co-defs">
+      <summary>How deliveries are dated and counted</summary>
+      <dl>
+        <dt>Delivery date</dt><dd>Neither sheet records the day a creative was delivered yet, so a delivered creative is dated by its Design ETA (or its request date when the ETA is blank). Add a column named "Delivered On" to either sheet and the dashboard uses it automatically.</dd>
+        <dt>Creatives</dt><dd>Each row counts as one creative. Add a column named "No. of Creatives" to either sheet and the dashboard counts that number instead.</dd>
+        <dt>Delivered</dt><dd>Design status DONE or Delivered.</dd>
+        <dt>Per designer, per month</dt><dd>Creatives delivered divided by the people who delivered at least one in the period, then by the number of months in it.</dd>
+        <dt>History</dt><dd>Marketing work before 2026 comes from the "2025" tab of the Marketing sheet.</dd>
+      </dl>
+    </details>
+  </section>
+
+  <!-- HEALTH -->
+  <section class="co-panel" id="health" data-panel="health" hidden>
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">Sheet health</h2>
+        <p class="co-note">Rows that make tracking less reliable. Fix them in the sheet and they drop off on the next refresh. Click a check to list its rows.</p>
+      </div>
+      <div class="co-health" data-draw="health-sum"></div>
+      <div class="co-tablewrap">
+        <table class="co-table">
+          <thead><tr><th>ID</th><th>Sheet</th><th>Brand</th><th>Creative</th><th>Designer</th><th>Status</th><th>Requested</th><th>ETA</th><th>Issue</th></tr></thead>
+          <tbody data-draw="health"></tbody>
+        </table>
+      </div>
+      <p class="co-note" data-draw="sources-note"></p>
+    </div>
+    <details class="co-defs">
+      <summary>How design statuses are read</summary>
+      <dl>
+        <dt>To be planned (TBP)</dt><dd>Design status TBP or blank, with the brief ready. Counts as open work.</dd>
+        <dt>In progress (WIP)</dt><dd>Design status WIP or In progress. Counts as open work.</dd>
+        <dt>Changes requested</dt><dd>Design status Changes. Counts as open work.</dd>
+        <dt>Under review</dt><dd>Design status Under review, Review or Shared: with the requester or client.</dd>
+        <dt>Delivered</dt><dd>Design status DONE or Delivered.</dd>
+        <dt>Awaiting brief</dt><dd>Design not started and content status is Incomplete brief, Pending, WIP, TBD or TBP.</dd>
+        <dt>On hold</dt><dd>Design status HOLD, On hold or No update, or content on HOLD.</dd>
+        <dt>Dropped</dt><dd>Design status Deprioritized, Rejected or Cancelled.</dd>
+        <dt>Any other status</dt><dd>Shown as typed in the sheet, counted as open work, and listed here under "Unrecognised status".</dd>
+        <dt>Overdue</dt><dd>Open work whose Design ETA is before today.</dd>
+        <dt>Designers</dt><dd>Read from "Designer/Editor" (Paid) and "Creator" (Marketing). Names typed together in one cell are split into each person.</dd>
+      </dl>
+    </details>
+  </section>
+
+  <footer class="co-foot"><span data-draw="foot">—</span></footer>
+</div>
+
+<dialog id="settings" class="co-dialog" aria-labelledby="settings-title">
+  <form method="dialog" id="settings-form" autocomplete="off">
+    <h2 class="co-h2" id="settings-title">Connection</h2>
+    <p class="co-note">The dashboard reads the sheets through your Apps Script web app. The URL and key are saved in this browser only, never in the code.</p>
+    <label class="co-field">Web app URL<input class="co-input" id="set-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" required></label>
+    <label class="co-field">Key<input class="co-input" id="set-key" type="password" placeholder="From createKey() in Apps Script" required></label>
+    <p class="co-note" id="set-msg" role="status"></p>
+    <div class="co-dialog-actions">
+      <button class="co-link" id="set-forget" type="button">Disconnect this browser</button>
+      <button class="co-btn" value="cancel" type="button" id="set-cancel">Cancel</button>
+      <button class="co-btn primary" id="set-save" type="submit">Save and load</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
