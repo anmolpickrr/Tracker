@@ -6,17 +6,17 @@
 <title>Creative Ops Tracker</title>
 <meta name="description" content="FASTRR Creative Ops: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
 <meta name="robots" content="noindex">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/ https://www.googleapis.com; frame-src https://accounts.google.com/gsi/; form-action 'none'; base-uri 'none'; object-src 'none'">
-<link rel="icon" href="assets/favicon.svg?v=20261109f" type="image/svg+xml">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/ https://www.googleapis.com; frame-src https://accounts.google.com/gsi/; media-src data: blob:; form-action 'none'; base-uri 'none'; object-src 'none'">
+<link rel="icon" href="assets/favicon.svg?v=20261110b" type="image/svg+xml">
 <meta name="theme-color" content="#0f0f0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Montserrat:ital,wght@1,900&family=Outfit:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=20261109f">
-<script src="assets/theme.js?v=20261109f"></script>
+<link rel="stylesheet" href="assets/style.css?v=20261110b">
+<script src="assets/theme.js?v=20261110b"></script>
 </head>
 <body>
-<div class="boot" id="boot" aria-hidden="true"><span class="boot-bg"><svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></svg></span><div class="boot-mark"><span class="boot-co">Creative Ops</span><span class="fastrr fastrr-xl" data-text="FASTRR"><i class="fr-streak"></i><i class="fr-streak"></i><i class="fr-streak"></i><span class="fr-word">FASTRR</span></span></div></div>
+<div class="boot" id="boot" aria-hidden="true"><div class="boot-lock"><svg class="logo boot-ico" viewBox="0 0 512 512" aria-hidden="true"><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></svg><span class="boot-word">FASTRR</span></div></div>
 <div class="app">
   <aside class="side" id="side" aria-label="Main navigation">
     <div class="side-brand">
@@ -83,9 +83,9 @@
     <button class="co-btn filters-toggle" id="btn-filters" type="button" aria-expanded="false" aria-controls="filters"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>Filters <b data-draw="filter-count"></b></button>
     <div class="co-filters" id="filters">
       <select class="co-select co-f" id="f-src" data-param="src" aria-label="Sheet">
-        <option value="">Both sheets</option>
-        <option value="Paid">Paid (client)</option>
-        <option value="Marketing">Marketing team</option>
+        <option value="">Internal + External</option>
+        <option value="Paid">External (client)</option>
+        <option value="Marketing">Internal (marketing)</option>
       </select>
       <select class="co-select co-f" id="f-designer" data-param="designer" data-draw="f-designer" aria-label="Designer"></select>
       <select class="co-select co-f" id="f-brand" data-param="brand" data-draw="f-brand" aria-label="Brand"></select>
@@ -132,15 +132,17 @@
     <div class="ov-grid">
       <div class="co-card">
         <div class="co-card-head">
-          <div><h2 class="co-h2">Delivery trend</h2><p class="co-note">Creatives delivered per week, last 12 weeks. Hover for each week.</p></div>
+          <div><h2 class="co-h2">Delivery trend</h2><p class="co-note" data-draw="trend-note">Creatives delivered per week, last 12 weeks. Hover for details.</p></div>
           <span class="trend-stat" data-draw="trend-stat"></span>
         </div>
+        <div data-gr="trend" data-gr-default="week" data-gr-draw="trend trend-stat trend-note"></div>
         <div class="co-chart trend" data-draw="trend"></div>
       </div>
       <div class="co-card">
         <div class="co-card-head">
-          <div><h2 class="co-h2">Top brands this month</h2><p class="co-note">Creatives delivered. Click a brand to filter everything by it.</p></div>
+          <div><h2 class="co-h2" data-draw="tb-title">Top brands this month</h2><p class="co-note">Creatives delivered. Click a brand to filter everything by it.</p></div>
         </div>
+        <div data-gr="brands" data-gr-default="month" data-gr-draw="top-brands tb-title"></div>
         <div data-draw="top-brands"></div>
       </div>
     </div>
@@ -293,16 +295,17 @@
     <div class="co-kpis">
       <div class="co-kpi hero"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9M21 4L11 14l-3-3"/></svg></span><span class="co-kpi-label">Creatives delivered</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="total">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="total">—</span></div>
       <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></span><span class="co-kpi-label">Tasks closed</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="tasks">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="tasks">—</span></div>
-      <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span><span class="co-kpi-label">Paid (client)</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="paid">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="paid">—</span></div>
-      <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11v3l13 5V6zM16 8.5a4 4 0 0 1 0 7"/></svg></span><span class="co-kpi-label">Marketing team</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="mkt">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="mkt">—</span></div>
+      <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12M6 9h12M13.5 20L7 13h2.5a4.5 4.5 0 0 0 0-9"/></svg></span><span class="co-kpi-label">External (client)</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="paid">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="paid">—</span></div>
+      <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11v3l13 5V6zM16 8.5a4 4 0 0 1 0 7"/></svg></span><span class="co-kpi-label">Internal (marketing)</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="mkt">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="mkt">—</span></div>
       <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12V3h9l9 9-9 9zM7.5 7.5h.01"/></svg></span><span class="co-kpi-label">Brands served</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="brands">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="brands">—</span></div>
       <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg></span><span class="co-kpi-label">Per designer, per month</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="per">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="per">—</span></div>
     </div>
     <div class="co-card">
       <div class="co-card-head">
-        <div><h2 class="co-h2">Creatives delivered by month</h2><p class="co-note">The report period is highlighted. Click a month to report on it.</p></div>
+        <div><h2 class="co-h2">Creatives delivered</h2><p class="co-note" data-draw="r-chart-note">The report period is highlighted. Click a bar to report on it.</p></div>
         <div class="seg small" role="group" aria-label="Chart breakdown"><button type="button" data-rchart="total">Total</button><button type="button" data-rchart="type">By type</button></div>
       </div>
+      <div data-gr="rchart" data-gr-default="month" data-gr-draw="r-chart r-chart-note"></div>
       <div class="co-legend" data-draw="r-legend"></div>
       <div class="co-chart" data-draw="r-chart"></div>
     </div>
@@ -327,7 +330,8 @@
         <dt>Creatives</dt><dd>Each row counts as one creative. Add a column named "No. of Creatives" to either sheet and the dashboard counts that number instead.</dd>
         <dt>Delivered</dt><dd>Design status DONE or Delivered.</dd>
         <dt>Per designer, per month</dt><dd>Creatives delivered divided by the people who delivered at least one in the period, then by the number of months in it.</dd>
-        <dt>History</dt><dd>Marketing work before 2026 comes from the "2025" tab of the Marketing sheet.</dd>
+        <dt>Internal and External</dt><dd>Everything from the Paid (client) sheet is External; everything from the Marketing team sheet is Internal. The sheets keep their own names.</dd>
+        <dt>History</dt><dd>Internal (marketing) work before 2026 comes from the "2025" tab of the Marketing sheet.</dd>
       </dl>
     </details>
   </section>
@@ -341,8 +345,8 @@
       <div class="co-integ" data-draw="integration"></div>
       <div class="co-health" data-draw="health-sum"></div>
       <div class="co-tablewrap">
-        <table class="co-table">
-          <thead><tr><th>ID</th><th class="co-hide-md">Sheet</th><th>Brand</th><th>Creative</th><th>Designer</th><th>Status</th><th class="co-hide-md">Requested</th><th>ETA</th><th>Issue</th></tr></thead>
+        <table class="co-table health-table">
+          <thead><tr><th>ID</th><th class="co-hide-md">Int / Ext</th><th>Brand</th><th>Creative</th><th>Designer</th><th>Status</th><th class="co-hide-md">Requested</th><th>ETA</th><th>Issue</th></tr></thead>
           <tbody data-draw="health"></tbody>
         </table>
       </div>
@@ -361,7 +365,7 @@
         <dt>Dropped</dt><dd>Design status Deprioritized, Rejected or Cancelled.</dd>
         <dt>Any other status</dt><dd>Shown as typed in the sheet, counted as open work, and listed here under "Unrecognised status".</dd>
         <dt>Overdue</dt><dd>Open work whose Design ETA is before today.</dd>
-        <dt>Designers</dt><dd>Read from "Designer/Editor" (Paid) and "Creator" (Marketing). Names typed together in one cell are split into each person.</dd>
+        <dt>Designers</dt><dd>Read from "Designer/Editor" (External, the Paid client sheet) and "Creator" (Internal, the Marketing sheet). Names typed together in one cell are split into each person.</dd>
       </dl>
     </details>
   </section>
@@ -369,7 +373,7 @@
   <!-- NOTES -->
   <section class="co-panel" id="notes" data-panel="notes" hidden>
     <div class="nb">
-      <aside class="nb-index" aria-label="Notes">
+      <div class="nb-bar nb-index" aria-label="Notes">
         <div class="nb-new">
           <button class="co-btn primary" type="button" data-new-note="blank"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New note</button>
           <button class="co-btn" type="button" data-new-note="standup">Stand-up</button>
@@ -381,15 +385,15 @@
           <select class="co-select" id="nb-f-brand" aria-label="Brand"><option value="">All brands</option></select>
           <select class="co-select" id="nb-f-cat" aria-label="Category"><option value="">All categories</option></select>
         </div>
-        <div class="nb-list" data-draw="nb-list"></div>
-      </aside>
-      <article class="paper" id="nb-paper">
-        <div class="paper-empty" id="nb-empty">
-          <span class="paper-empty-logo"><svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></svg></span>
-          <h2>Your team notebook</h2>
-          <p>Meeting minutes, discussions, action items and personal notes, saved to your work account. Pick a note on the left or start a new one.</p>
-          <div class="nb-new"><button class="co-btn primary" type="button" data-new-note="standup">Start today's stand-up notes</button><button class="co-btn" type="button" data-new-note="blank">Blank note</button></div>
-        </div>
+      </div>
+      <div class="nb-empty" id="nb-empty">
+        <span class="paper-empty-logo"><svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></svg></span>
+        <h2>Your team notebook</h2>
+        <p>Meeting minutes, discussions, action items and personal notes, saved to your work account. Each note is a sticky on this board; open one to write in the notebook.</p>
+        <div class="nb-new"><button class="co-btn primary" type="button" data-new-note="standup">Start today's stand-up notes</button><button class="co-btn" type="button" data-new-note="blank">Blank note</button></div>
+      </div>
+      <div class="nb-board nb-list" data-draw="nb-list"></div>
+      <article class="paper" id="nb-paper"><span class="paper-rings" aria-hidden="true"></span>
         <form class="paper-sheet" id="nb-form" autocomplete="off" hidden>
           <div class="paper-top">
             <button class="icon-btn nb-back" id="nb-back" type="button" aria-label="Back to notes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
@@ -625,8 +629,8 @@
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-<script src="assets/config.js?v=20261109f"></script>
-<script src="assets/data.js?v=20261109f"></script>
-<script src="assets/app.js?v=20261109f"></script>
+<script src="assets/config.js?v=20261110b"></script>
+<script src="assets/data.js?v=20261110b"></script>
+<script src="assets/app.js?v=20261110b"></script>
 </body>
 </html>

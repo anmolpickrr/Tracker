@@ -22,7 +22,7 @@
 
 /* Roles, lowest first. Viewer: sees everything. Editor: also edits tasks. Admin: also team list, access and the audit log. */
 const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true };
@@ -233,12 +233,14 @@ function doPost(e) {
     if (body.action === 'me') return json_({ ok: true, user: publicUser_(user) });
     if (body.action === 'ver') {
       const set = settings_();
-      const out = { ok: true, ver: liveVersion_(), role: user.role, remind: { morning: set.morning, evening: set.evening }, presenceOn: set.presence };
+      const out = { ok: true, ver: liveVersion_(), role: user.role, remind: { morning: set.morning, evening: set.evening }, presenceOn: set.presence, assist: assistStatus_() };
       if (set.presence) presenceBeat_(user, body.at);
       if (user.role === 'Admin') { out.pending = users_().list.filter(function (u) { return u.status === 'Pending'; }).length; if (set.presence) out.presence = presenceList_(); }
       return json_(out);
     }
     if (body.action === 'feed') return json_(feed_(user));
+    if (body.action === 'assist') return json_(assist_(user, body));
+    if (body.action === 'speak') return json_(speak_(user, body));
     if (body.action === 'history') return json_({ ok: true, days: history_() });
     if (body.action === 'settings') { const st = settings_(); return json_({ ok: true, settings: Object.assign({}, st, { chat: st.chat ? 'set' : '' }) }); }
     if (body.action === 'data') return text_(dataText_(!!body.fresh));
@@ -1555,3 +1557,131 @@ function testRead() {
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.CODATA = api;
 })(typeof window !== 'undefined' ? window : globalThis);
 /* ==== END data.js ==== */
+
+
+/* ============================ Asha, the dashboard assistant ============================
+ * The browser does the listening (speech to text), runs the tools on the live dashboard data it already
+ * holds (so every answer respects the person's role) and plays the voice. This web app only relays the
+ * conversation to Claude (Anthropic Messages API) with the key kept in Script properties, so the key never
+ * reaches a browser. Task changes still go through updateTask, which checks the role again.
+ *
+ * Setup (owner, once): Apps Script > Project settings > Script properties >
+ *   ANTHROPIC_API_KEY = your key from console.anthropic.com        (required for Asha's understanding)
+ *   GOOGLE_TTS_KEY    = a Google Cloud API key with Text-to-Speech  (optional: natural female voice)
+ * Without ANTHROPIC_API_KEY the dashboard falls back to a simpler built-in helper.
+ */
+const ASSIST_MODEL = 'claude-opus-5-5';
+function assistStatus_() {
+  const p = PropertiesService.getScriptProperties();
+  return { ai: !!p.getProperty('ANTHROPIC_API_KEY'), tts: !!p.getProperty('GOOGLE_TTS_KEY') };
+}
+// At most 40 assistant requests per person per 10 minutes (each spoken question can take a few).
+function assistLimit_(email, kind, max) {
+  const c = CacheService.getScriptCache(), k = 'lim:' + kind + ':' + email, n = Number(c.get(k) || 0);
+  if (n >= max) return false; c.put(k, String(n + 1), 600); return true;
+}
+const ASSIST_SYSTEM = [
+  'You are Asha, the voice assistant inside the FASTRR Creative Ops dashboard used by an Indian creative team (designers, editors, the creative head and coordinators). You are the most knowledgeable teammate: you know every section, number and process of this dashboard, and you help people find things, understand them and get work done.',
+  '',
+  'Language: people speak Hindi, English, Hinglish, broken English and mixed sentences, often with speech-to-text mistakes (names misspelt, "over due", "kitne task", "yashika ka", "dikhao", "kholo"). Work out what they mean; never correct their grammar. Reply in the same language mix they used: Hinglish in Latin script for Hinglish, Hindi in Devanagari for Hindi, simple English for English. Use Indian number formatting (1,25,000) and IST.',
+  '',
+  'Voice style: your reply is read aloud. Be warm, natural and brief: one to three short sentences, the answer first. No markdown, bullet symbols, tables, emojis or IDs read out unless asked; say "7 tasks" not a list of 7 IDs (the screen shows the matching tasks separately, so say "I have put them on screen" when a tool returned a list). Round sensibly and mention the period you counted.',
+  '',
+  'Accuracy: every number, name, status or date must come from a tool result in this conversation. Never guess or invent data. If a request is ambiguous (two people match a name, unclear period, unclear task), ask one short follow-up question instead of guessing. Resolve follow-ups like "aur uske?" or "what about last month" from the conversation. If a tool says something is not allowed for this person, explain kindly who can do it (an Editor or the Admin).',
+  '',
+  'Actions: you can open sections, apply filters, open a task and, for Editors and Admins, change a task\'s status, ETA, designer or priority. Before any change, say exactly what you will change and ask "Shall I go ahead?". Only call update_task after the person clearly says yes in their latest message. The dashboard also shows a confirm button; if they cancel, accept it. Navigation and filters need no confirmation.',
+  '',
+  'Dashboard guide (use this to explain features and processes):',
+  '- Data comes live from two Google Sheets: the Paid (client) sheet, shown everywhere as External, and the Marketing team sheet, shown as Internal. Edits in the sheets appear within about 30 seconds.',
+  '- Statuses: To be planned, In progress, Changes requested, Under review, Awaiting brief (content not ready, design not started), On hold, Delivered, Dropped. Open = to be planned + in progress + changes requested. Overdue = open with a Design ETA before today. Creatives = the "No. of Creatives" quantity (1 per task if blank). Delivered work is dated by Delivered On, else the Design ETA.',
+  '- Overview: headline numbers (open, overdue, due today, in progress, under review, delivered this month with change vs the same days of last month), Needs attention list, Meetings (their Google Calendar), Unassigned queue, Pipeline, Delivery trend and Top brands (each graph has Day, Week, Month, Quarter, Year and Custom buttons), Workload by designer, Coming up.',
+  '- Stand-up: one card per designer with overdue, due today and open work; sort options; good for the daily stand-up.',
+  '- Tasks: the full searchable list; click a task to edit status, ETA, designer, priority and quantity (Editors and Admins). Changes are written to the sheet and logged.',
+  '- Notes: a sticky-note board of meeting minutes, discussions and personal notes; open one to write in the notebook, @mention people, add action items with an owner and due date, follow-ups and an email reminder. Visibility: only me, people mentioned or added, or everyone.',
+  '- Team: each designer\'s open, overdue, this week, under review and delivered numbers. Reports: creatives delivered for a chosen period by brand, designer, type, and Internal vs External, with CSV download.',
+  '- Data health (admins): rows the dashboard could not read cleanly. Access (admins): approve people, set roles, see who is online, reminder settings, and the activity log of every change.',
+  '- Roles: View only sees everything and downloads reports; Can edit also changes tasks; Admin also manages people, the team list, settings and the log.',
+  '- Daily briefings at 10:00 and 18:00 IST by email, on the dashboard and optionally in Google Chat; the bell lists deadlines, overdue work, new requirements, changes by others and meetings.',
+  '- Colours on changes: green means better (more delivered, fewer overdue), red means worse; deeper shade = bigger change.'
+].join('\n');
+const ASSIST_TOOLS = [
+  { name: 'search_tasks', description: 'Find tasks in the live data the person can see. Use for any question about specific tasks, a designer\'s or brand\'s work, overdue or due work, or a task ID. Returns counts and up to `limit` tasks (shown on screen). Without status or due it returns everything not yet delivered or dropped.', input_schema: { type: 'object', properties: {
+    text: { type: 'string', description: 'Free text matched against ID, brand, creative title, type and designer.' },
+    designer: { type: 'string', description: 'Designer name or part of it (fuzzy). Use "unassigned" for tasks without a designer.' },
+    brand: { type: 'string' }, type: { type: 'string', description: 'Creative type, e.g. Static, Video, AI Video, GIF.' },
+    status: { type: 'string', enum: ['open', 'to be planned', 'in progress', 'changes requested', 'under review', 'awaiting brief', 'on hold', 'delivered', 'dropped', 'any'] },
+    due: { type: 'string', enum: ['overdue', 'today', 'tomorrow', 'this week', 'next 7 days', 'no eta', 'any'] },
+    classification: { type: 'string', enum: ['internal', 'external', 'any'] },
+    delivered_from: { type: 'string', description: 'YYYY-MM-DD, for delivered tasks.' }, delivered_to: { type: 'string', description: 'YYYY-MM-DD' },
+    limit: { type: 'integer', description: 'Max tasks to return, default 8.' } } } },
+  { name: 'get_summary', description: 'Headline numbers right now: open, overdue, due today/tomorrow, in progress, under review, awaiting brief, unassigned, plus delivered this month vs the same days of last month. Optionally for one designer, brand or Internal/External.', input_schema: { type: 'object', properties: { designer: { type: 'string' }, brand: { type: 'string' }, classification: { type: 'string', enum: ['internal', 'external', 'any'] } } } },
+  { name: 'team_progress', description: 'Per-designer progress: open, overdue, due today, under review, delivered in the period (default this month) and versus the previous period. Use for "how is the team doing", "who is overloaded", "who delivered most".', input_schema: { type: 'object', properties: { period: { type: 'string', enum: ['today', 'this week', 'last week', 'this month', 'last month', 'this quarter', 'this year', 'custom'] }, from: { type: 'string' }, to: { type: 'string' } } } },
+  { name: 'delivery_report', description: 'Creatives delivered in a period, grouped. Use for report questions ("kitne creatives deliver hue", "best brand last month", "internal vs external").', input_schema: { type: 'object', properties: { period: { type: 'string', enum: ['today', 'yesterday', 'this week', 'last week', 'this month', 'last month', 'this quarter', 'last quarter', 'this year', 'custom'] }, from: { type: 'string', description: 'YYYY-MM-DD when period is custom' }, to: { type: 'string' }, group_by: { type: 'string', enum: ['designer', 'brand', 'type', 'classification', 'day', 'week', 'month'] }, designer: { type: 'string' }, brand: { type: 'string' }, classification: { type: 'string', enum: ['internal', 'external', 'any'] } }, required: ['group_by'] } },
+  { name: 'my_notes', description: 'Search the notes this person can see, and list open action items (theirs by default).', input_schema: { type: 'object', properties: { text: { type: 'string' }, open_actions_only: { type: 'boolean' } } } },
+  { name: 'navigate', description: 'Open a dashboard section and optionally set the filters (designer, brand, creative type, Internal/External), or the Reports period. Use when the person asks to see, show, open or go to something.', input_schema: { type: 'object', properties: { section: { type: 'string', enum: ['overview', 'standup', 'tasks', 'notes', 'team', 'reports', 'health', 'access'] }, designer: { type: 'string' }, brand: { type: 'string' }, type: { type: 'string' }, classification: { type: 'string', enum: ['internal', 'external', 'any'] }, clear_filters: { type: 'boolean' }, report_period: { type: 'string', enum: ['this-month', 'last-month', 'this-quarter', 'last-quarter', 'ytd', 'last-12', 'all'] } }, required: ['section'] } },
+  { name: 'open_task', description: 'Open one task\'s detail window on screen.', input_schema: { type: 'object', properties: { id: { type: 'string', description: 'Task ID such as SRAP372.' } }, required: ['id'] } },
+  { name: 'update_task', description: 'Change a task in the sheet. Only after the person explicitly confirmed this exact change. Editors and Admins only; the screen asks them to confirm too.', input_schema: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['To be planned', 'In progress', 'Changes requested', 'Under review', 'On hold', 'Delivered', 'Dropped'] }, eta: { type: 'string', description: 'YYYY-MM-DD' }, designer: { type: 'string' }, priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] } }, required: ['id'] } }
+];
+ASSIST_TOOLS[ASSIST_TOOLS.length - 1].cache_control = { type: 'ephemeral' };
+// Only text, tool calls, tool results and the model's own thinking blocks are relayed; anything else is dropped.
+function assistClean_(messages) {
+  if (!Array.isArray(messages)) return null;
+  const ok = { text: 1, tool_use: 1, tool_result: 1, thinking: 1, redacted_thinking: 1 };
+  const out = messages.slice(-40).map(function (m) {
+    if (!m || (m.role !== 'user' && m.role !== 'assistant')) return null;
+    if (typeof m.content === 'string') return { role: m.role, content: m.content.slice(0, 4000) };
+    if (!Array.isArray(m.content)) return null;
+    return { role: m.role, content: m.content.filter(function (b) { return b && ok[b.type]; }) };
+  }).filter(function (m) { return m && (typeof m.content === 'string' ? m.content : m.content.length); });
+  // Start at a question the person typed or said, never at a tool result whose call was cut off.
+  while (out.length && !(out[0].role === 'user' && (typeof out[0].content === 'string' || out[0].content.some(function (b) { return b.type === 'text'; }) && !out[0].content.some(function (b) { return b.type === 'tool_result'; })))) out.shift();
+  return JSON.stringify(out).length > 120000 ? null : out;
+}
+function assist_(user, body) {
+  const key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+  if (!key) return { ok: false, error: 'not_configured' };
+  if (!assistLimit_(user.email, 'ast', 40)) return { ok: false, error: 'Too many questions in a short time. Try again in a few minutes.' };
+  const messages = assistClean_(body.messages);
+  if (!messages || !messages.length) return { ok: false, error: 'Nothing to answer.' };
+  const ctx = body.context || {};
+  const who = 'Signed-in person: ' + (user.name || user.email) + ' (' + user.email + '), role ' + user.role + (user.role === 'Viewer' ? ' (view only: cannot change tasks)' : user.role === 'Editor' ? ' (can edit tasks)' : ' (admin)') + '.\n' +
+    'Now: ' + Utilities.formatDate(new Date(), 'Asia/Kolkata', "EEEE d MMMM yyyy, h:mm a") + ' IST.\n' +
+    'On screen: ' + String(ctx.page || 'overview').slice(0, 40) + (ctx.filters ? '; filters: ' + String(ctx.filters).slice(0, 200) : '') + (ctx.lang ? '; speech language setting: ' + String(ctx.lang).slice(0, 10) : '') + '.';
+  const req = {
+    model: ASSIST_MODEL, max_tokens: 4000,
+    output_config: { effort: 'low' },
+    fallbacks: 'default',
+    system: [{ type: 'text', text: ASSIST_SYSTEM, cache_control: { type: 'ephemeral' } }, { type: 'text', text: who }],
+    tools: ASSIST_TOOLS,
+    messages: messages
+  };
+  let res;
+  try {
+    res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { 'x-api-key': key, 'anthropic-version': '2026-10-21', 'anthropic-beta': 'server-side-fallback-2026-07-01' }, payload: JSON.stringify(req) });
+  } catch (err) { return { ok: false, error: 'Could not reach the assistant service.' }; }
+  const code = res.getResponseCode(); let out = {};
+  try { out = JSON.parse(res.getContentText()); } catch (err) { out = {}; }
+  if (code !== 200) {
+    const m = out.error && out.error.message ? String(out.error.message).slice(0, 200) : 'HTTP ' + code;
+    return { ok: false, error: code === 429 || code === 529 ? 'The assistant is busy. Try again in a moment.' : code === 401 ? 'The assistant key in Script properties is not valid.' : 'Assistant error: ' + m };
+  }
+  if (out.stop_reason === 'refusal') return { ok: true, stop_reason: 'refusal', content: [] };
+  return { ok: true, stop_reason: out.stop_reason, content: out.content || [] };
+}
+// Natural female voice through Google Cloud Text-to-Speech (Chirp 3 HD), when GOOGLE_TTS_KEY is set.
+function speak_(user, body) {
+  const key = PropertiesService.getScriptProperties().getProperty('GOOGLE_TTS_KEY');
+  if (!key) return { ok: false, error: 'not_configured' };
+  if (!assistLimit_(user.email, 'tts', 80)) return { ok: false, error: 'limit' };
+  const text = String(body.text || '').slice(0, 700); if (!text) return { ok: false };
+  const lang = body.lang === 'hi-IN' ? 'hi-IN' : 'en-IN';
+  const cache = CacheService.getScriptCache(), ck = 'tts:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, lang + text));
+  const hit = cache.get(ck); if (hit) return { ok: true, audio: hit };
+  const res = UrlFetchApp.fetch('https://texttospeech.googleapis.com/v1/text:synthesize?key=' + encodeURIComponent(key), { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({ input: { text: text }, voice: { languageCode: lang, name: lang + '-Chirp3-HD-Aoede' }, audioConfig: { audioEncoding: 'MP3', speakingRate: 1.04 } }) });
+  if (res.getResponseCode() !== 200) return { ok: false, error: 'tts ' + res.getResponseCode() };
+  const audio = JSON.parse(res.getContentText()).audioContent || '';
+  if (audio && audio.length < 90000) cache.put(ck, audio, 21600);
+  return { ok: true, audio: audio };
+}

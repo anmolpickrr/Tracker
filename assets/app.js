@@ -10,6 +10,7 @@
   const DEFAULTS = { tab: 'today', src: '', designer: '', brand: '', type: '', stage: 'active', susort: 'urgent', who: 'active', rpreset: 'this-month', rfrom: '', rto: '', rchart: 'total' };
   const P = Object.assign({}, DEFAULTS);
   try { Object.assign(P, JSON.parse(LS.get('co.view', '{}'))); } catch (e) { /* ignore */ }
+  let TASK_SAVE = null; // set by the task editor; also used by the assistant
   const TABS = ['today', 'standup', 'tasks', 'notes', 'team', 'reports', 'health', 'access'];
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
   const CFG = window.CO_CONFIG || {};
@@ -164,6 +165,7 @@
         PRS.on = body.presenceOn !== false;
         if (body.remind) { const hm = (t) => { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? +m[1] * 60 + +m[2] : null; }; const a = hm(body.remind.morning), b = hm(body.remind.evening); if (a != null) REMIND_AT.morning = a; if (b != null) REMIND_AT.evening = b; REMIND_AT.label = body.remind; }
         if (body.presence) { PRS.list = body.presence; dash.draw('presence-mini'); dash.draw('presence'); }
+        if (body.assist) ASH.setStatus(body.assist);
       }
       if (body.ok && body.ver && S.ver && body.ver !== S.ver) await load(false);
       dash.draw('sync-text');
@@ -305,7 +307,9 @@
     };
     const topic = (r) => { if (!safeUrl(r.topic)) return r.topic; const a = document.createElement('a'); a.href = r.topic; a.target = '_blank'; a.rel = 'noopener'; a.className = 'co-muted'; a.textContent = /drive\.google/.test(r.topic) ? 'Reference folder' : 'Reference link'; return a; };
     const topicText = (r) => safeUrl(r.topic) ? 'Reference folder' : (r.topic || 'Untitled');
-    const srcTag = (r) => { const s = document.createElement('span'); s.className = 'src'; s.textContent = r.source === 'Paid' ? 'Paid' : 'Mkt'; return s; };
+    /* Classification (display only; the sheets keep their own names): the Paid (client) sheet is External, the Marketing team sheet is Internal. */
+    const cls = (r) => ((r && r.source) || r) === 'Paid' ? 'External' : 'Internal';
+    const srcTag = (r) => { const s = document.createElement('span'); const c = cls(r); s.className = 'src ' + (c === 'External' ? 'ext' : 'int'); s.textContent = c; s.title = c === 'External' ? 'External: client work (Paid sheet)' : 'Internal: marketing team work'; return s; };
     const emptyRow = (tbody, cols, text) => { const tr = tbody.insertRow(); tr.className = 'co-empty'; const c = tr.insertCell(); c.colSpan = cols; c.textContent = text; };
     const notReady = (el, mode) => {
       const s = status();
@@ -406,13 +410,13 @@
       a.download = filename; document.body.append(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     };
-    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, emptyRow, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials, inr, istHour, istTime, istDateTime, istParts, tone, toneInk, toneWash, toneFill, pctText };
+    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, cls, emptyRow, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials, inr, istHour, istTime, istDateTime, istParts, tone, toneInk, toneWash, toneFill, pctText };
   })();
 
   /* ================= Controls ================= */
   let shownTab = null;
   // The loading screen stays until the FASTRR reveal has landed (or 2.5 s at most), then fades.
-  const bootLanded = new Promise((res) => { const w = document.querySelector('.boot .fastrr-xl .fr-word'); if (!w || matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); w.addEventListener('animationend', () => setTimeout(res, 250), { once: true }); setTimeout(res, 2500); });
+  const bootLanded = new Promise((res) => { const w = document.querySelector('.boot .boot-word'); if (!w || matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); w.addEventListener('animationend', () => setTimeout(res, 250), { once: true }); setTimeout(res, 2500); });
   const hideBoot = () => { const b = document.getElementById('boot'); if (!b || b.dataset.leaving) return; b.dataset.leaving = '1'; bootLanded.then(() => { b.classList.add('done'); setTimeout(() => b.remove(), 500); }); };
   function syncControls() {
     const p = dash.params();
@@ -823,31 +827,104 @@
   });
 
 
-  /* Overview: creatives delivered per week (Monday–Sunday, IST), last 12 weeks, with the 12-week average. */
+  /* ================= Time buckets for every time-based graph =================
+     Each graph has its own Day / Week / Month / Quarter / Year / Custom control (remembered per browser).
+     A bucket is keyed by its first day (ISO). Weeks run Monday to Sunday, quarters are calendar quarters, all in IST. */
   const weekStart = (iso) => { const d = new Date(iso + 'T00:00:00'); const k = (d.getDay() + 6) % 7; return CO.addDays(iso, -k); };
-  const weeklySeries = () => {
+  const TB = (() => {
+    const G = { day: { label: 'Day', noun: 'day', n: 30 }, week: { label: 'Week', noun: 'week', n: 12 }, month: { label: 'Month', noun: 'month', n: 12 }, quarter: { label: 'Quarter', noun: 'quarter', n: 8 }, year: { label: 'Year', noun: 'year', n: 5 } };
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const key = (iso, g) => {
+      if (g === 'day') return iso; if (g === 'week') return weekStart(iso);
+      const y = iso.slice(0, 4), m = Number(iso.slice(5, 7));
+      if (g === 'month') return iso.slice(0, 7) + '-01';
+      if (g === 'quarter') return y + '-' + String(Math.floor((m - 1) / 3) * 3 + 1).padStart(2, '0') + '-01';
+      return y + '-01-01';
+    };
+    const next = (k, g) => g === 'day' ? CO.addDays(k, 1) : g === 'week' ? CO.addDays(k, 7) : CO.addMonths(k.slice(0, 7), g === 'month' ? 1 : g === 'quarter' ? 3 : 12) + '-01';
+    const prev = (k, g) => g === 'day' ? CO.addDays(k, -1) : g === 'week' ? CO.addDays(k, -7) : CO.addMonths(k.slice(0, 7), g === 'month' ? -1 : g === 'quarter' ? -3 : -12) + '-01';
+    const end = (k, g) => CO.addDays(next(k, g), -1);
+    const label = (k, g, long) => {
+      const [y, m, d] = k.split('-').map(Number), yy = "'" + String(y).slice(2);
+      if (g === 'day' || g === 'week') return (g === 'week' && long ? 'Week of ' : '') + d + ' ' + MON[m - 1] + (long ? ' ' + y : '');
+      if (g === 'month') return long ? CO.fmtMonth(k.slice(0, 7), true) : MON[m - 1] + ' ' + yy;
+      if (g === 'quarter') return 'Q' + ((m - 1) / 3 + 1) + (long ? ' ' + y : ' ' + yy);
+      return String(y);
+    };
+    const curName = { day: 'Today', week: 'This week', month: 'This month', quarter: 'This quarter', year: 'This year' };
+    const lastName = { day: 'yesterday', week: 'last week', month: 'last month', quarter: 'last quarter', year: 'last year' };
+    const LS = (name) => 'co.gr.' + name;
+    const state = (name, def) => { let s = null; try { s = JSON.parse(localStorage.getItem(LS(name)) || 'null'); } catch (e) { /* private mode */ } s = s && (G[s.g] || s.g === 'custom') ? s : { g: def }; s.def = def; return s; };
+    const ST = {};
+    const get = (name, def) => (ST[name] = ST[name] || state(name, def));
+    const save = (name) => { try { localStorage.setItem(LS(name), JSON.stringify({ g: ST[name].g, from: ST[name].from, to: ST[name].to })); } catch (e) { /* ignore */ } };
+    // For custom ranges, the grain follows the span: up to 45 days by day, 26 weeks by week, 3 years by month, else by quarter.
+    const grainOf = (s) => {
+      if (s.g !== 'custom') return s.g;
+      const days = CO.diffDays(s.from, s.to) + 1;
+      return days <= 45 ? 'day' : days <= 26 * 7 ? 'week' : days <= 3 * 366 ? 'month' : 'quarter';
+    };
+    const valid = (s) => s.g !== 'custom' || (s.from && s.to && s.from <= s.to);
+    // Buckets to draw: the last N ending with the current one, or every bucket of a custom range.
+    const buckets = (s, n) => {
+      const g = grainOf(s), out = [];
+      if (s.g === 'custom' && valid(s)) { for (let k = key(s.from, g); k <= s.to && out.length < 400; k = next(k, g)) out.push(k); return { g, keys: out, from: s.from, to: s.to < CO.today() ? s.to : CO.today() }; }
+      let k = key(CO.today(), g); for (let i = 0; i < (n || G[g].n); i++) { out.unshift(k); k = prev(k, g); }
+      return { g, keys: out, from: out[0], to: CO.today() };
+    };
+    // Sum delivered creatives per bucket; the current bucket is "so far".
+    const sum = (rows, keys, g, from, to) => { const m = new Map(keys.map((k) => [k, 0])); rows.forEach((r) => { if (r.stage === 'Delivered' && r.ddate && r.ddate >= from && r.ddate <= to) { const k = key(r.ddate, g); if (m.has(k)) m.set(k, m.get(k) + (r.qty || 1)); } }); return m; };
+    // The window to compare a bucket with: the bucket before it, cut to the same number of elapsed days when the bucket is still running.
+    const prevWindow = (k, g) => { const pk = prev(k, g), today = CO.today(); const running = end(k, g) >= today; return { from: pk, to: running ? CO.addDays(pk, CO.diffDays(k, today)) : end(pk, g), partial: running }; };
+    const between = (rows, f, t) => CO.sumQty(rows.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= f && r.ddate <= t));
+    // Control: segmented buttons + custom dates. onChange redraws the graph.
+    const control = (host, name, def, onChange, opts) => {
+      const s = get(name, def); host.replaceChildren(); host.className = 'gr-ctl';
+      const seg = document.createElement('div'); seg.className = 'seg small gr-seg'; seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'Group by');
+      const opt = (opts && opts.only) || ['day', 'week', 'month', 'quarter', 'year'];
+      const custom = document.createElement('span'); custom.className = 'gr-custom';
+      const f = Object.assign(document.createElement('input'), { type: 'date', className: 'co-input', value: s.from || CO.addDays(CO.today(), -29), min: '2020-01-01', max: CO.today() }); f.setAttribute('aria-label', 'From');
+      const t = Object.assign(document.createElement('input'), { type: 'date', className: 'co-input', value: s.to || CO.today(), min: '2020-01-01', max: CO.today() }); t.setAttribute('aria-label', 'To');
+      const dash2 = document.createElement('span'); dash2.textContent = 'to'; custom.append(f, dash2, t);
+      const paint = () => { seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.g === s.g))); custom.hidden = s.g !== 'custom'; };
+      [...opt, 'custom'].forEach((g) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.g = g; b.textContent = g === 'custom' ? 'Custom' : G[g].label; b.title = g === 'custom' ? 'Pick your own dates' : 'Show by ' + G[g].noun; b.addEventListener('click', () => { s.g = g; if (g === 'custom') { s.from = f.value; s.to = t.value; } save(name); paint(); onChange(); }); seg.append(b); });
+      const upd = () => { if (f.value && t.value && f.value <= t.value) { s.from = f.value; s.to = t.value; save(name); onChange(); } };
+      f.addEventListener('change', upd); t.addEventListener('change', upd);
+      host.append(seg, custom); paint();
+    };
+    return { G, key, next, prev, end, label, curName, lastName, get, grainOf, buckets, sum, prevWindow, between, control, valid };
+  })();
+  document.querySelectorAll('[data-gr]').forEach((h) => TB.control(h, h.dataset.gr, h.dataset.grDefault || 'month', () => { (h.dataset.grDraw || '').split(' ').filter(Boolean).forEach((d) => dash.draw(d)); }));
+
+  /* Overview: creatives delivered per day / week / month / quarter / year, with the average of the complete buckets. */
+  const trendSeries = () => {
     const rs = CO.rows(); if (!rs) return null;
-    const cur = weekStart(CO.today()), weeks = [];
-    for (let i = 11; i >= 0; i--) weeks.push(CO.addDays(cur, -7 * i));
-    const m = new Map(weeks.map((w) => [w, 0]));
-    rs.forEach((r) => { if (r.stage === 'Delivered' && r.ddate) { const w = weekStart(r.ddate); if (m.has(w)) m.set(w, m.get(w) + (r.qty || 1)); } });
-    return weeks.map((w) => ({ w, n: m.get(w) }));
+    const s = TB.get('trend', 'week'), b = TB.buckets(s), m = TB.sum(rs, b.keys, b.g, b.from, b.to);
+    return { g: b.g, custom: s.g === 'custom', ser: b.keys.map((k) => ({ w: k, n: m.get(k), running: TB.end(k, b.g) >= CO.today() })) };
   };
+  dash.draw('trend-note', (el) => {
+    const s = TB.get('trend', 'week'), g = TB.grainOf(s);
+    el.textContent = s.g === 'custom' ? 'Creatives delivered per ' + TB.G[g].noun + ', ' + CO.fmtDate(s.from) + ' to ' + CO.fmtDate(s.to) + '. Hover for details.' : 'Creatives delivered per ' + TB.G[g].noun + ', last ' + TB.G[g].n + ' ' + TB.G[g].noun + 's. Hover for details.';
+  });
   dash.draw('trend-stat', (el) => {
-    el.replaceChildren(); const ser = CO.status() === 'ok' && weeklySeries(); if (!ser) return;
-    // Compare complete weeks: the current week is still filling up.
-    const a = ser[ser.length - 2].n, b = ser[ser.length - 3].n;
-    const v = document.createElement('b'); v.textContent = CO.num(a);
-    el.append(v, 'last week ', CO.delta(a, b, 'up'), ' vs the week before');
+    el.replaceChildren(); const T = CO.status() === 'ok' && trendSeries(); if (!T) return;
+    const done = T.ser.filter((d) => !d.running); if (done.length < 2) return;
+    // Compare complete buckets: the current one is still filling up.
+    const a = done[done.length - 1], b = done[done.length - 2];
+    const v = document.createElement('b'); v.textContent = CO.num(a.n);
+    const lbl = T.custom ? TB.label(a.w, T.g, true) : TB.lastName[T.g];
+    el.append(v, lbl + ' ', CO.delta(a.n, b.n, 'up'), ' vs the ' + TB.G[T.g].noun + ' before');
   });
   dash.draw('trend', (el) => {
     if (CO.notReady(el, 'box')) return;
-    const ser = weeklySeries(); el.replaceChildren();
+    const T = trendSeries(), ser = T.ser, g = T.g; el.replaceChildren();
+    if (ser.length < 2) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Pick a range that covers at least two ' + TB.G[g].noun + 's.'; el.append(p); return; }
     const W = Math.max(300, el.clientWidth), H = 230, mB = 26, mT = 16;
-    const done = ser.slice(0, -1), avg = d3.mean(done, (d) => d.n) || 0;
+    const lastRunning = ser[ser.length - 1].running;
+    const done = lastRunning ? ser.slice(0, -1) : ser, avg = d3.mean(done, (d) => d.n) || 0;
     const y = d3.scaleLinear([0, Math.max(4, d3.max(ser, (d) => d.n), avg) * 1.1], [H - mB, mT]).nice();
     const ticks = y.ticks(4);
-    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered per week: ' + ser.map((d) => CO.fmtDate(d.w) + ' ' + d.n).join(', '));
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered per ' + TB.G[g].noun + ': ' + ser.map((d) => TB.label(d.w, g) + ' ' + d.n).join(', '));
     const meas = svg.append('text').attr('class', 'tick').text(CO.num(d3.max(ticks))); const mL = meas.node().getComputedTextLength() + 12; meas.remove();
     const x = d3.scalePoint(ser.map((d) => d.w), [mL + 8, W - 14]);
     const defs = svg.append('defs'); const gr = defs.append('linearGradient').attr('id', 'trend-fill').attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', 1);
@@ -855,24 +932,25 @@
     svg.append('g').selectAll('line').data(ticks).join('line').attr('class', 'grid').attr('x1', mL).attr('x2', W - 4).attr('y1', y).attr('y2', y);
     svg.append('g').selectAll('text').data(ticks).join('text').attr('class', 'tick').attr('x', mL - 6).attr('y', y).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => CO.num(d));
     const every = Math.ceil(ser.length / Math.max(1, Math.floor((W - mL) / 64)));
-    svg.append('g').selectAll('text').data(ser).join('text').attr('class', (d, i) => 'tick' + (i === ser.length - 1 ? ' on' : '')).attr('x', (d) => x(d.w)).attr('y', H - 6).attr('text-anchor', 'middle').text((d, i) => i === ser.length - 1 ? 'This week' : (ser.length - 1 - i) % every === 0 ? CO.fmtDate(d.w) : '');
-    // Average of the finished weeks
+    svg.append('g').selectAll('text').data(ser).join('text').attr('class', (d) => 'tick' + (d.running ? ' on' : '')).attr('x', (d) => x(d.w)).attr('y', H - 6).attr('text-anchor', 'middle').text((d, i) => d.running && !T.custom ? TB.curName[g] : (ser.length - 1 - i) % every === 0 ? TB.label(d.w, g) : '');
     svg.append('line').attr('class', 'ref').attr('x1', mL).attr('x2', W - 4).attr('y1', y(avg)).attr('y2', y(avg));
-    svg.append('text').attr('class', 'ref-l').attr('x', mL + 6).attr('y', y(avg) - 6).text('12-week avg ' + CO.num(avg));
+    svg.append('text').attr('class', 'ref-l').attr('x', mL + 6).attr('y', y(avg) - 6).text('avg ' + CO.num(Math.round(avg * 10) / 10) + ' / ' + TB.G[g].noun);
     const curve = d3.curveMonotoneX;
     const area = svg.append('path').datum(done).attr('class', 'area').attr('d', d3.area().curve(curve).x((d) => x(d.w)).y0(H - mB).y1((d) => y(d.n)));
     const line = svg.append('path').datum(done).attr('class', 'line').attr('d', d3.line().curve(curve).x((d) => x(d.w)).y((d) => y(d.n)));
-    // The current week (partial) is a faint continuation with a hollow dot, so a Monday never looks like a crash.
-    const last = ser[ser.length - 1], prevW = done[done.length - 1];
-    svg.append('line').attr('x1', x(prevW.w)).attr('y1', y(prevW.n)).attr('x2', x(last.w)).attr('y2', y(last.n)).style('stroke', 'var(--bar)').attr('stroke-width', 2).style('opacity', 0.3).attr('stroke-linecap', 'round');
-    svg.append('circle').attr('r', 4.5).attr('cx', x(last.w)).attr('cy', y(last.n)).style('fill', 'var(--panel)').style('stroke', 'var(--bar)').attr('stroke-width', 2).style('opacity', 0.7);
+    const prevW = done[done.length - 1];
+    if (lastRunning) {
+      // The running bucket is a faint continuation with a hollow dot, so an early-week dip never looks like a crash.
+      const last = ser[ser.length - 1];
+      svg.append('line').attr('x1', x(prevW.w)).attr('y1', y(prevW.n)).attr('x2', x(last.w)).attr('y2', y(last.n)).style('stroke', 'var(--bar)').attr('stroke-width', 2).style('opacity', 0.3).attr('stroke-linecap', 'round');
+      svg.append('circle').attr('r', 4.5).attr('cx', x(last.w)).attr('cy', y(last.n)).style('fill', 'var(--panel)').style('stroke', 'var(--bar)').attr('stroke-width', 2).style('opacity', 0.7);
+    }
     const endDot = svg.append('circle').attr('class', 'dot').attr('r', 5).attr('cx', x(prevW.w)).attr('cy', y(prevW.n));
-    if (freshSig(el, JSON.stringify(ser))) {
+    if (freshSig(el, g + JSON.stringify(ser))) {
       const L = line.node().getTotalLength(); line.attr('stroke-dasharray', L + ' ' + L).attr('stroke-dashoffset', L).transition().duration(900).ease(ease).attr('stroke-dashoffset', 0).on('end', () => line.attr('stroke-dasharray', null));
       area.style('opacity', 0).transition().delay(250).duration(700).style('opacity', 1);
       endDot.attr('r', 0).transition().delay(800).duration(300).attr('r', 5);
     }
-    // Hover: crosshair, the week's dot and a tooltip comparing with the week before.
     const cross = svg.append('line').attr('class', 'cross').attr('y1', mT).attr('y2', H - mB).style('opacity', 0);
     const hov = svg.append('circle').attr('class', 'dot').attr('r', 5.5).style('opacity', 0);
     const tipEl = CO.tip(el);
@@ -880,31 +958,39 @@
     const show = (px) => {
       const step = x.step(), i = Math.max(0, Math.min(ser.length - 1, Math.round((px - x(ser[0].w)) / step))), d = ser[i];
       cross.attr('x1', x(d.w)).attr('x2', x(d.w)).style('opacity', 1); hov.attr('cx', x(d.w)).attr('cy', y(d.n)).style('opacity', 1);
-      tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = (i === ser.length - 1 ? 'This week' : 'Week of ' + CO.fmtDate(d.w)) + ' · ' + CO.num(d.n) + ' creatives'; tipEl.append(k);
-      if (i) { const r = document.createElement('div'); r.append(CO.delta(d.n, ser[i - 1].n, 'up'), ' vs the week before'); tipEl.append(r); }
-      const r2 = document.createElement('div'); r2.textContent = CO.fmtDate(d.w) + ' – ' + CO.fmtDate(CO.addDays(d.w, 6)) + (i === ser.length - 1 ? ' (so far)' : ''); r2.style.color = 'var(--muted)'; tipEl.append(r2);
+      tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = TB.label(d.w, g, true) + ' · ' + CO.num(d.n) + ' creatives' + (d.running ? ' so far' : ''); tipEl.append(k);
+      if (i) { const pw = TB.prevWindow(d.w, g), pn = d.running ? TB.between(CO.rows(), pw.from, pw.to) : ser[i - 1].n; const r = document.createElement('div'); r.append(CO.delta(d.n, pn, 'up'), d.running ? ' vs the same days of the ' + TB.G[g].noun + ' before' : ' vs the ' + TB.G[g].noun + ' before'); tipEl.append(r); }
+      if (g !== 'day') { const r2 = document.createElement('div'); r2.textContent = CO.fmtDate(d.w) + ' – ' + CO.fmtDate(TB.end(d.w, g)) + (d.running ? ' (so far)' : ''); r2.style.color = 'var(--muted)'; tipEl.append(r2); }
       CO.placeTip(tipEl, el, x(d.w) / W * el.clientWidth, y(d.n) / H * el.clientHeight);
     };
     ov.on('mousemove', (e) => show(d3.pointer(e, svg.node())[0])).on('mouseleave', () => { cross.style('opacity', 0); hov.style('opacity', 0); tipEl.hidden = true; })
       .on('touchstart', (e) => show(d3.pointer(e.touches[0], svg.node())[0]), { passive: true });
   });
-  /* Overview: the brands with the most creatives delivered this month. Click one to filter the dashboard by it. */
+  /* Overview: the brands with the most creatives delivered in the chosen period (today, this week … or custom),
+     against the same elapsed days of the period before. Click one to filter the dashboard by it. */
+  const brandWindow = () => {
+    const s = TB.get('brands', 'month');
+    if (s.g === 'custom' && TB.valid(s)) { const to = s.to < CO.today() ? s.to : CO.today(), len = CO.diffDays(s.from, to); return { from: s.from, to, pfrom: CO.addDays(s.from, -len - 1), pto: CO.addDays(s.from, -1), title: 'Top brands, ' + CO.fmtDate(s.from) + ' – ' + CO.fmtDate(to), cmp: 'the ' + (len + 1) + ' days before' }; }
+    const g = s.g === 'custom' ? 'month' : s.g, k = TB.key(CO.today(), g), pw = TB.prevWindow(k, g);
+    return { from: k, to: CO.today(), pfrom: pw.from, pto: pw.to, title: 'Top brands ' + TB.curName[g].toLowerCase(), cmp: g === 'day' ? 'yesterday' : 'the same days of ' + TB.lastName[g] };
+  };
+  dash.draw('tb-title', (el) => { el.textContent = brandWindow().title; });
   dash.draw('top-brands', (el) => {
     if (CO.notReady(el, 'box')) return;
-    const m = CO.thisMonth(), rs = CO.rows().filter((r) => r.stage === 'Delivered' && r.month === m);
-    const pm = CO.prevMonth(m), dayNow = Number(CO.today().slice(8)), prev = CO.rows().filter((r) => r.stage === 'Delivered' && r.month === pm && Number(r.ddate.slice(8)) <= dayNow);
+    const w = brandWindow(), del = CO.rows().filter((r) => r.stage === 'Delivered' && r.ddate);
+    const rs = del.filter((r) => r.ddate >= w.from && r.ddate <= w.to), prev = del.filter((r) => r.ddate >= w.pfrom && r.ddate <= w.pto);
     const top = d3.rollups(rs, (v) => CO.sumQty(v), (r) => r.brand).sort((a, b) => b[1] - a[1]).slice(0, 6);
     el.replaceChildren();
-    if (!top.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Nothing delivered yet this month.'; el.append(p); return; }
+    if (!top.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Nothing delivered in this period yet.'; el.append(p); return; }
     const max = top[0][1], box = document.createElement('div'); box.className = 'tb-list';
-    const go = freshSig(el, JSON.stringify(top));
+    const go = freshSig(el, w.from + JSON.stringify(top));
     top.forEach(([b, n], i) => {
       const bt = document.createElement('button'); bt.type = 'button'; bt.title = 'Filter the dashboard by ' + b;
       const rk = document.createElement('span'); rk.className = 'rk'; rk.textContent = String(i + 1).padStart(2, '0');
       const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = b;
       const v = document.createElement('span'); v.className = 'v'; v.textContent = CO.num(n);
-      const pv = CO.sumQty(prev.filter((r) => r.brand === b)); v.title = CO.num(pv) + ' in the same days of last month';
-      const dl = CO.delta(n, pv, 'up'); dl.classList.add('tb-dl');
+      const pv = CO.sumQty(prev.filter((r) => r.brand === b)); v.title = CO.num(pv) + ' in ' + w.cmp;
+      const dl = CO.delta(n, pv, 'up'); dl.classList.add('tb-dl'); dl.title += ' (vs ' + w.cmp + ')';
       const tr = document.createElement('span'); tr.className = 'tr'; const fi = document.createElement('i'); fi.style.width = go ? '0%' : (n / max * 100) + '%'; tr.append(fi);
       if (go) requestAnimationFrame(() => requestAnimationFrame(() => { fi.style.width = (n / max * 100) + '%'; }));
       bt.append(rk, nm, dl, v, tr); bt.addEventListener('click', () => dash.setParams({ brand: b })); box.append(bt);
@@ -932,7 +1018,7 @@
       const dd = r.eta ? CO.diffDays(CO.today(), r.eta) : null;
       m.textContent = (r.qty > 1 ? r.qty + '× · ' : '') + (dd == null ? 'No ETA' : dd < 0 ? (-dd) + 'd late' : dd === 0 ? 'Today' : dd === 1 ? 'Tomorrow' : CO.fmtDate(r.eta));
       if (dd != null && dd < 0) m.classList.add('bad'); else if (dd === 0) m.classList.add('warn');
-      const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = [r.id, r.type, r.stage, r.priority, r.source === 'Paid' ? 'Paid' : 'Mkt'].filter(Boolean).join(' · ');
+      const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = [r.id, r.type, r.stage, r.priority, CO.cls(r)].filter(Boolean).join(' · ');
       d.append(t, m, meta); return d;
     };
     const section = (title, list, max, onMore) => {
@@ -1019,8 +1105,8 @@
     };
     document.getElementById('t-csv').addEventListener('click', () => {
       if (CO.status() !== 'ok') return;
-      CO.csv('creative-tasks-' + CO.today() + '.csv', ['ID', 'Sheet', 'Brand', 'Creative', 'Type', 'Qty', 'Designer', 'Priority', 'Requested', 'Design ETA', 'Status', 'Delivery date', 'Content owner', 'Channel', 'Live status', 'Brief', 'Creative link'],
-        filtered().map((r) => [r.id, r.source, r.brand, r.topic, r.type, r.qty, r.designers, r.priority, r.req, r.eta, r.stage, r.ddate, r.owner, r.channel, r.live_status, r.brief, r.link]));
+      CO.csv('creative-tasks-' + CO.today() + '.csv', ['ID', 'Internal / External', 'Brand', 'Creative', 'Type', 'Qty', 'Designer', 'Priority', 'Requested', 'Design ETA', 'Status', 'Delivery date', 'Content owner', 'Channel', 'Live status', 'Brief', 'Creative link'],
+        filtered().map((r) => [r.id, CO.cls(r), r.brand, r.topic, r.type, r.qty, r.designers, r.priority, r.req, r.eta, r.stage, r.ddate, r.owner, r.channel, r.live_status, r.brief, r.link]));
     });
     dash.draw('task-count', (el) => { if (CO.notReady(el, 'text')) return; el.textContent = CO.num(filtered().length); });
     // One-click status views with live counts; the full list stays in the status menu.
@@ -1181,29 +1267,28 @@
       const top = CO.topTypes(delivered(), 5), cmap = CO.typeColors(top);
       el.replaceChildren(...top.map((t) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = cmap.get(t); s.append(i, t); return s; }));
     });
+    dash.draw('r-chart-note', (el) => { const s = TB.get('rchart', 'month'), g = TB.grainOf(s); el.textContent = 'Creatives delivered per ' + TB.G[g].noun + '. The report period is highlighted; click a bar to report on it.'; });
     dash.draw('r-chart', (el) => {
       if (CO.notReady(el, 'box')) return;
-      const del = delivered().filter((r) => r.month <= CO.thisMonth());
+      const del = delivered();
       el.replaceChildren();
       if (!del.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'No deliveries in this view.'; el.append(p); return; }
       const pr = CO.period();
       const byType = (dash.params().rchart || 'total') === 'type';
       const top = byType ? CO.topTypes(del, 5) : ['Total'], cmap = byType ? CO.typeColors(top) : new Map([['Total', 'var(--brand)']]);
-      const ms = [...new Set(del.map((r) => r.month))].sort().slice(-18);
-      const inSel = (m) => pr.all || (m + '-01' <= pr.to && CO.monthEnd(m) >= pr.from);
-      const series = ms.map((m) => { const o = { m }; top.forEach((t) => { o[t] = 0; }); del.filter((r) => r.month === m).forEach((r) => { o[byType ? CO.typeOf(r, top) : 'Total'] += r.qty || 1; }); o.total = top.reduce((a, t) => a + o[t], 0); return o; });
-      // Each month against the month before. The current month (still running) is compared with the same days of last month.
-      const curM = CO.thisMonth(), dayNow = Number(CO.today().slice(8));
+      const S = TB.get('rchart', 'month'), B = TB.buckets(S, S.g === 'month' ? 18 : S.g === 'day' ? 31 : S.g === 'week' ? 16 : undefined), g = B.g, ms = B.keys;
+      const inSel = (k) => pr.all || (k <= pr.to && TB.end(k, g) >= pr.from);
+      const series = ms.map((m) => { const o = { m }; top.forEach((t) => { o[t] = 0; }); const e = TB.end(m, g); del.filter((r) => r.ddate >= m && r.ddate <= e && r.ddate >= B.from && r.ddate <= B.to).forEach((r) => { o[byType ? CO.typeOf(r, top) : 'Total'] += r.qty || 1; }); o.total = top.reduce((a, t) => a + o[t], 0); return o; });
+      // Each bucket against the one before; the running bucket against the same elapsed days of the one before.
       series.forEach((o) => {
-        const pm = CO.prevMonth(o.m), partial = o.m === curM;
-        const prevRows = del.filter((r) => r.month === pm && (!partial || Number(r.ddate.slice(8)) <= dayNow));
-        const any = del.some((r) => r.month <= pm);
-        o.prev = any ? CO.sumQty(prevRows) : null;
-        o.prevLabel = partial ? 'the same days of ' + CO.fmtMonth(pm) : CO.fmtMonth(pm);
+        const pw = TB.prevWindow(o.m, g);
+        o.running = pw.partial;
+        o.prev = del.some((r) => r.ddate <= pw.to) ? TB.between(del, pw.from, pw.to) : null;
+        o.prevLabel = pw.partial ? 'the same days of the ' + TB.G[g].noun + ' before' : TB.label(TB.prev(o.m, g), g, true);
         o.tone = o.prev == null ? null : CO.tone(o.total - o.prev, o.prev, 'up');
       });
       const W = Math.max(300, el.clientWidth), H = 260, mB = 24, mT = 18;
-      const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered by month');
+      const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered per ' + TB.G[g].noun);
       const yt = d3.scaleLinear([0, d3.max(series, (d) => d.total) || 1], [H - mB, mT]).nice();
       const ticks = yt.ticks(4);
       const meas = svg.append('text').attr('class', 'tick').text(CO.num(d3.max(ticks)));
@@ -1213,45 +1298,44 @@
       svg.append('g').selectAll('text').data(ticks).join('text').attr('class', 'tick').attr('x', mL - 6).attr('y', yt).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => CO.num(d));
       const every = Math.ceil(ms.length / Math.max(1, Math.floor((W - mL) / 52)));
       svg.append('g').selectAll('text').data(ms).join('text').attr('class', (m) => 'tick' + (inSel(m) && !pr.all ? ' on' : '')).attr('x', (m) => x(m) + x.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', 'middle')
-        .text((m, i) => (i % every === 0) ? CO.fmtMonth(m).replace(' 20', " '") : '');
+        .text((m, i) => ((ms.length - 1 - i) % every === 0) ? TB.label(m, g) : '');
       if (!byType) {
-        // Total: pill bars coloured by the change from the month before (green up, red down, deeper = bigger change).
-        // Months outside the report period are striped and lighter, so the selection reads first.
+        // Total: pill bars coloured by the change from the bucket before (green up, red down, deeper = bigger change).
+        // Buckets outside the report period are striped and lighter, so the selection reads first.
         const pid = 'stripe-' + Math.random().toString(36).slice(2, 8);
         const pat = svg.append('defs').append('pattern').attr('id', pid).attr('width', 7).attr('height', 7).attr('patternUnits', 'userSpaceOnUse').attr('patternTransform', 'rotate(45)');
         pat.append('line').attr('x1', 0).attr('y1', 0).attr('x2', 0).attr('y2', 7).style('stroke', 'var(--panel)').attr('stroke-width', 2.6).style('opacity', 0.55);
-        const pw = Math.max(8, Math.min(46, x.bandwidth() * 0.78)), po = (x.bandwidth() - pw) / 2, base = yt(0);
+        const pw = Math.max(4, Math.min(46, x.bandwidth() * 0.78)), po = (x.bandwidth() - pw) / 2, base = yt(0);
         const on = (d) => pr.all || inSel(d.m);
         const g2 = svg.append('g').selectAll('g').data(series).join('g');
         const bar = (sel) => sel.attr('x', (d) => x(d.m) + po).attr('width', pw).attr('y', (d) => Math.min(yt(d.total), base - pw)).attr('height', (d) => d.total ? Math.max(pw, base - yt(d.total)) : 0).attr('rx', pw / 2).attr('data-m', (d) => d.m);
         bar(g2.append('rect').attr('class', 'mk tone-bar')).style('fill', (d) => CO.toneFill(d.tone, 'var(--bar)')).style('opacity', (d) => on(d) ? 1 : 0.42);
         bar(g2.filter((d) => !on(d)).append('rect').attr('class', 'mk')).style('fill', 'url(#' + pid + ')');
-        svg.append('g').selectAll('circle').data(series.filter((d) => d.total)).join('circle').attr('class', 'mk').attr('data-m', (d) => d.m).attr('cx', (d) => x(d.m) + x.bandwidth() / 2).attr('cy', (d) => Math.min(yt(d.total), base - pw) + pw / 2).attr('r', Math.min(5, pw / 4))
+        if (pw >= 10) svg.append('g').selectAll('circle').data(series.filter((d) => d.total)).join('circle').attr('class', 'mk').attr('data-m', (d) => d.m).attr('cx', (d) => x(d.m) + x.bandwidth() / 2).attr('cy', (d) => Math.min(yt(d.total), base - pw) + pw / 2).attr('r', Math.min(5, pw / 4))
           .style('fill', 'var(--panel)').style('opacity', (d) => on(d) ? 0.95 : 0.6);
       } else {
       const stack = d3.stack().keys(top)(series);
       const bw = Math.min(24, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
       svg.append('g').selectAll('g').data(stack).join('g').style('fill', (s) => cmap.get(s.key))
         .selectAll('rect').data((s) => s).join('rect').attr('class', 'mk').attr('data-m', (d) => d.data.m).attr('x', (d) => x(d.data.m) + off).attr('width', bw)
-        .attr('y', (d) => yt(d[1])).attr('height', (d) => Math.max(0, yt(d[0]) - yt(d[1]) - (d[1] > d[0] && d[0] > 0 ? 2 : 0))).attr('rx', 3)
+        .attr('y', (d) => yt(d[1])).attr('height', (d) => Math.max(0, yt(d[0]) - yt(d[1]) - (d[1] > d[0] && d[0] > 0 ? 2 : 0))).attr('rx', Math.min(3, bw / 3))
         .style('opacity', (d) => inSel(d.data.m) ? 1 : 0.45);
       }
       const lw = byType ? Math.min(24, x.bandwidth()) : Math.min(46, x.bandwidth() * 0.78);
       svg.append('g').selectAll('text').data(series).join('text').attr('class', (d) => 'tick' + (inSel(d.m) ? ' on' : '')).attr('x', (d) => x(d.m) + x.bandwidth() / 2).attr('y', (d) => (byType ? yt(d.total) : Math.min(yt(d.total), yt(0) - lw)) - 7).attr('text-anchor', 'middle').text((d) => lw >= 16 && (x.bandwidth() >= 30 || inSel(d.m)) ? d.total : '');
-      // Average of the complete months shown (the current month is still filling up).
-      const full = series.filter((d) => d.m < CO.thisMonth()), avgM = d3.mean(full, (d) => d.total);
-      if (avgM) { svg.append('line').attr('class', 'ref').attr('x1', mL).attr('x2', W - 4).attr('y1', yt(avgM)).attr('y2', yt(avgM)); svg.append('text').attr('class', 'ref-l').attr('x', mL + 4).attr('y', yt(avgM) - 6).text('avg ' + CO.num(avgM) + ' / month'); }
-      // Bars grow from the baseline when the data or the view changes.
-      if (freshSig(el, (byType ? 't' : 's') + JSON.stringify(series.map((d) => d.total)) + pr.from + pr.to)) {
+      // Average of the complete buckets shown.
+      const full = series.filter((d) => !d.running), avgM = d3.mean(full, (d) => d.total);
+      if (avgM) { svg.append('line').attr('class', 'ref').attr('x1', mL).attr('x2', W - 4).attr('y1', yt(avgM)).attr('y2', yt(avgM)); svg.append('text').attr('class', 'ref-l').attr('x', mL + 4).attr('y', yt(avgM) - 6).text('avg ' + CO.num(Math.round(avgM * 10) / 10) + ' / ' + TB.G[g].noun); }
+      if (freshSig(el, g + (byType ? 't' : 's') + JSON.stringify(series.map((d) => d.total)) + pr.from + pr.to)) {
         svg.selectAll('rect.mk').each(function (d, i) { const r = d3.select(this), y0 = +r.attr('y'), h = +r.attr('height'); r.attr('y', yt(0)).attr('height', 0).transition().duration(750).delay(Math.min(i, 40) * 18).ease(ease).attr('y', y0).attr('height', h); });
         svg.selectAll('circle.mk').style('opacity', 0).transition().delay(650).duration(300).style('opacity', 1);
       }
       const tipEl = CO.tip(el);
       const mark = (m) => { el.classList.toggle('hovering', !!m); svg.selectAll('.mk').classed('on', function () { return this.getAttribute('data-m') === m; }); };
       svg.append('g').selectAll('rect').data(series).join('rect').attr('class', 'bar hit').attr('x', (d) => x(d.m)).attr('width', x.bandwidth()).attr('y', mT).attr('height', H - mB - mT)
-        .on('click', (e, d) => dash.setParams({ rpreset: 'custom', rfrom: d.m + '-01', rto: CO.monthEnd(d.m) }))
+        .on('click', (e, d) => { const to = TB.end(d.m, g); dash.setParams({ rpreset: 'custom', rfrom: d.m, rto: to > CO.today() ? CO.today() : to }); })
         .on('mouseenter', (e, d) => mark(d.m))
-        .on('mousemove', (e, d) => { tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = CO.fmtMonth(d.m, true) + ' · ' + CO.num(d.total) + ' creatives' + (d.m === CO.thisMonth() ? ' so far' : ''); tipEl.append(k);
+        .on('mousemove', (e, d) => { tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = TB.label(d.m, g, true) + ' · ' + CO.num(d.total) + ' creatives' + (d.running ? ' so far' : ''); tipEl.append(k);
           if (d.prev != null) { const r = document.createElement('div'); r.append(CO.delta(d.total, d.prev, 'up'), ' vs ' + d.prevLabel); tipEl.append(r); } (byType ? top.slice().reverse() : []).forEach((t) => { if (!d[t]) return; const r = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = cmap.get(t); r.append(sw, t + ': ' + d[t]); tipEl.append(r); }); const [px] = d3.pointer(e, el); CO.placeTip(tipEl, el, px, el.clientHeight * 0.3); })
         .on('mouseleave', () => { tipEl.hidden = true; mark(null); });
     });
@@ -1287,7 +1371,7 @@
       table.replaceChildren();
       const pr = CO.period(), cur = inRange(CO.rows(), pr.from, pr.to), prev = pr.pfrom ? inRange(CO.rows(), pr.pfrom, pr.pto) : [];
       const hr = table.createTHead().insertRow();
-      ['Creative type', 'This period', 'Share', 'Previous period', 'Change', 'Paid', 'Marketing', 'Brands', 'Designers'].forEach((h, i) => { const th = document.createElement('th'); th.textContent = h; if (i) th.className = 'n'; hr.append(th); });
+      ['Creative type', 'This period', 'Share', 'Previous period', 'Change', 'External', 'Internal', 'Brands', 'Designers'].forEach((h, i) => { const th = document.createElement('th'); th.textContent = h; if (i) th.className = 'n'; hr.append(th); });
       const tb = table.createTBody();
       const types = [...new Set(cur.concat(prev).map((r) => r.type))];
       if (!types.length) return CO.emptyRow(tb, 9, 'Nothing delivered in this period or the one before.');
@@ -1304,7 +1388,7 @@
       if (CO.status() !== 'ok') return;
       const pr = CO.period(), rs = inRange(CO.rows(), pr.from, pr.to), out = [];
       const add = (dim, keyFn) => { const m = new Map(); rs.forEach((r) => keyFn(r).forEach((k) => { const key = k + '\u0000' + r.type; m.set(key, (m.get(key) || 0) + (r.qty || 1)); })); [...m].sort().forEach(([key, n]) => { const [k, t] = key.split('\u0000'); out.push([CO.label(pr.from, pr.to), dim, k, t, n]); }); };
-      add('Brand', (r) => [r.brand]); add('Designer', (r) => r.list.length ? r.list : ['Unassigned']); add('Sheet', (r) => [r.source]);
+      add('Brand', (r) => [r.brand]); add('Designer', (r) => r.list.length ? r.list : ['Unassigned']); add('Internal / External', (r) => [CO.cls(r)]);
       CO.csv('creative-report-' + (pr.all ? 'all-time' : pr.from + '-to-' + pr.to) + '.csv', ['Period', 'Breakdown', 'Name', 'Creative type', 'Creatives delivered'], out);
     });
   })();
@@ -1356,7 +1440,7 @@
       if (can('Editor')) setTimeout(checkForChanges, 50);
       const list = r.designers ? [...new Set(r.designers.split(' + ').map(CO.canon))] : [];
       before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1) };
-      $('ed-where').textContent = (SHEET[r.src] || r.source) + (r.row ? ' · row ' + r.row : '') + (r.id ? ' · ' + r.id : '');
+      $('ed-where').textContent = CO.cls(r) + ' · ' + (SHEET[r.src] || r.source) + (r.row ? ' · row ' + r.row : '') + (r.id ? ' · ' + r.id : '');
       $('ed-title').textContent = r.brand + ' · ' + r.type;
       $('ed-topic').textContent = CO.topicText(r);
       const st = $('ed-status');
@@ -1405,7 +1489,14 @@
       if (!$('ed-qty-wrap').hidden && now.qty !== before.qty) fields.qty = now.qty;
       if (!Object.keys(fields).length) { dlgE.close(); return; }
       $('ed-save').disabled = true; $('ed-save').textContent = 'Saving…'; $('ed-msg').textContent = '';
-      try {
+      try { await saveFields(r, fields); dlgE.close(); }
+      catch (err) {
+        $('ed-msg').textContent = 'Not saved: ' + err.message;
+        $('ed-save').disabled = false; $('ed-save').textContent = 'Save to sheet';
+      }
+    });
+    // One path for every task change (the editor and the assistant): write to the sheet, show it at once, then reload.
+    async function saveFields(r, fields) {
         const res = await post({ action: 'updateTask', source: r.src, id: r.id, row: r.row, fields });
         // Show the change at once; the reload that follows confirms it from the sheet.
         const t = Object.assign({}, r);
@@ -1417,14 +1508,12 @@
         if (t.stage === 'Delivered') { t.ddate = res.written && res.written.deliveredOn ? CO.today() : (t.eta || t.req); t.month = t.ddate ? t.ddate.slice(0, 7) : ''; } else { t.ddate = null; t.month = ''; }
         if (res.row) t.row = res.row;
         S.tasks = S.tasks.map((x) => (x.uid === r.uid ? t : x));
-        dlgE.close(); renderAll();
+        renderAll();
         toast('Saved to the ' + (SHEET[r.src] || 'sheet') + ', row ' + (res.row || r.row) + (res.written && res.written.status ? ' (status "' + res.written.status + '")' : ''));
         setTimeout(() => load(true), 1500);
-      } catch (err) {
-        $('ed-msg').textContent = 'Not saved: ' + err.message;
-        $('ed-save').disabled = false; $('ed-save').textContent = 'Save to sheet';
-      }
-    });
+        return res;
+    }
+    TASK_SAVE = saveFields;
   })();
 
   /* ================= Start ================= */
@@ -1917,24 +2006,37 @@
       if (d > CO.addDays(t, -7)) return 'This week';
       return CO.fmtMonth(d.slice(0, 7), true);
     };
+    /* The board: every note is a sticky, coloured by type (meeting violet, discussion sun glare, personal orange),
+       grouped by when it is from. Open one and the board becomes a narrow stack beside the notebook. */
+    const tilt = (id) => { let h = 0; String(id).split('').forEach((c) => { h = (h * 31 + c.charCodeAt(0)) | 0; }); return ((Math.abs(h) % 7) - 3) * 0.45; };
     dash.draw('nb-list', (el) => {
       el.replaceChildren();
+      $n('nb-empty').hidden = !!st.cur || !st.loaded || st.notes.length > 0;
       if (!st.loaded) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = st.loading ? 'Loading notes…' : ''; el.append(p); return; }
       const list = filtered().sort((a, b) => (b.pinned - a.pinned) || String(b.date).localeCompare(String(a.date)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
-      if (!list.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = st.notes.length ? 'No notes match.' : 'No notes yet. Start one above.'; el.append(p); return; }
-      let last = '';
+      if (!list.length) { if (st.notes.length) { const p = document.createElement('p'); p.className = 'co-note nb-none'; p.textContent = 'No notes match. Clear the search or filters to see them all.'; el.append(p); } return; }
+      // One lane per group (Pinned, Today, Yesterday, This week, then months), side by side like columns on a board.
+      let last = '', lane = null;
       list.forEach((n) => {
-        const g = groupOf(n); if (g !== last) { const h = document.createElement('div'); h.className = 'nb-group'; h.textContent = g; el.append(h); last = g; }
-        const b = document.createElement('button'); b.type = 'button'; b.className = 'nb-item t-' + String(n.type || 'meeting').toLowerCase(); b.dataset.id = n.id; b.setAttribute('aria-current', String(!!st.cur && st.cur.id === n.id));
-        const t = document.createElement('div'); t.className = 't'; if (n.pinned) { const pin = document.createElement('span'); pin.className = 'pin'; pin.textContent = '●'; t.append(pin); } const tt = document.createElement('span'); tt.textContent = n.title; t.append(tt);
-        const s2 = document.createElement('div'); s2.className = 's'; s2.textContent = CO.fmtDate(n.date) + ' · ' + (n.body || n.followUps || 'No text yet').replace(/\s+/g, ' ').slice(0, 90);
-        const m = document.createElement('div'); m.className = 'm';
-        const tag = (txt, cls) => { const x = document.createElement('span'); x.className = 'nb-tag ' + (cls || ''); x.textContent = txt; m.append(x); };
-        tag(n.type, n.type === 'Meeting' ? 'meet' : ''); if (n.brand) tag(n.brand); if (n.category) tag(n.category);
-        const openA = (n.actions || []).filter((a) => !a.done).length; if (openA) tag(openA + ' open', 'act');
-        if (n.visibility === 'private') tag('Only me', 'lock');
-        const av = CO.av(n.createdByName || n.createdBy); av.title = 'By ' + (n.createdByName || n.createdBy); m.append(av);
-        b.append(t, s2, m); b.addEventListener('click', () => select(n.id)); el.append(b);
+        const g = groupOf(n);
+        if (g !== last) { lane = document.createElement('section'); lane.className = 'nb-lane'; const h = document.createElement('h3'); h.className = 'nb-group'; h.textContent = g; const c = document.createElement('span'); c.className = 'nb-count'; lane.append(h); h.append(c); el.append(lane); last = g; }
+        lane.querySelector('.nb-count').textContent = String(lane.querySelectorAll('.sticky').length + 1);
+        const type = String(n.type || 'Meeting'), b = document.createElement('button'); b.type = 'button';
+        b.className = 'nb-item sticky t-' + type.toLowerCase(); b.dataset.id = n.id; b.style.setProperty('--tilt', tilt(n.id) + 'deg');
+        b.setAttribute('aria-current', String(!!st.cur && st.cur.id === n.id));
+        const deco = document.createElement('span'); deco.className = n.pinned ? 'st-pin' : 'st-tape'; deco.setAttribute('aria-hidden', 'true'); if (n.pinned) deco.title = 'Pinned';
+        const kind = document.createElement('span'); kind.className = 'st-kind'; kind.textContent = [type, n.category].filter(Boolean).join(' · ');
+        const t = document.createElement('span'); t.className = 'st-title t'; t.textContent = n.title || 'Untitled';
+        const body = (n.body || n.followUps || '').replace(/\n{2,}/g, '\n').trim();
+        const s2 = document.createElement('span'); s2.className = 'st-body s'; s2.textContent = body || 'No text yet';
+        const foot = document.createElement('span'); foot.className = 'st-foot m';
+        const d = document.createElement('span'); d.className = 'st-date'; d.textContent = CO.fmtDate(n.date); foot.append(d);
+        const acts = n.actions || [], done = acts.filter((x) => x.done).length;
+        if (acts.length) { const p = document.createElement('span'); p.className = 'st-acts' + (done === acts.length ? ' all' : ''); p.style.setProperty('--p', (done / acts.length * 100) + '%'); p.title = done + ' of ' + acts.length + ' action items done'; p.textContent = done + '/' + acts.length; foot.append(p); }
+        if (n.brand) { const x = document.createElement('span'); x.className = 'nb-tag'; x.textContent = n.brand; foot.append(x); }
+        if (n.visibility === 'private') { const x = document.createElement('span'); x.className = 'st-lock'; x.title = 'Only you can see this'; x.textContent = 'Only me'; foot.append(x); }
+        const av = CO.av(n.createdByName || n.createdBy); av.title = 'By ' + (n.createdByName || n.createdBy); foot.append(av);
+        b.append(deco, kind, t, s2, foot); b.addEventListener('click', () => select(n.id)); lane.append(b);
       });
     });
     function fillFilters() {
@@ -1974,7 +2076,7 @@
     }
     function show() {
       const n = st.cur;
-      empty.hidden = !!n; form.hidden = !n; wrap.classList.toggle('editing', !!n);
+      empty.hidden = !!n || !st.loaded || st.notes.length > 0; form.hidden = !n; wrap.classList.toggle('editing', !!n); dash.draw('nb-list');
       if (!n) return;
       const ro = !n.canEdit; paper.classList.toggle('readonly', ro);
       $n('nb-title').value = n.title; $n('nb-date').value = n.date || ''; $n('nb-type').value = n.type; $n('nb-brand').value = n.brand || ''; $n('nb-cat').value = n.category || ''; $n('nb-vis').value = n.visibility;
@@ -2354,6 +2456,7 @@
   function signedIn(user) {
     A.user = user; gate.hidden = true; delete document.body.dataset.gate;
     renderAll(); load(false); NB.load(); loadHistory(); loadFeed(true); loadSettings(); dash.draw('cal'); setTimeout(checkForChanges, 2500);
+    ASH.show(true);
     // Admins see how many access requests are waiting as soon as they open the dashboard.
     if (can('Admin')) callApi({ action: 'ver' }).then((b) => { if (b.ok && typeof b.pending === 'number') { AX.pending = b.pending; syncControls(); } }).catch(() => {});
   }
@@ -2395,6 +2498,322 @@
     if (!reached) { S.status = 'error'; S.error = 'This browser could not reach the web app. Check your connection, turn off ad or privacy blockers for this page and click Refresh.'; renderAll(); return; }
     A.mode = 'key'; document.body.dataset.mode = 'key'; load(false);
   }
+
+  /* ================= Asha: voice assistant =================
+     Listens in the browser (Web Speech API: English-India or Hindi), understands with Claude through the web app
+     (Script property ANTHROPIC_API_KEY), answers from tools that run here on the live data this person can already see,
+     and speaks back (Google natural voice when GOOGLE_TTS_KEY is set, else the best female voice the device has).
+     Changes to tasks need Editor access and an on-screen confirmation, and go through the same save as the editor. */
+  const ASH = (() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const st = { msgs: [], busy: false, listening: false, speaking: false, viaVoice: false, ai: null, tts: false, rec: null, audio: null,
+      lang: LS.get('co.ashlang', 'en-IN'), voiceOn: LS.get('co.ashvoice', '1') !== '0', confirm: null };
+    const el = (t, c, txt) => { const e = document.createElement(t); if (c) e.className = c; if (txt != null) e.textContent = txt; return e; };
+    const ICON = {
+      mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+      send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>',
+      x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+      vol: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>',
+      mute: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zM17 9l5 6M22 9l-5 6"/></svg>'
+    };
+    const orb = (size) => { const o = el('span', 'orb ' + (size || '')); o.setAttribute('aria-hidden', 'true'); o.innerHTML = '<span class="orb-core"></span><span class="orb-shine"></span><span class="orb-face"><i class="orb-eye"></i><i class="orb-eye"></i><span class="orb-mouth"><i></i><i></i><i></i><i></i></span></span>'; return o; };
+
+    /* ---- UI ---- */
+    const fab = el('button', 'ash-fab'); fab.type = 'button'; fab.setAttribute('aria-label', 'Ask Asha, your dashboard assistant (Alt+A)'); fab.title = 'Ask Asha (Alt+A)';
+    fab.append(orb(), el('span', 'ash-halo'));
+    const panel = el('section', 'ash'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Asha, dashboard assistant'); panel.hidden = true;
+    const head = el('header', 'ash-head'); const hOrb = orb('sm');
+    const hT = el('div', 'ash-title'); hT.append(el('b', '', 'Asha'), el('small', '', 'Your dashboard helper'));
+    const langB = el('button', 'ash-chip'); langB.type = 'button';
+    const voiceB = el('button', 'ash-ib'); voiceB.type = 'button';
+    const closeB = el('button', 'ash-ib'); closeB.type = 'button'; closeB.innerHTML = ICON.x; closeB.setAttribute('aria-label', 'Close assistant');
+    head.append(hOrb, hT, langB, voiceB, closeB);
+    const log = el('div', 'ash-log'); log.setAttribute('aria-live', 'polite');
+    const sugg = el('div', 'ash-sugg');
+    const caption = el('div', 'ash-caption'); caption.hidden = true;
+    const foot = el('form', 'ash-foot'); foot.autocomplete = 'off';
+    const micB = el('button', 'ash-mic'); micB.type = 'button'; micB.innerHTML = ICON.mic + '<span class="ash-wave"><i></i><i></i><i></i><i></i><i></i></span>';
+    const input = el('input', 'ash-in'); input.placeholder = 'Ask anything, in Hindi or English…'; input.setAttribute('aria-label', 'Type a question'); input.maxLength = 500;
+    const sendB = el('button', 'ash-send'); sendB.type = 'submit'; sendB.innerHTML = ICON.send; sendB.setAttribute('aria-label', 'Send');
+    foot.append(micB, input, sendB);
+    const note = el('p', 'ash-note');
+    panel.append(head, log, caption, sugg, foot, note);
+    document.body.append(fab, panel);
+
+    const paintHead = () => {
+      langB.textContent = st.lang === 'hi-IN' ? 'हिन्दी' : 'English'; langB.title = 'Listening for ' + (st.lang === 'hi-IN' ? 'Hindi' : 'English and Hinglish') + '. Click to switch.';
+      voiceB.innerHTML = st.voiceOn ? ICON.vol : ICON.mute; voiceB.setAttribute('aria-label', st.voiceOn ? 'Turn voice replies off' : 'Turn voice replies on'); voiceB.setAttribute('aria-pressed', String(st.voiceOn));
+      micB.setAttribute('aria-label', st.listening ? 'Stop listening' : 'Speak'); micB.disabled = !SR;
+      if (!SR) micB.title = 'Voice input needs Chrome, Edge or Safari. You can type instead.';
+      note.textContent = st.ai === false ? 'Basic mode: the admin can connect Claude for full conversations (README, Asha).' : 'Answers use Claude (Anthropic) on the data you can see. Speech is turned into text by your browser.';
+    };
+    const setMood = (m) => { [fab, panel].forEach((x) => { x.dataset.mood = m; }); };
+    const mood = () => setMood(st.listening ? 'listening' : st.busy ? 'thinking' : st.speaking ? 'speaking' : 'idle');
+    const scroll = () => { log.scrollTop = log.scrollHeight; };
+    const bubble = (who, text) => { const b = el('div', 'ash-b ' + who); if (text) b.append(el('p', '', text)); log.append(b); scroll(); return b; };
+    const firstName = () => { const t = (S.team || []).find((m) => m.status !== 'Inactive'); return t ? t.name.split(' ')[0] : 'Yashika'; };
+    const drawSugg = () => {
+      sugg.replaceChildren();
+      if (st.msgs.length) return;
+      const list = ["What's overdue right now?", firstName() + ' ke kitne tasks pending hain?', 'Is mahine kitne creatives deliver hue?', 'Who has the most work this week?', 'How do I add an action item to a note?'];
+      list.forEach((q) => { const b = el('button', 'ash-chip', q); b.type = 'button'; b.addEventListener('click', () => ask(q, false)); sugg.append(b); });
+    };
+    const greet = () => {
+      if (log.childElementCount) return;
+      const h = Number(CO.istParts ? CO.istParts().hour : new Date().getHours());
+      const part = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+      bubble('bot', part + (A.user && A.user.name ? ', ' + A.user.name.split(' ')[0] : '') + '! I am Asha. Ask me about tasks, deadlines, the team or reports, or tell me where to go. Hindi, English, Hinglish, sab chalega.');
+    };
+    function open() { panel.hidden = false; fab.classList.add('on'); paintHead(); greet(); drawSugg(); mood(); setTimeout(() => input.focus(), 60); }
+    function close() { panel.hidden = true; fab.classList.remove('on'); stopListening(); stopSpeaking(); }
+    fab.addEventListener('click', () => (panel.hidden ? open() : close()));
+    closeB.addEventListener('click', close);
+    langB.addEventListener('click', () => { st.lang = st.lang === 'hi-IN' ? 'en-IN' : 'hi-IN'; LS.set('co.ashlang', st.lang); paintHead(); });
+    voiceB.addEventListener('click', () => { st.voiceOn = !st.voiceOn; LS.set('co.ashvoice', st.voiceOn ? '1' : '0'); if (!st.voiceOn) stopSpeaking(); paintHead(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.altKey && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); if (panel.hidden) open(); else close(); }
+      else if (e.key === 'Escape' && !panel.hidden && !document.querySelector('dialog[open]')) close();
+    });
+    foot.addEventListener('submit', (e) => { e.preventDefault(); const q = input.value.trim(); if (q) { input.value = ''; ask(q, false); } });
+    micB.addEventListener('click', () => (st.listening ? stopListening() : listen()));
+
+    /* ---- listening ---- */
+    function listen() {
+      if (!SR || st.busy) return;
+      stopSpeaking();
+      const rec = new SR(); st.rec = rec; rec.lang = st.lang; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+      let finalText = '';
+      rec.onresult = (e) => { let interim = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) finalText += t; else interim += t; } caption.textContent = (finalText + ' ' + interim).trim() || 'Listening…'; };
+      rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') bubble('bot err', 'I need microphone access. Allow the microphone for this site in the browser bar, or type your question.'); else if (e.error === 'no-speech') caption.textContent = 'I did not hear anything.'; };
+      rec.onend = () => { st.listening = false; st.rec = null; micB.classList.remove('on'); mood(); setTimeout(() => { caption.hidden = true; }, finalText ? 0 : 900); if (finalText.trim()) ask(finalText.trim(), true); };
+      try { rec.start(); st.listening = true; micB.classList.add('on'); caption.hidden = false; caption.textContent = 'Listening…'; mood(); } catch (e) { st.listening = false; }
+    }
+    function stopListening() { if (st.rec) { try { st.rec.stop(); } catch (e) { /* already stopped */ } } }
+
+    /* ---- speaking ---- */
+    const plain = (t) => String(t).replace(/[*_#`>|]/g, '').replace(/\s+/g, ' ').trim();
+    const langOf = (t) => (/[ऀ-ॿ]/.test(t) ? 'hi-IN' : 'en-IN');
+    let voices = []; const loadVoices = () => { try { voices = window.speechSynthesis ? speechSynthesis.getVoices() : []; } catch (e) { voices = []; } };
+    if (window.speechSynthesis) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+    const FEMALE = /neerja|swara|heera|kalpana|veena|lekha|aditi|raveena|female|zira|samantha|ava|allison|susan|serena|karen|moira|tessa|fiona|google uk english female|google हिन्दी|google hindi/i;
+    const pickVoice = (lang) => {
+      const base = lang.slice(0, 2), score = (v) => (v.lang === lang ? 40 : v.lang.startsWith(base) ? 25 : v.lang.startsWith('en') ? 5 : -100) + (FEMALE.test(v.name) ? 30 : 0) + (/natural|online|neural|premium|enhanced/i.test(v.name) ? 20 : 0) + (/google/i.test(v.name) ? 6 : 0) - (/male\b|ravi|hemant|prabhat|david|mark|daniel|alex\b/i.test(v.name) && !FEMALE.test(v.name) ? 40 : 0);
+      return voices.slice().sort((a, b) => score(b) - score(a))[0] || null;
+    };
+    function done() { st.speaking = false; mood(); if (st.viaVoice && st.lastAskedQuestion && !panel.hidden) setTimeout(listen, 250); }
+    async function speak(text) {
+      if (!st.voiceOn || !text) return;
+      const t = plain(text).slice(0, 700), lang = langOf(t); st.speaking = true; mood();
+      if (st.tts) {
+        try { const r = await callApi({ action: 'speak', text: t, lang }); if (r.ok && r.audio) { stopSpeaking(true); const a = new Audio('data:audio/mp3;base64,' + r.audio); st.audio = a; st.speaking = true; mood(); a.onended = done; a.onerror = done; await a.play(); return; } } catch (e) { /* fall back to the device voice */ }
+      }
+      if (!window.speechSynthesis) { st.speaking = false; mood(); return; }
+      speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); const v = pickVoice(lang); if (v) u.voice = v; u.lang = v ? v.lang : lang; u.rate = 1.03; u.pitch = 1.05;
+      u.onend = done; u.onerror = () => { st.speaking = false; mood(); }; speechSynthesis.speak(u);
+    }
+    function stopSpeaking(keep) { if (st.audio) { st.audio.pause(); st.audio = null; } try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } if (!keep) { st.speaking = false; mood(); } }
+
+    /* ---- data helpers (all on the live data this person can see) ---- */
+    const norm = (x) => String(x || '').toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
+    const allRows = () => CO.rows(true) || [];
+    const people = () => { const s = new Set(); (S.team || []).forEach((m) => s.add(m.name)); allRows().forEach((r) => r.list.forEach((n) => s.add(n))); return [...s].filter(Boolean); };
+    // Fuzzy person match: full name, first name, or a spoken spelling close to it. Returns {name} or {ambiguous:[...]} or {none}.
+    const lev = (a, b) => { const m = a.length, n = b.length, d = Array.from({ length: m + 1 }, (_, i) => [i]); for (let j = 1; j <= n; j++) d[0][j] = j; for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[m][n]; };
+    const findPerson = (q) => {
+      const k = norm(q); if (!k) return null; const ps = people();
+      const exact = ps.filter((p) => norm(p) === k); if (exact.length) return { name: exact[0] };
+      const part = ps.filter((p) => norm(p).split(' ').some((w) => w === k) || norm(p).startsWith(k) || norm(p).includes(k));
+      if (part.length === 1) return { name: part[0] }; if (part.length > 1) return { ambiguous: part.slice(0, 6) };
+      const close = ps.map((p) => [p, Math.min(...norm(p).split(' ').map((w) => lev(w, k.split(' ')[0])))]).filter(([, d]) => d <= Math.max(1, Math.floor(k.length / 4))).sort((a, b) => a[1] - b[1]);
+      if (close.length === 1 || (close.length > 1 && close[0][1] < close[1][1])) return { name: close[0][0] };
+      return close.length ? { ambiguous: close.slice(0, 6).map((c) => c[0]) } : { none: q };
+    };
+    const brands = () => [...new Set(allRows().map((r) => r.brand).filter(Boolean))];
+    const findBrand = (q) => { const k = norm(q); if (!k) return null; const bs = brands(); const ex = bs.find((b) => norm(b) === k); if (ex) return { name: ex }; const p = bs.filter((b) => norm(b).includes(k) || k.includes(norm(b))); if (p.length === 1) return { name: p[0] }; if (p.length > 1) return { ambiguous: p.slice(0, 6) }; const c = bs.filter((b) => lev(norm(b), k) <= 2); return c.length === 1 ? { name: c[0] } : c.length ? { ambiguous: c } : { none: q }; };
+    const clsOk = (r, c) => !c || c === 'any' || CO.cls(r).toLowerCase() === c;
+    const weekStartOf = (iso) => TB.key(iso, 'week');
+    const period = (p, from, to) => {
+      const t = CO.today(); let f, e, label = p || 'this month';
+      const span = (g, back) => { let k = TB.key(t, g); for (let i = 0; i < back; i++) k = TB.prev(k, g); return [k, back ? TB.end(k, g) : t]; };
+      switch (label) {
+        case 'today': [f, e] = [t, t]; break;
+        case 'yesterday': [f, e] = [CO.addDays(t, -1), CO.addDays(t, -1)]; break;
+        case 'this week': [f, e] = span('week', 0); break; case 'last week': [f, e] = span('week', 1); break;
+        case 'last month': [f, e] = span('month', 1); break;
+        case 'this quarter': [f, e] = span('quarter', 0); break; case 'last quarter': [f, e] = span('quarter', 1); break;
+        case 'this year': [f, e] = span('year', 0); break;
+        case 'custom': f = /^\d{4}-\d{2}-\d{2}$/.test(from || '') ? from : t; e = /^\d{4}-\d{2}-\d{2}$/.test(to || '') ? to : t; break;
+        default: label = 'this month'; [f, e] = span('month', 0);
+      }
+      const len = CO.diffDays(f, e); return { from: f, to: e, label, pfrom: CO.addDays(f, -len - 1), pto: CO.addDays(f, -1) };
+    };
+    const brief = (r) => ({ id: r.id || '(no ID, row ' + r.row + ')', brand: r.brand, creative: CO.topicText(r).slice(0, 80), type: r.type, qty: r.qty || 1, designer: r.list.join(', ') || 'Unassigned', status: r.stage, eta: r.eta || 'none', late_days: r.due === 'overdue' ? CO.diffDays(r.eta, CO.today()) : undefined, delivered: r.ddate || undefined, classification: CO.cls(r) });
+    const countBy = (rs, f) => { const m = {}; rs.forEach((r) => { const k = f(r); m[k] = (m[k] || 0) + (r.qty || 1); }); return m; };
+
+    /* ---- tools ---- */
+    let shown = null; // tasks to show on screen with the next answer
+    const TOOLS = {
+      search_tasks(a) {
+        let rs = allRows(); const t = CO.today(), tm = CO.addDays(t, 1), notes = [];
+        if (a.designer) { if (/^unassigned|none|nobody|koi nahi$/i.test(a.designer)) rs = rs.filter((r) => !r.list.length); else { const p = findPerson(a.designer); if (!p || p.none) return { error: 'No designer called "' + a.designer + '".', designers: people().slice(0, 30) }; if (p.ambiguous) return { ambiguous: p.ambiguous, ask: 'Which person did they mean?' }; rs = rs.filter((r) => r.list.includes(p.name)); notes.push('designer = ' + p.name); } }
+        if (a.brand) { const b = findBrand(a.brand); if (!b || b.none) return { error: 'No brand called "' + a.brand + '".' }; if (b.ambiguous) return { ambiguous: b.ambiguous }; rs = rs.filter((r) => r.brand === b.name); notes.push('brand = ' + b.name); }
+        if (a.type) rs = rs.filter((r) => norm(r.type).includes(norm(a.type)));
+        rs = rs.filter((r) => clsOk(r, a.classification));
+        const s = (a.status || (a.due && a.due !== 'any' ? 'open' : a.delivered_from ? 'delivered' : 'active')).toLowerCase();
+        if (s === 'open') rs = rs.filter((r) => r.open); else if (s === 'active') rs = rs.filter((r) => r.stage !== 'Delivered' && r.stage !== 'Dropped'); else if (s !== 'any') rs = rs.filter((r) => r.stage.toLowerCase() === s);
+        const we = CO.addDays(weekStartOf(t), 6);
+        const D = { overdue: (r) => r.due === 'overdue', today: (r) => r.open && r.eta === t, tomorrow: (r) => r.open && r.eta === tm, 'this week': (r) => r.open && r.eta && r.eta >= t && r.eta <= we, 'next 7 days': (r) => r.open && r.eta && r.eta >= t && r.eta <= CO.addDays(t, 7), 'no eta': (r) => r.open && !r.eta };
+        if (a.due && D[a.due]) rs = rs.filter(D[a.due]);
+        if (a.delivered_from) rs = rs.filter((r) => r.ddate && r.ddate >= a.delivered_from && r.ddate <= (a.delivered_to || t));
+        if (a.text) { const words = norm(a.text).split(' ').filter(Boolean); rs = rs.filter((r) => { const h = norm([r.id, r.brand, CO.topicText(r), r.type, r.list.join(' ')].join(' ')); return words.every((w) => h.includes(w)); }); }
+        rs = rs.slice().sort((x, y) => String(x.eta || '9999').localeCompare(String(y.eta || '9999')));
+        const lim = Math.max(1, Math.min(20, a.limit || 8)); shown = rs.slice(0, lim);
+        return { matched_tasks: rs.length, creatives: CO.sumQty(rs), by_status: countBy(rs, (r) => r.stage), overdue_among_them: rs.filter((r) => r.due === 'overdue').length, applied: notes, tasks: rs.slice(0, lim).map(brief), more_not_listed: Math.max(0, rs.length - lim), note: 'Status filter used: ' + s };
+      },
+      get_summary(a) {
+        let rs = allRows(); const lab = [];
+        if (a.designer) { const p = findPerson(a.designer); if (!p || p.none) return { error: 'No designer called "' + a.designer + '".' }; if (p.ambiguous) return { ambiguous: p.ambiguous }; rs = rs.filter((r) => r.list.includes(p.name)); lab.push(p.name); }
+        if (a.brand) { const b = findBrand(a.brand); if (!b || b.none) return { error: 'No brand called "' + a.brand + '".' }; if (b.ambiguous) return { ambiguous: b.ambiguous }; rs = rs.filter((r) => r.brand === b.name); lab.push(b.name); }
+        rs = rs.filter((r) => clsOk(r, a.classification));
+        const t = CO.today(), open = rs.filter((r) => r.open), m = CO.thisMonth(), pm = CO.prevMonth(m), day = Number(t.slice(8));
+        const del = rs.filter((r) => r.stage === 'Delivered' && r.ddate);
+        return { for: lab.join(', ') || 'everyone', open_tasks: open.length, open_creatives: CO.sumQty(open), overdue: open.filter((r) => r.due === 'overdue').length, due_today: open.filter((r) => r.eta === t).length, due_tomorrow: open.filter((r) => r.eta === CO.addDays(t, 1)).length, no_eta: open.filter((r) => !r.eta).length,
+          in_progress: rs.filter((r) => r.stage === 'In progress').length, to_be_planned: rs.filter((r) => r.stage === 'To be planned').length, changes_requested: rs.filter((r) => r.stage === 'Changes requested').length, under_review: rs.filter((r) => r.stage === 'Under review').length, awaiting_brief: rs.filter((r) => r.stage === 'Awaiting brief').length, on_hold: rs.filter((r) => r.stage === 'On hold').length,
+          unassigned_open: open.filter((r) => !r.list.length).length, delivered_this_month_creatives: CO.sumQty(del.filter((r) => r.month === m)), delivered_same_days_last_month: CO.sumQty(del.filter((r) => r.month === pm && Number(r.ddate.slice(8)) <= day)), oldest_overdue_days: open.filter((r) => r.due === 'overdue').reduce((x, r) => Math.max(x, CO.diffDays(r.eta, t)), 0) };
+      },
+      team_progress(a) {
+        const P = period(a.period, a.from, a.to), rs = allRows(), t = CO.today();
+        const names = new Set((S.team || []).filter((m) => m.status !== 'Inactive').map((m) => m.name)); rs.forEach((r) => { if (r.open) r.list.forEach((n) => names.add(n)); });
+        const rows = [...names].map((n) => { const mine = rs.filter((r) => r.list.includes(n)), op = mine.filter((r) => r.open), dl = mine.filter((r) => r.stage === 'Delivered' && r.ddate);
+          return { designer: n, open: op.length, overdue: op.filter((r) => r.due === 'overdue').length, due_today: op.filter((r) => r.eta === t).length, under_review: mine.filter((r) => r.stage === 'Under review').length, delivered: CO.sumQty(dl.filter((r) => r.ddate >= P.from && r.ddate <= P.to)), delivered_previous_period: CO.sumQty(dl.filter((r) => r.ddate >= P.pfrom && r.ddate <= P.pto)) }; })
+          .sort((x, y) => y.open - x.open);
+        const un = rs.filter((r) => r.open && !r.list.length).length;
+        return { period: P.label + ' (' + P.from + ' to ' + P.to + ')', previous_period: P.pfrom + ' to ' + P.pto, designers: rows, unassigned_open_tasks: un };
+      },
+      delivery_report(a) {
+        const P = period(a.period, a.from, a.to); let rs = allRows().filter((r) => r.stage === 'Delivered' && r.ddate);
+        if (a.designer) { const p = findPerson(a.designer); if (!p || p.none) return { error: 'No designer called "' + a.designer + '".' }; if (p.ambiguous) return { ambiguous: p.ambiguous }; rs = rs.filter((r) => r.list.includes(p.name)); }
+        if (a.brand) { const b = findBrand(a.brand); if (!b || b.none) return { error: 'No brand called "' + a.brand + '".' }; if (b.ambiguous) return { ambiguous: b.ambiguous }; rs = rs.filter((r) => r.brand === b.name); }
+        rs = rs.filter((r) => clsOk(r, a.classification));
+        const cur = rs.filter((r) => r.ddate >= P.from && r.ddate <= P.to), prev = rs.filter((r) => r.ddate >= P.pfrom && r.ddate <= P.pto);
+        const key = { designer: (r) => r.list.join(', ') || 'Unassigned', brand: (r) => r.brand, type: (r) => r.type, classification: (r) => CO.cls(r), day: (r) => r.ddate, week: (r) => 'week of ' + TB.key(r.ddate, 'week'), month: (r) => r.ddate.slice(0, 7) }[a.group_by] || ((r) => r.brand);
+        const groups = Object.entries(countBy(cur, key)).sort((x, y) => y[1] - x[1]).slice(0, 25).map(([k, v]) => ({ name: k, creatives: v }));
+        return { period: P.label + ' (' + P.from + ' to ' + P.to + ')', total_creatives: CO.sumQty(cur), tasks: cur.length, previous_period_total: CO.sumQty(prev), previous_period: P.pfrom + ' to ' + P.pto, groups };
+      },
+      my_notes(a) {
+        const ns = NB.notes || []; const k = norm(a.text || '');
+        const list = ns.filter((n) => !k || norm([n.title, n.body, n.brand, n.category].join(' ')).includes(k)).slice(0, 8).map((n) => ({ title: n.title, date: n.date, type: n.type, open_actions: (n.actions || []).filter((x) => !x.done).length }));
+        const acts = NB.myActions().filter((x) => !x.done).slice(0, 10).map((x) => ({ action: x.text, note: x.note, due: x.due || 'no date' }));
+        return a.open_actions_only ? { my_open_action_items: acts } : { notes: list, my_open_action_items: acts, total_notes_visible: ns.length };
+      },
+      navigate(a) {
+        const tab = { overview: 'today', standup: 'standup', tasks: 'tasks', notes: 'notes', team: 'team', reports: 'reports', health: 'health', access: 'access' }[a.section] || 'today';
+        if ((tab === 'health' || tab === 'access') && !can('Admin')) return { error: 'not_allowed', detail: 'Only admins can open ' + PAGE_NAME[tab] + '.' };
+        const p = { tab }; const said = [];
+        if (a.clear_filters) Object.assign(p, { src: '', designer: '', brand: '', type: '' });
+        if (a.designer) { const x = findPerson(a.designer); if (x && x.ambiguous) return { ambiguous: x.ambiguous }; if (x && x.name) { p.designer = x.name; said.push(x.name); } }
+        if (a.brand) { const x = findBrand(a.brand); if (x && x.ambiguous) return { ambiguous: x.ambiguous }; if (x && x.name) { p.brand = x.name; said.push(x.name); } }
+        if (a.type) { const ty = [...new Set(allRows().map((r) => r.type))].find((x) => norm(x) === norm(a.type)); if (ty) { p.type = ty; said.push(ty); } }
+        if (a.classification) { p.src = a.classification === 'external' ? 'Paid' : a.classification === 'internal' ? 'Marketing' : ''; if (p.src) said.push(a.classification); }
+        if (a.report_period) p.rpreset = a.report_period;
+        dash.setParams(p); return { opened: PAGE_NAME[tab], filters_set: said };
+      },
+      open_task(a) {
+        const r = allRows().find((x) => String(x.id).toLowerCase() === String(a.id).toLowerCase().replace(/\s+/g, ''));
+        if (!r) return { error: 'No task with ID ' + a.id + '.' };
+        document.dispatchEvent(new CustomEvent('co-open-task', { detail: r.uid })); return { opened: brief(r) };
+      },
+      async update_task(a) {
+        if (A.mode === 'auth' && !can('Editor')) return { error: 'not_allowed', detail: 'This person has view-only access. An Editor or the Admin can change tasks.' };
+        if (!TASK_SAVE) return { error: 'Editing is not available right now.' };
+        const r = allRows().find((x) => String(x.id).toLowerCase() === String(a.id).toLowerCase().replace(/\s+/g, ''));
+        if (!r) return { error: 'No task with ID ' + a.id + '.' };
+        const fields = {}, lines = [];
+        if (a.status && a.status !== r.stage) { fields.status = a.status; lines.push(['Status', r.stage, a.status]); }
+        if (a.eta && /^\d{4}-\d{2}-\d{2}$/.test(a.eta) && a.eta !== r.eta) { fields.eta = a.eta; lines.push(['Design ETA', r.eta ? CO.fmtDate(r.eta, true) : 'none', CO.fmtDate(a.eta, true)]); }
+        if (a.designer) { const names = String(a.designer).split(/\s*(?:,|\+| and | aur )\s*/i).filter(Boolean).map((n) => findPerson(n)); const bad = names.find((x) => !x || !x.name); if (bad) return bad && bad.ambiguous ? { ambiguous: bad.ambiguous } : { error: 'Unknown designer "' + a.designer + '".' }; const v = names.map((x) => x.name).join(', '); if (v !== r.list.join(', ')) { fields.designer = v; lines.push(['Designer', r.list.join(', ') || 'Unassigned', v]); } }
+        if (a.priority && a.priority !== r.priority) { fields.priority = a.priority; lines.push(['Priority', r.priority || 'none', a.priority]); }
+        if (!lines.length) return { result: 'Nothing to change: the task already has those values.', task: brief(r) };
+        const ok = await confirmCard(r, lines);
+        if (!ok) return { result: 'cancelled', detail: 'The person cancelled the change on screen. Nothing was saved.' };
+        try { const res = await TASK_SAVE(r, fields); return { result: 'saved', row: res.row || r.row, changes: lines.map((l) => l[0] + ': ' + l[1] + ' to ' + l[2]) }; }
+        catch (e) { return { error: 'Not saved: ' + e.message }; }
+      }
+    };
+    function confirmCard(r, lines) {
+      return new Promise((resolve) => {
+        const b = bubble('bot card'); b.append(el('b', '', 'Change ' + (r.id || 'this task') + '?'), el('span', 'ash-sub', r.brand + ' · ' + CO.topicText(r).slice(0, 60)));
+        const ul = el('ul', 'ash-diff'); lines.forEach(([k, x, y]) => { const li = el('li'); li.append(el('span', '', k), el('s', '', x), el('b', '', y)); ul.append(li); }); b.append(ul);
+        const row = el('div', 'ash-acts'); const yes = el('button', 'co-btn primary', 'Save change'), no = el('button', 'co-btn', 'Cancel'); yes.type = no.type = 'button'; row.append(yes, no); b.append(row); scroll();
+        const fin = (v) => { yes.disabled = no.disabled = true; row.replaceChildren(el('span', 'ash-sub', v ? 'Saving…' : 'Cancelled')); resolve(v); };
+        yes.addEventListener('click', () => fin(true)); no.addEventListener('click', () => fin(false)); yes.focus();
+      });
+    }
+    const showTasks = (b, rs) => {
+      if (!rs || !rs.length) return;
+      const ul = el('ul', 'ash-tasks'); rs.forEach((r) => { const li = el('li'); li.tabIndex = 0; li.setAttribute('role', 'button'); const a = el('span', 'ash-t'); a.append(el('b', '', r.brand), ' ' + CO.topicText(r).slice(0, 60)); const z = el('span', 'ash-sub', [r.id, r.list.join(', ') || 'Unassigned', r.stage, r.eta ? (r.due === 'overdue' ? CO.diffDays(r.eta, CO.today()) + 'd late' : CO.fmtDate(r.eta)) : 'No ETA'].filter(Boolean).join(' · ')); li.append(a, z); const go = () => document.dispatchEvent(new CustomEvent('co-open-task', { detail: r.uid })); li.addEventListener('click', go); li.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); }); ul.append(li); });
+      b.append(ul); scroll();
+    };
+
+    /* ---- the conversation ---- */
+    const ctx = () => { const p = dash.params(); return { page: PAGE_NAME[p.tab] || 'Overview', filters: [p.src ? CO.cls(p.src) : '', p.designer, p.brand, p.type].filter(Boolean).join(', '), lang: st.lang }; };
+    // Keep the conversation short enough to send, cutting only at a question the person asked (never between a tool call and its result).
+    const trim = () => { while (st.msgs.length > 30) { st.msgs.shift(); while (st.msgs.length && !(st.msgs[0].role === 'user' && st.msgs[0].content.some((c) => c.type === 'text'))) st.msgs.shift(); } };
+    async function ask(q, viaVoice) {
+      if (st.busy) return;
+      st.viaVoice = viaVoice; stopSpeaking(); sugg.replaceChildren();
+      bubble('me', q); st.busy = true; mood(); shown = null;
+      const wait = bubble('bot wait'); wait.append(el('span', 'dots', '')); wait.setAttribute('aria-label', 'Asha is thinking');
+      let answer = '';
+      try {
+        if (st.ai === false || A.mode !== 'auth') answer = local(q);
+        else {
+          st.msgs.push({ role: 'user', content: [{ type: 'text', text: q }] }); trim();
+          for (let hop = 0; hop < 7; hop++) {
+            const res = await callApi({ action: 'assist', messages: st.msgs, context: ctx() });
+            if (!res.ok) { if (res.error === 'not_configured') { st.ai = false; paintHead(); st.msgs.pop(); answer = local(q); } else answer = res.error || 'Something went wrong. Try again.'; break; }
+            if (res.stop_reason === 'refusal') { st.msgs.pop(); answer = 'I can not help with that one. Ask me about tasks, the team or reports.'; break; }
+            st.msgs.push({ role: 'assistant', content: res.content });
+            const text = res.content.filter((c) => c.type === 'text').map((c) => c.text).join(' ').trim();
+            const calls = res.content.filter((c) => c.type === 'tool_use');
+            if (res.stop_reason !== 'tool_use' || !calls.length) { answer = text || 'Done.'; break; }
+            const results = [];
+            for (const c of calls) {
+              let out; try { out = TOOLS[c.name] ? await TOOLS[c.name](c.input || {}) : { error: 'Unknown tool ' + c.name }; } catch (e) { out = { error: String(e.message || e) }; }
+              results.push({ type: 'tool_result', tool_use_id: c.id, content: JSON.stringify(out).slice(0, 12000), is_error: !!(out && out.error && out.error !== 'not_allowed') });
+            }
+            st.msgs.push({ role: 'user', content: results });
+            if (hop === 6) answer = 'That took too many steps. Could you ask in a simpler way?';
+          }
+        }
+      } catch (e) { if (e instanceof AuthLost) return; answer = 'I could not reach the dashboard service. Check the connection and try again.'; }
+      wait.remove(); st.busy = false;
+      const b = bubble('bot', answer); showTasks(b, shown); st.lastAskedQuestion = /\?\s*$|\?\s*["”]?$/.test(answer);
+      mood(); speak(answer);
+    }
+
+    /* ---- basic mode (no Claude key): understands the common questions in English and Hinglish ---- */
+    function local(q) {
+      const k = norm(q), hi = /\b(hai|hain|ka|ke|ki|kitne|kitna|kya|dikhao|kholo|mera|mere|aaj|kal|mahine|batao|chalo)\b|[ऀ-ॿ]/.test(q);
+      const say = (en, hn) => (hi ? hn : en);
+      const sec = [['overview', /\b(overview|home|dashboard)\b/], ['standup', /stand ?up/], ['tasks', /\btasks?\b|kaam/], ['notes', /\bnotes?\b/], ['team', /\bteam\b/], ['reports', /\breports?\b/], ['health', /\bhealth\b/], ['access', /\baccess\b/]].find(([, re]) => re.test(k));
+      const person = people().find((p) => k.includes(norm(p)) || norm(p).split(' ').some((w) => w.length > 2 && new RegExp('\\b' + w + '\\b').test(k)));
+      if (sec && /(open|show|go|take me|kholo|dikhao|chalo|le chalo|jao)/.test(k)) { const r = TOOLS.navigate({ section: sec[0], designer: person }); return r.error ? r.detail : say('Opened ' + r.opened + '.', r.opened + ' khol diya.'); }
+      if (/deliver/.test(k)) { const r = TOOLS.delivery_report({ period: /last month|pichle mahine/.test(k) ? 'last month' : /week|hafte/.test(k) ? 'this week' : /today|aaj/.test(k) ? 'today' : 'this month', group_by: 'designer', designer: person }); return say(CO.num(r.total_creatives) + ' creatives delivered ' + r.period.split(' (')[0] + (person ? ' by ' + person : '') + '.', (person ? person + ' ne ' : '') + r.period.split(' (')[0] + ' ' + CO.num(r.total_creatives) + ' creatives deliver kiye.'); }
+      const due = /overdue|late|der|delay/.test(k) ? 'overdue' : /\btoday\b|\baaj\b/.test(k) ? 'today' : /tomorrow|\bkal\b/.test(k) ? 'tomorrow' : '';
+      if (due || person || /pending|open|kitne|how many/.test(k)) {
+        const r = TOOLS.search_tasks({ designer: person, due: due || undefined, status: due ? undefined : 'open' });
+        if (r.error || r.ambiguous) return say('Which person do you mean?', 'Kaun se person ki baat kar rahe ho?');
+        const what = due === 'overdue' ? say('overdue', 'overdue') : due === 'today' ? say('due today', 'aaj due') : due === 'tomorrow' ? say('due tomorrow', 'kal due') : say('open', 'open');
+        return say((person ? person + ' has ' : 'There are ') + r.matched_tasks + ' ' + what + ' tasks' + (r.matched_tasks ? '. I have put them on screen.' : '.'), (person ? person + ' ke ' : 'Total ') + r.matched_tasks + ' tasks ' + what + ' hain' + (r.matched_tasks ? ', screen par dikha diye.' : '.'));
+      }
+      return say('I can tell you what is overdue, due today or open for anyone, what was delivered this month, and open any section. For full conversations, the admin can connect Claude.', 'Main overdue, aaj due ya open tasks, is mahine ki delivery, aur koi bhi section khol sakti hoon. Poori baatcheet ke liye admin Claude connect kar sakte hain.');
+    }
+    function setStatus(s) { if (!s) return; st.ai = !!s.ai; st.tts = !!s.tts; if (!panel.hidden) paintHead(); }
+    fab.hidden = true;
+    const show = (on) => { fab.hidden = !on; if (!on) close(); };
+    return { open, close, ask, setStatus, show, get state() { return st; }, _tools: TOOLS, _local: local };
+  })();
 
   renderAll();
   start();

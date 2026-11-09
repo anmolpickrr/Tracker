@@ -19,9 +19,13 @@ Navigation is a sidebar on desktop and a bottom tab bar on phones (More opens th
 | **Notes** | A team notebook: meeting minutes, discussions and personal notes with @mentions, action items (assignee and due date), follow-ups and reminders. See [Notes](#notes). |
 | **Access** (admins) | Access requests, people and their access level, and the activity log of every change. |
 
-Studio look: charcoal and lime by default (switch to the light theme with the sun/moon button; the choice is remembered per browser), Fastrr violet for charts, Outfit for headings and numbers. Category colours in charts are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table. Secondary table columns appear only on screens wide enough for them; everything is still in the task dialog and the CSV exports.
+FASTRR look: the brand palette (Pantone Sun Glare #DDFF00, Exuberant Orange #FF5A26, Blue Violet 2725 C #685BC7, Cloud Dancer #F0EEE9, Darkest Hour #1E1E1E) in a dark theme by default and a light theme (sun/moon button; remembered per browser). The two-strip logo icon is always Blue Violet. Outfit for headings and numbers, Montserrat Black Italic for the FASTRR wordmark. Green and red appear only on change chips (better or worse). Category colours in charts are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table. Secondary table columns appear only on screens wide enough for them; everything is still in the task dialog and the CSV exports.
 
-Filters for sheet, designer, brand and creative type sit above every data page (on phones behind **Filters**) and apply to all of it. Active filters are highlighted.
+**Internal and External:** everything from the *Paid (client)* sheet is shown as **External** and everything from the *Marketing team* sheet as **Internal**, in filters, tags, tables, reports and CSV files. This is a display label only: the sheets keep their names, so the import is unchanged. The Reports card for External work shows the ₹ symbol.
+
+**Graph periods:** the Delivery trend, Top brands and the Reports chart each have **Day, Week, Month, Quarter, Year** and **Custom** buttons (custom dates pick a sensible grouping for the span). The choice is remembered per graph. A period still running (today, this week, …) is compared with the same elapsed days of the one before.
+
+Filters for Internal/External, designer, brand and creative type sit above every data page (on phones behind **Filters**) and apply to all of it. Active filters are highlighted.
 
 ## How it works
 
@@ -109,13 +113,37 @@ Admins see, under **Access**, who has the dashboard open, which page they are on
 
 The coral clock in the header always shows India Standard Time, whatever the computer's own time zone. Click it to switch between 12-hour and 24-hour; the choice is remembered on that device.
 
+## Asha, the voice assistant
+
+The violet orb at the bottom right (or **Alt+A**) opens **Asha**, a voice and chat helper that knows the whole dashboard. Ask in Hindi, English, Hinglish or mixed sentences, by voice (tap the lime microphone) or by typing:
+
+- "Yashika ke kitne tasks overdue hain?", "What is due tomorrow for Huggler?", "SRAP372 ka status kya hai?"
+- "Is mahine kitne creatives deliver hue, internal vs external?", "Who delivered most last month?", "Team ka progress batao"
+- "Last month ka external report dikhao", "Open Gurleen's stand-up", "How do I add an action item?"
+- "SRAP372 ko under review kar do" (Editors and Admins)
+
+How it works:
+
+- **Answers come from the live data** you can already see, never from guesses. Matching tasks appear in the chat and open with a click. If something is unclear (two people with the same first name, an unclear period) she asks one short question. Follow-ups such as "aur pichle mahine?" keep the context.
+- **Actions:** she opens pages and sets filters directly. To change a task (status, ETA, designer, priority) she says what will change, and the change is saved only after you press **Save change** on the card; it goes through the same save as the task editor, is checked against your access level by the web app and appears in the activity log. View-only users are told who can make the change.
+- **Voice:** speech is turned into text by the browser (Chrome, Edge and Safari; Firefox can type). The language button switches between English (which also understands Hinglish) and हिन्दी. Replies are spoken in a female voice: Google's natural Chirp 3 HD voice when set up (below), else the most natural female voice on the device. The speaker button turns voice replies off. When a reply ends with a question she listens again automatically.
+- **Privacy:** your question and the dashboard rows needed to answer it are sent to Claude (Anthropic) through the web app; nothing is stored by the dashboard. The API key stays in Apps Script and never reaches a browser. Each person can ask about 40 questions every 10 minutes.
+
+**Setup (owner, once):**
+
+1. Create an API key at console.anthropic.com (Settings → API keys).
+2. In Apps Script: **Project Settings → Script Properties → Add script property**: `ANTHROPIC_API_KEY` = the key. Save. No redeploy is needed for the key, but deploy the new Code.gs version first.
+3. Optional, for the natural voice: in Google Cloud (project "Creative Ops Tracker"), enable **Cloud Text-to-Speech API**, create an API key restricted to that API, and add it as the script property `GOOGLE_TTS_KEY`.
+
+Without `ANTHROPIC_API_KEY`, Asha runs in **basic mode**: she still answers the common questions (overdue, due today or open work for anyone, deliveries this month, opening pages) in English or Hinglish, and says so at the bottom of the panel. Asha uses the Claude Opus 5.5 model at low effort for quick replies, with Anthropic's automatic fallback if a request is declined.
+
 ## Notes
 
-The **Notes** page is a notebook for daily meetings, discussions, minutes, action items and personal notes.
+The **Notes** page is a sticky-note board for daily meetings, discussions, minutes, action items and personal notes. Each note is a sticky coloured by type (meetings violet, discussions sun glare, personal orange) showing its title, the first lines, the date, action-item progress (for example 1/3 done), brand and author; pinned notes carry a pin. Stickies sit in lanes: Pinned, Today, Yesterday, This week, then by month. Open one and it becomes a ruled, spiral-bound notebook page, with the other stickies stacked alongside.
 
 - **Writing:** start from a template (**Stand-up** pre-fills attendees, updates, blockers, decisions and today's overdue list), or a blank or personal note. Each note has a title, meeting date, type (meeting, discussion or personal), brand and category.
 - **People:** type `@` to mention someone. Add action items with an assignee and a due date, plus follow-up points and a reminder time (IST).
-- **Finding notes:** search the text and filter by Mine, Shared with me, Meetings, Personal or Open actions, by brand and by category. The list is grouped by date, and notes can be pinned.
+- **Finding notes:** search the text and filter by Mine, Shared with me, Meetings, Personal or Open actions, by brand and by category. Notes can be pinned to the first lane.
 - **Who sees a note:**
 
   | Setting | Visible to |
