@@ -2282,13 +2282,13 @@
   function fillSettings() {
     const s2 = ST.s; if (!s2) return;
     const $s = (id) => document.getElementById(id);
-    $s('st-morning').value = s2.morning; $s('st-evening').value = s2.evening; $s('st-email').checked = !!s2.email; $s('st-presence').checked = s2.presence !== false;
+    $s('st-morning').value = s2.morning; $s('st-evening').value = s2.evening; $s('st-email').checked = !!s2.email; $s('st-presence').checked = s2.presence !== false; $s('st-model').value = s2.model || 'opus';
     $s('st-chat').value = ''; $s('st-chat').placeholder = s2.chat ? 'Connected. Paste a new link to replace it, or clear below.' : 'https://chat.googleapis.com/v1/spaces/…';
     $s('st-chat-clear').hidden = !s2.chat;
   }
   document.getElementById('st-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const $s = (id) => document.getElementById(id), body = { action: 'saveSettings', morning: $s('st-morning').value, evening: $s('st-evening').value, email: $s('st-email').checked, presence: $s('st-presence').checked };
+    const $s = (id) => document.getElementById(id), body = { action: 'saveSettings', morning: $s('st-morning').value, evening: $s('st-evening').value, email: $s('st-email').checked, presence: $s('st-presence').checked, model: $s('st-model').value };
     if ($s('st-chat').value.trim()) body.chat = $s('st-chat').value.trim();
     try { const r = await post(body); ST.s = r.settings; fillSettings(); toast('Reminder settings saved. They apply from the next check (within 10 minutes).'); }
     catch (err) { toast('Not saved: ' + err.message, true); }
@@ -2542,7 +2542,7 @@
     A.mode = 'key'; document.body.dataset.mode = 'key'; load(false);
   }
 
-  /* ================= Asha: voice assistant =================
+  /* ================= Fasty: voice assistant =================
      Listens in the browser (Web Speech API: English-India or Hindi), understands with Claude through the web app
      (Script property ANTHROPIC_API_KEY), answers from tools that run here on the live data this person can already see,
      and speaks back (Google natural voice when GOOGLE_TTS_KEY is set, else the best female voice the device has).
@@ -2562,11 +2562,11 @@
     const orb = (size) => { const o = el('span', 'orb ' + (size || '')); o.setAttribute('aria-hidden', 'true'); o.innerHTML = '<span class="orb-core"></span><span class="orb-shine"></span><span class="orb-face"><i class="orb-eye"></i><i class="orb-eye"></i><span class="orb-mouth"><i></i><i></i><i></i><i></i></span></span>'; return o; };
 
     /* ---- UI ---- */
-    const fab = el('button', 'ash-fab'); fab.type = 'button'; fab.setAttribute('aria-label', 'Ask Asha, your dashboard assistant (Alt+A)'); fab.title = 'Ask Asha (Alt+A)';
+    const fab = el('button', 'ash-fab'); fab.type = 'button'; fab.setAttribute('aria-label', 'Ask Fasty, your dashboard assistant (Alt+A)'); fab.title = 'Ask Fasty (Alt+A)';
     fab.append(orb(), el('span', 'ash-halo'));
-    const panel = el('section', 'ash'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Asha, dashboard assistant'); panel.hidden = true;
+    const panel = el('section', 'ash'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Fasty, dashboard assistant'); panel.hidden = true;
     const head = el('header', 'ash-head'); const hOrb = orb('sm');
-    const hT = el('div', 'ash-title'); hT.append(el('b', '', 'Asha'), el('small', '', 'Your dashboard helper'));
+    const hT = el('div', 'ash-title'); hT.append(el('b', '', 'Fasty'), el('small', '', 'Your dashboard helper'));
     const langB = el('button', 'ash-chip'); langB.type = 'button';
     const voiceB = el('button', 'ash-ib'); voiceB.type = 'button';
     const closeB = el('button', 'ash-ib'); closeB.type = 'button'; closeB.innerHTML = ICON.x; closeB.setAttribute('aria-label', 'Close assistant');
@@ -2588,7 +2588,7 @@
       voiceB.innerHTML = st.voiceOn ? ICON.vol : ICON.mute; voiceB.setAttribute('aria-label', st.voiceOn ? 'Turn voice replies off' : 'Turn voice replies on'); voiceB.setAttribute('aria-pressed', String(st.voiceOn));
       micB.setAttribute('aria-label', st.listening ? 'Stop listening' : 'Speak'); micB.disabled = !SR;
       if (!SR) micB.title = 'Voice input needs Chrome, Edge or Safari. You can type instead.';
-      note.textContent = st.ai === false ? 'Basic mode: the admin can connect Claude for full conversations (README, Asha).' : 'Answers use Claude (Anthropic) on the data you can see. Speech is turned into text by your browser.';
+      note.textContent = st.ai === false ? 'Basic mode: the admin can connect Claude for full conversations (README, Fasty).' : 'Answers use Claude (Anthropic) on the data you can see. Speech is turned into text by your browser.';
     };
     const setMood = (m) => { [fab, panel].forEach((x) => { x.dataset.mood = m; }); };
     const mood = () => setMood(st.listening ? 'listening' : st.busy ? 'thinking' : st.speaking ? 'speaking' : 'idle');
@@ -2605,7 +2605,7 @@
       if (log.childElementCount) return;
       const h = Number(CO.istParts ? CO.istParts().hour : new Date().getHours());
       const part = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-      bubble('bot', part + (A.user && A.user.name ? ', ' + A.user.name.split(' ')[0] : '') + '! I am Asha. Ask me about tasks, deadlines, the team or reports, or tell me where to go. Hindi, English, Hinglish, sab chalega.');
+      bubble('bot', part + (A.user && A.user.name ? ', ' + A.user.name.split(' ')[0] : '') + '! I am Fasty. Ask me about tasks, deadlines, the team or reports, or tell me where to go. Hindi, English, Hinglish, sab chalega.');
     };
     function open() { panel.hidden = false; fab.classList.add('on'); paintHead(); greet(); drawSugg(); mood(); setTimeout(() => input.focus(), 60); }
     function close() { panel.hidden = true; fab.classList.remove('on'); stopListening(); stopSpeaking(); }
@@ -2806,7 +2806,7 @@
       if (st.busy) return;
       st.viaVoice = viaVoice; stopSpeaking(); sugg.replaceChildren();
       bubble('me', q); st.busy = true; mood(); shown = null;
-      const wait = bubble('bot wait'); wait.append(el('span', 'dots', '')); wait.setAttribute('aria-label', 'Asha is thinking');
+      const wait = bubble('bot wait'); wait.append(el('span', 'dots', '')); wait.setAttribute('aria-label', 'Fasty is thinking');
       let answer = '';
       try {
         if (st.ai === false || A.mode !== 'auth') answer = local(q);
@@ -2875,7 +2875,7 @@
       // 2. Web app and integrations (admins can fix these)
       if (A.mode === 'auth' && S.verBody) {
         if (!('assist' in S.verBody)) add('warn', admin ? 'The web app is running an older Code.gs' : 'Some features are waiting for an update', admin ? 'Paste the latest Code.gs from GitHub into Apps Script, run setup, and deploy a new version. Until then the assistant, history comparisons and reminder settings may not work.' : 'The admin needs to update the web app. Everything else works.');
-        else if (admin && S.verBody.assist && !S.verBody.assist.ai) add('info', 'Asha is in basic mode', 'Add the ANTHROPIC_API_KEY script property in Apps Script for full conversations in Hindi, English and Hinglish (README, Asha).');
+        else if (admin && S.verBody.assist && !S.verBody.assist.ai) add('info', 'Fasty is in basic mode', 'Add the ANTHROPIC_API_KEY script property in Apps Script for full conversations in Hindi, English and Hinglish (README, Fasty).');
       }
       if (admin && S.health) {
         if (!S.health.liveTriggers) add('warn', 'Live change detection is off', 'Run setup in Apps Script once. Until then sheet edits arrive every 10 minutes instead of 30 seconds.');

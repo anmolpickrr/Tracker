@@ -113,9 +113,9 @@ Admins see, under **Access**, who has the dashboard open, which page they are on
 
 The coral clock in the header always shows India Standard Time, whatever the computer's own time zone. Click it to switch between 12-hour and 24-hour; the choice is remembered on that device.
 
-## Asha, the voice assistant
+## Fasty, the voice assistant
 
-The violet orb at the bottom right (or **Alt+A**) opens **Asha**, a voice and chat helper that knows the whole dashboard. Ask in Hindi, English, Hinglish or mixed sentences, by voice (tap the lime microphone) or by typing:
+The violet orb at the bottom right (or **Alt+A**) opens **Fasty**, a voice and chat helper that knows the whole dashboard. Ask in Hindi, English, Hinglish or mixed sentences, by voice (tap the lime microphone) or by typing:
 
 - "Yashika ke kitne tasks overdue hain?", "What is due tomorrow for Huggler?", "SRAP372 ka status kya hai?"
 - "Is mahine kitne creatives deliver hue, internal vs external?", "Who delivered most last month?", "Team ka progress batao"
@@ -124,9 +124,9 @@ The violet orb at the bottom right (or **Alt+A**) opens **Asha**, a voice and ch
 
 How it works:
 
-- **Answers come from the live data** you can already see, never from guesses. Matching tasks appear in the chat and open with a click. If something is unclear (two people with the same first name, an unclear period) she asks one short question. Follow-ups such as "aur pichle mahine?" keep the context.
-- **Actions:** she opens pages and sets filters directly. To change a task (status, ETA, designer, priority) she says what will change, and the change is saved only after you press **Save change** on the card; it goes through the same save as the task editor, is checked against your access level by the web app and appears in the activity log. View-only users are told who can make the change.
-- **Voice:** speech is turned into text by the browser (Chrome, Edge and Safari; Firefox can type). The language button switches between English (which also understands Hinglish) and हिन्दी. Replies are spoken in a female voice: Google's natural Chirp 3 HD voice when set up (below), else the most natural female voice on the device. The speaker button turns voice replies off. When a reply ends with a question she listens again automatically.
+- **Answers come from the live data** you can already see, never from guesses. Matching tasks appear in the chat and open with a click. If something is unclear (two people with the same first name, an unclear period) Fasty asks one short question. Follow-ups such as "aur pichle mahine?" keep the context.
+- **Actions:** Fasty opens pages and sets filters directly. To change a task (status, ETA, designer, priority) Fasty says what will change, and the change is saved only after you press **Save change** on the card; it goes through the same save as the task editor, is checked against your access level by the web app and appears in the activity log. View-only users are told who can make the change.
+- **Voice:** speech is turned into text by the browser (Chrome, Edge and Safari; Firefox can type). The language button switches between English (which also understands Hinglish) and हिन्दी. Replies are spoken in a female voice: Google's natural Chirp 3 HD voice when set up (below), else the most natural female voice on the device. The speaker button turns voice replies off. When a reply ends with a question, Fasty listens again automatically.
 - **Privacy:** your question and the dashboard rows needed to answer it are sent to Claude (Anthropic) through the web app; nothing is stored by the dashboard. The API key stays in Apps Script and never reaches a browser. Each person can ask about 40 questions every 10 minutes.
 
 **Setup (owner, once):**
@@ -135,7 +135,21 @@ How it works:
 2. In Apps Script: **Project Settings → Script Properties → Add script property**: `ANTHROPIC_API_KEY` = the key. Save. No redeploy is needed for the key, but deploy the new Code.gs version first.
 3. Optional, for the natural voice: in Google Cloud (project "Creative Ops Tracker"), enable **Cloud Text-to-Speech API**, create an API key restricted to that API, and add it as the script property `GOOGLE_TTS_KEY`.
 
-Without `ANTHROPIC_API_KEY`, Asha runs in **basic mode**: she still answers the common questions (overdue, due today or open work for anyone, deliveries this month, opening pages) in English or Hinglish, and says so at the bottom of the panel. Asha uses the Claude Opus 5.5 model at low effort for quick replies, with Anthropic's automatic fallback if a request is declined.
+Without `ANTHROPIC_API_KEY`, Fasty runs in **basic mode**: it still answers the common questions (overdue, due today or open work for anyone, deliveries this month, opening pages) in English or Hinglish, and says so at the bottom of the panel. Fasty runs at low effort for quick spoken replies. An admin picks the model under **Access → Reminders and notifications** (the change is logged): Claude Haiku 5.5 (fast, lowest cost), Claude Sonnet 5.5 (balanced) or Claude Opus 5.5 (most capable, the default). Sonnet and Opus use Anthropic's automatic fallback if a request is declined.
+
+### Cost (estimate)
+
+A question usually takes two calls to Claude (look up the data, then answer). Per question that is roughly 6,000 input tokens sent fresh (the conversation and the data found), 6,000 read from the cache (Fasty's instructions and tools, about 2,700 tokens, reused) and 700 output tokens. For 20 people × 20 questions = 400 questions a working day, 22 working days a month:
+
+| Model | Price per million tokens (input / output) | Per question | Per day | Per month |
+| --- | --- | --- | --- | --- |
+| Claude Haiku 5.5 | $0.10 / $0.50 | about $0.001 | about $0.45 | about $10 (≈ ₹900) |
+| Claude Sonnet 5.5 | $2 / $10 | about $0.02 | about $8.50 | about $190 (≈ ₹17,000) |
+| Claude Opus 5.5 | $4 / $20 | about $0.04 | about $17 | about $380 (≈ ₹34,000) |
+
+Long back-and-forth conversations cost more (the conversation is resent), short ones less; allow ±50%. Speech-to-text is done by the browser and is free. The optional Google natural voice costs about $30 per million characters after a free allowance: 400 spoken answers × ~200 characters ≈ 1.8 million characters a month, about $25–55 (≈ ₹2,000–4,500); without it, the device voice is free.
+
+Limits: each person can make 40 assistant calls (about 20 questions) and 80 voice replies every 10 minutes, which is far above normal use; the Anthropic account's own rate limits are well above 400 questions a day. Set a monthly spend limit in the Anthropic console to cap costs.
 
 ## Notes
 

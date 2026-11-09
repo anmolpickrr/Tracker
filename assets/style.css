@@ -1007,7 +1007,7 @@ body.syncing .side-logo .lb2 { animation: lb-run 1.1s .15s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) { .sticky, .sticky:hover { transform: none; transition: none; } }
 
-/* ============ Asha: assistant orb (3D, brand blue-violet with a sun-glare rim light) and panel ============ */
+/* ============ Fasty: assistant orb (3D, brand blue-violet with a sun-glare rim light) and panel ============ */
 .ash-fab { position: fixed; right: 22px; bottom: 22px; z-index: 70; width: 66px; height: 66px; border: 0; padding: 0; border-radius: 50%; background: none; cursor: pointer; display: grid; place-items: center; -webkit-tap-highlight-color: transparent; }
 .ash-fab .orb { animation: orb-float 3.6s ease-in-out infinite; }
 .ash-fab:hover .orb { transform: scale(1.07); }

@@ -25,7 +25,7 @@ const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
 const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
-const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true };
+const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'opus' };
 function settings_() {
   const cfg = (typeof CONFIG !== 'undefined' && CONFIG.reminders) || {};
   const fromCfg = {}; ['morning', 'evening'].forEach(function (k) { if (cfg[k] != null) fromCfg[k] = typeof cfg[k] === 'number' ? (cfg[k] < 10 ? '0' : '') + cfg[k] + ':00' : String(cfg[k]); });
@@ -1157,14 +1157,15 @@ function saveSettings_(b, u) {
   ['morning', 'evening'].forEach(function (k) { if (b[k] != null) { if (hhmm_(b[k]) == null) throw new Error('Times look like 10:00'); next[k] = String(b[k]); } });
   if (b.email != null) next.email = !!b.email;
   if (b.presence != null) next.presence = !!b.presence;
+  if (b.model != null) { if (!ASSIST_MODELS[b.model]) throw new Error('Unknown assistant model'); next.model = b.model; }
   if (b.chat != null) {
     const c = String(b.chat).trim();
     if (c && !/^https:\/\/chat\.googleapis\.com\/v1\/spaces\/[^\s]+$/.test(c)) throw new Error('Paste a Google Chat webhook link (it starts with https://chat.googleapis.com/v1/spaces/)');
     next.chat = c;
   }
-  ['morning', 'evening', 'email', 'presence'].forEach(function (k) { if (String(cur[k]) !== String(next[k])) changes.push({ action: 'Settings changed', record: 'Reminders', field: k, before: String(cur[k]), after: String(next[k]) }); });
+  ['morning', 'evening', 'email', 'presence', 'model'].forEach(function (k) { if (String(cur[k]) !== String(next[k])) changes.push({ action: 'Settings changed', record: k === 'model' ? 'Fasty' : 'Reminders', field: k, before: String(cur[k]), after: String(next[k]) }); });
   if (cur.chat !== next.chat) changes.push({ action: 'Settings changed', record: 'Reminders', field: 'Google Chat', before: cur.chat ? 'set' : 'off', after: next.chat ? 'set' : 'off' });
-  PropertiesService.getScriptProperties().setProperty('SETTINGS', JSON.stringify({ morning: next.morning, evening: next.evening, email: next.email, presence: next.presence, chat: next.chat }));
+  PropertiesService.getScriptProperties().setProperty('SETTINGS', JSON.stringify({ morning: next.morning, evening: next.evening, email: next.email, presence: next.presence, chat: next.chat, model: next.model }));
   return { ok: true, settings: Object.assign({}, next, { chat: next.chat ? 'set' : '' }), changes: changes };
 }
 /* Google Chat: one message to the team space at the briefing times (arrives as a phone notification in the Chat app). */
@@ -1559,18 +1560,25 @@ function testRead() {
 /* ==== END data.js ==== */
 
 
-/* ============================ Asha, the dashboard assistant ============================
+/* ============================ Fasty, the dashboard assistant ============================
  * The browser does the listening (speech to text), runs the tools on the live dashboard data it already
  * holds (so every answer respects the person's role) and plays the voice. This web app only relays the
  * conversation to Claude (Anthropic Messages API) with the key kept in Script properties, so the key never
  * reaches a browser. Task changes still go through updateTask, which checks the role again.
  *
  * Setup (owner, once): Apps Script > Project settings > Script properties >
- *   ANTHROPIC_API_KEY = your key from console.anthropic.com        (required for Asha's understanding)
+ *   ANTHROPIC_API_KEY = your key from console.anthropic.com        (required for Fasty's understanding)
  *   GOOGLE_TTS_KEY    = a Google Cloud API key with Text-to-Speech  (optional: natural female voice)
  * Without ANTHROPIC_API_KEY the dashboard falls back to a simpler built-in helper.
  */
-const ASSIST_MODEL = 'claude-opus-5-5';
+/* The model Fasty uses, chosen by an admin in Access > Reminders and notifications. Each needs slightly different settings:
+ * Claude Haiku 5.5 has no server-side refusal fallback; Claude Sonnet 5.5 turns thinking off with between_tools;
+ * Claude Opus 5.5 always thinks (effort controls how much). All run at low effort for quick spoken replies. */
+const ASSIST_MODELS = {
+  haiku: { id: 'claude-haiku-5-5', label: 'Fast and lowest cost (Claude Haiku 5.5)', extra: { thinking: { type: 'disabled' } }, fallback: false },
+  sonnet: { id: 'claude-sonnet-5-5', label: 'Balanced (Claude Sonnet 5.5)', extra: { thinking: { type: 'between_tools' } }, fallback: true },
+  opus: { id: 'claude-opus-5-5', label: 'Most capable (Claude Opus 5.5)', extra: {}, fallback: true }
+};
 function assistStatus_() {
   const p = PropertiesService.getScriptProperties();
   return { ai: !!p.getProperty('ANTHROPIC_API_KEY'), tts: !!p.getProperty('GOOGLE_TTS_KEY') };
@@ -1581,7 +1589,7 @@ function assistLimit_(email, kind, max) {
   if (n >= max) return false; c.put(k, String(n + 1), 600); return true;
 }
 const ASSIST_SYSTEM = [
-  'You are Asha, the voice assistant inside the FASTRR Creative Ops dashboard used by an Indian creative team (designers, editors, the creative head and coordinators). You are the most knowledgeable teammate: you know every section, number and process of this dashboard, and you help people find things, understand them and get work done.',
+  'You are Fasty, the voice assistant inside the FASTRR Creative Ops dashboard used by an Indian creative team (designers, editors, the creative head and coordinators). You are the most knowledgeable teammate: you know every section, number and process of this dashboard, and you help people find things, understand them and get work done.',
   '',
   'Language: people speak Hindi, English, Hinglish, broken English and mixed sentences, often with speech-to-text mistakes (names misspelt, "over due", "kitne task", "yashika ka", "dikhao", "kholo"). Work out what they mean; never correct their grammar. Reply in the same language mix they used: Hinglish in Latin script for Hinglish, Hindi in Devanagari for Hindi, simple English for English. Use Indian number formatting (1,25,000) and IST.',
   '',
@@ -1640,6 +1648,7 @@ function assistClean_(messages) {
 function assist_(user, body) {
   const key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
   if (!key) return { ok: false, error: 'not_configured' };
+  const M = ASSIST_MODELS[settings_().model] || ASSIST_MODELS.opus;
   if (!assistLimit_(user.email, 'ast', 40)) return { ok: false, error: 'Too many questions in a short time. Try again in a few minutes.' };
   const messages = assistClean_(body.messages);
   if (!messages || !messages.length) return { ok: false, error: 'Nothing to answer.' };
@@ -1648,17 +1657,17 @@ function assist_(user, body) {
     'Now: ' + Utilities.formatDate(new Date(), 'Asia/Kolkata', "EEEE d MMMM yyyy, h:mm a") + ' IST.\n' +
     'On screen: ' + String(ctx.page || 'overview').slice(0, 40) + (ctx.filters ? '; filters: ' + String(ctx.filters).slice(0, 200) : '') + (ctx.lang ? '; speech language setting: ' + String(ctx.lang).slice(0, 10) : '') + '.';
   const req = {
-    model: ASSIST_MODEL, max_tokens: 4000,
+    model: M.id, max_tokens: 4000,
     output_config: { effort: 'low' },
-    fallbacks: 'default',
     system: [{ type: 'text', text: ASSIST_SYSTEM, cache_control: { type: 'ephemeral' } }, { type: 'text', text: who }],
     tools: ASSIST_TOOLS,
     messages: messages
   };
+  Object.assign(req, M.extra); if (M.fallback) req.fallbacks = 'default';
   let res;
   try {
     res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      headers: { 'x-api-key': key, 'anthropic-version': '2026-10-21', 'anthropic-beta': 'server-side-fallback-2026-07-01' }, payload: JSON.stringify(req) });
+      headers: Object.assign({ 'x-api-key': key, 'anthropic-version': '2026-10-21' }, M.fallback ? { 'anthropic-beta': 'server-side-fallback-2026-07-01' } : {}), payload: JSON.stringify(req) });
   } catch (err) { return { ok: false, error: 'Could not reach the assistant service.' }; }
   const code = res.getResponseCode(); let out = {};
   try { out = JSON.parse(res.getContentText()); } catch (err) { out = {}; }
