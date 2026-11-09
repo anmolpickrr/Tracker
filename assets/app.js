@@ -2563,7 +2563,13 @@
 
     /* ---- UI ---- */
     const fab = el('button', 'ash-fab'); fab.type = 'button'; fab.setAttribute('aria-label', 'Ask Fasty, your dashboard assistant (Alt+A)'); fab.title = 'Ask Fasty (Alt+A)';
-    fab.append(orb(), el('span', 'ash-halo'));
+    fab.append(el('span', 'fy-glow'), orb(), el('span', 'ash-halo'), el('i', 'fy-spark s1'), el('i', 'fy-spark s2'), el('i', 'fy-spark s3'));
+    // "Need help?" pill above the orb, like the Fasty on creative.fastrr.com; dismissed for good with its ×.
+    const hint = el('div', 'fy-hint'); const hintT = el('button', 'fy-hint-t', 'Need help? Ask Fasty'); hintT.type = 'button';
+    const hintX = el('button', 'fy-hint-x'); hintX.type = 'button'; hintX.setAttribute('aria-label', 'Dismiss'); hintX.innerHTML = ICON.x;
+    hint.append(hintT, hintX); hint.hidden = true;
+    hintT.addEventListener('click', () => { hint.hidden = true; open(); });
+    hintX.addEventListener('click', () => { hint.hidden = true; LS.set('co.fyhint', '1'); });
     const panel = el('section', 'ash'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Fasty, dashboard assistant'); panel.hidden = true;
     const head = el('header', 'ash-head'); const hOrb = orb('sm');
     const hT = el('div', 'ash-title'); hT.append(el('b', '', 'Fasty'), el('small', '', 'Your dashboard helper'));
@@ -2581,7 +2587,7 @@
     foot.append(micB, input, sendB);
     const note = el('p', 'ash-note');
     panel.append(head, log, caption, sugg, foot, note);
-    document.body.append(fab, panel);
+    document.body.append(fab, hint, panel);
 
     const paintHead = () => {
       langB.textContent = st.lang === 'hi-IN' ? 'हिन्दी' : 'English'; langB.title = 'Listening for ' + (st.lang === 'hi-IN' ? 'Hindi' : 'English and Hinglish') + '. Click to switch.';
@@ -2607,7 +2613,7 @@
       const part = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
       bubble('bot', part + (A.user && A.user.name ? ', ' + A.user.name.split(' ')[0] : '') + '! I am Fasty. Ask me about tasks, deadlines, the team or reports, or tell me where to go. Hindi, English, Hinglish, sab chalega.');
     };
-    function open() { panel.hidden = false; fab.classList.add('on'); paintHead(); greet(); drawSugg(); mood(); setTimeout(() => input.focus(), 60); }
+    function open() { hint.hidden = true; panel.hidden = false; fab.classList.add('on'); paintHead(); greet(); drawSugg(); mood(); setTimeout(() => input.focus(), 60); }
     function close() { panel.hidden = true; fab.classList.remove('on'); stopListening(); stopSpeaking(); }
     fab.addEventListener('click', () => (panel.hidden ? open() : close()));
     closeB.addEventListener('click', close);
@@ -2856,7 +2862,7 @@
     }
     function setStatus(s) { if (!s) return; st.ai = !!s.ai; st.tts = !!s.tts; st.provider = s.provider; if (!panel.hidden) paintHead(); }
     fab.hidden = true;
-    const show = (on) => { fab.hidden = !on; if (!on) close(); };
+    const show = (on) => { fab.hidden = !on; if (!on) close(); if (on && LS.get('co.fyhint', '') !== '1') setTimeout(() => { if (panel.hidden) hint.hidden = false; }, 2500); };
     return { open, close, ask, setStatus, show, get state() { return st; }, _tools: TOOLS, _local: local };
   })();
 
