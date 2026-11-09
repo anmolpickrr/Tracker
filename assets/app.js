@@ -62,7 +62,7 @@
       const text = await res.text();
       let body;
       try { body = JSON.parse(text); } catch (e) { throw new Error(/<html/i.test(text) ? 'The web app answered with a web page instead of data. Check that it is deployed with access set to "Anyone".' : 'The web app returned something that is not data.'); }
-      if (!body.ok) throw new Error(body.error === 'bad_key' ? 'The key was not accepted. Copy it again from the Apps Script log (createKey).' : 'The web app reported: ' + body.error);
+      if (!body.ok) throw new Error(body.error === 'bad_key' ? 'The key was not accepted. Copy it again from the Apps Script execution log after running setup.' : 'The web app reported: ' + body.error);
       const src = body.sources || {};
       const failed = ['paid', 'mkt'].filter((k) => src[k] && src[k].error);
       if (failed.length === 2) throw new Error('Neither task sheet could be opened by the web app: ' + src.paid.error);
@@ -70,6 +70,8 @@
       S.tasks = CODATA.buildTasks({ paid: CODATA.parseSource('paid', src.paid), mkt: CODATA.parseSource('mkt', src.mkt), mkt2025: CODATA.parseSource('mkt2025', src.mkt2025) });
       S.teamRaw = CODATA.parseTeam(src.team);
       S.team = S.teamRaw;
+      S.cols = { paid: CODATA.columnsOf(src.paid), mkt: CODATA.columnsOf(src.mkt), mkt2025: CODATA.columnsOf(src.mkt2025) };
+      S.ver = body.ver || null;
       S.generatedAt = body.generatedAt; S.loadedAt = new Date();
       S.status = 'ok'; S.error = '';
       LS.set('co.cacheAt', S.generatedAt);
@@ -88,9 +90,25 @@
     if (!body.ok) throw new Error(body.error || 'save failed');
     return body;
   }
-  // Keep data current: every 5 minutes while the page is visible, and on return to the tab.
-  setInterval(() => { if (document.visibilityState === 'visible' && S.status === 'ok') load(false); }, 5 * 60 * 1000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.loadedAt && Date.now() - S.loadedAt > 2 * 60 * 1000) load(false); });
+  /* Live sync: every 30 s ask the web app whether a sheet changed (a tiny request), and reload only then.
+     A full reload also runs every 10 minutes as a safety net, and on return to the tab. */
+  let checking = false;
+  async function checkForChanges() {
+    if (checking || S.refreshing || S.status !== 'ok' || document.visibilityState !== 'visible') return;
+    checking = true;
+    try {
+      const { url, key } = conn();
+      const u = new URL(url); u.searchParams.set('key', key); u.searchParams.set('mode', 'ver');
+      const body = JSON.parse(await (await fetch(u.toString(), { redirect: 'follow' })).text());
+      S.checkedAt = new Date();
+      if (body.ok && body.ver && S.ver && body.ver !== S.ver) await load(true);
+      else dash.draw('sync-text');
+    } catch (e) { /* a missed check is retried on the next tick */ }
+    checking = false;
+  }
+  setInterval(checkForChanges, 30 * 1000);
+  setInterval(() => { if (document.visibilityState === 'visible' && S.status === 'ok') load(false); }, 10 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.loadedAt) { if (Date.now() - S.loadedAt > 10 * 60 * 1000) load(false); else checkForChanges(); } });
 
   /* ================= Helpers ================= */
   const CO = (() => {
@@ -361,7 +379,9 @@
   dash.draw('sync-text', (el) => {
     if (S.status === 'ok') {
       const at = new Date(S.generatedAt || S.loadedAt);
-      el.textContent = (S.refreshing ? 'Refreshing… ' : '') + 'Sheets read at ' + at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + (S.staleError ? ' · last refresh failed' : '');
+      const live = S.ver && S.ver !== '0';
+      el.textContent = (S.refreshing ? 'Syncing… ' : live ? 'Live · ' : '') + 'sheets read at ' + at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + (S.staleError ? ' · last refresh failed' : '');
+      el.title = live ? 'Checks the sheets for changes every 30 seconds' : 'Run setup() in Apps Script to turn on instant change detection';
     } else el.textContent = S.status === 'loading' ? 'Loading sheets…' : S.status === 'error' ? 'Could not load' : 'Not connected';
   });
   dash.draw('banner-title', (el) => { el.textContent = S.status === 'error' ? 'The sheets could not be loaded' : 'Connect the dashboard to your sheets'; });
@@ -446,6 +466,7 @@
   });
   const whenChip = (r) => { const s = document.createElement('span'); const d = r.eta ? CO.diffDays(CO.today(), r.eta) : null; s.className = 'chip ' + (d == null ? 's-mute' : d < 0 ? 's-bad' : d === 0 ? 's-warn' : r.stage === 'Changes requested' ? 's-warn' : 's-mute'); s.textContent = d == null ? 'No ETA' : d < 0 ? (-d) + 'd late' : d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : 'In ' + d + 'd'; return s; };
   const cells = (tr, r, cols) => {
+    tr.dataset.uid = r.uid; tr.classList.add('click');
     for (const c of cols) {
       if (c === 'when') CO.td(tr, whenChip(r), 'co-nowrap');
       else if (c === 'id') CO.td(tr, r.id || '—', 'co-id');
@@ -530,7 +551,7 @@
   /* ================= Stand-up ================= */
   (() => {
     const line = (r) => {
-      const d = document.createElement('div'); d.className = 'su-item';
+      const d = document.createElement('div'); d.className = 'su-item click'; d.dataset.uid = r.uid; d.tabIndex = 0;
       const t = document.createElement('span'); t.className = 't'; const b = document.createElement('b'); b.textContent = r.brand; t.append(b, ' · ' + CO.topicText(r));
       const m = document.createElement('span'); m.className = 'm';
       const dd = r.eta ? CO.diffDays(CO.today(), r.eta) : null;
@@ -630,7 +651,7 @@
       if (!rs.length) return CO.emptyRow(tb, 14, 'No tasks match these filters.');
       const LIMIT = 600;
       rs.slice(0, LIMIT).forEach((r) => {
-        const tr = tb.insertRow();
+        const tr = tb.insertRow(); tr.dataset.uid = r.uid; tr.className = 'click';
         CO.td(tr, r.id || '—', 'co-id'); CO.td(tr, CO.srcTag(r)); CO.td(tr, r.brand, 'co-nowrap'); CO.td(tr, CO.topic(r), 'co-topic'); CO.td(tr, r.type, 'co-nowrap'); CO.td(tr, String(r.qty), 'n');
         CO.td(tr, r.designers || 'Unassigned', r.designers ? 'co-nowrap' : 'co-muted co-nowrap'); CO.td(tr, r.priority || '—', r.priority === 'P0' ? 'pri' : 'co-muted');
         CO.td(tr, CO.fmtDate(r.req), 'co-nowrap'); CO.td(tr, CO.fmtDate(r.eta), 'co-nowrap'); CO.td(tr, CO.chip(r));
@@ -868,12 +889,87 @@
       const rs = flagged().filter((r) => !pick || r.flags.split('; ').includes(pick)).sort((a, b) => (b.open - a.open) || String(b.req || '').localeCompare(String(a.req || '')));
       if (!rs.length) return CO.emptyRow(tb, 9, 'No issues found in this view.');
       rs.slice(0, 400).forEach((r) => {
-        const tr = tb.insertRow();
+        const tr = tb.insertRow(); tr.dataset.uid = r.uid; tr.className = 'click';
         CO.td(tr, r.id || '—', 'co-id'); CO.td(tr, CO.srcTag(r)); CO.td(tr, r.brand, 'co-nowrap'); CO.td(tr, CO.topic(r), 'co-topic');
         CO.td(tr, r.designers || 'Unassigned', r.designers ? 'co-nowrap' : 'co-muted co-nowrap'); CO.td(tr, CO.chip(r));
         CO.td(tr, CO.fmtDate(r.req), 'co-nowrap'); CO.td(tr, CO.fmtDate(r.eta), 'co-nowrap'); CO.td(tr, r.flags);
       });
       if (rs.length > 400) CO.emptyRow(tb, 9, 'Showing 400 of ' + CO.num(rs.length) + '. Pick a check above to narrow the list.');
+    });
+  })();
+
+  /* ================= Edit a task (writes back to the sheet) ================= */
+  (() => {
+    const dlgE = document.getElementById('editor');
+    const $ = (id) => document.getElementById(id);
+    const SHEET = { paid: 'Paid sheet', mkt: 'Marketing sheet', mkt2025: 'Marketing sheet, 2025 tab' };
+    let current = null, before = null;
+    function openEditor(uid) {
+      if (S.status !== 'ok' || !S.tasks) return;
+      const r = S.tasks.find((t) => t.uid === uid); if (!r) return;
+      current = r;
+      const list = r.designers ? [...new Set(r.designers.split(' + ').map(CO.canon))] : [];
+      before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1) };
+      $('ed-where').textContent = (SHEET[r.src] || r.source) + (r.row ? ' · row ' + r.row : '') + (r.id ? ' · ' + r.id : '');
+      $('ed-title').textContent = r.brand + ' · ' + r.type;
+      $('ed-topic').textContent = CO.topicText(r);
+      const st = $('ed-status');
+      [...st.querySelectorAll('option[data-extra]')].forEach((o) => o.remove());
+      if (![...st.options].some((o) => o.value === r.stage)) { const o = new Option(r.stage + ' (as in the sheet)', r.stage); o.dataset.extra = '1'; o.disabled = true; st.append(o); }
+      st.value = r.stage;
+      $('ed-eta').value = r.eta || '';
+      $('ed-designer').value = before.designer;
+      const names = new Set(); (S.team || []).forEach((m) => { if (m.status !== 'Inactive') names.add(m.name); }); S.tasks.forEach((t) => t.designers && t.designers.split(' + ').forEach((d) => names.add(CO.canon(d))));
+      $('ed-people').replaceChildren(...[...names].sort().map((n) => new Option(n)));
+      $('ed-priority').value = /^P[0-3]$/.test(r.priority) ? r.priority : '';
+      const cols = (S.cols && S.cols[r.src]) || {};
+      $('ed-qty-wrap').hidden = !cols.qty; $('ed-qty').value = before.qty;
+      $('ed-priority').disabled = cols.priority === false;
+      $('ed-info').textContent = r.stage === 'Awaiting brief' ? 'Waiting on the brief: design has not started because the content status is not done yet.' : (r.stage === 'Delivered' && !cols.delivered ? '' : '');
+      const links = CO.links(r); $('ed-links').replaceChildren(links);
+      $('ed-msg').textContent = r.id ? '' : 'This row has no ID in the sheet, so it can only be edited there.';
+      $('ed-save').disabled = !r.id; $('ed-save').textContent = 'Save to sheet';
+      if (dlgE.showModal) dlgE.showModal(); else dlgE.setAttribute('open', '');
+    }
+    const openFrom = (e) => {
+      if (e.target.closest('a, button, input, select')) return;
+      const el = e.target.closest('[data-uid]'); if (el) openEditor(el.dataset.uid);
+    };
+    document.querySelector('.co').addEventListener('click', openFrom);
+    document.querySelector('.co').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('.su-item[data-uid]')) openEditor(e.target.dataset.uid); });
+    $('ed-cancel').addEventListener('click', () => dlgE.close());
+    $('editor-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const r = current; if (!r) return;
+      const now = { status: $('ed-status').value, eta: $('ed-eta').value, designer: $('ed-designer').value.replace(/\s*\+\s*/g, ', ').replace(/\s+/g, ' ').trim(), priority: $('ed-priority').value, qty: $('ed-qty').value };
+      if ($('ed-eta').value && !$('ed-eta').validity.valid) { $('ed-msg').textContent = 'Pick a complete date.'; return; }
+      const fields = {};
+      if (now.status !== before.status) fields.status = now.status;
+      if (now.eta !== before.eta) fields.eta = now.eta;
+      if (now.designer !== before.designer) fields.designer = now.designer;
+      if (now.priority !== before.priority && !$('ed-priority').disabled) fields.priority = now.priority;
+      if (!$('ed-qty-wrap').hidden && now.qty !== before.qty) fields.qty = now.qty;
+      if (!Object.keys(fields).length) { dlgE.close(); return; }
+      $('ed-save').disabled = true; $('ed-save').textContent = 'Saving…'; $('ed-msg').textContent = '';
+      try {
+        const res = await post({ action: 'updateTask', source: r.src, id: r.id, row: r.row, fields });
+        // Show the change at once; the reload that follows confirms it from the sheet.
+        const t = Object.assign({}, r);
+        if (fields.status) { t.stage = fields.status; t.open = CODATA.OPEN_STAGES.includes(fields.status); }
+        if ('eta' in fields) t.eta = fields.eta || null;
+        if ('designer' in fields) t.designers = fields.designer ? fields.designer.split(/\s*,\s*/).join(' + ') : '';
+        if ('priority' in fields) t.priority = fields.priority;
+        if (fields.qty) t.qty = Number(fields.qty);
+        if (t.stage === 'Delivered') { t.ddate = res.written && res.written.deliveredOn ? CO.today() : (t.eta || t.req); t.month = t.ddate ? t.ddate.slice(0, 7) : ''; } else { t.ddate = null; t.month = ''; }
+        if (res.row) t.row = res.row;
+        S.tasks = S.tasks.map((x) => (x.uid === r.uid ? t : x));
+        dlgE.close(); renderAll();
+        toast('Saved to the ' + (SHEET[r.src] || 'sheet') + ', row ' + (res.row || r.row) + (res.written && res.written.status ? ' (status "' + res.written.status + '")' : ''));
+        setTimeout(() => load(true), 1500);
+      } catch (err) {
+        $('ed-msg').textContent = 'Not saved: ' + err.message;
+        $('ed-save').disabled = false; $('ed-save').textContent = 'Save to sheet';
+      }
     });
   })();
 

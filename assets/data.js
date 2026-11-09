@@ -53,9 +53,11 @@
       delivered: find(/deliver/), qty: find(QTY)
     });
     const v = (r, k) => (ix[k] >= 0 && r[ix[k]] != null ? clean(r[ix[k]]) : '');
-    return src.rows.map((r) => {
+    const rowNums = Array.isArray(src.rowNums) ? src.rowNums : [];
+    return src.rows.map((r, i) => {
       const qn = parseInt(v(r, 'qty'), 10);
       return {
+        src: name, row: rowNums[i] || null,
         id: v(r, 'id'), req_date: parseDate(v(r, 'req')), req_text: v(r, 'req'), type: v(r, 'type'), brand: v(r, 'brand'), topic: v(r, 'topic'),
         channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: v(r, 'cstatus'),
         eta: parseDate(v(r, 'eta')), eta_text: v(r, 'eta'), creative_link: v(r, 'link'), design_status: v(r, 'dstatus'), designer: v(r, 'designer'),
@@ -182,7 +184,7 @@
       const ddate = stage === 'Delivered' ? (r.delivered_on || eta || req || null) : null;
       const pri = clean(r.priority).toUpperCase();
       return {
-        uid, id: clean(r.id), source,
+        uid, id: clean(r.id), source, src: r.src || '', row: r.row || null,
         brand: clean(r.brand) ? brandName.get(clean(r.brand).toLowerCase()) : 'No brand',
         topic: clean(r.topic), type: typeOf(r.type), channel: clean(r.channel), qty: r.qty || 1,
         priority: /^P\d$/.test(pri) ? pri : '', owner: clean(r.owner),
@@ -195,6 +197,13 @@
     });
   }
 
-  const api = { parseDate, parseSource, parseTeam, stageOf, buildTasks, designerSplitter };
+  // Which optional columns a source has (so the editor only offers what can be saved).
+  function columnsOf(src) {
+    const head = ((src && src.headers) || []).map((h) => clean(h).toLowerCase());
+    return { qty: head.some((h) => QTY.test(h)), delivered: head.some((h) => /deliver/.test(h)), priority: head.includes('priority') };
+  }
+  const OPEN_STAGES = ['To be planned', 'In progress', 'Changes requested'];
+
+  const api = { parseDate, parseSource, parseTeam, stageOf, buildTasks, designerSplitter, columnsOf, OPEN_STAGES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.CODATA = api;
 })(typeof window !== 'undefined' ? window : globalThis);

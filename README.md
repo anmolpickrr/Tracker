@@ -10,7 +10,7 @@ A live dashboard for the Fastrr creative team: the daily stand-up, who is workin
 | --- | --- |
 | **Today** | Open, in-progress, overdue and due-today counts; a "Needs attention" list; workload per designer; the pipeline by design status; what is coming up in the next 14 days. |
 | **Stand-up** | One card per active team member for the daily meeting: overdue, due today, in progress, changes requested and up next. Green cards have no open work. |
-| **All tasks** | Every task from both sheets, searchable and sortable, with links to the brief, creative and source file. Download as CSV. |
+| **All tasks** | Every task from both sheets, searchable and sortable, with links to the brief, creative and source file. Click a task to edit it. Download as CSV. |
 | **Team** | Scorecard per person (open, WIP, overdue, delivered this month and last, monthly average, type mix), a designer-by-month delivery grid, and Active / Inactive switches. |
 | **Reports** | Creatives delivered for any month, quarter, year or custom date range, compared with the period before, broken down by brand, designer and creative type. Download as CSV. |
 | **Sheet health** | Rows that make tracking unreliable: open work with no ETA or designer, unknown statuses, mistyped dates, delivered work with no link. |
@@ -23,7 +23,7 @@ Filters for sheet, designer, brand and creative type apply to every tab.
 Google Sheets ──► Apps Script web app (runs as you, needs a key) ──► this page (GitHub Pages)
 ```
 
-This repository and the site are public, but they contain **no data**. The page asks for the web app URL and key once, keeps them in that browser only, and loads the sheets from there each time it opens and every 5 minutes after.
+This repository and the site are public, but they contain **no data**. The page asks for the web app URL and key once, keeps them in that browser only, and loads the sheets through it. Edits made on the dashboard go back through the same web app into the sheets.
 
 Sources read by the web app (`apps-script/Code.gs`, `CONFIG`):
 
@@ -36,21 +36,28 @@ Sources read by the web app (`apps-script/Code.gs`, `CONFIG`):
 
 ## Connect the dashboard to the sheets (once, about 5 minutes)
 
-Do this signed in as someone who can open all three sheets.
+Do this signed in as someone who can **edit** all three sheets (the web app reads and writes as that person).
 
 1. Go to https://script.google.com and click **New project**. Name it "Creative Ops Tracker API".
-2. Delete the sample code and paste in everything from [`apps-script/Code.gs`](apps-script/Code.gs). In `CONFIG` at the top, replace the four `PASTE_…` placeholders with the links to your sheets (copy them from the browser address bar). Save.
-   Keep the real links in Apps Script only. Don't commit them here: this repository is public.
-3. In the function menu at the top, pick **createKey** and click **Run**. Allow the permissions it asks for (it needs to read and edit your spreadsheets). Open **Execution log** and copy the key it prints.
-4. Optional check: pick **testRead** and run it. The log should list row counts for each sheet.
-5. Click **Deploy → New deployment**. Choose type **Web app**. Set **Execute as: Me** and **Who has access: Anyone**. Click **Deploy** and copy the **Web app URL** (it ends in `/exec`).
-6. Open https://anmolpickrr.github.io/Tracker/, click **Connect**, paste the URL and the key, and click **Save and load**.
+2. Delete the sample code and paste in the script:
+   - from the private file **"Creative Ops Tracker – Apps Script code"** in your Google Drive, which already has your sheet links filled in, or
+   - from [`apps-script/Code.gs`](apps-script/Code.gs), then replace the four `PASTE_…` placeholders in `CONFIG` with the links to your sheets. Keep the real links in Apps Script only: this repository is public.
+3. Save, pick **setup** in the function menu at the top, and click **Run**. Allow the permissions it asks for (read and edit your spreadsheets, run triggers). Open **Execution log**: it lists the rows found in each sheet and prints your **key**.
+4. Click **Deploy → New deployment**, type **Web app**, **Execute as: Me**, **Who has access: Anyone**. Click **Deploy** and copy the **Web app URL** (it ends in `/exec`).
+5. Open https://anmolpickrr.github.io/Tracker/, click **Connect**, paste the URL and the key, and click **Save and load**.
 
-To give someone else access, send them the site link plus the URL and key (privately). Anyone without the key gets nothing.
+To give someone else access, send them the site link plus the URL and key (privately). Anyone without the key gets nothing. Anyone with the key can also edit tasks through the dashboard, so share it only with the team.
 
-**If you edit `Code.gs` later**, use **Deploy → Manage deployments → Edit → Version: New version** so the URL stays the same.
+**If you edit the script later**, use **Deploy → Manage deployments → Edit → Version: New version** so the URL stays the same.
 
-**To revoke access**, run `createKey` again (old keys stop working) and share the new key with the people who should still have it.
+**To revoke access**, run `createKey` (old keys stop working) and share the new key with the people who should still have it.
+
+## Live sync
+
+- **Sheet → dashboard:** `setup()` installs edit triggers on the sheets. Every edit bumps a version number, and open dashboards check that number every 30 seconds, reloading only when something changed. The header shows **Live** when this is on. A full reload also runs every 10 minutes and whenever you come back to the tab, which catches edits the triggers can miss (for example, rows added by other scripts or forms).
+- **Dashboard → sheet:** click any task (in Today, Stand-up, All tasks or Sheet health) to change its **design status, Design ETA, designer or priority**, and **No. of Creatives** once that column exists. **Save to sheet** writes into that task's row, found by its ID. Status values are written in the sheet's own spelling: the dropdown's options if the column has one, otherwise the values already used (for example `WIP`, `TBP`, `DONE`, `Shared`). Marking a task Delivered also fills **Delivered On** when that column exists and is empty.
+- Team Active/Inactive switches and **Add a team member** write to the team list sheet.
+- Rows without an ID, or with an ID that appears twice in the sheet, are not edited from the dashboard: the dialog says so, and they can be fixed in the sheet.
 
 ## Managing the team
 

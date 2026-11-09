@@ -225,6 +225,13 @@ details.co-defs dd { margin: 0; }
 .is-refreshing { opacity: .6; transition: opacity .3s; }
 
 /* Dialog and toast */
+.co-ed-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+.co-ed-grid .co-select, .co-ed-grid .co-input { width: 100%; font-size: var(--fs-body); padding-block: 8px; }
+.ed-msg { color: var(--bad); }
+.ed-msg:empty { display: none; }
+#editor { width: min(36rem, calc(100vw - 32px)); }
+tr.click, .su-item.click { cursor: pointer; }
+.su-item.click:hover .t b { color: var(--c1); }
 .co-dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--fg); padding: 22px; width: min(30rem, calc(100vw - 32px)); box-shadow: 0 30px 80px -20px rgba(0, 0, 0, .5); }
 .co-dialog::backdrop { background: rgba(8, 9, 12, .55); }
 .co-dialog form { display: grid; gap: 12px; }

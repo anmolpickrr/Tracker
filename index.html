@@ -139,7 +139,7 @@
     <div class="co-card">
       <div class="co-card-head">
         <h2 class="co-h2">All tasks</h2>
-        <p class="co-note"><span data-draw="task-count">—</span> tasks match. Click a column to sort.</p>
+        <p class="co-note"><span data-draw="task-count">—</span> tasks match. Click a column to sort, or a task to edit it.</p>
       </div>
       <div class="co-tools">
         <input class="co-input co-search" id="t-search" type="search" placeholder="Search ID, brand, creative, owner…" aria-label="Search tasks">
@@ -340,6 +340,43 @@
       <button class="co-link" id="set-forget" type="button">Disconnect this browser</button>
       <button class="co-btn" value="cancel" type="button" id="set-cancel">Cancel</button>
       <button class="co-btn primary" id="set-save" type="submit">Save and load</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="editor" class="co-dialog" aria-labelledby="ed-title">
+  <form method="dialog" id="editor-form" autocomplete="off">
+    <div>
+      <p class="co-eyebrow" id="ed-where">—</p>
+      <h2 class="co-h2" id="ed-title">—</h2>
+      <p class="co-note" id="ed-topic">—</p>
+    </div>
+    <div class="co-ed-grid">
+      <label class="co-field">Design status
+        <select class="co-select" id="ed-status">
+          <option value="To be planned">To be planned (TBP)</option>
+          <option value="In progress">In progress (WIP)</option>
+          <option value="Under review">Under review</option>
+          <option value="Changes requested">Changes requested</option>
+          <option value="Delivered">Delivered (DONE)</option>
+          <option value="On hold">On hold</option>
+          <option value="Dropped">Dropped (deprioritized)</option>
+        </select>
+      </label>
+      <label class="co-field">Design ETA<input class="co-input" id="ed-eta" type="date" min="2020-01-01" max="2099-12-31"></label>
+      <label class="co-field">Designer<input class="co-input" id="ed-designer" type="text" list="ed-people" maxlength="120" placeholder="Unassigned"></label>
+      <label class="co-field">Priority
+        <select class="co-select" id="ed-priority"><option value="">None</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select>
+      </label>
+      <label class="co-field" id="ed-qty-wrap">No. of creatives<input class="co-input" id="ed-qty" type="number" min="1" max="999" step="1"></label>
+    </div>
+    <datalist id="ed-people"></datalist>
+    <p class="co-note" id="ed-info"></p>
+    <p class="co-note" id="ed-links"></p>
+    <p class="co-note ed-msg" id="ed-msg" role="status"></p>
+    <div class="co-dialog-actions">
+      <button class="co-btn" type="button" id="ed-cancel">Cancel</button>
+      <button class="co-btn primary" type="submit" id="ed-save">Save to sheet</button>
     </div>
   </form>
 </dialog>
