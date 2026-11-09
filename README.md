@@ -16,6 +16,7 @@ Navigation is a sidebar on desktop and a bottom tab bar on phones (More opens th
 | **Team** | Scorecard per person (open, overdue, due in 7 days, in review, delivered this month and last, monthly average, main brands, type mix), a designer-by-month delivery grid, and Active / Inactive switches (admins). |
 | **Reports** | Creatives delivered for any month, quarter, year or custom range, compared with the period before: monthly chart (total or by type), by brand, by designer, by creative type. CSV. |
 | **Data health** | Rows that make tracking unreliable (no ETA, no designer, unknown status, mistyped dates, duplicates) and the connection status of every sheet. |
+| **Notes** | A team notebook: meeting minutes, discussions and personal notes with @mentions, action items (assignee and due date), follow-ups and reminders. See [Notes](#notes). |
 | **Access** (admins) | Access requests, people and their access level, and the activity log of every change. |
 
 Studio look: charcoal and lime by default (switch to the light theme with the sun/moon button; the choice is remembered per browser), Fastrr violet for charts, Outfit for headings and numbers. Category colours in charts are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table. Secondary table columns appear only on screens wide enough for them; everything is still in the task dialog and the CSV exports.
@@ -69,6 +70,43 @@ Do this in a browser profile signed into **design.tools@pickrr.com only** (see a
 **To update the script later**, replace Code.gs only; Config.gs keeps your settings. Then use **Deploy → Manage deployments → Edit → Version: New version** so the URL stays the same.
 
 Until Google sign-in is switched on, the dashboard uses the older shared key: anyone with the URL and key can see and edit everything, and nobody's changes can be told apart. Switch sign-in on (next section) to end that.
+
+## Indian standards
+
+Numbers use Indian grouping (1,00,000), and dates, "today", "overdue" and every time shown follow India Standard Time, wherever the dashboard is opened. The sheets have no money columns today; when one is added, the dashboard's `inr()` formatter shows it as ₹1,25,000 (or ₹2.4 L and ₹1.2 Cr in compact places).
+
+## Daily briefings (IST)
+
+- **10:00 IST, morning briefing:** today's tasks, assignments and priorities. It covers overdue work, work due today, unassigned work, items in review, your own tasks (when your name is on the team list) and your action items from notes.
+- **18:00 IST, evening wrap-up:** completed work, pending tasks, delivery status and what is due tomorrow.
+
+Each briefing arrives three ways:
+- **By email** to everyone with access, sent by the web app within 10 minutes of the hour. Each person can turn the emails off from the bell menu.
+- **On the dashboard,** as a card on the Overview and an item in the notification bell. If the dashboard is open at that moment, the briefing also opens on its own.
+- **As a desktop alert,** if the person turns that on in the bell menu (only while the dashboard is open in a tab).
+
+To email yourself a sample, run `sendTestReminder` in Apps Script. The times can be changed in Config.gs with `reminders: { morning: 10, evening: 18, email: true }`.
+
+## Notes
+
+The **Notes** page is a notebook for daily meetings, discussions, minutes, action items and personal notes.
+
+- **Writing:** start from a template (**Stand-up** pre-fills attendees, updates, blockers, decisions and today's overdue list), or a blank or personal note. Each note has a title, meeting date, type (meeting, discussion or personal), brand and category.
+- **People:** type `@` to mention someone. Add action items with an assignee and a due date, plus follow-up points and a reminder time (IST).
+- **Finding notes:** search the text and filter by Mine, Shared with me, Meetings, Personal or Open actions, by brand and by category. The list is grouped by date, and notes can be pinned.
+- **Who sees a note:**
+
+  | Setting | Visible to |
+  | --- | --- |
+  | Only me | the author |
+  | People I mention or add | the author, everyone @mentioned, everyone added to it, and everyone with an action item |
+  | Everyone with access | the whole team |
+
+  Admins can see every note.
+- **Who changes it:** only the author or an admin can edit or delete a note. Anyone with an action item can tick it off.
+- **Storage:** notes are saved to the *Notes* tab of the access spreadsheet, owned by design.tools. Each note records its author's work email, when it was created, and who last edited it and when. Every create, edit, delete and action-item tick is in the activity log (Access → Activity log → Notes). A deleted note disappears from the dashboard but stays in the spreadsheet, marked deleted.
+- **Safety:** unsaved writing is kept in the browser as a draft, and saving over someone else's newer edit is refused, so nothing is lost.
+- **Reminders and mentions:** a reminder emails the author, and anyone with an open action item, at the time set. Mentions and action items also appear in each person's notification bell.
 
 ## Access and sign-in
 
@@ -230,6 +268,8 @@ assets/data.js         turns sheet rows into one clean task list (statuses, desi
 assets/app.js          views, filters, charts, sign-in, roles, access and activity log
 apps-script/Code.gs    the data API that runs in Google Apps Script: reads, edits, sign-in, roles, audit log
 apps-script/Config.gs  its settings: sheet links, sign-in client ID, owners, domains (placeholders here)
+tools/inline-data.js   copies assets/data.js into Code.gs (run after changing data.js), so reminders count exactly like the dashboard
+assets/logo.svg        the Fastrr mark, also the favicon
 apps-script/appsscript.json  its permissions
 ```
 

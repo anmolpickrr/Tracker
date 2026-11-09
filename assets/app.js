@@ -10,7 +10,7 @@
   const DEFAULTS = { tab: 'today', src: '', designer: '', brand: '', type: '', stage: 'active', susort: 'urgent', who: 'active', rpreset: 'this-month', rfrom: '', rto: '', rchart: 'total' };
   const P = Object.assign({}, DEFAULTS);
   try { Object.assign(P, JSON.parse(LS.get('co.view', '{}'))); } catch (e) { /* ignore */ }
-  const TABS = ['today', 'standup', 'tasks', 'team', 'reports', 'health', 'access'];
+  const TABS = ['today', 'standup', 'tasks', 'notes', 'team', 'reports', 'health', 'access'];
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
   const CFG = window.CO_CONFIG || {};
   const RANK = { Viewer: 1, Editor: 2, Admin: 3 };
@@ -174,20 +174,33 @@
   const CO = (() => {
     const pad = (n) => String(n).padStart(2, '0');
     const isoOf = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-    const today = () => isoOf(new Date());
+    // "Today" is the date in India (IST), wherever the dashboard is opened.
+    const istParts = (d) => { const o = {}; new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d || new Date()).forEach((p) => { o[p.type] = p.value; }); return o; };
+    const today = () => { const o = istParts(); return o.year + '-' + o.month + '-' + o.day; };
     const toDate = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
     const addDays = (s, n) => { const d = toDate(s); d.setDate(d.getDate() + n); return isoOf(d); };
     const diffDays = (a, b) => Math.round((toDate(b) - toDate(a)) / 864e5);
     const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const fmtDate = (s, withYear) => { if (!s) return '—'; const [y, m, d] = s.split('-').map(Number); return d + ' ' + MON[m - 1] + (withYear || y !== new Date().getFullYear() ? ' ' + y : ''); };
+    const fmtDate = (s, withYear) => { if (!s) return '—'; const [y, m, d] = s.split('-').map(Number); return d + ' ' + MON[m - 1] + (withYear || y !== Number(today().slice(0, 4)) ? ' ' + y : ''); };
     const thisMonth = () => today().slice(0, 7);
     const prevMonth = (k) => { const [y, m] = k.split('-').map(Number); return m === 1 ? (y - 1) + '-12' : y + '-' + pad(m - 1); };
     const fmtMonth = (k, long) => { if (!k) return '—'; const [y, m] = k.split('-').map(Number); return (long ? MONTHS[m - 1] : MON[m - 1]) + ' ' + y; };
     const monthStart = (k) => k + '-01';
     const monthEnd = (k) => { const [y, m] = k.split('-').map(Number); return isoOf(new Date(y, m, 0)); };
     const addMonths = (k, n) => { const [y, m] = k.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
-    const num = (n) => d3.format(',')(Math.round(n));
+    // Indian number format: 1,00,000 and 12,34,567. inr() for money: ₹1,25,000, or ₹2.4 L / ₹1.2 Cr when compact.
+    const INNUM = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
+    const num = (n) => INNUM.format(Math.round(n));
+    const inr = (n, compact) => {
+      if (n == null || isNaN(n)) return '—';
+      if (compact && Math.abs(n) >= 1e7) return '₹' + (n / 1e7).toFixed(n >= 1e8 ? 0 : 1).replace(/\.0$/, '') + ' Cr';
+      if (compact && Math.abs(n) >= 1e5) return '₹' + (n / 1e5).toFixed(n >= 1e6 ? 0 : 1).replace(/\.0$/, '') + ' L';
+      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: n % 1 ? 2 : 0 }).format(n);
+    };
+    const istHour = () => Number(istParts().hour);
+    const istTime = (d) => new Date(d).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' });
+    const istDateTime = (d, withYear) => new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: withYear ? 'numeric' : undefined, hour: 'numeric', minute: '2-digit' });
     const sumQty = (rs) => rs.reduce((a, r) => a + (r.qty || 1), 0);
     const CLOSED = new Set(['Delivered', 'Dropped']);
     const VIDEO = /video|gif|reel/i;
@@ -223,9 +236,10 @@
     let memo = { rows: null, team: null, key: '', out: null };
     const status = () => dash.data('tasks').status;
     const all = () => (S.status === 'ok' ? S.tasks : null);
-    const rows = () => {
+    // rows(): tasks with the page filters applied. rows(true): every task (briefings and reminders ignore filters).
+    const rows = (unfiltered) => {
       const a = all(); if (!a) return null;
-      const p = dash.params(), tm = team();
+      const p = unfiltered ? { src: '', designer: '', brand: '', type: '' } : dash.params(), tm = team();
       const key = [p.src, p.designer, p.brand, p.type, today()].join('|');
       if (memo.rows === a && memo.team === tm && memo.key === key) return memo.out;
       const t = today(), out = [];
@@ -363,10 +377,12 @@
       a.download = filename; document.body.append(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     };
-    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, emptyRow, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials };
+    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, emptyRow, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials, inr, istHour, istTime, istDateTime, istParts };
   })();
 
   /* ================= Controls ================= */
+  let shownTab = null;
+  const hideBoot = () => { const b = document.getElementById('boot'); if (b && !b.classList.contains('done')) { b.classList.add('done'); setTimeout(() => b.remove(), 500); } };
   function syncControls() {
     const p = dash.params();
     const admin = A.mode === 'auth' && can('Admin');
@@ -374,15 +390,28 @@
     axTab.hidden = !admin;
     const badge = axTab.querySelector('.nav-badge'); badge.hidden = !AX.pending; badge.textContent = AX.pending ? AX.pending + ' waiting' : '';
     document.querySelector('.bt-dot').hidden = !(admin && AX.pending);
-    const bell = document.getElementById('btn-bell'); bell.hidden = !admin; bell.querySelector('.bell-dot').hidden = !AX.pending;
-    bell.title = AX.pending ? AX.pending + (AX.pending === 1 ? ' access request waiting' : ' access requests waiting') : 'Access and activity'; bell.setAttribute('aria-label', bell.title);
+    const signed = A.mode === 'auth' && !!A.user;
+    const bell = document.getElementById('btn-bell'); bell.hidden = !signed;
+    const unread = NT.unread(); bell.querySelector('.bell-dot').hidden = !unread;
+    bell.title = unread ? unread + ' new notification' + (unread === 1 ? '' : 's') : 'Notifications'; bell.setAttribute('aria-label', bell.title);
+    document.querySelector('.co-tab[data-tab="notes"]').hidden = !signed;
+    document.querySelector('.bt[data-tab="notes"]').hidden = !signed;
+    document.querySelector('.btabs').classList.toggle('four', !signed);
+    document.body.classList.toggle('syncing', !!S.refreshing || S.status === 'loading');
     document.getElementById('add-member').hidden = !can('Admin');
-    const tab = TABS.includes(p.tab) && (p.tab !== 'access' || admin) ? p.tab : 'today';
-    document.querySelectorAll('[data-panel]').forEach((s) => { s.hidden = s.dataset.panel !== tab; });
+    const tab = TABS.includes(p.tab) && (p.tab !== 'access' || admin) && (p.tab !== 'notes' || signed) ? p.tab : 'today';
+    document.querySelectorAll('[data-panel]').forEach((s) => {
+      const show = s.dataset.panel === tab;
+      // A short entrance when the page changes (not on every refresh).
+      if (show && s.hidden && shownTab !== tab) { s.classList.remove('enter'); void s.offsetWidth; s.classList.add('enter'); s.addEventListener('animationend', () => s.classList.remove('enter'), { once: true }); }
+      s.hidden = !show;
+    });
+    shownTab = tab;
+    if (tab === 'notes') NB.open();
     document.querySelectorAll('.co-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     document.querySelectorAll('.bt[data-tab]').forEach((b) => { if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
-    document.getElementById('bt-more').toggleAttribute('aria-current', !['today', 'standup', 'tasks', 'reports'].includes(tab));
-    document.getElementById('filter-bar').hidden = tab === 'access';
+    document.getElementById('bt-more').toggleAttribute('aria-current', !['today', 'standup', 'tasks', 'notes'].includes(tab));
+    document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes';
     ['src', 'designer', 'brand', 'type'].forEach((k) => { const el = document.querySelector('.co-f[data-param="' + k + '"]'); if (el) el.classList.toggle('is-set', !!p[k]); });
     document.getElementById('f-reset').hidden = !(p.src || p.designer || p.brand || p.type);
     document.querySelectorAll('[data-rchart]').forEach((b) => b.setAttribute('aria-pressed', String((p.rchart || 'total') === b.dataset.rchart)));
@@ -393,6 +422,7 @@
     val('#r-from', pr.all ? '' : pr.from); val('#r-to', pr.all ? '' : pr.to);
     const banner = document.getElementById('banner');
     banner.hidden = !(S.status === 'unconfigured' || S.status === 'error');
+    if (S.status === 'ok' || S.status === 'error' || S.status === 'unconfigured') hideBoot();
     document.getElementById('btn-connect').hidden = A.mode === 'auth';
   }
   document.querySelectorAll('.co-tab, .bt[data-tab]').forEach((b) => b.addEventListener('click', () => dash.setParams({ tab: b.dataset.tab })));
@@ -400,7 +430,7 @@
   function closeNav() { document.body.classList.remove('nav-open'); document.getElementById('scrim').hidden = true; document.getElementById('btn-menu').setAttribute('aria-expanded', 'false'); }
   function openNav() { document.body.classList.add('nav-open'); document.getElementById('scrim').hidden = false; document.getElementById('btn-menu').setAttribute('aria-expanded', 'true'); }
   document.getElementById('btn-menu').addEventListener('click', openNav);
-  document.getElementById('btn-bell').addEventListener('click', () => dash.setParams({ tab: 'access' }));
+  document.getElementById('btn-bell').addEventListener('click', (e) => { e.stopPropagation(); NT.toggle(); });
   document.getElementById('bt-more').addEventListener('click', openNav);
   document.getElementById('scrim').addEventListener('click', closeNav);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('nav-open')) closeNav(); });
@@ -483,7 +513,8 @@
 
   /* ================= Header, sync state and filters ================= */
   const PAGES = {
-    today: ['Overview', () => new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }) + ' · what needs attention today'],
+    today: ['Overview', () => new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long' }) + ' · what needs attention today'],
+    notes: ['Notes', 'Meeting minutes, discussions, action items and personal notes.'],
     standup: ['Daily stand-up', 'One card per active designer: what is late, due today, in progress and up next.'],
     tasks: ['Tasks', 'Every task from both sheets. Click a row to open or edit it.'],
     team: ['Team', 'Workload, output and who is on the team.'],
@@ -491,8 +522,8 @@
     health: ['Data health', 'Rows that make tracking less reliable, and the connection to the sheets.'],
     access: ['Access & activity', 'Who can use the dashboard, and every change they made.']
   };
-  const curTab = () => { const t = dash.params().tab; return PAGES[t] && (t !== 'access' || (A.mode === 'auth' && can('Admin'))) ? t : 'today'; };
-  const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
+  const curTab = () => { const t = dash.params().tab; return PAGES[t] && (t !== 'access' || (A.mode === 'auth' && can('Admin'))) && (t !== 'notes' || (A.mode === 'auth' && A.user)) ? t : 'today'; };
+  const greeting = () => { const h = CO.istHour(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
   const firstName = () => (A.user && A.user.name ? A.user.name.split(' ')[0] : '');
   dash.draw('page-title', (el) => { const t = curTab(); el.textContent = t === 'today' && firstName() ? greeting() + ', ' + firstName() : PAGES[t][0]; });
   dash.draw('page-eyebrow', (el) => { const t = curTab(); el.textContent = t === 'today' && firstName() ? 'Overview' : ''; });
@@ -506,14 +537,14 @@
     const sm = document.createElement('small'); sm.textContent = (ROLE_LABEL[A.user.role] || A.user.role) + ' · ' + A.user.email;
     w.append(b, sm); el.append(CO.av(A.user.name || A.user.email, 'lg'), w); el.title = A.user.email;
   });
-  dash.draw('today-date', (el) => { el.textContent = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); });
+  dash.draw('today-date', (el) => { el.textContent = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); });
   dash.draw('sync-dot', (el) => { el.className = 'co-sync-dot ' + (S.status === 'ok' ? (S.staleError ? 'warn' : 'ok') : S.status === 'error' ? 'bad' : S.status === 'loading' ? 'busy' : ''); });
   dash.draw('sync-text', (el) => {
     if (S.status === 'ok') {
       const at = new Date(S.generatedAt || S.loadedAt);
       const live = S.ver && S.ver !== '0';
       const ago = S.checkedAt || S.loadedAt ? Math.max(0, Math.round((Date.now() - (S.checkedAt > S.loadedAt ? S.checkedAt : S.loadedAt)) / 1000)) : null;
-      el.textContent = (S.refreshing ? 'Syncing… ' : live ? 'Live · ' : '') + 'data from ' + at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + (ago != null && !S.refreshing ? ' · checked ' + (ago < 5 ? 'just now' : ago + 's ago') : '') + (S.staleError ? ' · last refresh failed' : '');
+      el.textContent = (S.refreshing ? 'Syncing… ' : live ? 'Live · ' : '') + 'data from ' + CO.istTime(at) + (ago != null && !S.refreshing ? ' · checked ' + (ago < 5 ? 'just now' : ago + 's ago') : '') + (S.staleError ? ' · last refresh failed' : '');
       el.title = live ? 'Checks the sheets for changes every 30 seconds' : 'Run setup() in Apps Script to turn on instant change detection';
     } else el.textContent = S.status === 'loading' ? 'Loading sheets…' : S.status === 'error' ? 'Could not load' : 'Not connected';
   });
@@ -592,10 +623,18 @@
     review: (rs) => rs.filter((r) => r.stage === 'Under review'),
     delivered: (rs) => rs.filter((r) => r.stage === 'Delivered' && r.month === CO.thisMonth())
   };
+  /* Numbers count up to their new value when they change. */
+  const countTo = (el, n) => {
+    const from = el.__n == null ? 0 : el.__n; el.__n = n;
+    if (REDUCED || from === n) { el.textContent = CO.num(n); return; }
+    const t0 = performance.now(), dur = 700;
+    const step = (t) => { const k = Math.min(1, (t - t0) / dur); el.textContent = CO.num(from + (n - from) * ease(k)); if (k < 1 && el.__n === n) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  };
   dash.draw('kpi', (el) => {
-    if (CO.notReady(el, 'text')) return;
+    if (CO.notReady(el, 'text')) { el.__n = null; return; }
     const list = tiles[el.dataset.kpi](CO.rows());
-    el.textContent = CO.num(el.dataset.kpi === 'delivered' ? CO.sumQty(list) : list.length);
+    countTo(el, el.dataset.kpi === 'delivered' ? CO.sumQty(list) : list.length);
   });
   dash.draw('kpi-sub', (el) => {
     if (CO.notReady(el, 'text')) return;
@@ -705,6 +744,10 @@
     // A full-width hit area per row, so the whole line is clickable, not just the bar.
     g.insert('rect', ':first-child').attr('class', 'hit').attr('x', 0).attr('width', W).attr('y', (d) => y(d.name) - y.step() * y.paddingInner() / 2).attr('height', y.step());
     g.append('text').attr('class', 'tick').attr('x', (d) => x(d.total) + 6).attr('y', (d) => y(d.name) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.total);
+    g.classed('mk', true).on('mouseenter.dim', function () { el.classList.add('hovering'); d3.select(this).classed('on', true); }).on('mouseleave.dim', function () { el.classList.remove('hovering'); d3.select(this).classed('on', false); });
+    if (freshSig(el, JSON.stringify(data.map((d) => [d.key, d.overdue, d.week, d.later])))) {
+      g.selectAll('rect:not(.hit)').each(function () { const r = d3.select(this), w = +r.attr('width'), x0 = +r.attr('x'); r.attr('width', 0).attr('x', L).transition().duration(700).delay((d, i) => i * 40).ease(ease).attr('x', x0).attr('width', w); });
+    }
   });
   dash.draw('pipeline', (el) => {
     if (CO.notReady(el, 'box')) return;
@@ -738,6 +781,95 @@
     svg.append('path').attr('d', d3.line().curve(d3.curveMonotoneX).x((d, i) => x(i)).y(y)(v)).attr('fill', 'none').attr('stroke', 'var(--spark)').attr('stroke-opacity', 0.45).attr('stroke-width', 2).attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round');
     svg.append('circle').attr('cx', x(v.length - 1)).attr('cy', y(v[v.length - 1])).attr('r', 4).attr('fill', 'var(--spark)').attr('stroke', 'var(--panel)').attr('stroke-width', 2);
     el.title = ms.map((k, i) => CO.fmtMonth(k) + ': ' + v[i]).join(' · ');
+  });
+
+
+  /* Overview: creatives delivered per week (Monday–Sunday, IST), last 12 weeks, with the 12-week average. */
+  const weekStart = (iso) => { const d = new Date(iso + 'T00:00:00'); const k = (d.getDay() + 6) % 7; return CO.addDays(iso, -k); };
+  const weeklySeries = () => {
+    const rs = CO.rows(); if (!rs) return null;
+    const cur = weekStart(CO.today()), weeks = [];
+    for (let i = 11; i >= 0; i--) weeks.push(CO.addDays(cur, -7 * i));
+    const m = new Map(weeks.map((w) => [w, 0]));
+    rs.forEach((r) => { if (r.stage === 'Delivered' && r.ddate) { const w = weekStart(r.ddate); if (m.has(w)) m.set(w, m.get(w) + (r.qty || 1)); } });
+    return weeks.map((w) => ({ w, n: m.get(w) }));
+  };
+  dash.draw('trend-stat', (el) => {
+    el.replaceChildren(); const ser = CO.status() === 'ok' && weeklySeries(); if (!ser) return;
+    // Compare complete weeks: the current week is still filling up.
+    const a = ser[ser.length - 2].n, b = ser[ser.length - 3].n;
+    const v = document.createElement('b'); v.textContent = CO.num(a);
+    el.append(v, 'last week ', CO.delta(a, b), ' vs the week before');
+  });
+  dash.draw('trend', (el) => {
+    if (CO.notReady(el, 'box')) return;
+    const ser = weeklySeries(); el.replaceChildren();
+    const W = Math.max(300, el.clientWidth), H = 230, mB = 26, mT = 16;
+    const done = ser.slice(0, -1), avg = d3.mean(done, (d) => d.n) || 0;
+    const y = d3.scaleLinear([0, Math.max(4, d3.max(ser, (d) => d.n), avg) * 1.1], [H - mB, mT]).nice();
+    const ticks = y.ticks(4);
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered per week: ' + ser.map((d) => CO.fmtDate(d.w) + ' ' + d.n).join(', '));
+    const meas = svg.append('text').attr('class', 'tick').text(CO.num(d3.max(ticks))); const mL = meas.node().getComputedTextLength() + 12; meas.remove();
+    const x = d3.scalePoint(ser.map((d) => d.w), [mL + 8, W - 14]);
+    const defs = svg.append('defs'); const gr = defs.append('linearGradient').attr('id', 'trend-fill').attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', 1);
+    gr.append('stop').attr('offset', '0%').style('stop-color', 'var(--bar)').style('stop-opacity', 0.32); gr.append('stop').attr('offset', '100%').style('stop-color', 'var(--bar)').style('stop-opacity', 0);
+    svg.append('g').selectAll('line').data(ticks).join('line').attr('class', 'grid').attr('x1', mL).attr('x2', W - 4).attr('y1', y).attr('y2', y);
+    svg.append('g').selectAll('text').data(ticks).join('text').attr('class', 'tick').attr('x', mL - 6).attr('y', y).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => CO.num(d));
+    const every = Math.ceil(ser.length / Math.max(1, Math.floor((W - mL) / 64)));
+    svg.append('g').selectAll('text').data(ser).join('text').attr('class', (d, i) => 'tick' + (i === ser.length - 1 ? ' on' : '')).attr('x', (d) => x(d.w)).attr('y', H - 6).attr('text-anchor', 'middle').text((d, i) => i === ser.length - 1 ? 'This week' : (ser.length - 1 - i) % every === 0 ? CO.fmtDate(d.w) : '');
+    // Average of the finished weeks
+    svg.append('line').attr('class', 'ref').attr('x1', mL).attr('x2', W - 4).attr('y1', y(avg)).attr('y2', y(avg));
+    svg.append('text').attr('class', 'ref-l').attr('x', mL + 6).attr('y', y(avg) - 6).text('12-week avg ' + CO.num(avg));
+    const curve = d3.curveMonotoneX;
+    const area = svg.append('path').datum(done).attr('class', 'area').attr('d', d3.area().curve(curve).x((d) => x(d.w)).y0(H - mB).y1((d) => y(d.n)));
+    const line = svg.append('path').datum(done).attr('class', 'line').attr('d', d3.line().curve(curve).x((d) => x(d.w)).y((d) => y(d.n)));
+    // The current week (partial) is a faint continuation with a hollow dot, so a Monday never looks like a crash.
+    const last = ser[ser.length - 1], prevW = done[done.length - 1];
+    svg.append('line').attr('x1', x(prevW.w)).attr('y1', y(prevW.n)).attr('x2', x(last.w)).attr('y2', y(last.n)).style('stroke', 'var(--bar)').attr('stroke-width', 2).style('opacity', 0.3).attr('stroke-linecap', 'round');
+    svg.append('circle').attr('r', 4.5).attr('cx', x(last.w)).attr('cy', y(last.n)).style('fill', 'var(--panel)').style('stroke', 'var(--bar)').attr('stroke-width', 2).style('opacity', 0.7);
+    const endDot = svg.append('circle').attr('class', 'dot').attr('r', 5).attr('cx', x(prevW.w)).attr('cy', y(prevW.n));
+    if (freshSig(el, JSON.stringify(ser))) {
+      const L = line.node().getTotalLength(); line.attr('stroke-dasharray', L + ' ' + L).attr('stroke-dashoffset', L).transition().duration(900).ease(ease).attr('stroke-dashoffset', 0).on('end', () => line.attr('stroke-dasharray', null));
+      area.style('opacity', 0).transition().delay(250).duration(700).style('opacity', 1);
+      endDot.attr('r', 0).transition().delay(800).duration(300).attr('r', 5);
+    }
+    // Hover: crosshair, the week's dot and a tooltip comparing with the week before.
+    const cross = svg.append('line').attr('class', 'cross').attr('y1', mT).attr('y2', H - mB).style('opacity', 0);
+    const hov = svg.append('circle').attr('class', 'dot').attr('r', 5.5).style('opacity', 0);
+    const tipEl = CO.tip(el);
+    const ov = svg.append('rect').attr('x', mL).attr('y', 0).attr('width', W - mL).attr('height', H).style('fill', 'transparent');
+    const show = (px) => {
+      const step = x.step(), i = Math.max(0, Math.min(ser.length - 1, Math.round((px - x(ser[0].w)) / step))), d = ser[i];
+      cross.attr('x1', x(d.w)).attr('x2', x(d.w)).style('opacity', 1); hov.attr('cx', x(d.w)).attr('cy', y(d.n)).style('opacity', 1);
+      tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = (i === ser.length - 1 ? 'This week' : 'Week of ' + CO.fmtDate(d.w)) + ' · ' + CO.num(d.n) + ' creatives'; tipEl.append(k);
+      if (i) { const r = document.createElement('div'); const dd = d.n - ser[i - 1].n; const sp = document.createElement('span'); sp.className = 'd ' + (dd > 0 ? 'up' : dd < 0 ? 'down' : ''); sp.textContent = CO.sign(dd); r.append(sp, ' vs the week before'); tipEl.append(r); }
+      const r2 = document.createElement('div'); r2.textContent = CO.fmtDate(d.w) + ' – ' + CO.fmtDate(CO.addDays(d.w, 6)) + (i === ser.length - 1 ? ' (so far)' : ''); r2.style.color = 'var(--muted)'; tipEl.append(r2);
+      CO.placeTip(tipEl, el, x(d.w) / W * el.clientWidth, y(d.n) / H * el.clientHeight);
+    };
+    ov.on('mousemove', (e) => show(d3.pointer(e, svg.node())[0])).on('mouseleave', () => { cross.style('opacity', 0); hov.style('opacity', 0); tipEl.hidden = true; })
+      .on('touchstart', (e) => show(d3.pointer(e.touches[0], svg.node())[0]), { passive: true });
+  });
+  /* Overview: the brands with the most creatives delivered this month. Click one to filter the dashboard by it. */
+  dash.draw('top-brands', (el) => {
+    if (CO.notReady(el, 'box')) return;
+    const m = CO.thisMonth(), rs = CO.rows().filter((r) => r.stage === 'Delivered' && r.month === m);
+    const pm = CO.prevMonth(m), prev = CO.rows().filter((r) => r.stage === 'Delivered' && r.month === pm);
+    const top = d3.rollups(rs, (v) => CO.sumQty(v), (r) => r.brand).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    el.replaceChildren();
+    if (!top.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Nothing delivered yet this month.'; el.append(p); return; }
+    const max = top[0][1], box = document.createElement('div'); box.className = 'tb-list';
+    const go = freshSig(el, JSON.stringify(top));
+    top.forEach(([b, n], i) => {
+      const bt = document.createElement('button'); bt.type = 'button'; bt.title = 'Filter the dashboard by ' + b;
+      const rk = document.createElement('span'); rk.className = 'rk'; rk.textContent = String(i + 1).padStart(2, '0');
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = b;
+      const v = document.createElement('span'); v.className = 'v'; v.textContent = CO.num(n);
+      const pv = CO.sumQty(prev.filter((r) => r.brand === b)); v.title = CO.num(pv) + ' last month';
+      const tr = document.createElement('span'); tr.className = 'tr'; const fi = document.createElement('i'); fi.style.width = go ? '0%' : (n / max * 100) + '%'; tr.append(fi);
+      if (go) requestAnimationFrame(() => requestAnimationFrame(() => { fi.style.width = (n / max * 100) + '%'; }));
+      bt.append(rk, nm, v, tr); bt.addEventListener('click', () => dash.setParams({ brand: b })); box.append(bt);
+    });
+    el.append(box);
   });
 
   /* ================= Stand-up ================= */
@@ -986,7 +1118,7 @@
     dash.draw('rkpi', (el) => {
       if (CO.notReady(el, 'text')) return;
       const pr = CO.period(), s = stats(pr.from, pr.to), k = el.dataset.kpi;
-      el.textContent = k === 'per' ? (s.per ? s.per.toFixed(1) : '—') : CO.num(s[k]);
+      if (k === 'per') el.textContent = s.per ? s.per.toFixed(1) : '—'; else countTo(el, s[k]);
     });
     dash.draw('rkpi-sub', (el) => {
       if (CO.notReady(el, 'text')) return;
@@ -1018,11 +1150,11 @@
       const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered by month');
       const yt = d3.scaleLinear([0, d3.max(series, (d) => d.total) || 1], [H - mB, mT]).nice();
       const ticks = yt.ticks(4);
-      const meas = svg.append('text').attr('class', 'tick').text(d3.format(',')(d3.max(ticks)));
+      const meas = svg.append('text').attr('class', 'tick').text(CO.num(d3.max(ticks)));
       const mL = meas.node().getComputedTextLength() + 10; meas.remove();
       const x = d3.scaleBand(ms, [mL, W - 4]).padding(0.25);
       svg.append('g').selectAll('line').data(ticks).join('line').attr('class', 'grid').attr('x1', mL).attr('x2', W - 4).attr('y1', yt).attr('y2', yt);
-      svg.append('g').selectAll('text').data(ticks).join('text').attr('class', 'tick').attr('x', mL - 6).attr('y', yt).attr('dy', '0.35em').attr('text-anchor', 'end').text(d3.format(','));
+      svg.append('g').selectAll('text').data(ticks).join('text').attr('class', 'tick').attr('x', mL - 6).attr('y', yt).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => CO.num(d));
       const every = Math.ceil(ms.length / Math.max(1, Math.floor((W - mL) / 52)));
       svg.append('g').selectAll('text').data(ms).join('text').attr('class', (m) => 'tick' + (inSel(m) && !pr.all ? ' on' : '')).attr('x', (m) => x(m) + x.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', 'middle')
         .text((m, i) => (i % every === 0) ? CO.fmtMonth(m).replace(' 20', " '") : '');
@@ -1033,26 +1165,37 @@
         pat.append('rect').attr('width', 7).attr('height', 7).style('fill', 'var(--bar)').style('opacity', 0.22);
         pat.append('line').attr('x1', 0).attr('y1', 0).attr('x2', 0).attr('y2', 7).style('stroke', 'var(--bar)').attr('stroke-width', 2.2).style('opacity', 0.75);
         const pw = Math.max(8, Math.min(46, x.bandwidth() * 0.78)), po = (x.bandwidth() - pw) / 2, base = yt(0);
-        svg.append('g').selectAll('rect').data(series).join('rect').attr('x', (d) => x(d.m) + po).attr('width', pw)
+        svg.append('g').selectAll('rect').data(series).join('rect').attr('class', 'mk').attr('data-m', (d) => d.m).attr('x', (d) => x(d.m) + po).attr('width', pw)
           .attr('y', (d) => Math.min(yt(d.total), base - pw)).attr('height', (d) => d.total ? Math.max(pw, base - yt(d.total)) : 0).attr('rx', pw / 2)
           .style('fill', (d) => inSel(d.m) && !pr.all ? 'var(--bar)' : 'url(#' + pid + ')');
-        svg.append('g').selectAll('circle').data(series.filter((d) => d.total)).join('circle').attr('cx', (d) => x(d.m) + x.bandwidth() / 2).attr('cy', (d) => Math.min(yt(d.total), base - pw) + pw / 2).attr('r', Math.min(5, pw / 4))
+        svg.append('g').selectAll('circle').data(series.filter((d) => d.total)).join('circle').attr('class', 'mk').attr('data-m', (d) => d.m).attr('cx', (d) => x(d.m) + x.bandwidth() / 2).attr('cy', (d) => Math.min(yt(d.total), base - pw) + pw / 2).attr('r', Math.min(5, pw / 4))
           .style('fill', (d) => inSel(d.m) && !pr.all ? 'var(--panel)' : 'var(--bar)');
       } else {
       const stack = d3.stack().keys(top)(series);
       const bw = Math.min(24, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
       svg.append('g').selectAll('g').data(stack).join('g').style('fill', (s) => cmap.get(s.key))
-        .selectAll('rect').data((s) => s).join('rect').attr('x', (d) => x(d.data.m) + off).attr('width', bw)
+        .selectAll('rect').data((s) => s).join('rect').attr('class', 'mk').attr('data-m', (d) => d.data.m).attr('x', (d) => x(d.data.m) + off).attr('width', bw)
         .attr('y', (d) => yt(d[1])).attr('height', (d) => Math.max(0, yt(d[0]) - yt(d[1]) - (d[1] > d[0] && d[0] > 0 ? 2 : 0))).attr('rx', 3)
         .style('opacity', (d) => inSel(d.data.m) ? 1 : 0.45);
       }
       const lw = byType ? Math.min(24, x.bandwidth()) : Math.min(46, x.bandwidth() * 0.78);
       svg.append('g').selectAll('text').data(series).join('text').attr('class', (d) => 'tick' + (inSel(d.m) ? ' on' : '')).attr('x', (d) => x(d.m) + x.bandwidth() / 2).attr('y', (d) => (byType ? yt(d.total) : Math.min(yt(d.total), yt(0) - lw)) - 7).attr('text-anchor', 'middle').text((d) => lw >= 16 && (x.bandwidth() >= 30 || inSel(d.m)) ? d.total : '');
+      // Average of the complete months shown (the current month is still filling up).
+      const full = series.filter((d) => d.m < CO.thisMonth()), avgM = d3.mean(full, (d) => d.total);
+      if (avgM) { svg.append('line').attr('class', 'ref').attr('x1', mL).attr('x2', W - 4).attr('y1', yt(avgM)).attr('y2', yt(avgM)); svg.append('text').attr('class', 'ref-l').attr('x', mL + 4).attr('y', yt(avgM) - 6).text('avg ' + CO.num(avgM) + ' / month'); }
+      // Bars grow from the baseline when the data or the view changes.
+      if (freshSig(el, (byType ? 't' : 's') + JSON.stringify(series.map((d) => d.total)) + pr.from + pr.to)) {
+        svg.selectAll('rect.mk').each(function (d, i) { const r = d3.select(this), y0 = +r.attr('y'), h = +r.attr('height'); r.attr('y', yt(0)).attr('height', 0).transition().duration(750).delay(Math.min(i, 40) * 18).ease(ease).attr('y', y0).attr('height', h); });
+        svg.selectAll('circle.mk').style('opacity', 0).transition().delay(650).duration(300).style('opacity', 1);
+      }
       const tipEl = CO.tip(el);
+      const mark = (m) => { el.classList.toggle('hovering', !!m); svg.selectAll('.mk').classed('on', function () { return this.getAttribute('data-m') === m; }); };
       svg.append('g').selectAll('rect').data(series).join('rect').attr('class', 'bar hit').attr('x', (d) => x(d.m)).attr('width', x.bandwidth()).attr('y', mT).attr('height', H - mB - mT)
         .on('click', (e, d) => dash.setParams({ rpreset: 'custom', rfrom: d.m + '-01', rto: CO.monthEnd(d.m) }))
-        .on('mousemove', (e, d) => { tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = CO.fmtMonth(d.m, true) + ' · ' + d.total + ' creatives'; tipEl.append(k); (byType ? top.slice().reverse() : []).forEach((t) => { if (!d[t]) return; const r = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = cmap.get(t); r.append(sw, t + ': ' + d[t]); tipEl.append(r); }); const [px] = d3.pointer(e, el); CO.placeTip(tipEl, el, px, el.clientHeight * 0.3); })
-        .on('mouseleave', () => { tipEl.hidden = true; });
+        .on('mouseenter', (e, d) => mark(d.m))
+        .on('mousemove', (e, d) => { tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = CO.fmtMonth(d.m, true) + ' · ' + CO.num(d.total) + ' creatives' + (d.m === CO.thisMonth() ? ' so far' : ''); tipEl.append(k);
+          const i = series.indexOf(d); if (i > 0) { const dd = d.total - series[i - 1].total, r = document.createElement('div'), sp = document.createElement('span'); sp.className = 'd ' + (dd > 0 ? 'up' : dd < 0 ? 'down' : ''); sp.textContent = CO.sign(dd) + (series[i - 1].total ? ' (' + (dd >= 0 ? '+' : '−') + Math.round(Math.abs(dd) / series[i - 1].total * 100) + '%)' : ''); r.append(sp, ' vs ' + CO.fmtMonth(series[i - 1].m)); tipEl.append(r); } (byType ? top.slice().reverse() : []).forEach((t) => { if (!d[t]) return; const r = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = cmap.get(t); r.append(sw, t + ': ' + d[t]); tipEl.append(r); }); const [px] = d3.pointer(e, el); CO.placeTip(tipEl, el, px, el.clientHeight * 0.3); })
+        .on('mouseleave', () => { tipEl.hidden = true; mark(null); });
     });
     const crossTable = (table, keyFn, label, tag) => {
       if (CO.notReady(table, 'table')) return;
@@ -1251,7 +1394,7 @@
     catch (err) { toast('Not saved: ' + err.message, true); }
     axRefresh(true);
   }
-  const when = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined, hour: 'numeric', minute: '2-digit' }); };
+  const when = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? iso : CO.istDateTime(d, d.getFullYear() !== new Date().getFullYear()); };
   const nameOf = (email) => { const u = (AX.users || []).find((x) => x.email === String(email).toLowerCase()); return u && u.name ? u.name : email; };
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const roleSelect = (value) => { const s = el('select', 'co-select'); ['Viewer', 'Editor', 'Admin'].forEach((r) => s.append(new Option(ROLE_LABEL[r], r))); s.value = value || 'Viewer'; s.setAttribute('aria-label', 'Access level'); return s; };
@@ -1428,6 +1571,423 @@
     e.target.reset();
   });
 
+  /* ================= Motion helpers ================= */
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Animate a chart only when what it shows changed (not on every 30-second check).
+  const freshSig = (el, sig) => { const go = !REDUCED && el.__sig !== sig; el.__sig = sig; return go; };
+  const ease = d3.easeCubicOut;
+
+  /* ================= Daily briefings and notifications (IST) ================= */
+  const ICONS = {
+    sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
+    moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
+    user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1',
+    bell: 'M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0',
+    check: 'M20 6L9 17l-5-5', at: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.5 7.1'
+  };
+  const svgIcon = (d) => { const ns = 'http://www.w3.org/2000/svg'; const s = document.createElementNS(ns, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); s.append(p); return s; };
+  const myDesigner = () => { if (!A.user || !A.user.name) return null; const r = CO.team().resolve(A.user.name); return r ? r.name : null; };
+  /* The briefing: the same numbers for everyone, plus "yours" when the signed-in person is on the team list. */
+  function briefing(kind) {
+    const all = CO.rows(true); if (!all) return null;
+    const t = CO.today(), tm = CO.addDays(t, 1), me = myDesigner();
+    const open = all.filter((r) => r.open);
+    const b = {
+      kind, me, overdue: open.filter((r) => r.due === 'overdue'), today: open.filter((r) => r.due === 'today'), tomorrow: open.filter((r) => r.eta === tm),
+      unassigned: open.filter((r) => !r.list.length), review: all.filter((r) => r.stage === 'Under review'), delivered: all.filter((r) => r.stage === 'Delivered' && r.ddate === t)
+    };
+    b.mine = me ? open.filter((r) => r.list.includes(me)) : [];
+    b.actions = NB.myActions().filter((a) => !a.done);
+    return b;
+  }
+  const briefKind = () => { const h = CO.istHour(); return h >= REMIND_AT.evening ? 'evening' : h >= REMIND_AT.morning ? 'morning' : null; };
+  const REMIND_AT = { morning: 10, evening: 18 };
+  const BR = { dlg: document.getElementById('brief'), kind: 'morning' };
+  dash.draw('brief-body', (el) => {
+    el.replaceChildren(); const b = briefing(BR.kind); if (!b) return;
+    const first = A.user && A.user.name ? A.user.name.split(' ')[0] : '';
+    const hero = document.createElement('div'); hero.className = 'brief-hero';
+    const sm = document.createElement('small'); sm.textContent = b.kind === 'morning' ? 'Morning briefing · 10:00 IST' : 'Evening wrap-up · 18:00 IST';
+    const h = document.createElement('h2'); h.id = 'brief-title'; h.textContent = (b.kind === 'morning' ? 'Good morning' : 'Good evening') + (first ? ', ' + first : '');
+    const p = document.createElement('p'); p.textContent = b.kind === 'morning' ? 'Review today\'s tasks, assignments and priorities.' : 'Review completed work, what is pending, delivery status and tomorrow\'s priorities.';
+    hero.append(sm, h, p); el.append(hero);
+    const st = document.createElement('div'); st.className = 'brief-stats';
+    const stat = (n, l) => { const d = document.createElement('div'); const v = document.createElement('b'); v.textContent = CO.num(n); d.append(v, l); st.append(d); };
+    stat(b.overdue.length, 'overdue'); stat(b.today.length, 'due today');
+    if (b.kind === 'evening') { stat(CO.sumQty(b.delivered), 'delivered today'); stat(b.tomorrow.length, 'due tomorrow'); } else { stat(b.unassigned.length, 'unassigned'); stat(b.review.length, 'in review'); }
+    el.append(st);
+    const list = (title, rs, max) => {
+      if (!rs.length) return;
+      const box = document.createElement('div'); box.className = 'brief-list';
+      const hh = document.createElement('h3'); hh.textContent = title + ' · ' + rs.length; box.append(hh);
+      const ul = document.createElement('ul');
+      rs.slice(0, max || 5).forEach((r) => { const li = document.createElement('li'); const a = document.createElement('span'); a.textContent = r.brand + ' · ' + CO.topicText(r); const z = document.createElement('span'); z.textContent = (r.list.join(', ') || 'Unassigned') + ' · ' + (r.eta ? CO.fmtDate(r.eta) : 'No ETA'); li.append(a, z); li.addEventListener('click', () => { BR.dlg.close(); document.dispatchEvent(new CustomEvent('co-open-task', { detail: r.uid })); }); ul.append(li); });
+      box.append(ul); el.append(box);
+    };
+    if (b.me) { list('Your overdue work', b.mine.filter((r) => r.due === 'overdue')); list('Yours, due today', b.mine.filter((r) => r.due === 'today')); if (b.kind === 'evening') list('Yours, due tomorrow', b.mine.filter((r) => r.eta === CO.addDays(CO.today(), 1))); }
+    if (b.actions.length) { const box = document.createElement('div'); box.className = 'brief-list'; const hh = document.createElement('h3'); hh.textContent = 'Your action items from notes · ' + b.actions.length; const ul = document.createElement('ul'); b.actions.slice(0, 6).forEach((a) => { const li = document.createElement('li'); const x = document.createElement('span'); x.textContent = a.text; const y = document.createElement('span'); y.textContent = a.note + (a.due ? ' · ' + CO.fmtDate(a.due) : ''); li.append(x, y); li.addEventListener('click', () => { BR.dlg.close(); dash.setParams({ tab: 'notes' }); NB.select(a.noteId); }); ul.append(li); }); box.append(hh, ul); el.append(box); }
+    list('Team: overdue', b.overdue);
+    if (b.kind === 'morning') list('Team: due today', b.today); else { list('Delivered today', b.delivered); list('Team: due tomorrow', b.tomorrow); }
+  });
+  function openBriefing(kind) { BR.kind = kind || briefKind() || 'morning'; dash.draw('brief-body'); if (BR.dlg.showModal && !BR.dlg.open) BR.dlg.showModal(); NT.markRead('brief-' + BR.kind + '-' + CO.today()); }
+  document.getElementById('brief-close').addEventListener('click', () => BR.dlg.close());
+  document.getElementById('brief-go').addEventListener('click', () => { BR.dlg.close(); CO.goTasks(BR.kind === 'morning' ? 'overdue' : 'open', myDesigner() ? { designer: myDesigner() } : {}); });
+  /* Overview card: today's briefing, until dismissed. */
+  dash.draw('brief-card', (el) => {
+    const k = briefKind(), key = k && k + '-' + CO.today();
+    el.replaceChildren();
+    if (!k || A.mode !== 'auth' || !A.user || CO.status() !== 'ok' || LS.get('co.briefDismissed', '') === key) return;
+    const b = briefing(k); if (!b) return;
+    const ico = document.createElement('span'); ico.className = 'bc-ico'; ico.append(svgIcon(k === 'morning' ? ICONS.sun : ICONS.moon));
+    const tx = document.createElement('div'); const t = document.createElement('div'); t.className = 'bc-t'; t.textContent = k === 'morning' ? 'Your morning briefing is ready' : 'Your evening wrap-up is ready';
+    const s2 = document.createElement('div'); s2.className = 'bc-s';
+    const bits = k === 'morning' ? [[b.overdue.length, 'overdue'], [b.today.length, 'due today'], [b.unassigned.length, 'unassigned']] : [[CO.sumQty(b.delivered), 'delivered today'], [b.overdue.length, 'overdue'], [b.tomorrow.length, 'due tomorrow']];
+    bits.forEach(([n, l], i) => { const x = document.createElement('b'); x.textContent = CO.num(n); s2.append(i ? ' · ' : '', x, ' ' + l); });
+    if (b.me && b.mine.length) s2.append(' · ', Object.assign(document.createElement('b'), { textContent: CO.num(b.mine.length) }), ' with you');
+    tx.append(t, s2);
+    const act = document.createElement('div'); act.className = 'bc-act';
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'co-btn primary'; open.textContent = 'Open briefing'; open.addEventListener('click', () => openBriefing(k));
+    const no = document.createElement('button'); no.type = 'button'; no.className = 'co-btn'; no.textContent = 'Dismiss'; no.addEventListener('click', () => { LS.set('co.briefDismissed', key); el.replaceChildren(); });
+    act.append(open, no); el.append(ico, tx, act);
+  });
+
+  /* Notification centre: briefings, access requests, note reminders, action items, mentions. */
+  const NT = (() => {
+    const panel = document.getElementById('np');
+    let seen = []; try { seen = JSON.parse(LS.get('co.seen', '[]')) || []; } catch (e) { seen = []; }
+    const save = () => LS.set('co.seen', JSON.stringify(seen.slice(-400)));
+    const items = () => {
+      if (A.mode !== 'auth' || !A.user) return [];
+      const out = [], t = CO.today(), nowLocal = istNowKey();
+      const k = briefKind();
+      if (k === 'evening' || k === 'morning') out.push({ id: 'brief-morning-' + t, icon: 'sun', tone: 'lime', t: 'Morning briefing', s: '10:00 IST · today\'s tasks, assignments and priorities', go: () => openBriefing('morning') });
+      if (k === 'evening') out.unshift({ id: 'brief-evening-' + t, icon: 'moon', tone: 'lime', t: 'Evening wrap-up', s: '18:00 IST · completed, pending and tomorrow', go: () => openBriefing('evening') });
+      if (can('Admin') && AX.pending) out.unshift({ id: 'access-' + AX.pending + '-' + t, icon: 'user', tone: 'violet', t: AX.pending + (AX.pending === 1 ? ' access request' : ' access requests') + ' waiting', s: 'Approve or reject on the Access page', go: () => dash.setParams({ tab: 'access' }) });
+      NB.notes.forEach((n) => {
+        if (n.reminder && n.reminder <= nowLocal && n.reminder.slice(0, 10) >= CO.addDays(t, -2) && (n.createdBy === A.user.email || (n.actions || []).some((a) => !a.done && a.email === A.user.email))) out.unshift({ id: 'rem-' + n.id + '-' + n.reminder, icon: 'bell', tone: 'bad', t: 'Reminder: ' + n.title, s: CO.istDateTime(n.reminder + ':00+05:30') + (n.followUps ? ' · ' + n.followUps.slice(0, 60) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } });
+        (n.actions || []).forEach((a) => { if (!a.done && a.email === A.user.email && (!a.due || a.due <= CO.addDays(t, 1))) out.push({ id: 'act-' + n.id + '-' + a.id + '-' + (a.due || ''), icon: 'check', tone: a.due && a.due < t ? 'bad' : '', t: a.text, s: 'Action item · ' + n.title + (a.due ? ' · due ' + CO.fmtDate(a.due) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } }); });
+        if (n.createdBy !== A.user.email && (n.mentions || []).some((m) => m.email === A.user.email) && n.updatedAt && Date.now() - new Date(n.updatedAt) < 3 * 864e5) out.push({ id: 'men-' + n.id + '-' + n.updatedAt, icon: 'at', tone: 'violet', t: (n.createdByName || n.createdBy) + ' mentioned you', s: n.title, go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } });
+      });
+      return out;
+    };
+    const unread = () => items().filter((i) => !seen.includes(i.id)).length;
+    const markRead = (id) => { if (!seen.includes(id)) { seen.push(id); save(); syncControls(); dash.draw('np-list'); } };
+    dash.draw('np-list', (el) => {
+      el.replaceChildren(); const list = items();
+      if (!list.length) { const e = document.createElement('p'); e.className = 'np-empty'; e.textContent = 'You are all caught up.'; el.append(e); return; }
+      list.forEach((i) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'np-item' + (seen.includes(i.id) ? '' : ' unread');
+        const ic = document.createElement('span'); ic.className = 'np-ico ' + (i.tone || ''); ic.append(svgIcon(ICONS[i.icon]));
+        const tx = document.createElement('span'); const a = document.createElement('div'); a.className = 'np-t'; a.textContent = i.t; const z = document.createElement('div'); z.className = 'np-s'; z.textContent = i.s; tx.append(a, z);
+        b.append(ic, tx); b.addEventListener('click', () => { markRead(i.id); close(); i.go(); }); el.append(b);
+      });
+    });
+    const desk = document.getElementById('np-desktop'), mail = document.getElementById('np-email');
+    const close = () => { panel.hidden = true; document.getElementById('btn-bell').setAttribute('aria-expanded', 'false'); };
+    const toggle = () => {
+      if (!panel.hidden) return close();
+      panel.hidden = false; document.getElementById('btn-bell').setAttribute('aria-expanded', 'true');
+      desk.checked = LS.get('co.desktop', '') === '1' && 'Notification' in window && Notification.permission === 'granted';
+      desk.disabled = !('Notification' in window);
+      mail.checked = !A.user || A.user.reminders !== false;
+      dash.draw('np-list');
+    };
+    document.addEventListener('click', (e) => { if (!panel.hidden && !panel.contains(e.target) && !e.target.closest('#btn-bell')) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) close(); });
+    document.getElementById('np-read').addEventListener('click', () => { items().forEach((i) => { if (!seen.includes(i.id)) seen.push(i.id); }); save(); dash.draw('np-list'); syncControls(); });
+    desk.addEventListener('change', async () => {
+      if (!desk.checked) { LS.set('co.desktop', null); return; }
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') { LS.set('co.desktop', '1'); toast('Desktop alerts on: 10:00 and 18:00 IST, and note reminders, while the dashboard is open in a tab.'); }
+      else { desk.checked = false; toast('Your browser blocked notifications for this site. Allow them in the site settings to turn this on.', true); }
+    });
+    mail.addEventListener('change', async () => {
+      try { const r = await post({ action: 'prefs', reminders: mail.checked }); A.user.reminders = r.reminders; toast(mail.checked ? 'You will get the 10:00 and 18:00 IST briefings by email.' : 'Daily briefing emails turned off.'); }
+      catch (err) { mail.checked = !mail.checked; toast('Not saved: ' + err.message + '. The web app may need the latest Code.gs.', true); }
+    });
+    /* Every 30 s: at 10:00 and 18:00 IST show the briefing (and a desktop alert); note reminders when due. */
+    const alerted = new Set((LS.get('co.alerted', '') || '').split('|').filter(Boolean));
+    const alertOnce = (id, title, body, onClick) => {
+      if (alerted.has(id)) return false; alerted.add(id); LS.set('co.alerted', [...alerted].slice(-200).join('|'));
+      if (LS.get('co.desktop', '') === '1' && 'Notification' in window && Notification.permission === 'granted') {
+        try { const n = new Notification(title, { body, icon: 'assets/logo.svg', tag: id }); n.onclick = () => { window.focus(); onClick(); n.close(); }; } catch (e) { /* some browsers only allow this from a service worker */ }
+      }
+      return true;
+    };
+    const tick = () => {
+      if (A.mode !== 'auth' || !A.user || CO.status() !== 'ok') return;
+      const k = briefKind(), key = k && 'brief-' + k + '-' + CO.today();
+      if (k && CO.istHour() < REMIND_AT[k] + 3 && alertOnce(key, k === 'morning' ? 'Morning briefing' : 'Evening wrap-up', k === 'morning' ? 'Review today\'s tasks, assignments and priorities.' : 'Review completed work, pending tasks and tomorrow\'s priorities.', () => openBriefing(k))) {
+        toast(k === 'morning' ? 'Good morning. Your 10:00 briefing is ready.' : 'Your 18:00 wrap-up is ready.');
+        if (document.visibilityState === 'visible') openBriefing(k);
+      }
+      items().filter((i) => /^rem-/.test(i.id)).forEach((i) => { if (alertOnce(i.id, i.t, i.s, i.go)) toast(i.t); });
+      syncControls(); dash.draw('brief-card');
+    };
+    setInterval(tick, 30 * 1000);
+    return { unread, markRead, toggle, close, tick };
+  })();
+  function istNowKey() { const o = CO.istParts(); return o.year + '-' + o.month + '-' + o.day + 'T' + o.hour + ':' + o.minute; }
+
+  /* ================= Notes: a shared notebook ================= */
+  const NB = (() => {
+    const $n = (id) => document.getElementById(id);
+    const form = $n('nb-form'), empty = $n('nb-empty'), wrap = document.querySelector('.nb'), paper = $n('nb-paper');
+    const st = { notes: [], people: [], loaded: false, loading: false, cur: null, dirty: false, q: '', chip: 'all', brand: '', cat: '' };
+    const me = () => (A.user ? A.user.email : '');
+    const nameOf2 = (email) => { const p = st.people.find((x) => x.email === email); return p && p.name ? p.name : (A.user && email === A.user.email ? A.user.name || email : email); };
+    /* People you can mention or assign: everyone with access, plus the team list (designers without an account). */
+    const norm = (x) => String(x || '').toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const people = () => {
+      // One entry per person: a team-list name joined to the dashboard account it belongs to (same name,
+      // email like firstname.lastname@, or the only account with that first name).
+      const users = st.people.map((p) => ({ name: p.name || '', email: p.email, local: norm(p.email.split('@')[0]) }));
+      const used = new Set(), out = [];
+      (S.team || []).filter((m) => m.status !== 'Inactive').forEach((m) => {
+        const n = norm(m.name), f = n.split(' ')[0];
+        const firsts = users.filter((u) => norm(u.name || u.local).split(' ')[0] === f);
+        const u = users.find((x) => norm(x.name) === n || x.local === n) || (firsts.length === 1 ? firsts[0] : null);
+        if (u && !used.has(u.email)) { used.add(u.email); out.push({ name: m.name, email: u.email }); } else out.push({ name: m.name, email: '' });
+      });
+      users.forEach((u) => { if (!used.has(u.email)) out.push({ name: u.name || u.email, email: u.email }); });
+      return out.sort((a, b) => a.name.localeCompare(b.name));
+    };
+    async function load(force) {
+      if (A.mode !== 'auth' || !A.user || st.loading || (st.loaded && !force)) return;
+      st.loading = true;
+      try {
+        const [n, d] = await Promise.all([callApi({ action: 'notes' }), st.people.length && !force ? Promise.resolve({ ok: true, people: st.people }) : callApi({ action: 'directory' })]);
+        if (n.ok) { st.notes = n.notes; st.loaded = true; }
+        if (d.ok) st.people = d.people;
+      } catch (e) { if (!(e instanceof AuthLost)) toast('Notes could not load: ' + e.message + '. The web app may need the latest Code.gs.', true); }
+      st.loading = false;
+      fillFilters(); dash.draw('nb-list'); dash.draw('nb-chips'); syncControls(); dash.draw('np-list');
+    }
+    const open = () => { if (!st.loaded) load(); };
+    setInterval(() => { if (A.mode === 'auth' && A.user && !st.dirty) load(true); }, 2 * 60 * 1000);
+
+    /* ---- list ---- */
+    const CHIPS = [['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me'], ['Meeting', 'Meetings'], ['Personal', 'Personal'], ['actions', 'Open actions']];
+    dash.draw('nb-chips', (el) => {
+      el.replaceChildren(...CHIPS.map(([k, l]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = l; b.setAttribute('aria-pressed', String(st.chip === k)); b.addEventListener('click', () => { st.chip = k; dash.draw('nb-chips'); dash.draw('nb-list'); }); return b; }));
+    });
+    const filtered = () => st.notes.filter((n) => {
+      if (st.chip === 'mine' && n.createdBy !== me()) return false;
+      if (st.chip === 'shared' && n.createdBy === me()) return false;
+      if ((st.chip === 'Meeting' || st.chip === 'Personal') && (st.chip === 'Meeting' ? n.type === 'Personal' : n.type !== 'Personal')) return false;
+      if (st.chip === 'actions' && !(n.actions || []).some((a) => !a.done)) return false;
+      if (st.brand && n.brand !== st.brand) return false;
+      if (st.cat && n.category !== st.cat) return false;
+      if (st.q) { const hay = [n.title, n.body, n.brand, n.category, n.followUps, n.createdByName, (n.mentions || []).map((m) => m.name).join(' '), (n.actions || []).map((a) => a.text + ' ' + a.assignee).join(' ')].join(' ').toLowerCase(); if (!st.q.split(/\s+/).every((w) => hay.includes(w))) return false; }
+      return true;
+    });
+    const groupOf = (n) => {
+      const t = CO.today(), d = n.date || (n.createdAt || '').slice(0, 10);
+      if (n.pinned) return 'Pinned';
+      if (d === t) return 'Today'; if (d === CO.addDays(t, -1)) return 'Yesterday';
+      if (d > CO.addDays(t, -7)) return 'This week';
+      return CO.fmtMonth(d.slice(0, 7), true);
+    };
+    dash.draw('nb-list', (el) => {
+      el.replaceChildren();
+      if (!st.loaded) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = st.loading ? 'Loading notes…' : ''; el.append(p); return; }
+      const list = filtered().sort((a, b) => (b.pinned - a.pinned) || String(b.date).localeCompare(String(a.date)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
+      if (!list.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = st.notes.length ? 'No notes match.' : 'No notes yet. Start one above.'; el.append(p); return; }
+      let last = '';
+      list.forEach((n) => {
+        const g = groupOf(n); if (g !== last) { const h = document.createElement('div'); h.className = 'nb-group'; h.textContent = g; el.append(h); last = g; }
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'nb-item'; b.dataset.id = n.id; b.setAttribute('aria-current', String(!!st.cur && st.cur.id === n.id));
+        const t = document.createElement('div'); t.className = 't'; if (n.pinned) { const pin = document.createElement('span'); pin.className = 'pin'; pin.textContent = '●'; t.append(pin); } const tt = document.createElement('span'); tt.textContent = n.title; t.append(tt);
+        const s2 = document.createElement('div'); s2.className = 's'; s2.textContent = CO.fmtDate(n.date) + ' · ' + (n.body || n.followUps || 'No text yet').replace(/\s+/g, ' ').slice(0, 90);
+        const m = document.createElement('div'); m.className = 'm';
+        const tag = (txt, cls) => { const x = document.createElement('span'); x.className = 'nb-tag ' + (cls || ''); x.textContent = txt; m.append(x); };
+        tag(n.type, n.type === 'Meeting' ? 'meet' : ''); if (n.brand) tag(n.brand); if (n.category) tag(n.category);
+        const openA = (n.actions || []).filter((a) => !a.done).length; if (openA) tag(openA + ' open', 'act');
+        if (n.visibility === 'private') tag('Only me', 'lock');
+        const av = CO.av(n.createdByName || n.createdBy); av.title = 'By ' + (n.createdByName || n.createdBy); m.append(av);
+        b.append(t, s2, m); b.addEventListener('click', () => select(n.id)); el.append(b);
+      });
+    });
+    function fillFilters() {
+      const fill = (sel, label, vals) => { const cur = sel.value; sel.replaceChildren(new Option(label, ''), ...vals.map((v) => new Option(v, v))); sel.value = vals.includes(cur) ? cur : ''; };
+      fill($n('nb-f-brand'), 'All brands', [...new Set(st.notes.map((n) => n.brand).filter(Boolean))].sort());
+      fill($n('nb-f-cat'), 'All categories', [...new Set(st.notes.map((n) => n.category).filter(Boolean))].sort());
+      const brands = new Set((S.tasks || []).map((t) => t.brand).filter(Boolean)); st.notes.forEach((n) => { if (n.brand) brands.add(n.brand); });
+      $n('nb-brands').replaceChildren(...[...brands].sort().map((b) => new Option(b)));
+    }
+    let qt = 0;
+    $n('nb-q').addEventListener('input', (e) => { clearTimeout(qt); qt = setTimeout(() => { st.q = e.target.value.trim().toLowerCase(); dash.draw('nb-list'); }, 150); });
+    $n('nb-f-brand').addEventListener('change', (e) => { st.brand = e.target.value; dash.draw('nb-list'); });
+    $n('nb-f-cat').addEventListener('change', (e) => { st.cat = e.target.value; dash.draw('nb-list'); });
+
+    /* ---- editor ---- */
+    const confirmDiscard = () => !st.dirty || confirm('Discard your unsaved changes to this note?');
+    function select(id) {
+      if (st.cur && st.cur.id === id) { wrap.classList.add('editing'); return; }
+      if (!st.loaded) { load().then(() => select(id)); return; }
+      const n = st.notes.find((x) => x.id === id); if (!n || !confirmDiscard()) return;
+      st.cur = JSON.parse(JSON.stringify(n)); st.dirty = false; show();
+      const draft = LS.get('co.nbdraft.' + id, ''); if (draft && st.cur.canEdit) { try { const d = JSON.parse(draft); if (d.updatedAt === n.updatedAt && confirm('You have unsaved changes to this note from earlier. Restore them?')) { Object.assign(st.cur, d.note); st.dirty = true; show(); } else LS.set('co.nbdraft.' + id, null); } catch (e) { LS.set('co.nbdraft.' + id, null); } }
+    }
+    function startNew(tpl) {
+      if (!confirmDiscard()) return;
+      if (dash.params().tab !== 'notes') dash.setParams({ tab: 'notes' });
+      const t = CO.today(), n = { id: null, title: '', date: t, type: 'Meeting', brand: '', category: '', visibility: 'people', sharedWith: [], mentions: [], body: '', actions: [], reminder: '', followUps: '', pinned: false, canEdit: true, createdBy: me() };
+      if (tpl === 'standup') {
+        Object.assign(n, { title: 'Daily stand-up · ' + CO.fmtDate(t, true), category: 'Stand-up', visibility: 'team' });
+        const all = CO.rows(true) || [];
+        const late = all.filter((r) => r.due === 'overdue').sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 6);
+        const un = all.filter((r) => r.open && !r.list.length).length;
+        n.body = 'Attendees: \n\nUpdates\n• \n\nBlockers\n• \n\nDecisions\n• \n' + (late.length ? '\nOverdue right now (' + all.filter((r) => r.due === 'overdue').length + ')\n' + late.map((r) => '• ' + r.brand + ' · ' + CO.topicText(r) + ' (' + (r.list.join(', ') || 'unassigned') + ', ' + CO.diffDays(r.eta, t) + 'd late)').join('\n') + '\n' : '') + (un ? '\nUnassigned: ' + un + ' open tasks\n' : '');
+      } else if (tpl === 'personal') Object.assign(n, { type: 'Personal', visibility: 'private', title: '' });
+      st.cur = n; st.dirty = false; show(); $n('nb-title').focus();
+      const d = LS.get('co.nbdraft.new', ''); if (d && tpl === 'blank') { try { const x = JSON.parse(d); if (x.note && (x.note.title || x.note.body) && confirm('Restore the new note you were writing earlier?')) { Object.assign(st.cur, x.note); st.dirty = true; show(); } else LS.set('co.nbdraft.new', null); } catch (e) { LS.set('co.nbdraft.new', null); } }
+    }
+    function show() {
+      const n = st.cur;
+      empty.hidden = !!n; form.hidden = !n; wrap.classList.toggle('editing', !!n);
+      if (!n) return;
+      const ro = !n.canEdit; paper.classList.toggle('readonly', ro);
+      $n('nb-title').value = n.title; $n('nb-date').value = n.date || ''; $n('nb-type').value = n.type; $n('nb-brand').value = n.brand || ''; $n('nb-cat').value = n.category || ''; $n('nb-vis').value = n.visibility;
+      $n('nb-body').value = n.body || ''; $n('nb-follow').value = n.followUps || ''; $n('nb-remind').value = n.reminder || '';
+      ['nb-title', 'nb-date', 'nb-type', 'nb-brand', 'nb-cat', 'nb-vis', 'nb-body', 'nb-follow', 'nb-remind', 'nb-share-add'].forEach((id) => { $n(id).disabled = ro; });
+      $n('nb-save').hidden = ro; $n('nb-delete').hidden = ro || !n.id; $n('nb-add-action').hidden = ro; $n('nb-pin').disabled = ro;
+      $n('nb-pin').setAttribute('aria-pressed', String(!!n.pinned));
+      renderShare(); renderMentions(); renderActions(); renderFoot(); status();
+      dash.draw('nb-list');
+    }
+    const status = (text) => { const s = $n('nb-status'); s.classList.toggle('dirty', st.dirty); s.textContent = text || (!st.cur ? '' : !st.cur.canEdit ? 'View only · by ' + (st.cur.createdByName || st.cur.createdBy) : st.dirty ? 'Unsaved changes' : st.cur.id ? 'Saved' : 'New note'); };
+    function renderFoot() {
+      const n = st.cur, f = $n('nb-foot'); f.replaceChildren();
+      const add = (lab, who, at) => { const s = document.createElement('span'); s.append(lab + ' '); const b = document.createElement('b'); b.textContent = who; s.append(b, at ? ' · ' + CO.istDateTime(at, true) : ''); f.append(s); };
+      if (!n.id) { f.append('Saved to ' + (A.user ? A.user.email : 'your account') + ' when you press Save (Ctrl+S).'); return; }
+      add('Written by', n.createdByName || n.createdBy, n.createdAt);
+      if (n.updatedAt && n.updatedAt !== n.createdAt) add('Last edited by', n.updatedByName || n.updatedBy, n.updatedAt);
+      const v = document.createElement('span'); v.textContent = n.visibility === 'private' ? 'Only the author and admins can see this' : n.visibility === 'team' ? 'Everyone with dashboard access can see this' : 'Visible to the author, people mentioned, added or assigned, and admins'; f.append(v);
+    }
+    function renderShare() {
+      const n = st.cur, row = $n('nb-share'); row.hidden = n.visibility !== 'people';
+      const chips = $n('nb-share-chips'); chips.replaceChildren();
+      (n.sharedWith || []).forEach((e) => { const c = document.createElement('span'); c.className = 'chip-x'; c.append(nameOf2(e)); if (n.canEdit) { const x = document.createElement('button'); x.type = 'button'; x.setAttribute('aria-label', 'Remove ' + nameOf2(e)); x.textContent = '×'; x.addEventListener('click', () => { n.sharedWith = n.sharedWith.filter((y) => y !== e); touch(); renderShare(); }); c.append(x); } chips.append(c); });
+      const sel = $n('nb-share-add'); sel.replaceChildren(new Option('+ Add person', ''), ...st.people.filter((p) => p.email !== n.createdBy && !(n.sharedWith || []).includes(p.email)).map((p) => new Option(p.name || p.email, p.email)));
+    }
+    $n('nb-share-add').addEventListener('change', (e) => { if (!e.target.value) return; st.cur.sharedWith = (st.cur.sharedWith || []).concat(e.target.value); touch(); renderShare(); });
+    function syncMentions() { const body = st.cur.body || ''; st.cur.mentions = people().filter((p) => body.includes('@' + p.name)).map((p) => ({ name: p.name, email: p.email })); renderMentions(); }
+    function renderMentions() { const el = $n('nb-mentions'); el.replaceChildren(...(st.cur.mentions || []).map((m) => { const c = document.createElement('span'); c.className = 'mention'; c.append(CO.av(m.name), '@' + m.name); c.title = m.email ? m.email + (st.cur.visibility === 'people' ? ' · can see this note' : '') : 'On the team list (no dashboard account)'; return c; })); }
+    function renderActions() {
+      const n = st.cur, box = $n('nb-actions'); box.replaceChildren();
+      const ppl = people();
+      (n.actions || []).forEach((a) => {
+        const row = document.createElement('div'); row.className = 'ai' + (a.done ? ' done' : '');
+        const chk = document.createElement('button'); chk.type = 'button'; chk.className = 'ai-check'; chk.setAttribute('aria-label', a.done ? 'Mark not done' : 'Mark done'); chk.append(svgIcon(ICONS.check));
+        const mine = a.email && a.email === me();
+        chk.disabled = !(n.canEdit || mine);
+        chk.addEventListener('click', async () => {
+          if (n.canEdit && (!n.id || st.dirty)) { a.done = !a.done; a.doneBy = a.done ? me() : ''; touch(); renderActions(); return; }
+          try { const r = await post({ action: 'noteAction', id: n.id, actionId: a.id, done: !a.done }); n.actions = r.actions; const saved = st.notes.find((x) => x.id === n.id); if (saved) saved.actions = r.actions; renderActions(); dash.draw('nb-list'); syncControls(); toast(a.done ? 'Reopened' : 'Done ✓'); }
+          catch (err) { toast('Not saved: ' + err.message, true); }
+        });
+        const txt = document.createElement('input'); txt.className = 'ai-text'; txt.value = a.text; txt.placeholder = 'What needs doing'; txt.maxLength = 300; txt.disabled = !n.canEdit;
+        txt.addEventListener('input', () => { a.text = txt.value; touch(); });
+        const who = document.createElement('select'); who.className = 'co-select'; who.disabled = !n.canEdit; who.setAttribute('aria-label', 'Assigned to');
+        who.append(new Option('Unassigned', ''), ...ppl.map((p) => new Option(p.name, p.name)));
+        if (a.assignee && !ppl.some((p) => p.name === a.assignee)) who.append(new Option(a.assignee, a.assignee));
+        who.value = a.assignee || '';
+        who.addEventListener('change', () => { a.assignee = who.value; const p = ppl.find((x) => x.name === who.value); a.email = p ? p.email : ''; touch(); });
+        const due = document.createElement('input'); due.type = 'date'; due.className = 'co-input'; due.value = a.due || ''; due.disabled = !n.canEdit; due.setAttribute('aria-label', 'Due');
+        due.addEventListener('change', () => { a.due = due.value; touch(); });
+        const del = document.createElement('button'); del.type = 'button'; del.className = 'ai-del'; del.textContent = '×'; del.setAttribute('aria-label', 'Remove action item'); del.hidden = !n.canEdit;
+        del.addEventListener('click', () => { n.actions = n.actions.filter((x) => x !== a); touch(); renderActions(); });
+        row.append(chk, txt, who, due, del); box.append(row);
+      });
+      if (!(n.actions || []).length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = n.canEdit ? 'Nothing yet. Add who does what, by when.' : 'No action items.'; box.append(p); }
+    }
+    $n('nb-add-action').addEventListener('click', () => { st.cur.actions = (st.cur.actions || []).concat({ id: Math.random().toString(36).slice(2, 10), text: '', assignee: '', email: '', due: '', done: false }); touch(); renderActions(); const ins = $n('nb-actions').querySelectorAll('.ai-text'); if (ins.length) ins[ins.length - 1].focus(); });
+    let dt = 0;
+    function touch() {
+      if (!st.cur || !st.cur.canEdit) return;
+      st.dirty = true; status();
+      clearTimeout(dt); dt = setTimeout(() => { if (st.cur && st.dirty) LS.set('co.nbdraft.' + (st.cur.id || 'new'), JSON.stringify({ updatedAt: st.cur.updatedAt || '', note: st.cur })); }, 400);
+    }
+    const bind = (id, key, ev) => $n(id).addEventListener(ev || 'input', (e) => { if (!st.cur) return; st.cur[key] = e.target.value; touch(); if (key === 'visibility') { renderShare(); renderFoot(); } });
+    bind('nb-title', 'title'); bind('nb-date', 'date', 'change'); bind('nb-type', 'type', 'change'); bind('nb-brand', 'brand'); bind('nb-cat', 'category'); bind('nb-vis', 'visibility', 'change'); bind('nb-follow', 'followUps'); bind('nb-remind', 'reminder', 'change');
+    $n('nb-pin').addEventListener('click', () => { if (!st.cur || !st.cur.canEdit) return; st.cur.pinned = !st.cur.pinned; $n('nb-pin').setAttribute('aria-pressed', String(st.cur.pinned)); touch(); });
+
+    /* ---- @mentions ---- */
+    const body = $n('nb-body'), pop = $n('nb-pop');
+    let mq = null, msel = 0, mlist = [];
+    const caretXY = () => {
+      const m = document.createElement('div'), cs = getComputedStyle(body);
+      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'padding', 'border', 'boxSizing', 'whiteSpace', 'wordWrap', 'width'].forEach((k) => { m.style[k] = cs[k]; });
+      m.style.position = 'absolute'; m.style.visibility = 'hidden'; m.style.whiteSpace = 'pre-wrap'; m.style.wordWrap = 'break-word'; m.style.width = body.clientWidth + 'px';
+      m.textContent = body.value.slice(0, body.selectionStart); const sp = document.createElement('span'); sp.textContent = '​'; m.append(sp);
+      body.parentElement.append(m); const x = sp.offsetLeft, y = sp.offsetTop - body.scrollTop + parseFloat(cs.lineHeight); m.remove(); return { x, y };
+    };
+    const closePop = () => { pop.hidden = true; mq = null; };
+    function onBody() {
+      st.cur.body = body.value; touch(); syncMentions();
+      const before = body.value.slice(0, body.selectionStart), m = before.match(/(^|[\s(])@([^\s@]{0,24}(?: [^\s@]{0,24})?)$/);
+      if (!m) return closePop();
+      const q = m[2].toLowerCase(); mq = { start: body.selectionStart - m[2].length - 1 };
+      mlist = people().filter((p) => p.name.toLowerCase().includes(q) || (p.email || '').startsWith(q)).slice(0, 7);
+      if (!mlist.length) return closePop();
+      msel = 0; drawPop(); const xy = caretXY(); pop.style.left = Math.min(xy.x, body.clientWidth - 240) + 'px'; pop.style.top = xy.y + 6 + 'px'; pop.hidden = false;
+    }
+    function drawPop() { pop.replaceChildren(...mlist.map((p, i) => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', String(i === msel)); b.append(CO.av(p.name), p.name); const sm = document.createElement('small'); sm.textContent = p.email ? 'has access' : 'team list'; b.append(sm); b.addEventListener('mousedown', (e) => { e.preventDefault(); pick(i); }); return b; })); }
+    function pick(i) {
+      const p = mlist[i]; if (!p || !mq) return;
+      const v = body.value, end = body.selectionStart, ins = '@' + p.name + ' ';
+      body.value = v.slice(0, mq.start) + ins + v.slice(end); const c = mq.start + ins.length; body.setSelectionRange(c, c); closePop();
+      st.cur.body = body.value; touch(); syncMentions();
+      if (st.cur.visibility === 'private' && p.email) toast('Mentioned ' + p.name + '. Set "Who can see it" to share the note with them.');
+    }
+    body.addEventListener('input', onBody);
+    body.addEventListener('keydown', (e) => {
+      if (pop.hidden) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); msel = (msel + (e.key === 'ArrowDown' ? 1 : -1) + mlist.length) % mlist.length; drawPop(); }
+      else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(msel); }
+      else if (e.key === 'Escape') { e.preventDefault(); closePop(); }
+    });
+    body.addEventListener('blur', () => setTimeout(closePop, 150));
+
+    /* ---- save / delete ---- */
+    async function save() {
+      const n = st.cur; if (!n || !n.canEdit) return;
+      if (!(n.title || '').trim() && !(n.body || '').trim()) { toast('Give the note a title or some text first.', true); return; }
+      (n.actions || []).forEach((a) => { if (!a.text.trim()) a.text = ''; });
+      $n('nb-save').disabled = true; status('Saving…');
+      try {
+        const res = await post({ action: 'noteSave', id: n.id || undefined, updatedAt: n.updatedAt || undefined, note: { title: n.title, date: n.date, type: n.type, brand: n.brand, category: n.category, visibility: n.visibility, sharedWith: n.sharedWith, mentions: n.mentions, body: n.body, actions: (n.actions || []).filter((a) => a.text.trim()), reminder: n.reminder, followUps: n.followUps, pinned: n.pinned } });
+        LS.set('co.nbdraft.' + (n.id || 'new'), null);
+        st.dirty = false; await load(true);
+        const fresh = st.notes.find((x) => x.id === res.id); st.cur = fresh ? JSON.parse(JSON.stringify(fresh)) : st.cur; show();
+        toast(n.id ? 'Note saved' : 'Note created and saved to ' + me());
+      } catch (err) {
+        if (/stale/.test(err.message)) { toast('Someone else changed this note while you were editing. Your text is kept as a draft; reopen the note to see their version.', true); status('Not saved: changed by someone else'); }
+        else { toast('Not saved: ' + err.message, true); status('Not saved'); }
+      }
+      $n('nb-save').disabled = false;
+    }
+    form.addEventListener('submit', (e) => { e.preventDefault(); save(); });
+    document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && dash.params().tab === 'notes' && st.cur) { e.preventDefault(); save(); } });
+    $n('nb-delete').addEventListener('click', async () => {
+      const n = st.cur; if (!n || !n.id || !confirm('Delete "' + n.title + '"? It disappears for everyone. (It stays in the activity log.)')) return;
+      try { await post({ action: 'noteDelete', id: n.id }); st.cur = null; st.dirty = false; LS.set('co.nbdraft.' + n.id, null); await load(true); show(); toast('Note deleted'); }
+      catch (err) { toast('Not deleted: ' + err.message, true); }
+    });
+    $n('nb-back').addEventListener('click', () => { if (!confirmDiscard()) return; st.cur = null; st.dirty = false; show(); });
+    document.querySelectorAll('[data-new-note]').forEach((b) => b.addEventListener('click', () => startNew(b.dataset.newNote)));
+    window.addEventListener('beforeunload', (e) => { if (st.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+    const myActions = () => {
+      const out = []; if (!A.user) return out;
+      st.notes.forEach((n) => (n.actions || []).forEach((a) => { if (a.email === A.user.email) out.push(Object.assign({ note: n.title, noteId: n.id }, a)); }));
+      return out;
+    };
+    return { open, load, select, startNew, myActions, get notes() { return st.notes; } };
+  })();
+  document.addEventListener('co-open-task', (e) => { const el = document.querySelector('[data-uid="' + CSS.escape(e.detail) + '"]'); if (el) el.click(); else { dash.setParams({ tab: 'tasks', stage: 'all' }); setTimeout(() => { const x = document.querySelector('[data-uid="' + CSS.escape(e.detail) + '"]'); if (x) x.click(); }, 300); } });
+
   /* ================= Sign-in ================= */
   const gate = document.getElementById('gate');
   const $g = (id) => document.getElementById(id);
@@ -1463,7 +2023,7 @@
     gateMsg('');
   }
   async function showGate(msg) {
-    document.body.dataset.gate = '1'; gate.hidden = false;
+    document.body.dataset.gate = '1'; gate.hidden = false; hideBoot();
     let m = msg; try { m = m || sessionStorage.getItem('co.gatemsg') || ''; sessionStorage.removeItem('co.gatemsg'); } catch (e) { /* ignore */ }
     gateTab(G.tab); gateMsg(m);
     $g('gate-domains').textContent = A.domains.map((d) => '@' + d).join(' or ');
@@ -1508,7 +2068,7 @@
 
   function signedIn(user) {
     A.user = user; gate.hidden = true; delete document.body.dataset.gate;
-    renderAll(); load(false);
+    renderAll(); load(false); NB.load();
     // Admins see how many access requests are waiting as soon as they open the dashboard.
     if (can('Admin')) callApi({ action: 'ver' }).then((b) => { if (b.ok && typeof b.pending === 'number') { AX.pending = b.pending; syncControls(); } }).catch(() => {});
   }

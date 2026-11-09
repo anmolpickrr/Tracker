@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-IN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -7,17 +7,20 @@
 <meta name="description" content="Fastrr Creative Studio: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
 <meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; form-action 'none'; base-uri 'none'; object-src 'none'">
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0f0f0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
 <link rel="stylesheet" href="assets/style.css">
 <script src="assets/theme.js"></script>
 </head>
 <body>
+<div class="boot" id="boot" aria-hidden="true"><span class="boot-logo"><svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></svg></span></div>
 <div class="app">
   <aside class="side" id="side" aria-label="Main navigation">
     <div class="side-brand">
-      <span class="side-logo" aria-hidden="true">F</span>
+      <span class="side-logo"><svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></svg></span>
       <span><b>Creative Ops</b><small>Fastrr Creative Studio</small></span>
     </div>
     <nav class="side-nav co-tabs" role="tablist" aria-label="Views">
@@ -25,6 +28,7 @@
       <button class="co-tab" role="tab" data-tab="today" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/></svg><span class="nav-l">Overview</span><span class="nav-badge" hidden></span></button>
       <button class="co-tab" role="tab" data-tab="standup" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 13c-2.7 0-8 1.3-8 4v3h16v-3c0-2.7-5.3-4-8-4zM16 13c-.3 0-.7 0-1.1.1A4.2 4.2 0 0 1 17 17v3h7v-3c0-2.7-5.3-4-8-4z"/></svg><span class="nav-l">Stand-up</span><span class="nav-badge" hidden></span></button>
       <button class="co-tab" role="tab" data-tab="tasks" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span class="nav-l">Tasks</span><span class="nav-badge" hidden></span></button>
+      <button class="co-tab" role="tab" data-tab="notes" aria-selected="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h11a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6zM6 3v18M10 8h5M10 12h5"/></svg><span class="nav-l">Notes</span><span class="nav-badge" hidden></span></button>
       <p class="nav-h">Insights</p>
       <button class="co-tab" role="tab" data-tab="team" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span class="nav-l">Team</span><span class="nav-badge" hidden></span></button>
       <button class="co-tab" role="tab" data-tab="reports" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="nav-l">Reports</span><span class="nav-badge" hidden></span></button>
@@ -56,7 +60,7 @@
         <span class="sync-pill"><span class="co-sync-dot" data-draw="sync-dot"></span><span data-draw="sync-text">Not connected</span></span>
         <button class="icon-btn" id="btn-refresh" type="button" aria-label="Refresh now" title="Refresh now"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"/></svg></button>
         <button class="icon-btn" id="btn-theme" type="button" aria-label="Switch theme" title="Switch theme"><svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg><svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
-        <button class="icon-btn bell" id="btn-bell" type="button" aria-label="Access requests" title="Access requests" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg><i class="bell-dot" hidden></i></button>
+        <button class="icon-btn bell" id="btn-bell" type="button" aria-label="Notifications" title="Notifications" aria-haspopup="dialog" aria-expanded="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg><i class="bell-dot" hidden></i></button>
         <span class="top-av" data-draw="top-av"></span>
       </div>
     </header>
@@ -87,6 +91,7 @@
 
   <!-- OVERVIEW -->
   <section class="co-panel" id="today" data-panel="today">
+    <div class="brief-card" data-draw="brief-card"></div>
     <div class="co-kpis">
       <button class="co-kpi" data-go="open" type="button"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v13H3zM8 7V4h8v3M3 12h18"/></svg></span><span class="co-kpi-label">Open with designers</span><span class="kpi-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></span></span><span class="co-kpi-val" data-draw="kpi" data-kpi="open">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="open">—</span></button>
       <button class="co-kpi is-bad" data-go="overdue" type="button"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5l3 2M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM4 4L2 6M20 4l2 2"/></svg></span><span class="co-kpi-label">Overdue</span><span class="kpi-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></span></span><span class="co-kpi-val" data-draw="kpi" data-kpi="overdue">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="overdue">—</span></button>
@@ -96,7 +101,7 @@
       <button class="co-kpi hero" data-go="delivered-month" type="button"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9M21 4L11 14l-3-3"/></svg></span><span class="co-kpi-label">Delivered this month</span><span class="kpi-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></span></span><span class="co-kpi-row"><span class="co-kpi-val" data-draw="kpi" data-kpi="delivered">—</span><span class="co-spark" data-draw="kpi-spark" aria-hidden="true"></span></span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="delivered">—</span></button>
     </div>
 
-    <div class="ov-grid">
+    <div class="ov-grid fill">
       <div class="co-card">
         <div class="co-card-head">
           <div><h2 class="co-h2">Needs attention</h2><p class="co-note">Overdue, due today or tomorrow, and changes requested. Oldest deadline first.</p></div>
@@ -115,6 +120,22 @@
           <div class="co-card-head"><div><h2 class="co-h2">Pipeline</h2><p class="co-note">Everything not delivered or dropped, by status.</p></div></div>
           <div data-draw="pipeline"></div>
         </div>
+      </div>
+    </div>
+
+    <div class="ov-grid">
+      <div class="co-card">
+        <div class="co-card-head">
+          <div><h2 class="co-h2">Delivery trend</h2><p class="co-note">Creatives delivered per week, last 12 weeks. Hover for each week.</p></div>
+          <span class="trend-stat" data-draw="trend-stat"></span>
+        </div>
+        <div class="co-chart trend" data-draw="trend"></div>
+      </div>
+      <div class="co-card">
+        <div class="co-card-head">
+          <div><h2 class="co-h2">Top brands this month</h2><p class="co-note">Creatives delivered. Click a brand to filter everything by it.</p></div>
+        </div>
+        <div data-draw="top-brands"></div>
       </div>
     </div>
 
@@ -339,6 +360,73 @@
     </details>
   </section>
 
+  <!-- NOTES -->
+  <section class="co-panel" id="notes" data-panel="notes" hidden>
+    <div class="nb">
+      <aside class="nb-index" aria-label="Notes">
+        <div class="nb-new">
+          <button class="co-btn primary" type="button" data-new-note="blank"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New note</button>
+          <button class="co-btn" type="button" data-new-note="standup">Stand-up</button>
+          <button class="co-btn" type="button" data-new-note="personal">Personal</button>
+        </div>
+        <input class="co-input co-search" id="nb-q" type="search" placeholder="Search notes, people, brands…" aria-label="Search notes">
+        <div class="seg chips" data-draw="nb-chips" role="group" aria-label="Show"></div>
+        <div class="nb-filters">
+          <select class="co-select" id="nb-f-brand" aria-label="Brand"><option value="">All brands</option></select>
+          <select class="co-select" id="nb-f-cat" aria-label="Category"><option value="">All categories</option></select>
+        </div>
+        <div class="nb-list" data-draw="nb-list"></div>
+      </aside>
+      <article class="paper" id="nb-paper">
+        <div class="paper-empty" id="nb-empty">
+          <span class="paper-empty-logo"><svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></svg></span>
+          <h2>Your team notebook</h2>
+          <p>Meeting minutes, discussions, action items and personal notes, saved to your work account. Pick a note on the left or start a new one.</p>
+          <div class="nb-new"><button class="co-btn primary" type="button" data-new-note="standup">Start today's stand-up notes</button><button class="co-btn" type="button" data-new-note="blank">Blank note</button></div>
+        </div>
+        <form class="paper-sheet" id="nb-form" autocomplete="off" hidden>
+          <div class="paper-top">
+            <button class="icon-btn nb-back" id="nb-back" type="button" aria-label="Back to notes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <span class="paper-status" id="nb-status" role="status"></span>
+            <div class="paper-actions">
+              <button class="icon-btn" id="nb-pin" type="button" aria-label="Pin note" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></svg></button>
+              <button class="icon-btn danger" id="nb-delete" type="button" aria-label="Delete note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+              <button class="co-btn primary" id="nb-save" type="submit">Save</button>
+            </div>
+          </div>
+          <input class="paper-title" id="nb-title" placeholder="Title, e.g. Daily stand-up" maxlength="160" aria-label="Title">
+          <div class="paper-meta">
+            <label class="pm"><span>Date</span><input class="co-input" id="nb-date" type="date"></label>
+            <label class="pm"><span>Type</span><select class="co-select" id="nb-type"><option>Meeting</option><option>Discussion</option><option>Personal</option></select></label>
+            <label class="pm"><span>Brand</span><input class="co-input" id="nb-brand" list="nb-brands" maxlength="80" placeholder="Any brand"></label>
+            <label class="pm"><span>Category</span><input class="co-input" id="nb-cat" list="nb-cats" maxlength="60" placeholder="Stand-up, Review…"></label>
+            <label class="pm"><span>Who can see it</span><select class="co-select" id="nb-vis"><option value="private">Only me</option><option value="people">People I mention or add</option><option value="team">Everyone with access</option></select></label>
+          </div>
+          <div class="paper-share" id="nb-share">
+            <span class="ps-l">Shared with</span><span class="ps-chips" id="nb-share-chips"></span>
+            <select class="co-select" id="nb-share-add" aria-label="Add a person"><option value="">+ Add person</option></select>
+          </div>
+          <div class="paper-lines">
+            <textarea class="paper-body" id="nb-body" placeholder="Start writing… type @ to mention someone" aria-label="Note"></textarea>
+            <div class="mention-pop" id="nb-pop" role="listbox" hidden></div>
+          </div>
+          <div class="paper-mentions" id="nb-mentions"></div>
+          <section class="paper-sec">
+            <h3>Action items</h3>
+            <div class="ai-list" id="nb-actions"></div>
+            <button class="co-link ai-add" id="nb-add-action" type="button">+ Add an action item</button>
+          </section>
+          <section class="paper-sec two">
+            <div><h3>Follow-ups</h3><textarea class="co-input paper-small" id="nb-follow" rows="3" maxlength="4000" placeholder="Points to check next time"></textarea></div>
+            <div><h3>Reminder</h3><input class="co-input" id="nb-remind" type="datetime-local"><p class="co-note">IST. Emailed to you (and anyone with an open action item) at this time.</p></div>
+          </section>
+          <footer class="paper-foot" id="nb-foot"></footer>
+        </form>
+        <datalist id="nb-brands"></datalist><datalist id="nb-cats"><option>Stand-up</option><option>Review</option><option>Planning</option><option>Client call</option><option>1:1</option><option>Brainstorm</option></datalist>
+      </article>
+    </div>
+  </section>
+
   <!-- ACCESS (admins only; the web app refuses these requests from anyone else) -->
   <section class="co-panel" id="access" data-panel="access" hidden>
     <div class="co-card">
@@ -376,6 +464,7 @@
           <option value="tasks">Task and sheet edits</option>
           <option value="team">Team list</option>
           <option value="access">Access changes</option>
+          <option value="notes">Notes</option>
           <option value="signins">Sign-ins</option>
         </select>
         <button class="co-btn" id="ax-csv" type="button">Download CSV</button>
@@ -397,14 +486,14 @@
     <button class="bt" type="button" data-tab="today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/></svg><span>Overview</span></button>
     <button class="bt" type="button" data-tab="standup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 13c-2.7 0-8 1.3-8 4v3h16v-3c0-2.7-5.3-4-8-4zM16 13c-.3 0-.7 0-1.1.1A4.2 4.2 0 0 1 17 17v3h7v-3c0-2.7-5.3-4-8-4z"/></svg><span>Stand-up</span></button>
     <button class="bt" type="button" data-tab="tasks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Tasks</span></button>
-    <button class="bt" type="button" data-tab="reports"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Reports</span></button>
+    <button class="bt" type="button" data-tab="notes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h11a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6zM6 3v18M10 8h5M10 12h5"/></svg><span>Notes</span></button>
     <button class="bt" type="button" id="bt-more" aria-controls="side"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg><span>More</span><i class="bt-dot" hidden></i></button>
   </nav>
 </div>
 
 <div class="gate" id="gate" hidden>
   <div class="gate-card">
-    <p class="co-eyebrow"><i></i>Fastrr Creative Studio</p>
+    <p class="co-eyebrow"><span class="gate-logo"><svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></svg></span>Fastrr Creative Studio</p>
     <h1 class="gate-title">Creative Ops Tracker</h1>
     <p class="co-note">For the creative team. Use your <b id="gate-domains">work</b> Google account.</p>
     <div class="gate-tabs" id="gate-tabs" role="tablist" aria-label="Log in or sign up">
@@ -445,6 +534,20 @@
       <button class="co-btn primary" id="set-save" type="submit">Save and load</button>
     </div>
   </form>
+</dialog>
+
+<div class="np" id="np" role="dialog" aria-label="Notifications" hidden>
+  <div class="np-head"><h2 class="co-h2">Notifications</h2><button class="co-link" type="button" id="np-read">Mark all read</button></div>
+  <div class="np-list" data-draw="np-list"></div>
+  <div class="np-foot">
+    <label class="sw"><input type="checkbox" id="np-desktop"><span class="sw-ui"></span><span>Desktop alerts at 10:00 and 18:00 IST</span></label>
+    <label class="sw"><input type="checkbox" id="np-email"><span class="sw-ui"></span><span>Email me the daily briefings</span></label>
+  </div>
+</div>
+
+<dialog id="brief" class="co-dialog brief-dialog" aria-labelledby="brief-title">
+  <div class="brief-body" data-draw="brief-body"></div>
+  <div class="co-dialog-actions"><button class="co-btn" type="button" id="brief-close">Close</button><button class="co-btn primary" type="button" id="brief-go">Open tasks</button></div>
 </dialog>
 
 <dialog id="person" class="co-dialog pr-dialog" aria-labelledby="pr-head">

@@ -22,7 +22,10 @@
 
 /* Roles, lowest first. Viewer: sees everything. Editor: also edits tasks. Admin: also team list, access and the audit log. */
 const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', updateTask: 'Editor', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', updateTask: 'Editor', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+/* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
+const REMIND = Object.assign({ morning: 10, evening: 18, email: true }, (typeof CONFIG !== 'undefined' && CONFIG.reminders) || {});
+const IST = 'Asia/Kolkata';
 
 /* The source's layout: its `kind`, else guessed from its name. */
 function kindOf_(name) {
@@ -67,7 +70,12 @@ function setup() {
   Logger.log('Edits by other scripts and integrations: ' + (driveCheckWorks_() ? 'detected too (Drive check works)' : 'NOT detected: add the Drive scope in appsscript.json (see README)'));
   if (viewOnly.length) Logger.log('NEEDS EDIT ACCESS: ' + viewOnly.join(', ') + '. This account can only view those sheets, so the dashboard can read them but cannot detect edits instantly or save changes to them. Ask the owner to make ' + Session.getEffectiveUser().getEmail() + ' an Editor, then run setup() again.');
   const book = ensureAccessBook_();
-  Logger.log('Access list and audit log: ' + book.getUrl());
+  Logger.log('Access list, notes and audit log: ' + book.getUrl());
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'remindersTick') ScriptApp.deleteTrigger(t); });
+  if (authOn_()) {
+    ScriptApp.newTrigger('remindersTick').timeBased().everyMinutes(10).create();
+    Logger.log('Daily reminders: ' + REMIND.morning + ':00 and ' + REMIND.evening + ':00 IST' + (REMIND.email ? ', by email and on the dashboard' : ', on the dashboard only') + '. Note reminders are emailed within 10 minutes of their time.');
+  }
   if (authOn_()) {
     Logger.log('Sign-in is ON. Only approved ' + CONFIG.access.domains.map(function (d) { return '@' + d; }).join(' / ') + ' accounts can use the dashboard. Owner (always Admin): ' + owners_().join(', '));
     if (!owners_().length) Logger.log('ADD YOUR EMAIL to CONFIG.access.owners, or nobody can approve access.');
@@ -220,6 +228,8 @@ function doPost(e) {
     if (body.action === 'health') return json_(health_());
     if (body.action === 'users') return json_({ ok: true, users: users_().list.map(publicUser_), you: user.email, owners: owners_() });
     if (body.action === 'audit') return json_(auditRead_(body));
+    if (body.action === 'directory') return json_({ ok: true, people: users_().list.filter(function (u) { return u.status === 'Approved'; }).map(function (u) { return { email: u.email, name: u.name || '', photo: photo_(u.photo) }; }) });
+    if (body.action === 'notes') return json_(notesList_(user));
     if (body.action === 'signout') { audit_([{ who: user.email, role: user.role, action: 'Signed out' }]); return json_({ ok: true }); }
     // Writes: one at a time, each recorded in the audit log with before and after values.
     return json_(write_(body, user));
@@ -242,8 +252,13 @@ function write_(body, user) {
     if (body.action === 'setMember') out = setMember_(body);
     else if (body.action === 'updateTask') out = updateTask_(body);
     else if (body.action === 'setAccess') out = setAccess_(body, user);
+    else if (body.action === 'noteSave') out = noteSave_(body, user);
+    else if (body.action === 'noteDelete') out = noteDelete_(body, user);
+    else if (body.action === 'noteAction') out = noteAction_(body, user);
+    else if (body.action === 'prefs') out = prefs_(body, user);
     else out = { ok: false, error: 'unknown_action' };
-    if (out.ok && body.action !== 'setAccess') { SpreadsheetApp.flush(); bumpVersion_(); clearCache_(); }
+    // Only edits to the task sheets change the dashboard's data version.
+    if (out.ok && (body.action === 'setMember' || body.action === 'updateTask')) { SpreadsheetApp.flush(); bumpVersion_(); clearCache_(); }
     if (out.ok && out.changes && out.changes.length) {
       audit_(out.changes.map(function (c) { return Object.assign({ who: user.email, role: user.role }, c); }));
       delete out.changes;
@@ -445,7 +460,7 @@ function listOptions_(cell) {
  * Nobody else can edit it; owners get view access.
  */
 const UNKNOWN_EDITOR = 'Not reported by Google';
-const USER_HEAD = ['Email', 'Name', 'Role', 'Status', 'Team / role', 'Note', 'Requested on', 'Decided by', 'Decided on', 'Last sign-in', 'Sessions valid from', 'Photo'];
+const USER_HEAD = ['Email', 'Name', 'Role', 'Status', 'Team / role', 'Note', 'Requested on', 'Decided by', 'Decided on', 'Last sign-in', 'Sessions valid from', 'Photo', 'Email reminders'];
 const AUDIT_HEAD = ['When', 'Who', 'Their role', 'Action', 'Sheet', 'Tab', 'Task / record', 'Row', 'Field', 'Before', 'After', 'Details', 'Via'];
 
 function authOn_() { const id = String(CONFIG.access && CONFIG.access.clientId || ''); return !!id && !/^PASTE_/.test(id); }
@@ -612,7 +627,7 @@ function users_() {
         row: i + 1, email: email, name: clean_(v[i][1]), role: ROLES[clean_(v[i][2])] ? clean_(v[i][2]) : 'Viewer',
         status: ['Approved', 'Pending', 'Revoked', 'Denied'].indexOf(clean_(v[i][3])) >= 0 ? clean_(v[i][3]) : 'Pending',
         team: clean_(v[i][4]), note: clean_(v[i][5]), requestedOn: iso_(v[i][6]), decidedBy: clean_(v[i][7]), decidedOn: iso_(v[i][8]), lastSignIn: iso_(v[i][9]),
-        validFrom: Number(v[i][10]) || 0, photo: photo_(v[i][11])
+        validFrom: Number(v[i][10]) || 0, photo: photo_(v[i][11]), reminders: clean_(v[i][12]) !== 'Off'
       };
       if (isOwner_(email)) { u.role = 'Admin'; u.status = 'Approved'; u.owner = true; }
       out.list.push(u);
@@ -626,11 +641,14 @@ function userByEmail_(email) {
   return users_().list.filter(function (u) { return u.email === email; })[0] || null;
 }
 function publicUser_(u) {
-  return { email: u.email, name: u.name || '', role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), owner: !!u.owner || isOwner_(u.email) };
+  return { email: u.email, name: u.name || '', role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), reminders: u.reminders !== false, owner: !!u.owner || isOwner_(u.email) };
 }
 /* Only Google profile photos are kept and shown. */
 function photo_(url) { const s = String(url || ''); return /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\/[^\s"'<>]+$/i.test(s) ? s.slice(0, 500) : ''; }
-function userHeader_(sh) { if (String(sh.getRange(1, 12).getValue()) !== 'Photo') sh.getRange(1, 12).setValue('Photo'); }
+function userHeader_(sh) {
+  if (String(sh.getRange(1, 12).getValue()) !== 'Photo') sh.getRange(1, 12).setValue('Photo');
+  if (String(sh.getRange(1, 13).getValue()) !== 'Email reminders') sh.getRange(1, 13).setValue('Email reminders');
+}
 function appendUser_(u) {
   const sh = accessBook_().getSheetByName('Users');
   userHeader_(sh);
@@ -644,7 +662,7 @@ function updateUser_(u, patch) {
   const row = emails.indexOf(u.email) + 1;
   if (row < 2) throw new Error('User ' + u.email + ' is no longer in the access list');
   userHeader_(sh);
-  const cols = { name: 2, role: 3, status: 4, team: 5, note: 6, decidedBy: 8, decidedOn: 9, lastSignIn: 10, validFrom: 11, photo: 12 };
+  const cols = { name: 2, role: 3, status: 4, team: 5, note: 6, decidedBy: 8, decidedOn: 9, lastSignIn: 10, validFrom: 11, photo: 12, reminders: 13 };
   Object.keys(patch).forEach(function (k) { if (cols[k] && patch[k] != null) sh.getRange(row, cols[k]).setValue(safe_(patch[k])); });
   CacheService.getScriptCache().remove('users');
 }
@@ -674,10 +692,11 @@ function ensureAccessBook_() {
     return sh;
   };
   tab('Users', USER_HEAD);
+  tab('Notes', NOTE_HEAD);
   const audit = tab('Audit', AUDIT_HEAD);
   audit.getRange('A:A').setNumberFormat('yyyy-mm-dd hh:mm:ss');
   // Only the account the web app runs as may edit either tab: no one can rewrite history.
-  [ss.getSheetByName('Users'), audit].forEach(function (sh) {
+  [ss.getSheetByName('Users'), ss.getSheetByName('Notes'), audit].forEach(function (sh) {
     try {
       const prot = sh.getProtections(SpreadsheetApp.ProtectionType.SHEET)[0] || sh.protect();
       prot.setDescription('Written only by the Creative Ops Tracker web app');
@@ -705,7 +724,7 @@ function audit_(entries) {
 }
 
 /* Newest first. body: { before: row number to continue from, limit, q (text), kind ('tasks'|'team'|'access'|'signins'), who } */
-const AUDIT_KINDS = { tasks: /^(Task|Sheet|Rows|Columns|Tab)/, team: /^Team/, access: /^(Access|User|Signed everyone)/, signins: /^Sign/ };
+const AUDIT_KINDS = { tasks: /^(Task|Sheet|Rows|Columns|Tab)/, team: /^Team/, access: /^(Access|User|Signed everyone)/, signins: /^Sign/, notes: /^Note/ };
 function auditRead_(body) {
   if (!hasAccessBook_()) return { ok: true, entries: [], next: null, total: 0 };
   const sh = accessBook_().getSheetByName('Audit');
@@ -816,6 +835,233 @@ function safe_(v) {
 function plain_(s) { return !/^[=+\-@]/.test(clean_(s)); }
 function iso_(v) { return v instanceof Date && !isNaN(v) ? v.toISOString() : (v ? String(v) : ''); }
 
+/* ================= Notes: meeting minutes and personal notes ================= */
+/*
+ * Stored in the Notes tab of the access book (owned by the web app account, not shared for editing).
+ * Who sees a note:
+ *   private – its author (and admins)          team – everyone with dashboard access
+ *   people  – its author, the people it is shared with, everyone @mentioned and everyone with an action item (and admins)
+ * Who changes it: its author or an admin. Anyone with an action item can tick that item.
+ * Every create, edit and delete is in the audit log; deleted notes are kept, marked deleted.
+ */
+const NOTE_HEAD = ['ID', 'Created', 'Created by', 'Updated', 'Updated by', 'Title', 'Meeting date', 'Type', 'Brand', 'Category', 'Visibility', 'Shared with', 'Mentions', 'Body', 'Action items', 'Reminder', 'Follow-ups', 'Reminder sent', 'Deleted', 'Deleted by', 'Pinned'];
+const NOTE_TYPES = ['Meeting', 'Discussion', 'Personal'];
+function notesSheet_() {
+  const ss = accessBook_();
+  let sh = ss.getSheetByName('Notes');
+  if (!sh) { sh = ss.insertSheet('Notes'); sh.appendRow(NOTE_HEAD); sh.setFrozenRows(1); }
+  return sh;
+}
+function parseJson_(s, d) { try { const v = JSON.parse(String(s || '')); return v == null ? d : v; } catch (err) { return d; } }
+function noteFromRow_(v, row) {
+  return {
+    row: row, id: String(v[0]), createdAt: iso_(v[1]), createdBy: clean_(v[2]).toLowerCase(), updatedAt: iso_(v[3]), updatedBy: clean_(v[4]).toLowerCase(),
+    title: String(v[5] || ''), date: v[6] instanceof Date ? Utilities.formatDate(v[6], IST, 'yyyy-MM-dd') : clean_(v[6]), type: clean_(v[7]) || 'Meeting', brand: clean_(v[8]), category: clean_(v[9]),
+    visibility: ['private', 'team', 'people'].indexOf(clean_(v[10])) >= 0 ? clean_(v[10]) : 'private', sharedWith: parseJson_(v[11], []), mentions: parseJson_(v[12], []),
+    body: String(v[13] || ''), actions: parseJson_(v[14], []), reminder: clean_(v[15]), followUps: String(v[16] || ''), reminderSent: clean_(v[17]), deleted: v[18] === true || clean_(v[18]) === 'TRUE', pinned: v[20] === true || clean_(v[20]) === 'TRUE'
+  };
+}
+function noteReaders_(n) {
+  const out = {}; out[n.createdBy] = 1;
+  (n.sharedWith || []).forEach(function (e) { out[String(e).toLowerCase()] = 1; });
+  (n.mentions || []).forEach(function (m) { if (m && m.email) out[String(m.email).toLowerCase()] = 1; });
+  (n.actions || []).forEach(function (a) { if (a && a.email) out[String(a.email).toLowerCase()] = 1; });
+  return out;
+}
+function canSeeNote_(n, u) {
+  if (n.deleted) return false;
+  if (u.role === 'Admin' || n.createdBy === u.email || n.visibility === 'team') return true;
+  return n.visibility === 'people' && !!noteReaders_(n)[u.email];
+}
+function canEditNote_(n, u) { return u.role === 'Admin' || n.createdBy === u.email; }
+function allNotes_() {
+  if (!hasAccessBook_()) return [];
+  const sh = notesSheet_(), last = sh.getLastRow();
+  if (last < 2) return [];
+  const v = sh.getRange(2, 1, last - 1, NOTE_HEAD.length).getValues();
+  return v.map(function (r, i) { return noteFromRow_(r, i + 2); }).filter(function (n) { return n.id; });
+}
+function publicNote_(n, u) {
+  const o = Object.assign({}, n); delete o.row; delete o.reminderSent; delete o.deleted;
+  o.canEdit = canEditNote_(n, u);
+  return o;
+}
+function notesList_(u) {
+  const names = {}; users_().list.forEach(function (x) { names[x.email] = x.name || x.email; });
+  const list = allNotes_().filter(function (n) { return canSeeNote_(n, u); })
+    .sort(function (a, b) { return String(b.date || b.createdAt).localeCompare(String(a.date || a.createdAt)) || String(b.updatedAt).localeCompare(String(a.updatedAt)); })
+    .map(function (n) { const o = publicNote_(n, u); o.createdByName = names[n.createdBy] || n.createdBy; o.updatedByName = names[n.updatedBy] || n.updatedBy; return o; });
+  return { ok: true, notes: list };
+}
+/* Cleans what the browser sent: lengths, known values, and people who actually have access. */
+function noteInput_(b) {
+  const approved = {}; users_().list.forEach(function (x) { if (x.status === 'Approved') approved[x.email] = x; });
+  const emailOk = function (e) { e = clean_(e).toLowerCase(); return approved[e] ? e : ''; };
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? String(b.date) : Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd');
+  const reminder = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(b.reminder || '')) ? String(b.reminder) : '';
+  const actions = (Array.isArray(b.actions) ? b.actions : []).slice(0, 100).map(function (a) {
+    return { id: clean_(a.id).slice(0, 40) || Utilities.getUuid().slice(0, 8), text: clean_(a.text).slice(0, 300), assignee: clean_(a.assignee).slice(0, 80), email: emailOk(a.email),
+      due: /^\d{4}-\d{2}-\d{2}$/.test(String(a.due || '')) ? String(a.due) : '', done: !!a.done, doneBy: clean_(a.doneBy).slice(0, 120), doneAt: clean_(a.doneAt).slice(0, 40) };
+  }).filter(function (a) { return a.text; });
+  const mentions = (Array.isArray(b.mentions) ? b.mentions : []).slice(0, 50).map(function (m) { return { name: clean_(m.name).slice(0, 80), email: emailOk(m.email) }; }).filter(function (m) { return m.name || m.email; });
+  return {
+    title: clean_(b.title).slice(0, 160) || 'Untitled note', date: date, type: NOTE_TYPES.indexOf(b.type) >= 0 ? b.type : 'Meeting',
+    brand: clean_(b.brand).slice(0, 80), category: clean_(b.category).slice(0, 60), visibility: ['private', 'team', 'people'].indexOf(b.visibility) >= 0 ? b.visibility : 'private',
+    sharedWith: (Array.isArray(b.sharedWith) ? b.sharedWith : []).map(emailOk).filter(String).slice(0, 50), mentions: mentions,
+    body: String(b.body == null ? '' : b.body).slice(0, 40000), actions: actions, reminder: reminder, followUps: String(b.followUps == null ? '' : b.followUps).slice(0, 4000), pinned: !!b.pinned
+  };
+}
+function noteRowValues_(id, created, createdBy, n, now, by, reminderSent) {
+  return [id, created, createdBy, now, by, n.title, n.date, n.type, n.brand, n.category, n.visibility, JSON.stringify(n.sharedWith), JSON.stringify(n.mentions), n.body, JSON.stringify(n.actions), n.reminder, n.followUps, reminderSent || '', false, '', n.pinned]
+    // Dates and times are kept as plain text (IST), so Sheets never turns them into another time zone.
+    .map(function (v, i) { return i === 1 || i === 3 || typeof v === 'boolean' ? v : (i === 6 || i === 15 || i === 17) && v ? "'" + v : safe_(v); });
+}
+function noteSave_(b, u) {
+  const n = noteInput_(b.note || {}), now = new Date(), sh = notesSheet_();
+  if (!b.id) {
+    const id = 'N' + Utilities.formatDate(now, IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 6);
+    sh.appendRow(noteRowValues_(id, now, u.email, n, now, u.email, ''));
+    return { ok: true, id: id, changes: [{ action: 'Note created', sheet: 'Notes', record: n.title, field: 'Visibility', after: n.visibility, details: n.type + (n.brand ? ' · ' + n.brand : '') + ' · ' + n.actions.length + ' action items' }] };
+  }
+  const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
+  if (!cur || cur.deleted) return { ok: false, error: 'This note no longer exists.' };
+  if (!canEditNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note (or an admin) can change it.' };
+  if (b.updatedAt && cur.updatedAt && b.updatedAt !== cur.updatedAt) return { ok: false, error: 'stale', note: publicNote_(cur, u) };
+  // A changed reminder time is sent again.
+  const sent = n.reminder && n.reminder === cur.reminder ? cur.reminderSent : '';
+  sh.getRange(cur.row, 1, 1, NOTE_HEAD.length).setValues([noteRowValues_(cur.id, new Date(cur.createdAt), cur.createdBy, n, now, u.email, sent)]);
+  const changed = ['title', 'date', 'type', 'brand', 'category', 'visibility', 'body', 'reminder', 'followUps'].filter(function (k) { return String(cur[k] || '') !== String(n[k] || ''); });
+  if (JSON.stringify(cur.actions) !== JSON.stringify(n.actions)) changed.push('action items');
+  if (JSON.stringify(cur.sharedWith) !== JSON.stringify(n.sharedWith)) changed.push('shared with');
+  return { ok: true, id: cur.id, changes: changed.length ? [{ action: 'Note edited', sheet: 'Notes', record: n.title, field: changed.join(', '), before: cur.visibility === n.visibility ? '' : cur.visibility, after: cur.visibility === n.visibility ? '' : n.visibility, details: cur.createdBy === u.email ? '' : 'Note by ' + cur.createdBy }] : [] };
+}
+function noteDelete_(b, u) {
+  const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
+  if (!cur || cur.deleted) return { ok: false, error: 'This note no longer exists.' };
+  if (!canEditNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note (or an admin) can delete it.' };
+  const sh = notesSheet_();
+  sh.getRange(cur.row, 19, 1, 2).setValues([[true, u.email]]);
+  sh.getRange(cur.row, 4, 1, 2).setValues([[new Date(), u.email]]);
+  return { ok: true, changes: [{ action: 'Note deleted', sheet: 'Notes', record: cur.title, details: cur.createdBy === u.email ? '' : 'Note by ' + cur.createdBy }] };
+}
+function noteAction_(b, u) {
+  const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
+  if (!cur || !canSeeNote_(cur, u)) return { ok: false, error: 'This note no longer exists.' };
+  const a = (cur.actions || []).filter(function (x) { return x.id === String(b.actionId); })[0];
+  if (!a) return { ok: false, error: 'That action item is gone.' };
+  if (!canEditNote_(cur, u) && a.email !== u.email) return { ok: false, error: 'Only the person it is assigned to, the author or an admin can tick this.' };
+  a.done = !!b.done; a.doneBy = a.done ? u.email : ''; a.doneAt = a.done ? new Date().toISOString() : '';
+  notesSheet_().getRange(cur.row, 15).setValue(JSON.stringify(cur.actions));
+  return { ok: true, actions: cur.actions, changes: [{ action: 'Note action item ' + (a.done ? 'done' : 'reopened'), sheet: 'Notes', record: cur.title, field: 'Action item', before: a.done ? 'Open' : 'Done', after: a.done ? 'Done' : 'Open', details: a.text }] };
+}
+function prefs_(b, u) {
+  updateUser_(u, { reminders: b.reminders ? 'On' : 'Off' });
+  return { ok: true, reminders: !!b.reminders, changes: [{ action: 'Reminder setting changed', record: u.email, field: 'Email reminders', before: u.reminders === false ? 'Off' : 'On', after: b.reminders ? 'On' : 'Off' }] };
+}
+
+/* ================= Daily reminders (IST) ================= */
+/* Runs every 10 minutes (setup installs it). Sends the 10:00 and 18:00 IST emails once a day each, and note reminders when due. */
+function remindersTick() {
+  if (!authOn_() || !hasAccessBook_()) return;
+  const now = new Date(), day = Utilities.formatDate(now, IST, 'yyyy-MM-dd'), hh = Number(Utilities.formatDate(now, IST, 'H'));
+  const props = PropertiesService.getScriptProperties();
+  const lock = LockService.getScriptLock(); if (!lock.tryLock(20000)) return;
+  try {
+    if (REMIND.email && hh >= REMIND.morning && hh < REMIND.morning + 3 && props.getProperty('SENT_MORNING') !== day) { props.setProperty('SENT_MORNING', day); sendDigests_('morning'); }
+    if (REMIND.email && hh >= REMIND.evening && hh < REMIND.evening + 3 && props.getProperty('SENT_EVENING') !== day) { props.setProperty('SENT_EVENING', day); sendDigests_('evening'); }
+    sendNoteReminders_(now);
+  } finally { lock.releaseLock(); }
+}
+/** Run from the editor to email yourself today's morning briefing (nothing else is sent). */
+function sendTestReminder() { sendDigests_('morning', Session.getEffectiveUser().getEmail()); Logger.log('Sent a test morning briefing to ' + Session.getEffectiveUser().getEmail()); }
+
+/* The task list, built exactly as the dashboard builds it (CODATA below is the dashboard's own data.js). */
+function tasksNow_() {
+  const body = JSON.parse(dataText_(false)), src = body.sources || {};
+  const keys = Object.keys(src).filter(function (k) { return !src[k].error && CODATA.kindOf(k, src[k].kind) !== 'team'; });
+  const tasks = CODATA.buildTasks(keys.map(function (k) { return { kind: CODATA.kindOf(k, src[k].kind), rows: CODATA.parseSource(CODATA.kindOf(k, src[k].kind), src[k], k) }; }));
+  const teamKey = Object.keys(src).filter(function (k) { return CODATA.kindOf(k, src[k].kind) === 'team'; })[0];
+  const team = CODATA.parseTeam(teamKey ? src[teamKey] : null) || [];
+  const byKey = {}, alias = {}, first = {};
+  team.forEach(function (m) {
+    byKey[m.name.toLowerCase()] = m;
+    String(m.aliases || '').split(/[,;\/]/).map(function (a) { return a.trim().toLowerCase(); }).filter(String).forEach(function (a) { alias[a] = m; });
+    const f = m.name.split(' ')[0].toLowerCase(); first[f] = first.hasOwnProperty(f) ? null : m;
+  });
+  const resolve = function (n) { const k = String(n || '').toLowerCase(); return byKey[k] || alias[k] || first[k.split(' ')[0]] || null; };
+  tasks.forEach(function (t) { t.list = t.designers ? t.designers.split(' + ').map(function (d) { const r = resolve(d); return r ? r.name : d; }) : []; });
+  return { tasks: tasks, resolve: resolve };
+}
+function sendDigests_(kind, onlyTo) {
+  const t = tasksNow_(), today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd');
+  const tomorrow = Utilities.formatDate(new Date(Date.now() + 864e5), IST, 'yyyy-MM-dd');
+  const open = t.tasks.filter(function (r) { return r.open; });
+  const team = {
+    overdue: open.filter(function (r) { return r.eta && r.eta < today; }), today: open.filter(function (r) { return r.eta === today; }),
+    tomorrow: open.filter(function (r) { return r.eta === tomorrow; }), unassigned: open.filter(function (r) { return !r.list.length; }),
+    review: t.tasks.filter(function (r) { return r.stage === 'Under review'; }), deliveredToday: t.tasks.filter(function (r) { return r.stage === 'Delivered' && r.ddate === today; })
+  };
+  const notes = allNotes_().filter(function (n) { return !n.deleted; });
+  users_().list.filter(function (u) { return u.status === 'Approved' && u.reminders !== false && (!onlyTo || u.email === onlyTo); }).forEach(function (u) {
+    const me = t.resolve(u.name || '') ; const mine = me ? open.filter(function (r) { return r.list.indexOf(me.name) >= 0; }) : [];
+    const myActions = [];
+    notes.forEach(function (n) { (n.actions || []).forEach(function (a) { if (!a.done && a.email === u.email) myActions.push({ note: n.title, text: a.text, due: a.due }); }); });
+    const html = digestHtml_(kind, u, team, mine, myActions, today);
+    try {
+      MailApp.sendEmail({ to: u.email, subject: (kind === 'morning' ? 'Morning briefing' : 'Evening wrap-up') + ' · ' + team.overdue.length + ' overdue, ' + team.today.length + ' due today · Creative Ops', htmlBody: html, name: 'Creative Ops Tracker' });
+    } catch (err) { console.error('mail: ' + err); }
+  });
+}
+function esc_(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function digestHtml_(kind, u, team, mine, myActions, today) {
+  const fmt = function (d) { return d ? Utilities.formatDate(new Date(d + 'T00:00:00+05:30'), IST, 'd MMM') : 'No ETA'; };
+  const row = function (r) { return '<tr><td style="padding:6px 10px 6px 0;color:#111"><b>' + esc_(r.brand) + '</b> · ' + esc_(String(r.topic || '').slice(0, 70)) + '</td><td style="padding:6px 0;color:#666;white-space:nowrap;text-align:right">' + esc_(r.id || '') + ' · ' + fmt(r.eta) + '</td></tr>'; };
+  const list = function (title, rs, max) { if (!rs.length) return ''; return '<h3 style="font:600 14px Arial;margin:22px 0 6px">' + esc_(title) + ' (' + rs.length + ')</h3><table style="font:13px Arial;border-collapse:collapse;width:100%">' + rs.slice(0, max || 8).map(row).join('') + '</table>' + (rs.length > (max || 8) ? '<p style="font:12px Arial;color:#666">+' + (rs.length - (max || 8)) + ' more on the dashboard</p>' : ''); };
+  const stat = function (n, label, color) { return '<td style="padding:12px 14px;background:#f4f4f1;border-radius:12px;font:12px Arial;color:#555"><div style="font:600 24px Arial;color:' + (color || '#111') + '">' + n + '</div>' + label + '</td><td style="width:8px"></td>'; };
+  const first = (u.name || '').split(' ')[0];
+  const intro = kind === 'morning'
+    ? 'Good morning' + (first ? ', ' + esc_(first) : '') + '. Here is what needs attention today: review your tasks, assignments and priorities.'
+    : 'Good evening' + (first ? ', ' + esc_(first) : '') + '. Here is today\'s wrap-up: completed work, what is still pending, and tomorrow\'s priorities.';
+  let h = '<div style="max-width:640px;margin:auto;font:14px/1.5 Arial;color:#111">';
+  h += '<div style="background:#111;color:#fff;border-radius:18px;padding:22px 24px"><div style="font:12px Arial;color:#d6f36b;letter-spacing:.1em;text-transform:uppercase">' + (kind === 'morning' ? 'Morning briefing · 10:00 IST' : 'Evening wrap-up · 18:00 IST') + '</div><div style="font:600 22px Arial;margin-top:6px">' + Utilities.formatDate(new Date(), IST, 'EEEE, d MMMM') + '</div><p style="color:#ccc;margin:8px 0 0">' + intro + '</p></div>';
+  h += '<table style="margin:16px 0;border-collapse:separate"><tr>' + stat(team.overdue.length, 'overdue', '#c2413b') + stat(team.today.length, 'due today', '#a96500') + (kind === 'evening' ? stat(team.deliveredToday.length, 'delivered today', '#1d8a5b') : stat(team.unassigned.length, 'unassigned')) + stat(team.review.length, 'in review') + '</tr></table>';
+  if (mine.length) {
+    h += list('Your overdue work', mine.filter(function (r) { return r.eta && r.eta < today; }));
+    h += list('Yours, due today', mine.filter(function (r) { return r.eta === today; }));
+    if (kind === 'evening') h += list('Yours, due tomorrow', mine.filter(function (r) { return r.eta > today; }).sort(function (a, b) { return a.eta.localeCompare(b.eta); }), 5);
+  }
+  if (myActions.length) h += '<h3 style="font:600 14px Arial;margin:22px 0 6px">Your action items from meeting notes (' + myActions.length + ')</h3><ul style="font:13px Arial;padding-left:18px;margin:0">' + myActions.slice(0, 10).map(function (a) { return '<li style="margin:4px 0">' + esc_(a.text) + ' <span style="color:#666">· ' + esc_(a.note) + (a.due ? ' · due ' + fmt(a.due) : '') + '</span></li>'; }).join('') + '</ul>';
+  if (u.role === 'Admin' || !mine.length) {
+    h += list('Team: overdue', team.overdue);
+    h += list(kind === 'morning' ? 'Team: due today' : 'Team: due tomorrow', kind === 'morning' ? team.today : team.tomorrow);
+    if (kind === 'evening') h += list('Delivered today', team.deliveredToday, 10);
+    else h += list('Unassigned', team.unassigned, 5);
+  }
+  h += '<p style="margin:26px 0 0"><a href="' + esc_(CONFIG.access.dashboardUrl) + '" style="background:#d6f36b;color:#111;text-decoration:none;padding:11px 20px;border-radius:999px;font:600 14px Arial">Open the dashboard</a></p>';
+  h += '<p style="font:11px Arial;color:#888;margin-top:22px">You get this at ' + REMIND.morning + ':00 and ' + REMIND.evening + ':00 IST. Turn it off in the dashboard menu (Daily emails).</p></div>';
+  return h;
+}
+/* Note reminders: emailed to the note's author (and its action-item owners) once, at the time set (IST). */
+function sendNoteReminders_(now) {
+  const due = allNotes_().filter(function (n) {
+    if (n.deleted || !n.reminder || n.reminderSent === n.reminder) return false;
+    const at = new Date(n.reminder + ':00+05:30');
+    return at <= now && now - at < 2 * 864e5;
+  });
+  if (!due.length) return;
+  const sh = notesSheet_();
+  due.forEach(function (n) {
+    const to = {}; to[n.createdBy] = 1; (n.actions || []).forEach(function (a) { if (!a.done && a.email) to[a.email] = 1; });
+    const open = (n.actions || []).filter(function (a) { return !a.done; });
+    const html = '<div style="max-width:600px;margin:auto;font:14px/1.5 Arial;color:#111"><div style="background:#111;color:#fff;border-radius:18px;padding:20px 22px"><div style="font:12px Arial;color:#d6f36b;letter-spacing:.1em;text-transform:uppercase">Note reminder</div><div style="font:600 20px Arial;margin-top:6px">' + esc_(n.title) + '</div></div>' +
+      (n.followUps ? '<h3 style="font:600 14px Arial;margin:18px 0 6px">Follow-ups</h3><p style="white-space:pre-wrap;margin:0">' + esc_(n.followUps) + '</p>' : '') +
+      (open.length ? '<h3 style="font:600 14px Arial;margin:18px 0 6px">Open action items</h3><ul style="padding-left:18px;margin:0">' + open.map(function (a) { return '<li>' + esc_(a.text) + (a.assignee ? ' <span style="color:#666">· ' + esc_(a.assignee) + '</span>' : '') + '</li>'; }).join('') + '</ul>' : '') +
+      '<p style="margin:22px 0 0"><a href="' + esc_(CONFIG.access.dashboardUrl) + '#notes" style="background:#d6f36b;color:#111;text-decoration:none;padding:10px 18px;border-radius:999px;font:600 14px Arial">Open notes</a></p></div>';
+    Object.keys(to).forEach(function (e) { const u = userByEmail_(e); if (!u || u.status !== 'Approved') return; try { MailApp.sendEmail({ to: e, subject: 'Reminder: ' + n.title, htmlBody: html, name: 'Creative Ops Tracker' }); } catch (err) { console.error('mail: ' + err); } });
+    sh.getRange(n.row, 18).setValue("'" + n.reminder);
+  });
+}
+
 /* ================= Helpers ================= */
 
 function sheetId_(link) {
@@ -898,3 +1144,298 @@ function testRead() {
     Logger.log(k + ': ' + (s.error ? 'ERROR ' + s.error : s.rows.length + ' rows from "' + s.file + '" / ' + s.tab));
   });
 }
+
+/* ==== BEGIN data.js (generated: copied from assets/data.js by tools/inline-data.js; do not edit here) ==== */
+/* Creative Ops Tracker: turns raw sheet rows into one clean task list.
+   Pure functions, no DOM, so they can be tested outside the browser. */
+(function (root) {
+  'use strict';
+
+  const clean = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+
+  /* ---------- Dates ---------- */
+  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  const p2 = (n) => String(n).padStart(2, '0');
+  const mk = (y, mo, d) => { if (y < 100) y += 2000; if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return null; return String(y).padStart(4, '0') + '-' + p2(mo) + '-' + p2(d); };
+  // Sheets show dates as "20-Apr-2026", "22 April 2026", "23-10-2026" (day first) or "6/3/2026" (month first).
+  const parseDate = (s) => {
+    s = clean(s).replace(/_/g, '-').replace(/\b(\d{1,2})(st|nd|rd|th)\b/i, '$1'); if (!s) return null; let m;
+    if ((m = s.match(/^(\d{1,2})[-\s.\/]+([A-Za-z]{3,})[-\s.,\/]+(\d{2,4})$/)) && MON[m[2].slice(0, 3).toLowerCase()]) return mk(+m[3], MON[m[2].slice(0, 3).toLowerCase()], +m[1]);
+    if ((m = s.match(/^([A-Za-z]{3,})[\s-]+(\d{1,2}),?[\s-]+(\d{4})$/)) && MON[m[1].slice(0, 3).toLowerCase()]) return mk(+m[3], MON[m[1].slice(0, 3).toLowerCase()], +m[2]);
+    if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return mk(+m[1], +m[2], +m[3]);
+    if ((m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/))) return mk(+m[3], +m[2], +m[1]);
+    if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) return mk(+m[3], +m[1], +m[2]);
+    return null;
+  };
+
+  /* ---------- Columns ---------- */
+  // A source's layout: as the web app reports it, else guessed from its name.
+  function kindOf(key, given) {
+    if (given) return given;
+    return key === 'team' ? 'team' : /^paid/.test(key || '') ? 'paid' : 'mkt';
+  }
+  const QTY = /^(no\.?\s*of\s*creatives?|number of creatives?|qty|quantity|creatives?\s*count|count of creatives?)$/;
+  // kind: 'paid' | 'mkt' (the tab's layout); key: the source's name in the web app's CONFIG (used for edits)
+  function parseSource(kind, src, key) {
+    const name = (src && src.kind) || kindOf(kind);
+    if (!src || !Array.isArray(src.rows)) return [];
+    const head = (src.headers || []).map((h) => clean(h).toLowerCase());
+    const col = (n, nth = 0) => { let seen = 0; for (let i = 0; i < head.length; i++) if (head[i] === n) { if (seen === nth) return i; seen++; } return -1; };
+    const any = (...names) => { for (const n of names) { const i = col(n); if (i >= 0) return i; } return -1; };
+    const find = (re) => head.findIndex((h) => re.test(h));
+    let ix;
+    if (name === 'paid') {
+      // Paid sheet: column A holds the ID and column B the request date (their headers are shifted);
+      // the second "Design ETA" column holds the design status.
+      ix = {
+        id: 0, req: 1, eta: col('design eta', 0),
+        dstatus: col('design eta', 1) >= 0 ? col('design eta', 1) : any('design status'),
+        designer: any('designer/editor', 'designer', 'creator')
+      };
+    } else {
+      ix = {
+        id: any('creative_id', 'req. id', 'id') >= 0 ? any('creative_id', 'req. id', 'id') : 0,
+        req: any('req. date', 'request date'), eta: any('design eta'), dstatus: any('design status'),
+        designer: any('creator', 'designer/editor', 'designer')
+      };
+      if (ix.id === ix.req) ix.id = 0;
+    }
+    Object.assign(ix, {
+      type: any('creative type'), brand: any('brands', 'brand'), topic: any('sku/topic'), channel: any('marketing channel'),
+      priority: any('priority'), brief: any('creative brief'), owner: any('content owner'), cstatus: any('content status'),
+      link: any('creative link'), file: any('open file'), live: any('live status'), liveDate: any('status live date', 'live status date'),
+      delivered: find(/deliver/), qty: find(QTY)
+    });
+    const v = (r, k) => (ix[k] >= 0 && r[ix[k]] != null ? clean(r[ix[k]]) : '');
+    const rowNums = Array.isArray(src.rowNums) ? src.rowNums : [];
+    return src.rows.map((r, i) => {
+      const qn = parseInt(v(r, 'qty'), 10);
+      return {
+        src: key || kind, row: rowNums[i] || null,
+        id: v(r, 'id'), req_date: parseDate(v(r, 'req')), req_text: v(r, 'req'), type: v(r, 'type'), brand: v(r, 'brand'), topic: v(r, 'topic'),
+        channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: v(r, 'cstatus'),
+        eta: parseDate(v(r, 'eta')), eta_text: v(r, 'eta'), creative_link: v(r, 'link'), design_status: v(r, 'dstatus'), designer: v(r, 'designer'),
+        open_file: v(r, 'file'), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')), delivered_on: parseDate(v(r, 'delivered')),
+        qty: qn > 0 ? qn : null
+      };
+    });
+  }
+
+  function parseTeam(src) {
+    if (!src || !Array.isArray(src.rows)) return [];
+    const head = (src.headers || []).map((h) => clean(h).toLowerCase());
+    const f = (re) => head.findIndex((h) => re.test(h));
+    const ix = { name: f(/^name/), status: f(/^status/), role: f(/^role/), aliases: f(/also|alias/), notes: f(/^notes?/) };
+    const v = (r, k) => (ix[k] >= 0 && r[ix[k]] != null ? clean(r[ix[k]]) : '');
+    return src.rows.filter((r) => v(r, 'name')).map((r) => ({
+      name: v(r, 'name'),
+      status: /inactive|left|former|^no$/i.test(v(r, 'status')) ? 'Inactive' : 'Active',
+      role: v(r, 'role'), aliases: v(r, 'aliases'), notes: v(r, 'notes')
+    }));
+  }
+
+  /* ---------- Status ---------- */
+  const title = (s) => s.toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase());
+  function stageOf(ds0, cs0) {
+    const ds = clean(ds0).toUpperCase(), cs = clean(cs0).toUpperCase();
+    if (['DONE', 'DELIVERED', 'COMPLETED', 'COMPLETE'].includes(ds)) return ['Delivered', false];
+    if (['WIP', 'IN PROGRESS', 'WORK IN PROGRESS', 'ONGOING', 'IN-PROGRESS'].includes(ds)) return ['In progress', true];
+    if (['SHARED', 'UNDER REVIEW', 'IN REVIEW', 'REVIEW', 'SENT FOR REVIEW'].includes(ds)) return ['Under review', false];
+    if (['CHANGES', 'CHANGES REQUESTED', 'REVISION', 'REWORK', 'FEEDBACK'].includes(ds)) return ['Changes requested', true];
+    if (['HOLD', 'ON HOLD', 'NO UPDATE', 'PAUSED'].includes(ds)) return ['On hold', false];
+    if (['DEPRIORITIZED', 'DEPRIORITISED', 'REJECTED', 'CANCELLED', 'CANCELED', 'DROPPED', 'NOT NEEDED'].includes(ds)) return ['Dropped', false];
+    if (ds === '' || ['TBP', 'TO BE PLANNED', 'NOT STARTED', 'PLANNED', 'TODO', 'TO DO'].includes(ds)) {
+      if (cs === 'HOLD') return ['On hold', false];
+      if (['INCOMPLETE BRIEF', 'PENDING', 'TBD', 'TBP', 'WIP'].includes(cs)) return ['Awaiting brief', false];
+      return ['To be planned', true];
+    }
+    return [title(clean(ds0)), true];
+  }
+  const KNOWN = ['Delivered', 'In progress', 'Under review', 'Changes requested', 'On hold', 'Dropped', 'To be planned', 'Awaiting brief'];
+
+  const TYPES = { 'video (in-house)': 'In-House Video', 'in-house video': 'In-House Video', 'a+': 'A+ Content', 'a++': 'A+ Content', 'static ad': 'Static', 'static ads': 'Static', 'carousel ': 'Carousel', 'carousel ads': 'Carousel', 'gif ads': 'GIF', 'ai ugc video': 'AI Video', 'in-house edit': 'Video Edit', 'reels': 'Reel' };
+  const typeOf = (s) => { const c = clean(s); if (!c) return 'Unspecified'; return TYPES[c.toLowerCase()] || c; };
+
+  /* ---------- Designers ---------- */
+  const SPLIT = /\s*(?:,|&|\+|\/|;|\band\b)\s*/i;
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Learn each person from cells that name one person, then split cells that run several names together.
+  function designerSplitter(cells) {
+    const counts = new Map(), display = new Map();
+    for (const c0 of cells) { const c = clean(c0); if (!c) continue; for (const part of c.split(SPLIT).filter(Boolean)) { const k = part.toLowerCase(); counts.set(k, (counts.get(k) || 0) + 1); if (!display.has(k)) display.set(k, part); } }
+    const keys = [...counts.keys()];
+    const firstOf = (k) => k.split(' ')[0];
+    const covers = (k) => {
+      const others = keys.filter((o) => o !== k && k.includes(o));
+      let rest = ' ' + k + ' ';
+      others.sort((x, y) => y.length - x.length).forEach((o) => { rest = rest.replace(' ' + o + ' ', ' '); });
+      const leftover = rest.trim().split(' ').filter(Boolean);
+      return others.length >= 2 || (others.length === 1 && leftover.length > 0 && leftover.every((w) => keys.some((o) => o !== k && firstOf(o) === w)));
+    };
+    const names = new Map();
+    for (const k of keys) if (!covers(k)) names.set(k, display.get(k));
+    const firsts = new Map();
+    for (const [k, d] of names) { const f = firstOf(k); const prev = firsts.get(f); if (!prev || k.length > prev[0].length) firsts.set(f, [k, d]); }
+    return (s) => {
+      const c = clean(s); if (!c) return [];
+      const out = [];
+      for (const part of c.split(SPLIT).filter(Boolean)) {
+        const k = part.toLowerCase();
+        if (names.has(k) && !(k.split(' ').length === 1 && firsts.has(k) && firsts.get(k)[0] !== k)) { out.push(names.get(k)); continue; }
+        const hits = [];
+        for (const [kk, d] of names) { if (kk.split(' ').length < 2) continue; const i = k.search(new RegExp('\\b' + esc(kk) + '\\b')); if (i >= 0) hits.push([i, kk.length, d]); }
+        for (const [f, [, d]] of firsts) { const i = k.search(new RegExp('\\b' + esc(f) + '\\b')); if (i >= 0) hits.push([i, f.length, d]); }
+        hits.sort((x, y) => x[0] - y[0] || y[1] - x[1]);
+        const kept = []; let end = -1;
+        for (const h of hits) { if (h[0] >= end && !kept.includes(h[2])) { kept.push(h[2]); end = h[0] + h[1]; } }
+        if (kept.length) out.push(...kept); else out.push(part);
+      }
+      return [...new Set(out)];
+    };
+  }
+
+  /* ---------- One task list ---------- */
+  /* ---------- Dates that need a year correction ---------- */
+  const days = (a, b) => (Date.parse(b) - Date.parse(a)) / 864e5;
+  const goodYear = (d) => !!d && +d.slice(0, 4) >= 2020 && +d.slice(0, 4) <= 2100;
+  const reYear = (d, y) => { const c = String(y).padStart(4, '0') + d.slice(4); return isNaN(Date.parse(c)) ? null : c; };
+  // Re-year date d so it falls within [lo, hi] days of ref, as close to ref as possible.
+  const nearYear = (d, ref, lo, hi) => {
+    let best = null;
+    for (const y of [+ref.slice(0, 4) - 1, +ref.slice(0, 4), +ref.slice(0, 4) + 1]) {
+      const c = reYear(d, y); if (!c) continue;
+      const g = days(ref, c);
+      if (g >= lo && g <= hi && (!best || Math.abs(g) < Math.abs(best[1]))) best = [c, g];
+    }
+    return best ? best[0] : null;
+  };
+
+  // sources: [{ kind: 'paid'|'mkt', rows }] in the web app's order (newest tab of each kind first),
+  // or the older form { paid: rows, mkt: rows, mkt2025: rows }.
+  // Returns the task list; rows that are too incomplete to be a task are on its `ignored` property.
+  function buildTasks(sources, today) {
+    if (!today) { const d = new Date(); today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
+    const list = Array.isArray(sources) ? sources : Object.keys(sources).map((k) => ({ kind: kindOf(k), rows: sources[k] || [] }));
+    const seenIds = { paid: new Set(), mkt: new Set() };
+    const both = [], ignored = [];
+    for (const s of list) {
+      if (s.kind !== 'paid' && s.kind !== 'mkt') continue;
+      const ids = new Set();
+      for (const r of s.rows || []) {
+        const id = clean(r.id);
+        if (id && seenIds[s.kind].has(id)) continue; // the same task in an older tab: the newer copy wins
+        if (id) ids.add(id);
+        const source = s.kind === 'paid' ? 'Paid' : 'Marketing';
+        if (clean(r.brand) || clean(r.type) || clean(r.topic)) both.push([r, source]);
+        else ignored.push({ src: r.src || '', row: r.row || null, id, source, owner: clean(r.owner), status: clean(r.design_status) || clean(r.content_status), eta: r.eta, req: r.req_date });
+      }
+      ids.forEach((id) => seenIds[s.kind].add(id));
+    }
+
+    // Designer cells: an email becomes a name ("neha@shiprocket.com" → "Neha").
+    const fromEmail = (v) => clean(v).replace(/([A-Za-z0-9._-]+)@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m, u) => u.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+    const designersOf = designerSplitter(both.map(([r]) => fromEmail(r.designer)));
+
+    // One spelling per brand and per creative type (case, spacing and plurals merged; the most used spelling wins).
+    const canon = (values, keyOf, pretty) => {
+      const votes = new Map();
+      for (const v of values) { if (!v) continue; const k = keyOf(v); const m = votes.get(k) || new Map(); m.set(v, (m.get(v) || 0) + 1); votes.set(k, m); }
+      const out = new Map();
+      for (const [k, m] of votes) out.set(k, pretty([...m].sort((a, b) => b[1] - a[1])[0][0]));
+      return out;
+    };
+    const brandKey = (b) => b.toLowerCase();
+    const brandName = canon(both.map(([r]) => clean(r.brand)), brandKey, (b) => (b === b.toLowerCase() ? b.replace(/\b\w/g, (c) => c.toUpperCase()) : b));
+    const typeKey = (t) => t.toLowerCase().replace(/s$/, '');
+    const typeName = canon(both.map(([r]) => typeOf(r.type)), typeKey, (t) => (/^gif$/i.test(t) ? 'GIF' : t));
+
+    // Request dates of neighbouring rows (rows are entered in date order), to tell which date has a mistyped year.
+    const bySrc = new Map();
+    for (const [r] of both) { const k = r.src || ''; if (!bySrc.has(k)) bySrc.set(k, []); bySrc.get(k).push(r); }
+    const around = new Map(), span = new Map();
+    for (const [k, rows] of bySrc) {
+      // The tab's usual date range (its middle 90%, so a cluster of typos cannot stretch it).
+      const all = rows.map((r) => r.req_date).filter(goodYear).sort();
+      if (all.length >= 20) span.set(k, [all[Math.floor(all.length * 0.05)], all[Math.ceil(all.length * 0.95) - 1]]);
+      rows.sort((x, y) => (x.row || 0) - (y.row || 0));
+      rows.forEach((r, i) => {
+        const near = [];
+        for (let j = Math.max(0, i - 6); j <= Math.min(rows.length - 1, i + 6); j++) if (j !== i && goodYear(rows[j].req_date)) near.push(rows[j].req_date);
+        near.sort();
+        around.set(r, near.length >= 3 ? near[near.length >> 1] : null);
+      });
+    }
+
+    // Rows sharing an ID within one tab are different tasks: both are kept and flagged.
+    const idCount = new Map();
+    for (const [r] of both) { const id = clean(r.id); if (id) { const k = (r.src || '') + '|' + id; idCount.set(k, (idCount.get(k) || 0) + 1); } }
+
+    const seen = new Set();
+    const tasks = both.map(([r, source], i) => {
+      const flags = [];
+      let req = r.req_date, eta = r.eta;
+      const mid = around.get(r), sp = span.get(r.src || '');
+      const inSpan = (d) => !sp || (days(sp[0], d) >= -60 && days(d, sp[1]) >= -60);
+      // 1. Request date: a year outside the tab's range, or far from the neighbouring rows, is a typo.
+      //    Re-year it to sit just before the ETA when the ETA looks right, else next to its neighbours.
+      if (req && (!goodYear(req) || !inSpan(req) || (mid && Math.abs(days(mid, req)) > 120))) {
+        let fix = null;
+        if (eta && goodYear(eta) && inSpan(eta)) fix = nearYear(req, eta, -150, 30);
+        if (!fix && mid) fix = nearYear(req, mid, -120, 120);
+        if (fix && fix !== req) { req = fix; flags.push('Request date year looks mistyped'); }
+      }
+      if (req && !goodYear(req)) { req = null; flags.push('Request date unreadable'); }
+      // 2. ETA: should land shortly after the request date.
+      if (eta && req && (Math.abs(days(req, eta)) > 200 || !goodYear(eta))) {
+        const fix = nearYear(eta, req, -45, 150);
+        if (fix) { eta = fix; flags.push('ETA year looks mistyped'); }
+      }
+      if (eta && !goodYear(eta)) { eta = null; flags.push('ETA unreadable'); }
+      if (!req && clean(r.req_text) && !flags.includes('Request date unreadable')) flags.push('Request date unreadable');
+      if (!eta && clean(r.eta_text) && !flags.includes('ETA unreadable')) flags.push('ETA unreadable');
+      if (req && eta && days(req, eta) < 0) flags.push('ETA before request date');
+      const [stage, open] = stageOf(r.design_status, r.content_status);
+      if (!KNOWN.includes(stage)) flags.push('Unrecognised status');
+      const des = designersOf(fromEmail(r.designer));
+      if (open && !eta) flags.push('Open, no ETA');
+      if ((open || stage === 'Under review') && !des.length) flags.push('No designer assigned');
+      if (stage === 'Delivered' && !des.length) flags.push('Delivered, no designer');
+      if (stage === 'Delivered' && !/^https?:/i.test(clean(r.creative_link))) flags.push('Delivered, no creative link');
+      if (!clean(r.brand)) flags.push('No brand');
+      if (clean(r.id) && idCount.get((r.src || '') + '|' + clean(r.id)) > 1) flags.push('Duplicate ID');
+      let uid = (r.src || source) + ':' + (clean(r.id) || 'row' + (r.row || i + 2));
+      while (seen.has(uid)) uid += '·';
+      seen.add(uid);
+      // Delivery date: the Delivered On column if the sheet has one, else the ETA (or request date).
+      // A delivered task can't have been delivered in the future, so a later ETA counts as today.
+      let ddate = stage === 'Delivered' ? (r.delivered_on || eta || req || null) : null;
+      if (ddate && ddate > today) ddate = today;
+      const pri = clean(r.priority).toUpperCase();
+      const t0 = typeOf(r.type);
+      return {
+        uid, id: clean(r.id), source, src: r.src || '', row: r.row || null,
+        brand: clean(r.brand) ? brandName.get(brandKey(clean(r.brand))) : 'No brand',
+        topic: clean(r.topic), type: typeName.get(typeKey(t0)) || t0, channel: clean(r.channel), qty: r.qty || 1,
+        priority: /^P\d$/.test(pri) ? pri : '', owner: clean(r.owner),
+        designers: des.join(' + '), stage, open, design_status: clean(r.design_status), req, eta,
+        ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: stage === 'Delivered' ? (r.delivered_on ? 'delivered' : eta ? 'eta' : 'request') : '',
+        live_status: clean(r.live_status).replace(/^Luanch/i, 'Launch'),
+        brief: clean(r.brief), link: clean(r.creative_link), file: clean(r.open_file),
+        flags: flags.join('; ')
+      };
+    });
+    Object.defineProperty(tasks, 'ignored', { value: ignored, enumerable: false });
+    return tasks;
+  }
+
+  // Which optional columns a source has (so the editor only offers what can be saved).
+  function columnsOf(src) {
+    const head = ((src && src.headers) || []).map((h) => clean(h).toLowerCase());
+    return { qty: head.some((h) => QTY.test(h)), delivered: head.some((h) => /deliver/.test(h)), priority: head.includes('priority') };
+  }
+  const OPEN_STAGES = ['To be planned', 'In progress', 'Changes requested'];
+
+  const api = { kindOf, parseDate, parseSource, parseTeam, stageOf, buildTasks, designerSplitter, columnsOf, OPEN_STAGES };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.CODATA = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+/* ==== END data.js ==== */
