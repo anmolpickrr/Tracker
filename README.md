@@ -129,13 +129,18 @@ How it works:
 - **Voice:** speech is turned into text by the browser (Chrome, Edge and Safari; Firefox can type). The language button switches between English (which also understands Hinglish) and हिन्दी. Replies are spoken in a female voice: Google's natural Chirp 3 HD voice when set up (below), else the most natural female voice on the device. The speaker button turns voice replies off. When a reply ends with a question, Fasty listens again automatically.
 - **Privacy:** your question and the dashboard rows needed to answer it are sent to Claude (Anthropic) through the web app; nothing is stored by the dashboard. The API key stays in Apps Script and never reaches a browser. Each person can ask about 40 questions every 10 minutes.
 
-**Setup (owner, once):**
+**Setup (owner, once, about 10 minutes):**
 
-1. Create an API key at console.anthropic.com (Settings → API keys).
-2. In Apps Script: **Project Settings → Script Properties → Add script property**: `ANTHROPIC_API_KEY` = the key. Save. No redeploy is needed for the key, but deploy the new Code.gs version first.
-3. Optional, for the natural voice: in Google Cloud (project "Creative Ops Tracker"), enable **Cloud Text-to-Speech API**, create an API key restricted to that API, and add it as the script property `GOOGLE_TTS_KEY`.
+1. **Update the web app.** On GitHub open `apps-script/Code.gs` → *Raw* → select all, copy. In Apps Script, open `Code.gs`, select all, paste, save. Then **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**. The URL stays the same.
+2. **Free AI (recommended): Google Gemini.** Signed in as design.tools@pickrr.com, open aistudio.google.com → **Get API key → Create API key** (pick the "Creative Ops Tracker" project). In Apps Script: **Project Settings (⚙) → Script properties → Add script property**: name `GEMINI_API_KEY`, value the key → **Save**. No redeploy needed.
+3. **Check:** reload the dashboard. The System check no longer says "basic mode", and Fasty's panel says "Answers use Google Gemini".
+4. *Optional, paid:* `ANTHROPIC_API_KEY` for Claude (see costs below), and `GOOGLE_TTS_KEY` for Google's natural voice. `GEMINI_MODEL` pins a specific Gemini model (default `gemini-flash-latest`, which follows Google's current Flash model).
 
-Without `ANTHROPIC_API_KEY`, Fasty runs in **basic mode**: it still answers the common questions (overdue, due today or open work for anyone, deliveries this month, opening pages) in English or Hinglish, and says so at the bottom of the panel. Fasty runs at low effort for quick spoken replies. An admin picks the model under **Access → Reminders and notifications** (the change is logged): Claude Haiku 5.5 (fast, lowest cost), Claude Sonnet 5.5 (balanced) or Claude Opus 5.5 (most capable, the default). Sonnet and Opus use Anthropic's automatic fallback if a request is declined.
+**Which AI answers:** Access → Reminders and notifications → *Fasty, the assistant*. **Automatic** (default) uses free Gemini when its key is set, otherwise Claude Haiku 5.5. When Gemini's free daily or per-minute limit is reached, Fasty answers that question in basic mode and says so, instead of failing.
+
+**About the free tier:** Google charges nothing, but limits requests per minute and per day (shown in AI Studio, and changed from time to time) and **may use free-tier requests to improve its products**. The questions and the task rows Fasty looks up (brands, creative titles, designer names, dates) are sent. If that is not acceptable for client work, use Claude Haiku 5.5 (about ₹900 a month for the team; Anthropic does not train on API data) or turn on billing for the Gemini key (paid tier data is not used for training).
+
+Without any AI key, Fasty runs in **basic mode**: it still answers the common questions (overdue, due today or open work for anyone, deliveries this month, opening pages) in English or Hinglish, and says so at the bottom of the panel. Fasty runs at low effort for quick spoken replies. An admin picks the model under **Access → Reminders and notifications** (the change is logged): Claude Haiku 5.5 (fast, lowest cost), Claude Sonnet 5.5 (balanced) or Claude Opus 5.5 (most capable, the default). Sonnet and Opus use Anthropic's automatic fallback if a request is declined.
 
 ### Cost (estimate)
 

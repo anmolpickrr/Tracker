@@ -2282,7 +2282,7 @@
   function fillSettings() {
     const s2 = ST.s; if (!s2) return;
     const $s = (id) => document.getElementById(id);
-    $s('st-morning').value = s2.morning; $s('st-evening').value = s2.evening; $s('st-email').checked = !!s2.email; $s('st-presence').checked = s2.presence !== false; $s('st-model').value = s2.model || 'opus';
+    $s('st-morning').value = s2.morning; $s('st-evening').value = s2.evening; $s('st-email').checked = !!s2.email; $s('st-presence').checked = s2.presence !== false; $s('st-model').value = s2.model || 'auto';
     $s('st-chat').value = ''; $s('st-chat').placeholder = s2.chat ? 'Connected. Paste a new link to replace it, or clear below.' : 'https://chat.googleapis.com/v1/spaces/…';
     $s('st-chat-clear').hidden = !s2.chat;
   }
@@ -2588,7 +2588,7 @@
       voiceB.innerHTML = st.voiceOn ? ICON.vol : ICON.mute; voiceB.setAttribute('aria-label', st.voiceOn ? 'Turn voice replies off' : 'Turn voice replies on'); voiceB.setAttribute('aria-pressed', String(st.voiceOn));
       micB.setAttribute('aria-label', st.listening ? 'Stop listening' : 'Speak'); micB.disabled = !SR;
       if (!SR) micB.title = 'Voice input needs Chrome, Edge or Safari. You can type instead.';
-      note.textContent = st.ai === false ? 'Basic mode: the admin can connect Claude for full conversations (README, Fasty).' : 'Answers use Claude (Anthropic) on the data you can see. Speech is turned into text by your browser.';
+      note.textContent = st.ai === false ? 'Basic mode: the admin can connect an AI service for full conversations (README, Fasty).' : 'Answers use ' + (st.provider === 'gemini' ? 'Google Gemini' : 'Claude (Anthropic)') + ' on the data you can see. Speech is turned into text by your browser.';
     };
     const setMood = (m) => { [fab, panel].forEach((x) => { x.dataset.mood = m; }); };
     const mood = () => setMood(st.listening ? 'listening' : st.busy ? 'thinking' : st.speaking ? 'speaking' : 'idle');
@@ -2814,6 +2814,7 @@
           st.msgs.push({ role: 'user', content: [{ type: 'text', text: q }] }); trim();
           for (let hop = 0; hop < 7; hop++) {
             const res = await callApi({ action: 'assist', messages: st.msgs, context: ctx() });
+            if (!res.ok && res.error === 'busy') { st.msgs.pop(); answer = local(q) + ' (Quick answer: the free AI service is busy right now, so I used basic mode.)'; break; }
             if (!res.ok) { if (res.error === 'not_configured') { st.ai = false; paintHead(); st.msgs.pop(); answer = local(q); } else answer = res.error || 'Something went wrong. Try again.'; break; }
             if (res.stop_reason === 'refusal') { st.msgs.pop(); answer = 'I can not help with that one. Ask me about tasks, the team or reports.'; break; }
             st.msgs.push({ role: 'assistant', content: res.content });
@@ -2852,7 +2853,7 @@
       }
       return say('I can tell you what is overdue, due today or open for anyone, what was delivered this month, and open any section. For full conversations, the admin can connect Claude.', 'Main overdue, aaj due ya open tasks, is mahine ki delivery, aur koi bhi section khol sakti hoon. Poori baatcheet ke liye admin Claude connect kar sakte hain.');
     }
-    function setStatus(s) { if (!s) return; st.ai = !!s.ai; st.tts = !!s.tts; if (!panel.hidden) paintHead(); }
+    function setStatus(s) { if (!s) return; st.ai = !!s.ai; st.tts = !!s.tts; st.provider = s.provider; if (!panel.hidden) paintHead(); }
     fab.hidden = true;
     const show = (on) => { fab.hidden = !on; if (!on) close(); };
     return { open, close, ask, setStatus, show, get state() { return st; }, _tools: TOOLS, _local: local };
@@ -2875,7 +2876,7 @@
       // 2. Web app and integrations (admins can fix these)
       if (A.mode === 'auth' && S.verBody) {
         if (!('assist' in S.verBody)) add('warn', admin ? 'The web app is running an older Code.gs' : 'Some features are waiting for an update', admin ? 'Paste the latest Code.gs from GitHub into Apps Script, run setup, and deploy a new version. Until then the assistant, history comparisons and reminder settings may not work.' : 'The admin needs to update the web app. Everything else works.');
-        else if (admin && S.verBody.assist && !S.verBody.assist.ai) add('info', 'Fasty is in basic mode', 'Add the ANTHROPIC_API_KEY script property in Apps Script for full conversations in Hindi, English and Hinglish (README, Fasty).');
+        else if (admin && S.verBody.assist && !S.verBody.assist.ai) add('info', 'Fasty is in basic mode', 'Add a free GEMINI_API_KEY script property in Apps Script for full conversations in Hindi, English and Hinglish (README, Fasty).');
       }
       if (admin && S.health) {
         if (!S.health.liveTriggers) add('warn', 'Live change detection is off', 'Run setup in Apps Script once. Until then sheet edits arrive every 10 minutes instead of 30 seconds.');

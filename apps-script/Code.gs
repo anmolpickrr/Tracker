@@ -25,7 +25,7 @@ const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
 const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
-const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'opus' };
+const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
 function settings_() {
   const cfg = (typeof CONFIG !== 'undefined' && CONFIG.reminders) || {};
   const fromCfg = {}; ['morning', 'evening'].forEach(function (k) { if (cfg[k] != null) fromCfg[k] = typeof cfg[k] === 'number' ? (cfg[k] < 10 ? '0' : '') + cfg[k] + ':00' : String(cfg[k]); });
@@ -1575,13 +1575,22 @@ function testRead() {
  * Claude Haiku 5.5 has no server-side refusal fallback; Claude Sonnet 5.5 turns thinking off with between_tools;
  * Claude Opus 5.5 always thinks (effort controls how much). All run at low effort for quick spoken replies. */
 const ASSIST_MODELS = {
+  auto: { label: 'Automatic: Gemini (free) if its key is set, else Claude Haiku 5.5' },
+  gemini: { label: 'Free: Google Gemini Flash (AI Studio free tier)' },
   haiku: { id: 'claude-haiku-5-5', label: 'Fast and lowest cost (Claude Haiku 5.5)', extra: { thinking: { type: 'disabled' } }, fallback: false },
   sonnet: { id: 'claude-sonnet-5-5', label: 'Balanced (Claude Sonnet 5.5)', extra: { thinking: { type: 'between_tools' } }, fallback: true },
   opus: { id: 'claude-opus-5-5', label: 'Most capable (Claude Opus 5.5)', extra: {}, fallback: true }
 };
 function assistStatus_() {
   const p = PropertiesService.getScriptProperties();
-  return { ai: !!p.getProperty('ANTHROPIC_API_KEY'), tts: !!p.getProperty('GOOGLE_TTS_KEY') };
+  return { ai: !!(p.getProperty('ANTHROPIC_API_KEY') || p.getProperty('GEMINI_API_KEY')), tts: !!p.getProperty('GOOGLE_TTS_KEY'), provider: assistProvider_() };
+}
+// Which service answers: the admin's choice if its key is set; "auto" prefers the free Gemini key, then Claude Haiku.
+function assistProvider_() {
+  const p = PropertiesService.getScriptProperties(), m = settings_().model || 'auto';
+  const gem = !!p.getProperty('GEMINI_API_KEY'), cl = !!p.getProperty('ANTHROPIC_API_KEY');
+  if (m === 'gemini' || m === 'auto') return gem ? 'gemini' : cl ? (m === 'auto' ? 'haiku' : 'none') : 'none';
+  return cl ? m : gem ? 'gemini' : 'none';
 }
 // At most 40 assistant requests per person per 10 minutes (each spoken question can take a few).
 function assistLimit_(email, kind, max) {
@@ -1646,9 +1655,10 @@ function assistClean_(messages) {
   return JSON.stringify(out).length > 120000 ? null : out;
 }
 function assist_(user, body) {
+  const prov = assistProvider_();
+  if (prov === 'none') return { ok: false, error: 'not_configured' };
   const key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
-  if (!key) return { ok: false, error: 'not_configured' };
-  const M = ASSIST_MODELS[settings_().model] || ASSIST_MODELS.opus;
+  const M = ASSIST_MODELS[prov];
   if (!assistLimit_(user.email, 'ast', 40)) return { ok: false, error: 'Too many questions in a short time. Try again in a few minutes.' };
   const messages = assistClean_(body.messages);
   if (!messages || !messages.length) return { ok: false, error: 'Nothing to answer.' };
@@ -1656,6 +1666,9 @@ function assist_(user, body) {
   const who = 'Signed-in person: ' + (user.name || user.email) + ' (' + user.email + '), role ' + user.role + (user.role === 'Viewer' ? ' (view only: cannot change tasks)' : user.role === 'Editor' ? ' (can edit tasks)' : ' (admin)') + '.\n' +
     'Now: ' + Utilities.formatDate(new Date(), 'Asia/Kolkata', "EEEE d MMMM yyyy, h:mm a") + ' IST.\n' +
     'On screen: ' + String(ctx.page || 'overview').slice(0, 40) + (ctx.filters ? '; filters: ' + String(ctx.filters).slice(0, 200) : '') + (ctx.lang ? '; speech language setting: ' + String(ctx.lang).slice(0, 10) : '') + '.';
+  if (prov === 'gemini') return gemini_(messages, who);
+  // Gemini-only fields are dropped if the admin switched to Claude mid-conversation.
+  messages.forEach(function (m) { if (Array.isArray(m.content)) m.content.forEach(function (b) { delete b.sig; }); });
   const req = {
     model: M.id, max_tokens: 4000,
     output_config: { effort: 'low' },
@@ -1693,4 +1706,48 @@ function speak_(user, body) {
   const audio = JSON.parse(res.getContentText()).audioContent || '';
   if (audio && audio.length < 90000) cache.put(ck, audio, 21600);
   return { ok: true, audio: audio };
+}
+
+/* ---- Google Gemini (free tier from aistudio.google.com) ----
+ * The browser keeps the conversation in the same shape for every provider; here it is translated to Gemini's
+ * format and back. GEMINI_MODEL (script property) can pin a model; the default alias follows Google's current Flash model.
+ * Note: on the free tier Google may use requests to improve its products. */
+function geminiSchema_(x) {
+  if (Array.isArray(x)) return x.map(geminiSchema_);
+  if (!x || typeof x !== 'object') return x;
+  const o = {}; Object.keys(x).forEach(function (k) { if (k !== 'cache_control' && k !== 'additionalProperties') o[k] = geminiSchema_(x[k]); }); return o;
+}
+function gemini_(messages, who) {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GEMINI_API_KEY');
+  const model = props.getProperty('GEMINI_MODEL') || 'gemini-flash-latest';
+  const names = {};
+  const contents = messages.map(function (m) {
+    const blocks = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content, parts = [];
+    blocks.forEach(function (b) {
+      if (b.type === 'text' && b.text) parts.push({ text: b.text });
+      else if (b.type === 'tool_use') { names[b.id] = b.name; const fc = { functionCall: { name: b.name, args: b.input || {} } }; if (b.sig) fc.thoughtSignature = b.sig; parts.push(fc); }
+      else if (b.type === 'tool_result') { let r; try { r = JSON.parse(b.content); } catch (e) { r = { result: String(b.content) }; } parts.push({ functionResponse: { name: names[b.tool_use_id] || String(b.tool_use_id).split('__')[1] || 'tool', response: Array.isArray(r) ? { result: r } : r } }); }
+    });
+    return parts.length ? { role: m.role === 'assistant' ? 'model' : 'user', parts: parts } : null;
+  }).filter(Boolean);
+  const req = {
+    systemInstruction: { parts: [{ text: ASSIST_SYSTEM + '\n\n' + who }] },
+    contents: contents,
+    tools: [{ functionDeclarations: ASSIST_TOOLS.map(function (t) { return { name: t.name, description: t.description, parameters: geminiSchema_(t.input_schema) }; }) }],
+    generationConfig: { temperature: 0.3, maxOutputTokens: 2048 }
+  };
+  let res;
+  try { res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key }, payload: JSON.stringify(req) }); }
+  catch (err) { return { ok: false, error: 'busy' }; }
+  const code = res.getResponseCode(); let out = {}; try { out = JSON.parse(res.getContentText()); } catch (e) { out = {}; }
+  if (code === 429 || code >= 500) return { ok: false, error: 'busy' };
+  if (code !== 200) return { ok: false, error: code === 400 || code === 403 ? 'The Gemini key or model in Script properties is not valid (' + String((out.error || {}).message || code).slice(0, 120) + ').' : 'Assistant error ' + code };
+  const cand = (out.candidates || [])[0];
+  if (!cand || !cand.content) return { ok: true, stop_reason: (out.promptFeedback || {}).blockReason || (cand && cand.finishReason === 'SAFETY') ? 'refusal' : 'end_turn', content: [] };
+  const content = [], n = Utilities.getUuid().slice(0, 8);
+  (cand.content.parts || []).forEach(function (pt, i) {
+    if (pt.functionCall) { const b = { type: 'tool_use', id: 'g' + n + i + '__' + pt.functionCall.name, name: pt.functionCall.name, input: pt.functionCall.args || {} }; if (pt.thoughtSignature) b.sig = pt.thoughtSignature; content.push(b); }
+    else if (pt.text && !pt.thought) content.push({ type: 'text', text: pt.text });
+  });
+  return { ok: true, stop_reason: content.some(function (b) { return b.type === 'tool_use'; }) ? 'tool_use' : 'end_turn', content: content };
 }
