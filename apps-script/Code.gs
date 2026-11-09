@@ -1719,7 +1719,9 @@ function geminiSchema_(x) {
 }
 function gemini_(messages, who) {
   const props = PropertiesService.getScriptProperties(), key = props.getProperty('GEMINI_API_KEY');
-  const model = props.getProperty('GEMINI_MODEL') || 'gemini-flash-latest';
+  // testFasty() times the free models and saves the fastest that works (GEMINI_TUNE); GEMINI_MODEL overrides it.
+  let tune = {}; try { tune = JSON.parse(props.getProperty('GEMINI_TUNE') || '{}'); } catch (e) { tune = {}; }
+  const model = props.getProperty('GEMINI_MODEL') || tune.model || 'gemini-flash-lite-latest';
   const names = {};
   const contents = messages.map(function (m) {
     const blocks = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content, parts = [];
@@ -1734,7 +1736,7 @@ function gemini_(messages, who) {
     systemInstruction: { parts: [{ text: ASSIST_SYSTEM + '\n\n' + who }] },
     contents: contents,
     tools: [{ functionDeclarations: ASSIST_TOOLS.map(function (t) { return { name: t.name, description: t.description, parameters: geminiSchema_(t.input_schema) }; }) }],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 2048 }
+    generationConfig: Object.assign({ temperature: 0.3, maxOutputTokens: 2048 }, tune.model === model && tune.thinking ? { thinkingConfig: tune.thinking } : {})
   };
   let res;
   try { res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key }, payload: JSON.stringify(req) }); }
@@ -1752,22 +1754,33 @@ function gemini_(messages, who) {
   return { ok: true, stop_reason: content.some(function (b) { return b.type === 'tool_use'; }) ? 'tool_use' : 'end_turn', content: content };
 }
 
-/** Run from the Apps Script editor (choose testFasty, then Run) to check Fasty's AI connection step by step. Results appear in the Execution log. */
+/** Run from the Apps Script editor (choose testFasty, then Run). It checks the key, times the free Gemini models
+ *  (with thinking off where the model allows), saves the fastest that works for Fasty, then runs a full Fasty request. */
 function testFasty() {
   const p = PropertiesService.getScriptProperties(), prov = assistProvider_(), gk = p.getProperty('GEMINI_API_KEY') || '';
-  console.log('1. Provider: ' + prov + ' | GEMINI_API_KEY set: ' + !!gk + ' (starts "' + gk.slice(0, 4) + '", ' + gk.length + ' characters) | model setting: ' + settings_().model);
+  console.log('1. Provider: ' + prov + ' | GEMINI_API_KEY set: ' + !!gk + ' (' + gk.length + ' characters) | model setting: ' + settings_().model);
   if (prov === 'none') { console.log('No AI key found. Add GEMINI_API_KEY under Project Settings > Script properties.'); return; }
   if (prov === 'gemini') {
-    const model = p.getProperty('GEMINI_MODEL') || 'gemini-flash-latest';
-    let t = Date.now(), r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=5', { headers: { 'x-goog-api-key': gk }, muteHttpExceptions: true });
-    console.log('2. Key check: HTTP ' + r.getResponseCode() + ' in ' + (Date.now() - t) + ' ms ' + (r.getResponseCode() === 200 ? '(key accepted)' : r.getContentText().slice(0, 300)));
-    if (r.getResponseCode() !== 200) return;
-    t = Date.now(); r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', { method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': gk }, muteHttpExceptions: true, payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Say hi in 3 words.' }] }] }) });
-    console.log('3. Tiny request to ' + model + ': HTTP ' + r.getResponseCode() + ' in ' + (Date.now() - t) + ' ms: ' + r.getContentText().slice(0, 300));
-    if (r.getResponseCode() !== 200) return;
+    const tries = [
+      ['gemini-flash-lite-latest', { thinkingBudget: 0 }], ['gemini-flash-lite-latest', null],
+      ['gemini-2.5-flash-lite', { thinkingBudget: 0 }], ['gemini-flash-latest', { thinkingBudget: 0 }],
+      ['gemini-flash-latest', { thinkingLevel: 'low' }], ['gemini-2.5-flash', { thinkingBudget: 0 }], ['gemini-flash-latest', null]];
+    let best = null;
+    tries.forEach(function (tr) {
+      if (best && best.ms < 4000) return;
+      const body = { contents: [{ role: 'user', parts: [{ text: 'Reply with: ok' }] }], generationConfig: tr[1] ? { thinkingConfig: tr[1] } : {} };
+      const t = Date.now(); let code = 0, txt = '';
+      try { const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + tr[0] + ':generateContent', { method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': gk }, muteHttpExceptions: true, payload: JSON.stringify(body) }); code = r.getResponseCode(); txt = r.getContentText(); } catch (e) { txt = String(e); }
+      const ms = Date.now() - t;
+      console.log('2. ' + tr[0] + (tr[1] ? ' ' + JSON.stringify(tr[1]) : ' (default thinking)') + ': HTTP ' + code + ' in ' + ms + ' ms' + (code === 200 ? '' : ' ' + txt.slice(0, 160)));
+      if (code === 200 && (!best || ms < best.ms)) best = { model: tr[0], thinking: tr[1], ms: ms };
+    });
+    if (!best) { console.log('No Gemini model answered. Check the key in AI Studio (it should start with AIza) and the Rate Limit page.'); return; }
+    p.setProperty('GEMINI_TUNE', JSON.stringify({ model: best.model, thinking: best.thinking }));
+    console.log('3. Saved for Fasty: ' + best.model + (best.thinking ? ' ' + JSON.stringify(best.thinking) : '') + ' (' + best.ms + ' ms)');
   }
   const t0 = Date.now();
   const res = assist_({ email: 'test@local', name: 'Test', role: 'Viewer' }, { messages: [{ role: 'user', content: [{ type: 'text', text: 'aaj kitne tasks overdue hain?' }] }] });
-  console.log('4. Full Fasty request: ' + (Date.now() - t0) + ' ms: ' + JSON.stringify(res).slice(0, 500));
+  console.log('4. Full Fasty request: ' + (Date.now() - t0) + ' ms: ' + JSON.stringify(res).slice(0, 400));
   console.log(res.ok ? 'Fasty is working.' : 'Fasty is NOT working: ' + res.error);
 }
