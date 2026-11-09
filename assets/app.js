@@ -91,6 +91,30 @@
     try {
       const body = A.mode === 'auth' ? await callApi({ action: 'data', fresh: !!fresh }) : await keyGet(fresh ? { fresh: '1' } : {});
       if (!body.ok) throw new Error(errText(body.error));
+      applyData(body);
+      if (A.mode === 'auth' && A.user) DC.put(A.user.email, body);
+      loadHealth();
+      if (P.tab === 'access') axRefresh(true);
+      LS.set('co.cacheAt', S.generatedAt);
+      afterFirstData();
+    } catch (err) {
+      if (err instanceof AuthLost) { S.refreshing = false; return; }
+      S.error = err && err.message ? err.message : String(err);
+      if (err instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(S.error)) {
+        let reachable = false;
+        try { reachable = !!(await probeVer()).ok; } catch (e2) { /* unreachable */ }
+        S.error = reachable
+          ? 'The web app is connected but could not open the sheets. In Apps Script, signed in as the account the web app runs as (Deploy → Manage deployments shows it), run setup once and approve the permissions, then click Refresh.'
+          : 'This browser could not reach the web app. Check your connection, turn off ad or privacy blockers for this page (or try a private window) and click Refresh.';
+      }
+      if (S.status !== 'ok') S.status = 'error';
+      else S.staleError = S.error;
+    }
+    S.refreshing = false; S.cached = false;
+    renderAll();
+  }
+  // Turn a data response (live, or the copy saved on this device) into the dashboard's tasks and team.
+  function applyData(body) {
       const src = body.sources || {};
       const taskKeys = Object.keys(src).filter((k) => CODATA.kindOf(k, src[k].kind) !== 'team' && !src[k].optional);
       if (taskKeys.length && taskKeys.every((k) => src[k].error)) throw new Error('None of the task sheets could be opened by the web app: ' + src[taskKeys[0]].error);
@@ -106,26 +130,23 @@
       S.ver = body.ver || null;
       S.generatedAt = body.generatedAt; S.loadedAt = new Date();
       S.status = 'ok'; S.error = ''; S.staleError = '';
-      loadHealth();
-      if (P.tab === 'access') axRefresh(true);
-      LS.set('co.cacheAt', S.generatedAt);
-    } catch (err) {
-      if (err instanceof AuthLost) { S.refreshing = false; return; }
-      S.error = err && err.message ? err.message : String(err);
-      if (err instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(S.error)) {
-        // Google's own error pages carry no cross-site header, so a script error looks like a network failure.
-        // The version check touches no sheets: if it answers, the web app is reachable and the sheets are the problem.
-        let reachable = false;
-        try { reachable = !!(await probeVer()).ok; } catch (e2) { /* unreachable */ }
-        S.error = reachable
-          ? 'The web app is connected but could not open the sheets. In Apps Script, signed in as the account the web app runs as (Deploy → Manage deployments shows it), run setup once and approve the permissions, then click Refresh.'
-          : 'This browser could not reach the web app. Check your connection, turn off ad or privacy blockers for this page (or try a private window) and click Refresh.';
-      }
-      if (S.status !== 'ok') S.status = 'error';
-      else S.staleError = S.error;
-    }
-    S.refreshing = false;
-    renderAll();
+  }
+  /* Data saved on this device (IndexedDB, per signed-in person) so the dashboard draws instantly on the next visit while
+     the live data loads. Cleared on sign-out and when access ends. */
+  const DC = (() => {
+    const db = () => new Promise((res, rej) => { try { const r = indexedDB.open('co-data', 1); r.onupgradeneeded = () => r.result.createObjectStore('d'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } });
+    const tx = async (mode, fn) => { const d = await db(); return new Promise((res, rej) => { const t = d.transaction('d', mode); const out = fn(t.objectStore('d')); t.oncomplete = () => res(out && out.result); t.onerror = () => rej(t.error); }); };
+    return {
+      put: (email, body) => tx('readwrite', (st) => st.put({ body, at: Date.now() }, email)).catch(() => {}),
+      get: async (email) => { try { const d = await db(); return await new Promise((res) => { const r = d.transaction('d').objectStore('d').get(email); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); }); } catch (e) { return null; } },
+      clear: () => tx('readwrite', (st) => st.clear()).catch(() => {})
+    };
+  })();
+  // The secondary calls (notes, history, feed, settings, meetings) wait until the data has arrived, so they never slow it down.
+  let firstDone = false;
+  function afterFirstData() {
+    if (firstDone || A.mode !== 'auth' || !A.user) return; firstDone = true;
+    setTimeout(() => { NB.load(); loadHistory(); loadFeed(true); loadSettings(); dash.draw('cal'); checkForChanges(); }, 50);
   }
   /* Integration health from the web app (account, change detection, edit access). Admins only. Best effort. */
   async function loadHealth() {
@@ -435,7 +456,7 @@
   /* ================= Controls ================= */
   let shownTab = null;
   // The loading screen stays until the FASTRR reveal has landed (or 2.5 s at most), then fades.
-  const bootLanded = new Promise((res) => { const w = document.querySelector('.boot .boot-sub'); if (!w || matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); w.addEventListener('animationend', () => setTimeout(res, 250), { once: true }); setTimeout(res, 2500); });
+  const bootLanded = new Promise((res) => { const w = document.querySelector('.boot .boot-sub'); if (!w || matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); w.addEventListener('animationend', () => setTimeout(res, 120), { once: true }); setTimeout(res, 1800); });
   const hideBoot = () => { const b = document.getElementById('boot'); if (!b || b.dataset.leaving) return; b.dataset.leaving = '1'; bootLanded.then(() => { b.classList.add('done'); setTimeout(() => b.remove(), 500); }); };
   function syncControls() {
     const p = dash.params();
@@ -598,7 +619,7 @@
       const at = new Date(S.generatedAt || S.loadedAt);
       const live = S.ver && S.ver !== '0';
       const ago = S.checkedAt || S.loadedAt ? Math.max(0, Math.round((Date.now() - (S.checkedAt > S.loadedAt ? S.checkedAt : S.loadedAt)) / 1000)) : null;
-      el.textContent = (S.refreshing ? 'Syncing… ' : live ? 'Live · ' : '') + 'data from ' + CO.istTime(at) + (ago != null && !S.refreshing ? ' · checked ' + (ago < 5 ? 'just now' : ago + 's ago') : '') + (S.staleError ? ' · last refresh failed' : '');
+      el.textContent = (S.cached ? 'Saved copy · updating… ' : S.refreshing ? 'Syncing… ' : live ? 'Live · ' : '') + 'data from ' + CO.istTime(at) + (ago != null && !S.refreshing ? ' · checked ' + (ago < 5 ? 'just now' : ago + 's ago') : '') + (S.staleError ? ' · last refresh failed' : '');
       el.title = live ? 'Checks the sheets for changes every 30 seconds' : 'Run setup() in Apps Script to turn on instant change detection';
     } else el.textContent = S.status === 'loading' ? 'Loading sheets…' : S.status === 'error' ? 'Could not load' : 'Not connected';
   });
@@ -2511,7 +2532,10 @@
 
   function signedIn(user) {
     A.user = user; gate.hidden = true; delete document.body.dataset.gate;
-    renderAll(); load(false); NB.load(); loadHistory(); loadFeed(true); loadSettings(); dash.draw('cal'); setTimeout(checkForChanges, 2500);
+    LS.set('co.me', JSON.stringify(user));
+    renderAll();
+    DC.get(user.email).then((c) => { if (c && c.body && c.body.ok && S.status !== 'ok') { try { applyData(c.body); S.cached = true; S.refreshing = true; renderAll(); } catch (e) { /* ignore a bad copy */ } } });
+    load(false);
     ASH.show(true);
     // Admins see how many access requests are waiting as soon as they open the dashboard.
     if (can('Admin')) callApi({ action: 'ver' }).then((b) => { if (b.ok && typeof b.pending === 'number') { AX.pending = b.pending; syncControls(); } }).catch(() => {});
@@ -2521,13 +2545,13 @@
     const msg = body.error === 'session_expired' ? 'Your sign-in has ended. Log in again to continue.'
       : body.error === 'no_access' ? (body.status === 'Pending' ? 'Your access request is still waiting for approval.' : 'Your access to this dashboard has been removed. Talk to the Creative Head if you need it back.')
       : '';
-    A.session = ''; LS.set('co.session', null);
+    A.session = ''; LS.set('co.session', null); LS.set('co.me', null); DC.clear();
     if (A.user) { try { sessionStorage.setItem('co.gatemsg', msg); } catch (e) { /* ignore */ } A.user = null; location.reload(); return; }
     showGate(msg);
   }
   document.getElementById('btn-signout').addEventListener('click', async () => {
     try { await callApi({ action: 'signout' }); } catch (e) { /* signing out locally is what matters */ }
-    A.session = ''; LS.set('co.session', null);
+    A.session = ''; LS.set('co.session', null); LS.set('co.me', null); DC.clear();
     try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ }
     try { sessionStorage.setItem('co.gatemsg', 'You are signed out.'); } catch (e) { /* ignore */ }
     location.reload();
@@ -2537,6 +2561,14 @@
     const url = conn().url;
     if (!url) { A.mode = 'key'; document.body.dataset.mode = 'key'; S.status = 'unconfigured'; renderAll(); return; }
     A.url = url; S.status = 'loading'; renderAll();
+    // Fast path: this device has signed in before. Use the saved settings and person at once; the data request itself checks the session.
+    let saved = null, me = null; try { saved = JSON.parse(LS.get('co.cfg', 'null')); me = JSON.parse(LS.get('co.me', 'null')); } catch (e) { saved = null; }
+    if (saved && saved.auth && A.session && me && me.email) {
+      A.mode = 'auth'; A.clientId = saved.clientId; A.domains = saved.domains || []; document.body.dataset.mode = 'auth';
+      signedIn(me);
+      callApi({ action: 'me' }).then((r) => { if (r.ok && JSON.stringify(r.user) !== JSON.stringify(me)) { A.user = r.user; LS.set('co.me', JSON.stringify(r.user)); renderAll(); } }).catch(() => {});
+      return;
+    }
     let cfg = null, reached = false;
     try {
       const u = new URL(url); u.searchParams.set('mode', 'config');
@@ -2545,6 +2577,7 @@
     } catch (e) { /* unreachable, or an older web app */ }
     if (cfg && cfg.ok && cfg.auth) {
       A.mode = 'auth'; A.clientId = cfg.clientId; A.domains = cfg.domains || []; document.body.dataset.mode = 'auth';
+      LS.set('co.cfg', JSON.stringify({ auth: true, clientId: cfg.clientId, domains: cfg.domains || [] }));
       if (A.session) {
         try { const me = await callApi({ action: 'me' }); if (me.ok) { signedIn(me.user); return; } }
         catch (e) { if (e instanceof AuthLost) return; S.status = 'error'; S.error = 'This browser could not reach the web app. Check your connection and click Refresh.'; A.mode = null; renderAll(); return; }

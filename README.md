@@ -263,6 +263,10 @@ Do this in the browser profile signed into **design.tools@pickrr.com** only.
 
 From then on, the shared key no longer works. Everyone, including you, signs in with Google at https://anmolpickrr.github.io/Tracker/. Ask the team to sign up, then approve them under **Access**.
 
+## Fast start
+
+On a device that has signed in before, the dashboard opens at once from a copy of the last data saved in the browser (IndexedDB, for that person only), shows "Saved copy · updating…" and swaps in the live data a few seconds later. It skips the settings and sign-in round trips (the data request checks the session), and loads notes, history, the activity feed, settings and the briefing check only after the data has arrived. Signing out, or losing access, deletes the saved copy.
+
 ## Live sync
 
 Open dashboards ask the web app **every 30 seconds** whether anything changed, and reload only when it has:

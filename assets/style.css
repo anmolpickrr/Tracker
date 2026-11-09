@@ -70,8 +70,8 @@ svg { flex: none; }
 .side-brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 18px; }
 .side-brand b { display: block; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
 .side-brand small { display: block; font-size: 11.5px; color: var(--muted); }
-.side-logo { width: 42px; height: 42px; display: grid; place-items: center; flex: none; }
-.side-logo .logo { width: 42px; height: auto; }
+.side-logo { width: 34px; height: 34px; display: grid; place-items: center; flex: none; }
+.side-logo .logo { width: 30px; height: auto; }
 .side-name { display: grid; gap: 3px; }
 .side-nav { display: grid; gap: 3px; }
 .nav-h { margin: 16px 12px 6px; font: 600 12px/1 var(--font-body); color: var(--muted); }
@@ -519,7 +519,7 @@ body[data-gate] .app, body[data-gate] .co { display: none; }
 .gate-card { width: min(27rem, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 28px; padding: 32px 30px 24px; display: grid; gap: 16px; box-shadow: var(--shadow-lg); }
 .gate-card .co-eyebrow { margin: 0; display: flex; align-items: center; gap: 10px; font: 600 11px/1 var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .gate-logo { width: 34px; height: 34px; display: grid; place-items: center; }
-.gate-logo .logo { width: 34px; height: 34px; }
+.gate-logo .logo { width: 30px; height: auto; }
 .gate-title { margin: 0; font: 600 34px/1.05 var(--font-display); letter-spacing: -0.03em; }
 .gate-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border-radius: 999px; background: var(--sunken); border: 1px solid var(--line); }
 .gate-tabs button { border: 0; background: none; border-radius: 999px; padding: 9px 0; cursor: pointer; font-weight: 500; color: var(--muted); }
@@ -577,18 +577,6 @@ body[data-gate] .app, body[data-gate] .co { display: none; }
 @media (max-width: 520px) { .pr-list li { grid-template-columns: 1fr; gap: 2px; } }
 
 /* ============ Brand mark (two bars) and motion ============ */
-.logo { display: block; overflow: visible; }
-.logo .lb { fill: var(--logo); }
-.logo .lb { transform-box: fill-box; transform-origin: left center; animation: lb-in .7s cubic-bezier(.2, .8, .2, 1) both; }
-.logo .lb2 { animation-delay: .12s; }
-@keyframes lb-in { from { transform: translateX(-28%) scaleX(.4); opacity: 0; } to { transform: none; opacity: 1; } }
-.side-brand:hover .lb1, .gate-logo:hover .lb1 { animation: lb-nudge .6s ease; }
-.side-brand:hover .lb2, .gate-logo:hover .lb2 { animation: lb-nudge .6s .08s ease; }
-@keyframes lb-nudge { 40% { transform: translateX(10%); } }
-/* While data is syncing, the mark streams like a progress indicator. */
-body.syncing .side-logo .lb1 { animation: lb-run 1.1s ease-in-out infinite; }
-body.syncing .side-logo .lb2 { animation: lb-run 1.1s .15s ease-in-out infinite; }
-@keyframes lb-run { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(14%); opacity: .55; } }
 
 .boot { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: var(--bg); transition: opacity .4s ease, visibility .4s; }
 .boot.done { opacity: 0; visibility: hidden; }
@@ -707,7 +695,7 @@ body.syncing .side-logo .lb2 { animation: lb-run 1.1s .15s ease-in-out infinite;
 .paper::before { content: ""; position: absolute; top: 0; bottom: 0; left: 64px; width: 1px; background: var(--paper-margin); pointer-events: none; }
 .paper-empty { display: grid; justify-items: center; text-align: center; gap: 10px; padding: 14vh 30px; }
 .paper-empty-logo { width: 72px; height: 72px; display: grid; place-items: center; margin-bottom: 6px; --fg: #1d1d1b; }
-.paper-empty-logo .logo { width: 72px; height: 72px; }
+.paper-empty-logo .logo { width: 64px; height: auto; }
 .paper-empty h2 { margin: 0; font: 500 30px var(--font-notes, 'Newsreader', Georgia, serif); letter-spacing: -0.01em; }
 .paper-empty p { margin: 0; max-width: 34rem; color: var(--paper-muted); font-size: 14px; }
 .paper-empty .nb-new { justify-content: center; margin-top: 8px; }
@@ -786,7 +774,7 @@ body.syncing .side-logo .lb2 { animation: lb-run 1.1s .15s ease-in-out infinite;
   .pm { flex: 1 1 45%; }
   .pm .co-input, .pm .co-select { min-width: 0; width: 100%; }
 }
-@media (prefers-reduced-motion: reduce) { .logo .lb, .bm-s, .bm-word, .boot-sub { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .mark .lb, .mark .lt, .bm-word, .boot-sub { animation: none !important; } .mark .lt { opacity: 0 !important; } }
 
 /* Needs attention fills the height of the column beside it and scrolls inside, instead of leaving a gap. */
 .ov-grid.fill { align-items: stretch; }
@@ -923,11 +911,6 @@ body.syncing .side-logo .lb2 { animation: lb-run 1.1s .15s ease-in-out infinite;
    the wordmark sweeps out from behind them, then "Creative Ops" settles underneath in small italic. */
 .boot-lock { position: relative; display: grid; justify-items: end; gap: 10px; }
 .boot-mark { width: clamp(230px, 42vw, 440px); height: auto; overflow: visible; color: var(--fg); }
-.bm-s { fill: var(--logo); transform-box: fill-box; transform-origin: right center; animation: boot-dash .72s cubic-bezier(.12, .9, .25, 1) both, boot-kick .38s .86s cubic-bezier(.3, 0, .2, 1) both; }
-.bm-top { animation-delay: .08s, .86s; }
-.bm-bot { animation-delay: .2s, .92s; }
-@keyframes boot-dash { 0% { transform: translateX(-700%) scaleX(3); opacity: 0; } 20% { opacity: 1; } 62% { transform: translateX(12%) scaleX(1.3); } 80% { transform: translateX(-4%) scaleX(.92); } 100% { transform: none; opacity: 1; } }
-@keyframes boot-kick { 40% { transform: translateX(16%) scaleX(1.18); } 100% { transform: none; } }
 .bm-word { fill: currentColor; transform-box: fill-box; transform-origin: left center; animation: boot-word .6s 1s cubic-bezier(.16, 1.15, .3, 1) both; }
 @keyframes boot-word { 0% { opacity: 0; transform: translateX(-26%) skewX(-18deg) scaleX(1.2); clip-path: inset(0 100% 0 0); } 45% { opacity: 1; clip-path: inset(0 0 0 0); } 72% { transform: translateX(1.5%) skewX(5deg) scaleX(.99); } 100% { opacity: 1; transform: none; clip-path: inset(0 0 0 0); } }
 .boot-sub { font: italic 500 clamp(13px, 2.2vw, 17px)/1 var(--font-display); letter-spacing: .02em; color: var(--muted); padding-right: 2px; animation: boot-sub .45s 1.45s cubic-bezier(.2, .8, .2, 1) both; }
@@ -1173,3 +1156,26 @@ body.syncing .side-logo .lb2 { animation: lb-run 1.1s .15s ease-in-out infinite;
 .ash-caption { background-color: var(--accent-soft); margin: 0; border-radius: 0; padding: 8px 26px; }
 @media (max-width: 960px) { .fy-hint { right: 14px; bottom: calc(166px + env(safe-area-inset-bottom, 0px)); } }
 @media (prefers-reduced-motion: reduce) { .fy-glow, .fy-spark, .fy-hint, .ash::before, .ash::after { animation: none !important; } }
+
+/* ============ The FASTRR mark (favicon shape, FASTRR blue): the strips dash in with motion trails, overshoot and settle.
+   Same motion in the sidebar, sign-in, notes and the loading screen. Hover gives a quick forward kick; syncing streams. ============ */
+.logo { display: block; overflow: visible; }
+.mark .lb { fill: var(--logo); transform-box: fill-box; transform-origin: right center; animation: mk-dash .62s cubic-bezier(.12, .9, .25, 1) both; }
+.mark .lb1 { animation-delay: .04s; }
+.mark .lb2 { animation-delay: .13s; }
+@keyframes mk-dash { 0% { transform: translateX(-240%) scaleX(2.2); opacity: 0; } 22% { opacity: 1; } 64% { transform: translateX(7%) scaleX(1.16); } 82% { transform: translateX(-2.5%) scaleX(.96); } 100% { transform: none; opacity: 1; } }
+.mark .lt { fill: var(--logo); opacity: 0; transform-box: fill-box; transform-origin: right center; animation: mk-trail .62s cubic-bezier(.2, .7, .2, 1) both; }
+.mark .lt1 { animation-delay: .1s; }
+.mark .lt2 { animation-delay: .19s; }
+@keyframes mk-trail { 0% { opacity: 0; transform: translateX(-60%) scaleX(.4); } 35% { opacity: .35; } 100% { opacity: 0; transform: translateX(30%) scaleX(1); } }
+.side-brand:hover .mark .lb, .gate-logo:hover .mark .lb { animation: mk-kick .5s cubic-bezier(.3, 0, .2, 1); }
+.side-brand:hover .mark .lb2, .gate-logo:hover .mark .lb2 { animation-delay: .06s; }
+.side-brand:hover .mark .lt, .gate-logo:hover .mark .lt { animation: mk-trail .5s cubic-bezier(.2, .7, .2, 1); }
+@keyframes mk-kick { 40% { transform: translateX(12%) scaleX(1.15); } 100% { transform: none; } }
+body.syncing .side-logo .mark .lb1 { animation: mk-run 1s ease-in-out infinite; }
+body.syncing .side-logo .mark .lb2 { animation: mk-run 1s .14s ease-in-out infinite; }
+@keyframes mk-run { 0%, 100% { transform: none; } 45% { transform: translateX(14%) scaleX(1.12); opacity: .6; } }
+/* Loading screen: same mark, then the wordmark and "Creative Ops" follow quickly (about a second in all) */
+.boot-mark .mark .lb { animation-duration: .6s; }
+.bm-word { animation-delay: .55s !important; animation-duration: .5s !important; }
+.boot-sub { animation-delay: .9s !important; animation-duration: .35s !important; }
