@@ -542,7 +542,7 @@
 
   /* ================= Header, sync state and filters ================= */
   const PAGES = {
-    today: ['Overview', () => new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long' }) + ' · what needs attention today'],
+    today: ['Overview', () => 'What needs attention today.'],
     notes: ['Notes', 'Meeting minutes, discussions, action items and personal notes.'],
     standup: ['Daily stand-up', 'One card per active designer: what is late, due today, in progress and up next.'],
     tasks: ['Tasks', 'Every task from both sheets. Click a row to open or edit it.'],
