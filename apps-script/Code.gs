@@ -20,18 +20,39 @@
  * The copy of this file on GitHub has placeholders: keep real links in Apps Script only.
  */
 const CONFIG = {
+  /*
+   * One line per sheet tab the dashboard reads. `kind` says how the tab is laid out:
+   *   'paid' – the client (Paid) sheet layout   'mkt' – the Marketing team layout   'team' – the team list
+   * To add a new sheet or tab (for example a 2027 sheet), copy a line, give it a new name,
+   * paste the sheet link and the tab name, then save and run setup() again. No redeploy needed.
+   * List the newest tab of each kind first: if the same ID appears in two tabs, the first one listed wins.
+   */
   sources: {
     // Client creative requests ("Design Requirements (PAID)"), tab "2026".
-    paid: { sheet: 'PASTE_PAID_SHEET_LINK', tab: '2026' },
+    paid: { sheet: 'PASTE_PAID_SHEET_LINK', tab: '2026', kind: 'paid' },
     // Marketing team requests ("Design Requirements"), tab "2026 (Mkt Team)".
-    mkt: { sheet: 'PASTE_MARKETING_SHEET_LINK', tab: '2026 (Mkt Team)' },
+    mkt: { sheet: 'PASTE_MARKETING_SHEET_LINK', tab: '2026 (Mkt Team)', kind: 'mkt' },
     // Earlier marketing history (Nov 2024 – Dec 2025) from the same sheet. Delete this line to leave it out.
-    mkt2025: { sheet: 'PASTE_MARKETING_SHEET_LINK', tab: '2025', optional: true },
+    mkt2025: { sheet: 'PASTE_MARKETING_SHEET_LINK', tab: '2025', kind: 'mkt', optional: true },
+    // Example for next year (remove the // to use it):
+    // mkt2027: { sheet: 'PASTE_2027_SHEET_LINK', tab: 'Sheet1', kind: 'mkt' },
     // Team list: Name, Status (Active / Inactive), Role, Also written as, Notes. First tab.
-    team: { sheet: 'PASTE_TEAM_LIST_SHEET_LINK', tab: '' }
+    team: { sheet: 'PASTE_TEAM_LIST_SHEET_LINK', tab: '', kind: 'team' }
   },
   cacheSeconds: 60
 };
+
+/* The source's layout: its `kind`, else guessed from its name. */
+function kindOf_(name) {
+  const s = CONFIG.sources[name] || {};
+  if (s.kind) return s.kind;
+  return name === 'team' ? 'team' : /^paid/.test(name) ? 'paid' : 'mkt';
+}
+function teamSource_() {
+  const names = Object.keys(CONFIG.sources).filter(function (n) { return kindOf_(n) === 'team'; });
+  if (!names.length) throw new Error('No team list in CONFIG');
+  return CONFIG.sources[names[0]];
+}
 
 /* ================= One-time setup ================= */
 
@@ -97,8 +118,9 @@ function readAll_() {
     const s = CONFIG.sources[name];
     try {
       out.sources[name] = readTab_(s);
+      out.sources[name].kind = kindOf_(name);
     } catch (err) {
-      out.sources[name] = { error: String(err && err.message || err), optional: !!s.optional };
+      out.sources[name] = { error: String(err && err.message || err), optional: !!s.optional, kind: kindOf_(name) };
     }
   });
   return out;
@@ -137,9 +159,9 @@ function health_() {
         const owner = ss.getOwner();
         canEdit = (owner && owner.getEmail() === me) || ss.getEditors().some(function (u) { return u.getEmail() === me; });
       } catch (err) { canEdit = false; }
-      out.sources[name] = { ok: true, file: ss.getName(), tab: sheet.getName(), rows: Math.max(0, sheet.getLastRow() - 1), canEdit: canEdit };
+      out.sources[name] = { ok: true, kind: kindOf_(name), file: ss.getName(), tab: sheet.getName(), rows: Math.max(0, sheet.getLastRow() - 1), canEdit: canEdit };
     } catch (err) {
-      out.sources[name] = { ok: false, error: String(err && err.message || err), optional: !!s.optional };
+      out.sources[name] = { ok: false, kind: kindOf_(name), error: String(err && err.message || err), optional: !!s.optional };
     }
   });
   return out;
@@ -171,7 +193,7 @@ function setMember_(body) {
   const name = clean_(body.name);
   if (!name || name.length > 80) return { ok: false, error: 'bad_name' };
   const status = body.status === 'Inactive' ? 'Inactive' : 'Active';
-  const sheet = openTab_(CONFIG.sources.team);
+  const sheet = openTab_(teamSource_());
   const values = sheet.getDataRange().getValues();
   const head = values[0].map(function (h) { return String(h).trim().toLowerCase(); });
   const col = function (re) { for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; };
@@ -206,19 +228,19 @@ const STATUS_WORDS = {
 const QTY_HEADER = /^(no\.?\s*of\s*creatives?|number of creatives?|qty|quantity|creatives?\s*count|count of creatives?)$/;
 
 /**
- * body: { source: 'paid'|'mkt'|'mkt2025', id, row, fields: { status?, eta?, designer?, priority?, qty? } }
+ * body: { source: a name from CONFIG.sources, id, row, fields: { status?, eta?, designer?, priority?, qty? } }
  * Finds the row by its ID (using `row` as a hint), then writes only the fields given.
  */
 function updateTask_(body) {
   const src = CONFIG.sources[body.source];
-  if (!src || body.source === 'team') return { ok: false, error: 'unknown sheet' };
+  if (!src || kindOf_(body.source) === 'team') return { ok: false, error: 'unknown sheet' };
   const id = clean_(body.id);
   if (!id) return { ok: false, error: 'This task has no ID in the sheet, so it can only be edited there.' };
   const f = body.fields || {};
   const sheet = openTab_(src);
   const lastCol = sheet.getLastColumn(), lastRow = sheet.getLastRow();
   const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function (h) { return clean_(h).toLowerCase(); });
-  const c = taskColumns_(body.source, head);
+  const c = taskColumns_(kindOf_(body.source), head);
 
   // Locate the row: trust the hint only if the ID there still matches.
   let row = Number(body.row) || 0;
@@ -280,12 +302,12 @@ function updateTask_(body) {
   return { ok: true, row: row, written: written };
 }
 
-function taskColumns_(name, head) {
+function taskColumns_(kind, head) {
   const col = function (n, nth) { let seen = 0; for (let i = 0; i < head.length; i++) if (head[i] === n) { if (seen === (nth || 0)) return i; seen++; } return -1; };
   const any = function () { for (let i = 0; i < arguments.length; i++) { const k = col(arguments[i]); if (k >= 0) return k; } return -1; };
   const find = function (re) { for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; };
   const c = { priority: col('priority'), qty: find(QTY_HEADER), delivered: find(/deliver/) };
-  if (name === 'paid') {
+  if (kind === 'paid') {
     // Paid sheet: column A holds the ID; the second "Design ETA" column holds the design status.
     c.id = 0; c.eta = col('design eta', 0);
     c.status = col('design eta', 1) >= 0 ? col('design eta', 1) : any('design status');

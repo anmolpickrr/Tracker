@@ -64,13 +64,16 @@
       try { body = JSON.parse(text); } catch (e) { throw new Error(/<html/i.test(text) ? 'The web app answered with a web page instead of data. Check that it is deployed with access set to "Anyone".' : 'The web app returned something that is not data.'); }
       if (!body.ok) throw new Error(body.error === 'bad_key' ? 'The key was not accepted. Copy it again from the Apps Script execution log after running setup.' : 'The web app reported: ' + body.error);
       const src = body.sources || {};
-      const failed = ['paid', 'mkt'].filter((k) => src[k] && src[k].error);
-      if (failed.length === 2) throw new Error('Neither task sheet could be opened by the web app: ' + src.paid.error);
+      const taskKeys = Object.keys(src).filter((k) => CODATA.kindOf(k, src[k].kind) !== 'team' && !src[k].optional);
+      if (taskKeys.length && taskKeys.every((k) => src[k].error)) throw new Error('None of the task sheets could be opened by the web app: ' + src[taskKeys[0]].error);
       S.sources = src;
-      S.tasks = CODATA.buildTasks({ paid: CODATA.parseSource('paid', src.paid), mkt: CODATA.parseSource('mkt', src.mkt), mkt2025: CODATA.parseSource('mkt2025', src.mkt2025) });
-      S.teamRaw = CODATA.parseTeam(src.team);
+      // Every task tab the web app reports, in its order (newest tab of each kind first).
+      const keys = Object.keys(src).filter((k) => !src[k].error && CODATA.kindOf(k, src[k].kind) !== 'team');
+      S.tasks = CODATA.buildTasks(keys.map((k) => ({ kind: CODATA.kindOf(k, src[k].kind), rows: CODATA.parseSource(CODATA.kindOf(k, src[k].kind), src[k], k) })));
+      const teamKey = Object.keys(src).find((k) => CODATA.kindOf(k, src[k].kind) === 'team');
+      S.teamRaw = CODATA.parseTeam(teamKey ? src[teamKey] : null);
       S.team = S.teamRaw;
-      S.cols = { paid: CODATA.columnsOf(src.paid), mkt: CODATA.columnsOf(src.mkt), mkt2025: CODATA.columnsOf(src.mkt2025) };
+      S.cols = {}; Object.keys(src).forEach((k) => { S.cols[k] = CODATA.columnsOf(src[k]); });
       S.ver = body.ver || null;
       S.generatedAt = body.generatedAt; S.loadedAt = new Date();
       S.status = 'ok'; S.error = '';
@@ -408,7 +411,7 @@
   dash.draw('banner-text', (el) => { el.textContent = S.status === 'error' ? S.error : 'Paste the web app URL and key from the Apps Script set-up (see the README). They are kept in this browser only.'; });
   dash.draw('foot', (el) => {
     const src = S.sources || {};
-    const parts = ['paid', 'mkt', 'mkt2025', 'team'].filter((k) => src[k]).map((k) => (src[k].error ? '⚠ ' : '') + (src[k].file ? src[k].file + ' / ' + src[k].tab : k) + (src[k].rows ? ' (' + CO.num(src[k].rows.length) + ' rows)' : ''));
+    const parts = Object.keys(src).map((k) => (src[k].error ? '⚠ ' : '') + (src[k].file ? src[k].file + ' / ' + src[k].tab : k) + (src[k].rows ? ' (' + CO.num(src[k].rows.length) + ' rows)' : ''));
     el.textContent = parts.length ? 'Sources: ' + parts.join(' · ') : 'Data is read live from the Google Sheets through your Apps Script web app.';
   });
   dash.draw('integration', (el) => {
@@ -417,7 +420,7 @@
     const row = (k, v, cls) => { const r = document.createElement('div'); r.className = 'row'; const a = document.createElement('span'); a.className = 'k'; a.textContent = k; const b = document.createElement('span'); if (cls) b.className = cls; b.textContent = v; r.append(a, b); el.append(r); };
     row('Connected as', h.runsAs || 'unknown');
     row('Live change detection', h.liveTriggers ? 'On: sheet edits show here within about 30 seconds' : 'Off: run setup in Apps Script to turn it on (until then, changes arrive every 10 minutes)', h.liveTriggers ? 'good' : 'warn');
-    const label = { paid: 'Paid sheet', mkt: 'Marketing sheet', mkt2025: 'Marketing 2025 tab', team: 'Team list' };
+    const label = new Proxy({}, { get: (_, k) => { const s = (h.sources || {})[k]; return s && s.file ? s.file + ' / ' + (s.tab || 'first tab') : k; } });
     Object.keys(h.sources || {}).forEach((k) => {
       const s = h.sources[k];
       if (!s.ok) return row(label[k] || k, (s.optional ? 'Not loaded (optional): ' : 'Cannot open: ') + s.error, s.optional ? 'warn' : 'bad');
@@ -935,7 +938,7 @@
   (() => {
     const dlgE = document.getElementById('editor');
     const $ = (id) => document.getElementById(id);
-    const SHEET = { paid: 'Paid sheet', mkt: 'Marketing sheet', mkt2025: 'Marketing sheet, 2025 tab' };
+    const SHEET = new Proxy({}, { get: (_, k) => { const s = S.sources && S.sources[k]; return s && s.file ? s.file + ' / ' + s.tab : null; } });
     let current = null, before = null;
     function openEditor(uid) {
       if (S.status !== 'ok' || !S.tasks) return;

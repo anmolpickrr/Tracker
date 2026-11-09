@@ -54,7 +54,7 @@ Do this in a browser profile signed into **design.tools@pickrr.com only** (see a
 
 1. Go to https://script.google.com and click **New project**. Name it "Creative Ops Tracker API".
 2. Delete the sample code and paste in the script:
-   - from the private file **"Creative Ops Tracker – Apps Script code v2"** in design.tools' Google Drive, which already has your sheet links filled in, or
+   - from the private file **"Creative Ops Tracker – Apps Script code v3"** in design.tools' Google Drive, which already has your sheet links filled in, or
    - from [`apps-script/Code.gs`](apps-script/Code.gs), then replace the four `PASTE_…` placeholders in `CONFIG` with the links to your sheets. Keep the real links in Apps Script only: this repository is public.
 3. Save, pick **setup** in the function menu at the top, and click **Run**. Allow the permissions it asks for (read and edit your spreadsheets, run triggers). Open **Execution log**: it lists the rows found in each sheet, the account the web app runs as, which sheets have change detection, and your **key**.
 4. Click **Deploy → New deployment**, type **Web app**, **Execute as: Me**, **Who has access: Anyone**. Click **Deploy** and copy the **Web app URL** (it ends in `/exec`).
@@ -107,9 +107,19 @@ The dashboard picks these up automatically by their header name:
 - **`No. of Creatives`**: how many creatives a task asks for. Without it, each row counts as one.
 - **`Delivered On`**: the date the creative was actually delivered. Without it, delivered work is dated by its Design ETA, so monthly reports are close but not exact.
 
-## Changing sources
+## Adding a sheet or tab (for example, a new year)
 
-Sheet links and tab names live in `CONFIG` in your Apps Script project (the copy in this repository has placeholders). If a tab is renamed, update it there and deploy a new version.
+Every sheet tab the dashboard reads is one line in `CONFIG.sources` in the Apps Script (in the design.tools browser profile):
+
+```js
+mkt2027: { sheet: 'https://docs.google.com/spreadsheets/d/…/edit', tab: 'Sheet1', kind: 'mkt' },
+```
+
+- `kind` is the tab's layout: `'mkt'` for the Marketing layout, `'paid'` for the Paid layout, `'team'` for the team list.
+- Put the newest tab of each kind **first**. If a task is copied into the new year's sheet with the same ID, the first listed copy is the one shown and edited, so it is never counted twice.
+- Make sure design.tools@pickrr.com is an **Editor** of the new sheet.
+- Save, then run **setup** once (it adds change detection for the new sheet). No redeploy and no dashboard change are needed: the dashboard reads every tab the web app reports.
+- To stop reading an old tab, delete its line, save and run setup.
 
 ## Files
 

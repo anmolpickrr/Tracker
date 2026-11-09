@@ -21,9 +21,15 @@
   };
 
   /* ---------- Columns ---------- */
+  // A source's layout: as the web app reports it, else guessed from its name.
+  function kindOf(key, given) {
+    if (given) return given;
+    return key === 'team' ? 'team' : /^paid/.test(key || '') ? 'paid' : 'mkt';
+  }
   const QTY = /^(no\.?\s*of\s*creatives?|number of creatives?|qty|quantity|creatives?\s*count|count of creatives?)$/;
-  // name: 'paid' | 'mkt' | 'mkt2025'
-  function parseSource(name, src) {
+  // kind: 'paid' | 'mkt' (the tab's layout); key: the source's name in the web app's CONFIG (used for edits)
+  function parseSource(kind, src, key) {
+    const name = (src && src.kind) || kindOf(kind);
     if (!src || !Array.isArray(src.rows)) return [];
     const head = (src.headers || []).map((h) => clean(h).toLowerCase());
     const col = (n, nth = 0) => { let seen = 0; for (let i = 0; i < head.length; i++) if (head[i] === n) { if (seen === nth) return i; seen++; } return -1; };
@@ -57,7 +63,7 @@
     return src.rows.map((r, i) => {
       const qn = parseInt(v(r, 'qty'), 10);
       return {
-        src: name, row: rowNums[i] || null,
+        src: key || kind, row: rowNums[i] || null,
         id: v(r, 'id'), req_date: parseDate(v(r, 'req')), req_text: v(r, 'req'), type: v(r, 'type'), brand: v(r, 'brand'), topic: v(r, 'topic'),
         channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: v(r, 'cstatus'),
         eta: parseDate(v(r, 'eta')), eta_text: v(r, 'eta'), creative_link: v(r, 'link'), design_status: v(r, 'dstatus'), designer: v(r, 'designer'),
@@ -142,13 +148,24 @@
 
   /* ---------- One task list ---------- */
   // sources: { paid: rows, mkt: rows, mkt2025: rows }  (rows from parseSource)
+  // sources: [{ kind: 'paid'|'mkt', rows }] in the web app's order (newest tab of each kind first),
+  // or the older form { paid: rows, mkt: rows, mkt2025: rows }.
   function buildTasks(sources) {
-    const mktIds = new Set((sources.mkt || []).map((r) => clean(r.id)).filter(Boolean));
-    const both = []
-      .concat((sources.paid || []).map((r) => [r, 'Paid']))
-      .concat((sources.mkt || []).map((r) => [r, 'Marketing']))
-      .concat((sources.mkt2025 || []).filter((r) => !mktIds.has(clean(r.id))).map((r) => [r, 'Marketing']))
-      .filter(([r]) => clean(r.brand) || clean(r.type) || clean(r.topic));
+    const list = Array.isArray(sources) ? sources : Object.keys(sources).map((k) => ({ kind: kindOf(k), rows: sources[k] || [] }));
+    const seenIds = { paid: new Set(), mkt: new Set() };
+    const both = [];
+    for (const s of list) {
+      if (s.kind !== 'paid' && s.kind !== 'mkt') continue;
+      const ids = new Set();
+      for (const r of s.rows || []) {
+        const id = clean(r.id);
+        if (id && seenIds[s.kind].has(id)) continue; // the same task in an older tab
+        if (id) ids.add(id);
+        both.push([r, s.kind === 'paid' ? 'Paid' : 'Marketing']);
+      }
+      ids.forEach((id) => seenIds[s.kind].add(id));
+    }
+    for (let i = both.length - 1; i >= 0; i--) { const r = both[i][0]; if (!(clean(r.brand) || clean(r.type) || clean(r.topic))) both.splice(i, 1); }
     const designersOf = designerSplitter(both.map(([r]) => r.designer));
     const yr = (s) => +s.slice(0, 4);
     const gap = (a, b) => (Date.parse(b) - Date.parse(a)) / 864e5;
@@ -204,6 +221,6 @@
   }
   const OPEN_STAGES = ['To be planned', 'In progress', 'Changes requested'];
 
-  const api = { parseDate, parseSource, parseTeam, stageOf, buildTasks, designerSplitter, columnsOf, OPEN_STAGES };
+  const api = { kindOf, parseDate, parseSource, parseTeam, stageOf, buildTasks, designerSplitter, columnsOf, OPEN_STAGES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.CODATA = api;
 })(typeof window !== 'undefined' ? window : globalThis);
