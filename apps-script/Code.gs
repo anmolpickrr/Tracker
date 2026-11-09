@@ -42,16 +42,23 @@ function setup() {
   if (!key) key = createKey();
   // Change detection: any edit in a source sheet bumps the data version, so open dashboards reload within ~30 s.
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'onSheetChange') ScriptApp.deleteTrigger(t); });
-  const seen = {};
+  const seen = {}, ok = [], viewOnly = [];
   Object.keys(CONFIG.sources).forEach(function (name) {
     const id = sheetId_(CONFIG.sources[name].sheet);
     if (seen[id]) return; seen[id] = true;
-    ScriptApp.newTrigger('onSheetChange').forSpreadsheet(id).onEdit().create();
-    ScriptApp.newTrigger('onSheetChange').forSpreadsheet(id).onChange().create();
+    try {
+      ScriptApp.newTrigger('onSheetChange').forSpreadsheet(id).onEdit().create();
+      ScriptApp.newTrigger('onSheetChange').forSpreadsheet(id).onChange().create();
+      ok.push(name);
+    } catch (err) {
+      // Google only allows these triggers on sheets this account can edit.
+      viewOnly.push(name);
+    }
   });
   bumpVersion_();
   testRead();
-  Logger.log('Change detection is on for ' + Object.keys(seen).length + ' spreadsheets.');
+  Logger.log('Change detection is on for: ' + (ok.join(', ') || 'none'));
+  if (viewOnly.length) Logger.log('NEEDS EDIT ACCESS: ' + viewOnly.join(', ') + '. This account can only view those sheets, so the dashboard can read them but cannot detect edits instantly or save changes to them. Ask the owner to make ' + Session.getEffectiveUser().getEmail() + ' an Editor, then run setup() again.');
   Logger.log('Your dashboard key: ' + key);
 }
 
