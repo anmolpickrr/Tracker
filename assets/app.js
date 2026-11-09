@@ -1575,7 +1575,7 @@
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
   // Animate a chart only when what it shows changed (not on every 30-second check).
   const freshSig = (el, sig) => { const go = !REDUCED && el.__sig !== sig; el.__sig = sig; return go; };
-  const ease = d3.easeCubicOut;
+  const ease = (t) => 1 - Math.pow(1 - t, 3); // cubic ease-out; no dependency on d3 being loaded
 
   /* ================= Daily briefings and notifications (IST) ================= */
   const ICONS = {
