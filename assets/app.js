@@ -162,6 +162,7 @@
       if (A.mode === 'auth' && body.ok && typeof body.pending === 'number' && body.pending !== AX.pending) { AX.pending = body.pending; syncControls(); }
       if (P.tab === 'access') axRefresh(false);
       if (A.mode === 'auth' && body.ok) {
+        S.verBody = body; dash.draw('syscheck');
         PRS.on = body.presenceOn !== false;
         if (body.remind) { const hm = (t) => { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? +m[1] * 60 + +m[2] : null; }; const a = hm(body.remind.morning), b = hm(body.remind.evening); if (a != null) REMIND_AT.morning = a; if (b != null) REMIND_AT.evening = b; REMIND_AT.label = body.remind; }
         if (body.presence) { PRS.list = body.presence; dash.draw('presence-mini'); dash.draw('presence'); }
@@ -196,6 +197,24 @@
     const prevMonth = (k) => { const [y, m] = k.split('-').map(Number); return m === 1 ? (y - 1) + '-12' : y + '-' + pad(m - 1); };
     const fmtMonth = (k, long) => { if (!k) return '—'; const [y, m] = k.split('-').map(Number); return (long ? MONTHS[m - 1] : MON[m - 1]) + ' ' + y; };
     const monthStart = (k) => k + '-01';
+    /* Working days: Monday to Friday. Saturdays and Sundays are never counted (no holiday calendar),
+       so a month has 20 to 23 working days, usually 21 or 22. Used for every rate and every comparison of a period that is still running. */
+    const isWorkday = (iso) => { const g = toDate(iso).getDay(); return g !== 0 && g !== 6; };
+    const wdMemo = new Map();
+    const workdays = (f, t) => {
+      if (!f || !t || t < f) return 0; const k = f + t; if (wdMemo.has(k)) return wdMemo.get(k);
+      const a = toDate(f), b = toDate(t); const days = Math.round((b - a) / 864e5) + 1, full = Math.floor(days / 7); let n = full * 5;
+      for (let i = full * 7; i < days; i++) { const g = (a.getDay() + i) % 7; if (g !== 0 && g !== 6) n++; }
+      wdMemo.set(k, n); return n;
+    };
+    const nthWorkday = (start, n, cap) => { let d = start, c = 0; while (d <= cap) { if (isWorkday(d)) { c++; if (c === n) return d; } d = addDays(d, 1); } return null; };
+    // End of the window in an earlier period that has as many working days as have passed in the current one
+    // (e.g. 1–10 Nov 2026 has 7 working days, so October is counted to its 7th working day, 9 Oct).
+    const sameWorkdaysEnd = (curFrom, curTo, prevFrom, prevEnd) => {
+      const n = workdays(curFrom, curTo); if (!n) return addDays(prevFrom, -1);
+      if (isWorkday(curTo)) return nthWorkday(prevFrom, n, prevEnd) || prevEnd;
+      const nx = nthWorkday(prevFrom, n + 1, prevEnd); return nx ? addDays(nx, -1) : prevEnd;
+    };
     const monthEnd = (k) => { const [y, m] = k.split('-').map(Number); return isoOf(new Date(y, m, 0)); };
     const addMonths = (k, n) => { const [y, m] = k.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
     // Indian number format: 1,00,000 and 12,34,567. inr() for money: ₹1,25,000, or ₹2.4 L / ₹1.2 Cr when compact.
@@ -378,7 +397,7 @@
       const prevSpan = (startK, months, partial) => {
         const ps = addMonths(startK, -months);
         pfrom = monthStart(ps);
-        if (partial) { const cand = addDays(pfrom, diffDays(from, to)); const cap = monthEnd(addMonths(startK, -1)); pto = cand > cap ? cap : cand; }
+        if (partial) pto = sameWorkdaysEnd(from, to, pfrom, monthEnd(addMonths(startK, -1)));
         else pto = monthEnd(addMonths(startK, -1));
       };
       if (preset === 'custom' && p.rfrom && p.rto) {
@@ -390,7 +409,7 @@
       else if (preset === 'last-3') { const k = addMonths(m, -3); from = monthStart(k); to = monthEnd(prevMonth(m)); prevSpan(k, 3, false); }
       else if (preset === 'this-quarter') { const k = qStart(m); from = monthStart(k); to = t; prevSpan(k, 3, true); }
       else if (preset === 'last-quarter') { const k = addMonths(qStart(m), -3); from = monthStart(k); to = monthEnd(addMonths(k, 2)); prevSpan(k, 3, false); }
-      else if (preset === 'ytd') { from = t.slice(0, 4) + '-01-01'; to = t; pfrom = (Number(t.slice(0, 4)) - 1) + '-01-01'; pto = (Number(t.slice(0, 4)) - 1) + t.slice(4); }
+      else if (preset === 'ytd') { from = t.slice(0, 4) + '-01-01'; to = t; pfrom = (Number(t.slice(0, 4)) - 1) + '-01-01'; pto = sameWorkdaysEnd(from, to, pfrom, (Number(t.slice(0, 4)) - 1) + '-12-31'); }
       else if (preset === 'last-12') { const k = addMonths(m, -11); from = monthStart(k); to = t; prevSpan(k, 12, true); }
       else if (preset === 'all') { from = '2000-01-01'; to = '2099-12-31'; }
       else { from = monthStart(m); to = t; prevSpan(m, 1, true); }
@@ -410,13 +429,13 @@
       a.download = filename; document.body.append(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     };
-    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, cls, emptyRow, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials, inr, istHour, istTime, istDateTime, istParts, tone, toneInk, toneWash, toneFill, pctText };
+    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, cls, emptyRow, isWorkday, workdays, nthWorkday, sameWorkdaysEnd, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials, inr, istHour, istTime, istDateTime, istParts, tone, toneInk, toneWash, toneFill, pctText };
   })();
 
   /* ================= Controls ================= */
   let shownTab = null;
   // The loading screen stays until the FASTRR reveal has landed (or 2.5 s at most), then fades.
-  const bootLanded = new Promise((res) => { const w = document.querySelector('.boot .boot-word'); if (!w || matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); w.addEventListener('animationend', () => setTimeout(res, 250), { once: true }); setTimeout(res, 2500); });
+  const bootLanded = new Promise((res) => { const w = document.querySelector('.boot .boot-sub'); if (!w || matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); w.addEventListener('animationend', () => setTimeout(res, 250), { once: true }); setTimeout(res, 2500); });
   const hideBoot = () => { const b = document.getElementById('boot'); if (!b || b.dataset.leaving) return; b.dataset.leaving = '1'; bootLanded.then(() => { b.classList.add('done'); setTimeout(() => b.remove(), 500); }); };
   function syncControls() {
     const p = dash.params();
@@ -689,9 +708,11 @@
     else if (k === 'today') { el.textContent = rs.filter((r) => r.due === 'week').length + ' more in the next 7 days'; }
     else if (k === 'review') { el.textContent = rs.filter((r) => r.stage === 'Awaiting brief').length + ' awaiting brief'; cmp(list.length, 'review', 'none'); }
     else if (k === 'delivered') {
-      const pm = CO.prevMonth(CO.thisMonth()), day = Number(CO.today().slice(8));
-      const prevSame = CO.sumQty(rs.filter((r) => r.stage === 'Delivered' && r.month === pm && Number(r.ddate.slice(8)) <= day));
-      el.append(CO.delta(CO.sumQty(list), prevSame, 'up'), ' vs same days of ' + CO.fmtMonth(pm).split(' ')[0]);
+      const m = CO.thisMonth(), pm = CO.prevMonth(m), pto = CO.sameWorkdaysEnd(m + '-01', CO.today(), pm + '-01', CO.monthEnd(pm));
+      const prevSame = CO.sumQty(rs.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= pm + '-01' && r.ddate <= pto));
+      const wd = CO.workdays(m + '-01', CO.today());
+      el.append(CO.delta(CO.sumQty(list), prevSame, 'up'), ' vs the first ' + wd + ' working days of ' + CO.fmtMonth(pm).split(' ')[0]);
+      el.title = 'Working days are Monday to Friday. ' + wd + ' have passed this month; ' + CO.fmtMonth(pm, true) + ' is counted from the 1st to ' + CO.fmtDate(pto) + ', its ' + wd + 'th working day.';
     }
   });
   const whenChip = (r) => { const s = document.createElement('span'); const d = r.eta ? CO.diffDays(CO.today(), r.eta) : null; s.className = 'when' + (d == null ? '' : d < 0 ? ' bad' : d <= 1 ? ' warn' : ''); s.textContent = d == null ? 'No ETA' : d < 0 ? (-d) + 'd late' : d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : CO.fmtDate(r.eta); s.title = r.eta ? 'Design ETA ' + CO.fmtDate(r.eta, true) : 'No Design ETA'; return s; };
@@ -832,17 +853,18 @@
      A bucket is keyed by its first day (ISO). Weeks run Monday to Sunday, quarters are calendar quarters, all in IST. */
   const weekStart = (iso) => { const d = new Date(iso + 'T00:00:00'); const k = (d.getDay() + 6) % 7; return CO.addDays(iso, -k); };
   const TB = (() => {
-    const G = { day: { label: 'Day', noun: 'day', n: 30 }, week: { label: 'Week', noun: 'week', n: 12 }, month: { label: 'Month', noun: 'month', n: 12 }, quarter: { label: 'Quarter', noun: 'quarter', n: 8 }, year: { label: 'Year', noun: 'year', n: 5 } };
+    const G = { day: { label: 'Day', noun: 'working day', n: 22 }, week: { label: 'Week', noun: 'week', n: 12 }, month: { label: 'Month', noun: 'month', n: 12 }, quarter: { label: 'Quarter', noun: 'quarter', n: 8 }, year: { label: 'Year', noun: 'year', n: 5 } };
     const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const key = (iso, g) => {
-      if (g === 'day') return iso; if (g === 'week') return weekStart(iso);
+      // Day buckets are working days; anything dated on a Saturday or Sunday counts on the Friday before.
+      if (g === 'day') { const w = new Date(iso + 'T00:00:00').getDay(); return w === 6 ? CO.addDays(iso, -1) : w === 0 ? CO.addDays(iso, -2) : iso; } if (g === 'week') return weekStart(iso);
       const y = iso.slice(0, 4), m = Number(iso.slice(5, 7));
       if (g === 'month') return iso.slice(0, 7) + '-01';
       if (g === 'quarter') return y + '-' + String(Math.floor((m - 1) / 3) * 3 + 1).padStart(2, '0') + '-01';
       return y + '-01-01';
     };
-    const next = (k, g) => g === 'day' ? CO.addDays(k, 1) : g === 'week' ? CO.addDays(k, 7) : CO.addMonths(k.slice(0, 7), g === 'month' ? 1 : g === 'quarter' ? 3 : 12) + '-01';
-    const prev = (k, g) => g === 'day' ? CO.addDays(k, -1) : g === 'week' ? CO.addDays(k, -7) : CO.addMonths(k.slice(0, 7), g === 'month' ? -1 : g === 'quarter' ? -3 : -12) + '-01';
+    const next = (k, g) => g === 'day' ? CO.addDays(k, new Date(k + 'T00:00:00').getDay() === 5 ? 3 : 1) : g === 'week' ? CO.addDays(k, 7) : CO.addMonths(k.slice(0, 7), g === 'month' ? 1 : g === 'quarter' ? 3 : 12) + '-01';
+    const prev = (k, g) => g === 'day' ? CO.addDays(k, new Date(k + 'T00:00:00').getDay() === 1 ? -3 : -1) : g === 'week' ? CO.addDays(k, -7) : CO.addMonths(k.slice(0, 7), g === 'month' ? -1 : g === 'quarter' ? -3 : -12) + '-01';
     const end = (k, g) => CO.addDays(next(k, g), -1);
     const label = (k, g, long) => {
       const [y, m, d] = k.split('-').map(Number), yy = "'" + String(y).slice(2);
@@ -852,7 +874,7 @@
       return String(y);
     };
     const curName = { day: 'Today', week: 'This week', month: 'This month', quarter: 'This quarter', year: 'This year' };
-    const lastName = { day: 'yesterday', week: 'last week', month: 'last month', quarter: 'last quarter', year: 'last year' };
+    const lastName = { day: 'the last working day', week: 'last week', month: 'last month', quarter: 'last quarter', year: 'last year' };
     const LS = (name) => 'co.gr.' + name;
     const state = (name, def) => { let s = null; try { s = JSON.parse(localStorage.getItem(LS(name)) || 'null'); } catch (e) { /* private mode */ } s = s && (G[s.g] || s.g === 'custom') ? s : { g: def }; s.def = def; return s; };
     const ST = {};
@@ -875,7 +897,8 @@
     // Sum delivered creatives per bucket; the current bucket is "so far".
     const sum = (rows, keys, g, from, to) => { const m = new Map(keys.map((k) => [k, 0])); rows.forEach((r) => { if (r.stage === 'Delivered' && r.ddate && r.ddate >= from && r.ddate <= to) { const k = key(r.ddate, g); if (m.has(k)) m.set(k, m.get(k) + (r.qty || 1)); } }); return m; };
     // The window to compare a bucket with: the bucket before it, cut to the same number of elapsed days when the bucket is still running.
-    const prevWindow = (k, g) => { const pk = prev(k, g), today = CO.today(); const running = end(k, g) >= today; return { from: pk, to: running ? CO.addDays(pk, CO.diffDays(k, today)) : end(pk, g), partial: running }; };
+    // Running buckets are matched on working days elapsed (Mon–Fri), so a month 7 working days in is compared with the first 7 working days of the month before.
+    const prevWindow = (k, g) => { const pk = prev(k, g), today = CO.today(); const running = end(k, g) >= today; return { from: pk, to: running ? (g === 'day' ? end(pk, g) : CO.sameWorkdaysEnd(k, today, pk, end(pk, g))) : end(pk, g), partial: running }; };
     const between = (rows, f, t) => CO.sumQty(rows.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= f && r.ddate <= t));
     // Control: segmented buttons + custom dates. onChange redraws the graph.
     const control = (host, name, def, onChange, opts) => {
@@ -959,7 +982,7 @@
       const step = x.step(), i = Math.max(0, Math.min(ser.length - 1, Math.round((px - x(ser[0].w)) / step))), d = ser[i];
       cross.attr('x1', x(d.w)).attr('x2', x(d.w)).style('opacity', 1); hov.attr('cx', x(d.w)).attr('cy', y(d.n)).style('opacity', 1);
       tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = TB.label(d.w, g, true) + ' · ' + CO.num(d.n) + ' creatives' + (d.running ? ' so far' : ''); tipEl.append(k);
-      if (i) { const pw = TB.prevWindow(d.w, g), pn = d.running ? TB.between(CO.rows(), pw.from, pw.to) : ser[i - 1].n; const r = document.createElement('div'); r.append(CO.delta(d.n, pn, 'up'), d.running ? ' vs the same days of the ' + TB.G[g].noun + ' before' : ' vs the ' + TB.G[g].noun + ' before'); tipEl.append(r); }
+      if (i) { const pw = TB.prevWindow(d.w, g), pn = d.running ? TB.between(CO.rows(), pw.from, pw.to) : ser[i - 1].n; const r = document.createElement('div'); r.append(CO.delta(d.n, pn, 'up'), d.running ? (g === 'day' ? ' vs the working day before' : ' vs the same working days of the ' + TB.G[g].noun + ' before') : ' vs the ' + TB.G[g].noun + ' before'); tipEl.append(r); }
       if (g !== 'day') { const r2 = document.createElement('div'); r2.textContent = CO.fmtDate(d.w) + ' – ' + CO.fmtDate(TB.end(d.w, g)) + (d.running ? ' (so far)' : ''); r2.style.color = 'var(--muted)'; tipEl.append(r2); }
       CO.placeTip(tipEl, el, x(d.w) / W * el.clientWidth, y(d.n) / H * el.clientHeight);
     };
@@ -972,7 +995,7 @@
     const s = TB.get('brands', 'month');
     if (s.g === 'custom' && TB.valid(s)) { const to = s.to < CO.today() ? s.to : CO.today(), len = CO.diffDays(s.from, to); return { from: s.from, to, pfrom: CO.addDays(s.from, -len - 1), pto: CO.addDays(s.from, -1), title: 'Top brands, ' + CO.fmtDate(s.from) + ' – ' + CO.fmtDate(to), cmp: 'the ' + (len + 1) + ' days before' }; }
     const g = s.g === 'custom' ? 'month' : s.g, k = TB.key(CO.today(), g), pw = TB.prevWindow(k, g);
-    return { from: k, to: CO.today(), pfrom: pw.from, pto: pw.to, title: 'Top brands ' + TB.curName[g].toLowerCase(), cmp: g === 'day' ? 'yesterday' : 'the same days of ' + TB.lastName[g] };
+    return { from: k, to: CO.today(), pfrom: pw.from, pto: pw.to, title: 'Top brands ' + TB.curName[g].toLowerCase(), cmp: g === 'day' ? 'the working day before' : 'the same working days of ' + TB.lastName[g] };
   };
   dash.draw('tb-title', (el) => { el.textContent = brandWindow().title; });
   dash.draw('top-brands', (el) => {
@@ -1172,7 +1195,8 @@
           name, open: CO.sumQty(open), wip: open.filter((r) => r.stage === 'In progress').length, overdue: list.filter((r) => r.due === 'overdue').length,
           week: list.filter((r) => r.due === 'today' || r.due === 'week').length, review: list.filter((r) => r.stage === 'Under review').length,
           thisM: CO.sumQty(del.filter((r) => r.month === m)), lastM: CO.sumQty(del.filter((r) => r.month === pm)),
-          lastSame: CO.sumQty(del.filter((r) => r.month === pm && Number(r.ddate.slice(8)) <= Number(CO.today().slice(8)))),
+          lastSame: CO.sumQty(del.filter((r) => r.ddate && r.ddate >= pm + '-01' && r.ddate <= CO.sameWorkdaysEnd(m + '-01', CO.today(), pm + '-01', CO.monthEnd(pm)))),
+          perDay: CO.workdays(m + '-01', CO.today()) ? CO.sumQty(del.filter((r) => r.month === m)) / CO.workdays(m + '-01', CO.today()) : 0,
           avg: ms.size ? CO.sumQty(del) / ms.size : 0, del,
           brands: d3.rollups(list, (v) => v.length, (r) => r.brand).sort((a, b) => b[1] - a[1]).slice(0, 3).map((d) => d[0]).join(', ')
         };
@@ -1186,7 +1210,7 @@
         const ob = document.createElement('span'); ob.className = 'co-inbar'; const bi = document.createElement('i'); bi.style.width = (d.open / maxOpen * 3) + 'rem'; ob.append(bi, String(d.open)); CO.td(tr, ob, 'n');
         CO.td(tr, String(d.wip), 'n co-hide-lg');
         CO.td(tr, String(d.overdue), 'n' + (d.overdue ? ' bad' : ''));
-        CO.td(tr, String(d.week), 'n co-hide-md'); CO.td(tr, String(d.review), 'n'); const tm = document.createElement('span'); tm.className = 'n-with-dl'; const tb = document.createElement('b'); tb.textContent = CO.num(d.thisM); tm.append(tb, CO.delta(d.thisM, d.lastSame, 'up')); tm.lastChild.title += ' (same days of last month)'; CO.td(tr, tm, 'n'); CO.td(tr, CO.num(d.lastM), 'n'); CO.td(tr, d.avg ? d.avg.toFixed(1) : '—', 'n');
+        CO.td(tr, String(d.week), 'n co-hide-md'); CO.td(tr, String(d.review), 'n'); const tm = document.createElement('span'); tm.className = 'n-with-dl'; const tb = document.createElement('b'); tb.textContent = CO.num(d.thisM); tm.append(tb, CO.delta(d.thisM, d.lastSame, 'up')); tm.lastChild.title += ' (vs the same number of working days last month)'; CO.td(tr, tm, 'n'); CO.td(tr, CO.num(d.lastM), 'n'); const pd = CO.td(tr, d.perDay ? d.perDay.toFixed(1) : '0', 'n'); pd.title = CO.num(d.thisM) + ' creatives ÷ ' + CO.workdays(m + '-01', CO.today()) + ' working days so far this month (Mon–Fri)';
         CO.td(tr, d.brands, 'co-hide-lg co-clip').title = d.brands;
         const mix = document.createElement('span'); mix.className = 'co-mix';
         const total = CO.sumQty(d.del);
@@ -1194,6 +1218,10 @@
         mix.title = top.map((t) => t + ': ' + CO.sumQty(d.del.filter((r) => CO.typeOf(r, top) === t))).filter((x) => !/: 0$/.test(x)).join(' · ');
         CO.td(tr, mix, 'co-hide-md');
       });
+    });
+    dash.draw('team-wd', (el) => {
+      const m = CO.thisMonth(), t = CO.today(), pm = CO.prevMonth(m), so = CO.workdays(m + '-01', t), all = CO.workdays(m + '-01', CO.monthEnd(m));
+      el.textContent = 'Working days are Monday to Friday. ' + CO.fmtMonth(m, true) + ' has ' + all + ' working days; ' + so + ' so far. "This month" is compared with the first ' + so + ' working days of ' + CO.fmtMonth(pm, true).split(' ')[0] + ', and "Per work day" is this month\'s creatives ÷ ' + so + '.';
     });
     dash.draw('team-legend', (el) => {
       if (CO.notReady(el, 'list')) return;
@@ -1233,26 +1261,27 @@
   (() => {
     const inRange = (rs, f, t) => rs.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= f && r.ddate <= t);
     const delivered = () => CO.rows().filter((r) => r.stage === 'Delivered' && r.ddate);
-    const monthsIn = (f, t, rs) => f === '2000-01-01' ? Math.max(1, new Set(rs.map((r) => r.month)).size) : Math.max(1, (CO.diffDays(f, t) + 1) / 30.44);
+    // Working days in the period up to today (Mon–Fri); for all time, from the first delivery.
+    const wdIn = (f, t, rs) => { const a = f === '2000-01-01' ? (rs.map((r) => r.ddate).sort()[0] || CO.today()) : f; const b = t > CO.today() ? CO.today() : t; return CO.workdays(a, b); };
     const stats = (f, t) => {
       const rs = inRange(CO.rows(), f, t);
       const people = new Set(rs.flatMap((r) => r.list));
       const total = CO.sumQty(rs);
       return { rs, total, tasks: rs.length, paid: CO.sumQty(rs.filter((r) => r.source === 'Paid')), mkt: CO.sumQty(rs.filter((r) => r.source === 'Marketing')),
-        brands: new Set(rs.map((r) => r.brand)).size, people: people.size, per: people.size ? total / people.size / monthsIn(f, t, rs) : 0 };
+        brands: new Set(rs.map((r) => r.brand)).size, people: people.size, wd: wdIn(f, t, rs), per: people.size && wdIn(f, t, rs) ? total / people.size / wdIn(f, t, rs) : 0 };
     };
-    dash.draw('r-period', (el) => { const pr = CO.period(); el.textContent = 'Reporting on ' + CO.label(pr.from, pr.to) + (pr.pfrom ? ', compared with ' + CO.label(pr.pfrom, pr.pto) : '') + '.'; });
+    dash.draw('r-period', (el) => { const pr = CO.period(); const to = pr.to > CO.today() ? CO.today() : pr.to; el.textContent = 'Reporting on ' + CO.label(pr.from, pr.to) + (pr.all ? '' : ' (' + CO.workdays(pr.from, to) + ' working days' + (pr.to > CO.today() ? ' so far' : '') + ')') + (pr.pfrom ? ', compared with ' + CO.label(pr.pfrom, pr.pto) + ' (' + CO.workdays(pr.pfrom, pr.pto) + ' working days)' : '') + '.'; });
     dash.draw('rkpi', (el) => {
       if (CO.notReady(el, 'text')) return;
       const pr = CO.period(), s = stats(pr.from, pr.to), k = el.dataset.kpi;
-      if (k === 'per') el.textContent = s.per ? s.per.toFixed(1) : '—'; else countTo(el, s[k]);
+      if (k === 'per') el.textContent = s.per ? s.per.toFixed(2) : '—'; else countTo(el, s[k]);
     });
     dash.draw('rkpi-sub', (el) => {
       if (CO.notReady(el, 'text')) return;
       const pr = CO.period(), s = stats(pr.from, pr.to), k = el.dataset.kpi;
       el.replaceChildren();
       if (k === 'paid' || k === 'mkt') { el.textContent = (s.total ? Math.round(s[k] / s.total * 100) : 0) + '% of the period'; return; }
-      if (k === 'per') { el.textContent = s.people + (s.people === 1 ? ' person' : ' people') + ' delivered'; return; }
+      if (k === 'per') { el.textContent = s.people + (s.people === 1 ? ' person' : ' people') + ' · ' + s.wd + ' working days'; el.title = CO.num(s.total) + ' creatives ÷ ' + s.people + ' people ÷ ' + s.wd + ' working days (Mon–Fri)'; return; }
       if (!pr.pfrom) { el.textContent = k === 'total' ? CO.num(CO.sumQty(s.rs.filter((r) => CO.VIDEO.test(r.type)))) + ' video, reel or GIF' : ''; return; }
       el.append(CO.delta(s[k], stats(pr.pfrom, pr.pto)[k], 'up'), ' vs previous');
     });
@@ -1276,7 +1305,7 @@
       const pr = CO.period();
       const byType = (dash.params().rchart || 'total') === 'type';
       const top = byType ? CO.topTypes(del, 5) : ['Total'], cmap = byType ? CO.typeColors(top) : new Map([['Total', 'var(--brand)']]);
-      const S = TB.get('rchart', 'month'), B = TB.buckets(S, S.g === 'month' ? 18 : S.g === 'day' ? 31 : S.g === 'week' ? 16 : undefined), g = B.g, ms = B.keys;
+      const S = TB.get('rchart', 'month'), B = TB.buckets(S, S.g === 'month' ? 18 : S.g === 'day' ? 22 : S.g === 'week' ? 16 : undefined), g = B.g, ms = B.keys;
       const inSel = (k) => pr.all || (k <= pr.to && TB.end(k, g) >= pr.from);
       const series = ms.map((m) => { const o = { m }; top.forEach((t) => { o[t] = 0; }); const e = TB.end(m, g); del.filter((r) => r.ddate >= m && r.ddate <= e && r.ddate >= B.from && r.ddate <= B.to).forEach((r) => { o[byType ? CO.typeOf(r, top) : 'Total'] += r.qty || 1; }); o.total = top.reduce((a, t) => a + o[t], 0); return o; });
       // Each bucket against the one before; the running bucket against the same elapsed days of the one before.
@@ -1284,7 +1313,7 @@
         const pw = TB.prevWindow(o.m, g);
         o.running = pw.partial;
         o.prev = del.some((r) => r.ddate <= pw.to) ? TB.between(del, pw.from, pw.to) : null;
-        o.prevLabel = pw.partial ? 'the same days of the ' + TB.G[g].noun + ' before' : TB.label(TB.prev(o.m, g), g, true);
+        o.prevLabel = pw.partial ? (g === 'day' ? 'the working day before' : 'the same working days of the ' + TB.G[g].noun + ' before') : TB.label(TB.prev(o.m, g), g, true);
         o.tone = o.prev == null ? null : CO.tone(o.total - o.prev, o.prev, 'up');
       });
       const W = Math.max(300, el.clientWidth), H = 260, mB = 24, mT = 18;
@@ -2311,7 +2340,14 @@
       u.searchParams.set('singleEvents', 'true'); u.searchParams.set('orderBy', 'startTime'); u.searchParams.set('maxResults', '25');
       const res = await fetch(u.toString(), { headers: { Authorization: 'Bearer ' + CAL.token } });
       if (res.status === 401) { CAL.token = ''; sessionStorage.removeItem('co.calToken'); throw new Error('expired'); }
-      if (res.status === 403) throw new Error('The Google Calendar API is not switched on for this dashboard yet (admin step in the README).');
+      if (res.status === 403) {
+        // Google says which project and gives the link to switch the API on; keep only a Google Cloud link.
+        let msg = ''; try { msg = ((await res.json()).error || {}).message || ''; } catch (e2) { /* no body */ }
+        const m = msg.match(/https:\/\/console\.(?:developers|cloud)\.google\.com\/apis\/api\/calendar-json\.googleapis\.com\/overview\?project=\d+/);
+        CAL.off = true; CAL.enableUrl = m ? m[0] : 'https://console.cloud.google.com/apis/library/calendar-json.googleapis.com';
+        throw new Error(can('Admin') ? 'The Google Calendar API is switched off in the Google Cloud project, so meetings cannot load. Switch it on, wait a minute, then press Try again.' : 'Meetings will show here once the admin switches on the Google Calendar API.');
+      }
+      CAL.off = false;
       const body = await res.json();
       CAL.events = (body.items || []).filter((e) => e.status !== 'cancelled' && !(e.attendees || []).some((a) => a.self && a.responseStatus === 'declined')).map((e) => {
         const meet = e.hangoutLink || ((e.conferenceData && e.conferenceData.entryPoints) || []).filter((p) => p.entryPointType === 'video').map((p) => p.uri)[0] || '';
@@ -2344,6 +2380,13 @@
       const p = document.createElement('p'); p.textContent = LS.get('co.cal', '') === '1' ? 'Reconnect to show your next meetings (Google asks again every hour or so).' : 'See your next meeting, who is in it and a Join button for Google Meet. Read-only; only you see your calendar.';
       const b = document.createElement('button'); b.type = 'button'; b.className = 'co-btn primary'; b.textContent = LS.get('co.cal', '') === '1' ? 'Show my meetings' : 'Connect Google Calendar'; b.addEventListener('click', calConnect);
       box.append(p, b); if (CAL.err) { const e = document.createElement('p'); e.className = 'co-note bad'; e.textContent = CAL.err; box.append(e); }
+      el.append(box); return;
+    }
+    if (CAL.off) {
+      const box = document.createElement('div'); box.className = 'cal-empty'; const p = document.createElement('p'); p.className = 'bad'; p.textContent = CAL.err; box.append(p);
+      const row = document.createElement('div'); row.className = 'cal-acts';
+      if (can('Admin')) { const a = document.createElement('a'); a.className = 'co-btn primary'; a.href = CAL.enableUrl; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Switch on in Google Cloud'; row.append(a); }
+      const r = document.createElement('button'); r.type = 'button'; r.className = 'co-btn'; r.textContent = 'Try again'; r.addEventListener('click', () => calLoad(true)); row.append(r); box.append(row);
       el.append(box); return;
     }
     if (!CAL.events) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = CAL.err || 'Loading your calendar…'; el.append(p); calLoad(); return; }
@@ -2675,11 +2718,11 @@
         if (a.designer) { const p = findPerson(a.designer); if (!p || p.none) return { error: 'No designer called "' + a.designer + '".' }; if (p.ambiguous) return { ambiguous: p.ambiguous }; rs = rs.filter((r) => r.list.includes(p.name)); lab.push(p.name); }
         if (a.brand) { const b = findBrand(a.brand); if (!b || b.none) return { error: 'No brand called "' + a.brand + '".' }; if (b.ambiguous) return { ambiguous: b.ambiguous }; rs = rs.filter((r) => r.brand === b.name); lab.push(b.name); }
         rs = rs.filter((r) => clsOk(r, a.classification));
-        const t = CO.today(), open = rs.filter((r) => r.open), m = CO.thisMonth(), pm = CO.prevMonth(m), day = Number(t.slice(8));
+        const t = CO.today(), open = rs.filter((r) => r.open), m = CO.thisMonth(), pm = CO.prevMonth(m), pto = CO.sameWorkdaysEnd(m + '-01', t, pm + '-01', CO.monthEnd(pm));
         const del = rs.filter((r) => r.stage === 'Delivered' && r.ddate);
         return { for: lab.join(', ') || 'everyone', open_tasks: open.length, open_creatives: CO.sumQty(open), overdue: open.filter((r) => r.due === 'overdue').length, due_today: open.filter((r) => r.eta === t).length, due_tomorrow: open.filter((r) => r.eta === CO.addDays(t, 1)).length, no_eta: open.filter((r) => !r.eta).length,
           in_progress: rs.filter((r) => r.stage === 'In progress').length, to_be_planned: rs.filter((r) => r.stage === 'To be planned').length, changes_requested: rs.filter((r) => r.stage === 'Changes requested').length, under_review: rs.filter((r) => r.stage === 'Under review').length, awaiting_brief: rs.filter((r) => r.stage === 'Awaiting brief').length, on_hold: rs.filter((r) => r.stage === 'On hold').length,
-          unassigned_open: open.filter((r) => !r.list.length).length, delivered_this_month_creatives: CO.sumQty(del.filter((r) => r.month === m)), delivered_same_days_last_month: CO.sumQty(del.filter((r) => r.month === pm && Number(r.ddate.slice(8)) <= day)), oldest_overdue_days: open.filter((r) => r.due === 'overdue').reduce((x, r) => Math.max(x, CO.diffDays(r.eta, t)), 0) };
+          unassigned_open: open.filter((r) => !r.list.length).length, delivered_this_month_creatives: CO.sumQty(del.filter((r) => r.month === m)), delivered_same_working_days_last_month: CO.sumQty(del.filter((r) => r.ddate >= pm + '-01' && r.ddate <= pto)), working_days_so_far_this_month: CO.workdays(m + '-01', t), working_days_in_month: CO.workdays(m + '-01', CO.monthEnd(m)), oldest_overdue_days: open.filter((r) => r.due === 'overdue').reduce((x, r) => Math.max(x, CO.diffDays(r.eta, t)), 0) };
       },
       team_progress(a) {
         const P = period(a.period, a.from, a.to), rs = allRows(), t = CO.today();
@@ -2813,6 +2856,81 @@
     fab.hidden = true;
     const show = (on) => { fab.hidden = !on; if (!on) close(); };
     return { open, close, ask, setStatus, show, get state() { return st; }, _tools: TOOLS, _local: local };
+  })();
+
+  /* ================= System check (Overview) =================
+     Every refresh, the dashboard checks its own data, connections and calculations, and lists anything wrong at the top
+     of the Overview with what to do about it. People who cannot fix a setting see only what affects them. */
+  const SYS = (() => {
+    const last = { ok: 0, at: null };
+    const checks = () => {
+      const out = [], admin = can('Admin'), t = CO.today();
+      const add = (level, title, detail, act) => out.push({ level, title, detail, act });
+      // 1. Data loading and sheets
+      if (S.status === 'error') add('bad', 'The data could not load', S.error);
+      if (S.staleError) add('warn', 'The last refresh failed', 'Showing data from ' + (S.loadedAt ? CO.istTime(S.loadedAt) : 'earlier') + '. ' + S.staleError, ['Try again', () => load(true)]);
+      const src = S.sources || {};
+      Object.keys(src).forEach((k) => { const s = src[k]; if (s && s.error && (!s.optional || admin)) add(s.optional ? 'warn' : 'bad', 'A sheet could not be read: ' + (s.file ? s.file + ' / ' + s.tab : k), s.error + (admin ? ' Check the link in Config.gs and that design.tools can open the sheet.' : ' The admin has to fix the sheet link or sharing.')); });
+      if (S.loadedAt && document.visibilityState === 'visible' && Date.now() - S.loadedAt > 15 * 60 * 1000) add('warn', 'The data is ' + Math.round((Date.now() - S.loadedAt) / 60000) + ' minutes old', 'Live sync has not refreshed it. Check the internet connection.', ['Refresh now', () => load(true)]);
+      // 2. Web app and integrations (admins can fix these)
+      if (A.mode === 'auth' && S.verBody) {
+        if (!('assist' in S.verBody)) add('warn', admin ? 'The web app is running an older Code.gs' : 'Some features are waiting for an update', admin ? 'Paste the latest Code.gs from GitHub into Apps Script, run setup, and deploy a new version. Until then the assistant, history comparisons and reminder settings may not work.' : 'The admin needs to update the web app. Everything else works.');
+        else if (admin && S.verBody.assist && !S.verBody.assist.ai) add('info', 'Asha is in basic mode', 'Add the ANTHROPIC_API_KEY script property in Apps Script for full conversations in Hindi, English and Hinglish (README, Asha).');
+      }
+      if (admin && S.health) {
+        if (!S.health.liveTriggers) add('warn', 'Live change detection is off', 'Run setup in Apps Script once. Until then sheet edits arrive every 10 minutes instead of 30 seconds.');
+        Object.keys(S.health.sources || {}).forEach((k) => { const h = S.health.sources[k]; if (h.ok && h.canEdit === false) add('warn', 'Read-only sheet: ' + (h.file || k), 'Edits from the dashboard to this sheet will fail. Give design.tools edit access.'); });
+      }
+      if (CAL.off) add(admin ? 'warn' : 'info', 'Google Calendar is switched off', admin ? 'Meetings cannot load until the Google Calendar API is switched on in the Google Cloud project.' : 'Meetings will show once the admin switches it on.', admin ? ['Switch on in Google Cloud', () => window.open(CAL.enableUrl, '_blank', 'noopener')] : null);
+      if (admin && A.mode === 'auth' && S.verBody && 'assist' in S.verBody && HS.at && !HS.days.length) add('info', 'No daily snapshots yet', 'Week-on-week comparisons for open and overdue work start after a few days of snapshots. Run setup once if this stays for more than a day.');
+      // 3. Data quality (admins: fixes are in the sheets)
+      if (admin && S.status === 'ok') {
+        const all = CO.rows(true) || [], skipped = (S.ignored || []).length, unknown = all.filter((r) => /Unrecognised status/.test(String(r.flags || ''))).length;
+        const noEta = all.filter((r) => r.open && !r.eta).length, noDes = all.filter((r) => r.open && !r.list.length).length;
+        if (skipped || unknown) add('warn', (skipped + unknown) + ' rows are not counted correctly', [skipped ? skipped + ' incomplete rows are left out' : '', unknown ? unknown + ' have a status the dashboard does not recognise' : ''].filter(Boolean).join('; ') + '. Fix them in the sheets.', ['Open Data health', () => dash.setParams({ tab: 'health' })]);
+        if (noEta > 20 || noDes > 20) add('info', 'Open work missing details', noEta + ' open tasks have no Design ETA and ' + noDes + ' have no designer, so they cannot count as overdue or in anyone\'s workload.', ['Open Data health', () => dash.setParams({ tab: 'health' })]);
+      }
+      // 4. Calculation self-check: the same numbers worked out two independent ways must agree.
+      if (S.status === 'ok') {
+        const all = CO.rows(true) || [], fails = [];
+        const stageSum = all.reduce((n, r) => n + (r.stage ? 1 : 0), 0); if (stageSum !== all.length) fails.push('every task has a status');
+        if (all.some((r) => r.open !== CODATA.OPEN_STAGES.includes(r.stage))) fails.push('open work matches the open statuses');
+        if (all.some((r) => r.stage === 'Delivered' && (!r.ddate || r.ddate > t || r.month !== r.ddate.slice(0, 7)))) fails.push('delivery dates are set and not in the future');
+        const od1 = all.filter((r) => r.due === 'overdue').length, od2 = all.filter((r) => r.open && r.eta && r.eta < t).length; if (od1 !== od2) fails.push('overdue count (' + od1 + ' vs ' + od2 + ')');
+        const m = CO.thisMonth(), d1 = CO.sumQty(all.filter((r) => r.stage === 'Delivered' && r.month === m)), b = TB.sum(all, [m + '-01'], 'month', m + '-01', t).get(m + '-01');
+        if (d1 !== b) fails.push('delivered this month (' + d1 + ' vs ' + b + ')');
+        const wd = CO.workdays(m + '-01', CO.monthEnd(m)); if (wd < 20 || wd > 23) fails.push('working days in the month (' + wd + ')');
+        const withDes = all.filter((r) => r.open && r.list.length).length, perDes = [...new Set(all.flatMap((r) => r.list))].reduce((n, d) => n + all.filter((r) => r.open && r.list.includes(d)).length, 0);
+        if (perDes < withDes) fails.push('designer workloads add up');
+        last.ok = 7 - fails.length;
+        if (fails.length) add('bad', 'A calculation check failed', 'These numbers did not agree: ' + fails.join('; ') + '. Please tell the admin; refreshing may fix it.', ['Refresh now', () => load(true)]);
+      }
+      last.at = new Date();
+      return out;
+    };
+    dash.draw('syscheck', (el) => {
+      if (S.status === 'loading' && !S.tasks) { el.replaceChildren(); return; }
+      const list = checks(), order = { bad: 0, warn: 1, info: 2 }; list.sort((a, b) => order[a.level] - order[b.level]);
+      el.replaceChildren(); el.className = 'sys ' + (list.some((x) => x.level === 'bad') ? 'bad' : list.some((x) => x.level === 'warn') ? 'warn' : 'ok');
+      const head = document.createElement('button'); head.type = 'button'; head.className = 'sys-head';
+      const dot = document.createElement('span'); dot.className = 'sys-dot';
+      const tx = document.createElement('span'); tx.className = 'sys-t';
+      const real = list.filter((x) => x.level !== 'info').length;
+      tx.textContent = !list.length ? 'All systems working: data, sheets, live sync and ' + last.ok + ' calculation checks passed' : real ? real + (real === 1 ? ' thing needs' : ' things need') + ' attention' : 'Working, with ' + list.length + (list.length === 1 ? ' note' : ' notes');
+      const when = document.createElement('span'); when.className = 'sys-when'; when.textContent = 'Checked ' + CO.istTime(last.at);
+      head.append(dot, tx, when);
+      el.append(head);
+      if (!list.length) return;
+      const open = el.dataset.open !== '0' && (real > 0 || el.dataset.open === '1');
+      head.setAttribute('aria-expanded', String(open));
+      head.addEventListener('click', () => { el.dataset.open = open ? '0' : '1'; dash.draw('syscheck'); });
+      if (!open) return;
+      const ul = document.createElement('ul'); ul.className = 'sys-list';
+      list.forEach((x) => { const li = document.createElement('li'); li.className = x.level; const b = document.createElement('b'); b.textContent = x.title; const p = document.createElement('span'); p.textContent = x.detail; li.append(b, p); if (x.act) { const a = document.createElement('button'); a.type = 'button'; a.className = 'co-btn'; a.textContent = x.act[0]; a.addEventListener('click', x.act[1]); li.append(a); } ul.append(li); });
+      el.append(ul);
+    });
+    setInterval(() => { if (P.tab === 'today' && document.visibilityState === 'visible') dash.draw('syscheck'); }, 60 * 1000);
+    return { checks };
   })();
 
   renderAll();

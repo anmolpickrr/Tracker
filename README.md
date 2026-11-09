@@ -19,7 +19,7 @@ Navigation is a sidebar on desktop and a bottom tab bar on phones (More opens th
 | **Notes** | A team notebook: meeting minutes, discussions and personal notes with @mentions, action items (assignee and due date), follow-ups and reminders. See [Notes](#notes). |
 | **Access** (admins) | Access requests, people and their access level, and the activity log of every change. |
 
-FASTRR look: the brand palette (Pantone Sun Glare #DDFF00, Exuberant Orange #FF5A26, Blue Violet 2725 C #685BC7, Cloud Dancer #F0EEE9, Darkest Hour #1E1E1E) in a dark theme by default and a light theme (sun/moon button; remembered per browser). The two-strip logo icon is always Blue Violet. Outfit for headings and numbers, Montserrat Black Italic for the FASTRR wordmark. Green and red appear only on change chips (better or worse). Category colours in charts are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table. Secondary table columns appear only on screens wide enough for them; everything is still in the task dialog and the CSV exports.
+FASTRR look: the brand palette (Pantone Sun Glare #DDFF00, Exuberant Orange #FF5A26, Blue Violet 2725 C #685BC7, Cloud Dancer #F0EEE9, Darkest Hour #1E1E1E) in a dark theme by default and a light theme (sun/moon button; remembered per browser). The two-strip logo icon is always FASTRR blue (#6037D7) and the sidebar shows only the animated icon. The loading screen shows the original FASTRR logo with "Creative Ops" in small italic beneath it. Outfit for headings and numbers. Green and red appear only on change chips (better or worse). Category colours in charts are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table. Secondary table columns appear only on screens wide enough for them; everything is still in the task dialog and the CSV exports.
 
 **Internal and External:** everything from the *Paid (client)* sheet is shown as **External** and everything from the *Marketing team* sheet as **Internal**, in filters, tags, tables, reports and CSV files. This is a display label only: the sheets keep their names, so the import is unchanged. The Reports card for External work shows the ₹ symbol.
 
@@ -260,6 +260,19 @@ Rows without an ID, or whose ID appears twice in a tab, are not edited from the 
 - Brand and creative-type spellings that differ only in case or a plural "s" are merged ("Gif"/"GIF", "Listings"/"Listing").
 - A task shared by two designers counts once in team totals and once for each designer in per-person views.
 
+### Working days (Monday to Friday)
+
+Every rate and every comparison uses **working days, Monday to Friday**; Saturdays and Sundays are never counted, so a month has 20 to 23 working days (usually 21 or 22). Public holidays are not taken out.
+
+- **Rates:** Reports shows *Per designer, per working day* (creatives ÷ people who delivered ÷ working days in the period up to today). The Team page shows *Per work day* (this month's creatives ÷ working days so far). Multiply by about 21.7 for a typical month.
+- **Comparisons of a period still running** use the same number of working days: on 10 November (7 working days in) the month is compared with the first 7 working days of October (1 to 9 October). Weeks compare Monday-to-date with the same weekdays.
+- **Day view in graphs** shows working days only; anything dated on a Saturday or Sunday counts on the Friday before.
+- Notes on the Team and Reports pages, and tooltips on the numbers, show the working days used.
+
+### System check (Overview)
+
+A strip at the top of the Overview checks the dashboard every refresh and every minute: that the data loaded and every sheet could be read, that live sync is current, that the web app is up to date, the Google Calendar and assistant set-up (admins), rows that cannot be counted, and a calculation self-check that works out key numbers two independent ways (open work, overdue, delivered this month, workloads, working days) and compares them. When everything is fine it shows one green line; otherwise it lists each problem with what to do and, where possible, a button to fix or open it. People who cannot change a setting only see what affects them.
+
 ### Change colours (green is better, red is worse)
 
 Every comparison shows the change as a coloured chip: **green when the number moved the good way, red when it moved the bad way**, and grey for no change. The good way depends on the measure: more delivered is green, but **fewer open, fewer overdue and fewer unassigned is green** and more of them is red. Under review has no good or bad direction and stays grey. The shade deepens with the size of the change and reaches full strength at a 50% change, so a small wobble stays pale.
@@ -330,7 +343,7 @@ apps-script/Code.gs    the data API that runs in Google Apps Script: reads, edit
 apps-script/Config.gs  its settings: sheet links, sign-in client ID, owners, domains (placeholders here)
 tools/inline-data.js   copies assets/data.js into Code.gs (run after changing data.js), so reminders count exactly like the dashboard
 assets/logo.svg        the FASTRR mark on a transparent background (notifications)
-assets/favicon.svg     browser-tab icon; dark bars on light tabs, white bars on dark tabs
+assets/favicon.svg     browser-tab icon: #111114 bars on light tabs, white on dark tabs
 apps-script/appsscript.json  its permissions
 ```
 
