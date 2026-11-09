@@ -2650,11 +2650,20 @@
       return voices.slice().sort((a, b) => score(b) - score(a))[0] || null;
     };
     function done() { st.speaking = false; mood(); if (st.viaVoice && st.lastAskedQuestion && !panel.hidden) setTimeout(listen, 250); }
+    // Gemini returns raw 16-bit PCM; wrap it in a WAV header so the browser can play it. Chirp returns MP3.
+    const audioUrl = (b64, mime) => {
+      if (!/L16|pcm/i.test(mime || '')) return 'data:' + (mime || 'audio/mp3') + ';base64,' + b64;
+      const rate = Number(((mime || '').match(/rate=(\d+)/) || [])[1]) || 24000, pcm = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const h = new DataView(new ArrayBuffer(44)), w = (o, str) => [...str].forEach((c, i) => h.setUint8(o + i, c.charCodeAt(0)));
+      w(0, 'RIFF'); h.setUint32(4, 36 + pcm.length, true); w(8, 'WAVEfmt '); h.setUint32(16, 16, true); h.setUint16(20, 1, true); h.setUint16(22, 1, true);
+      h.setUint32(24, rate, true); h.setUint32(28, rate * 2, true); h.setUint16(32, 2, true); h.setUint16(34, 16, true); w(36, 'data'); h.setUint32(40, pcm.length, true);
+      return URL.createObjectURL(new Blob([h.buffer, pcm], { type: 'audio/wav' }));
+    };
     async function speak(text) {
       if (!st.voiceOn || !text) return;
       const t = plain(text).slice(0, 700), lang = langOf(t); st.speaking = true; mood();
       if (st.tts) {
-        try { const r = await callApi({ action: 'speak', text: t, lang }); if (r.ok && r.audio) { stopSpeaking(true); const a = new Audio('data:audio/mp3;base64,' + r.audio); st.audio = a; st.speaking = true; mood(); a.onended = done; a.onerror = done; await a.play(); return; } } catch (e) { /* fall back to the device voice */ }
+        try { const r = await callApi({ action: 'speak', text: t, lang }); if (r.ok && r.audio) { stopSpeaking(true); const a = new Audio(audioUrl(r.audio, r.mime)); st.audio = a; st.speaking = true; mood(); a.onended = done; a.onerror = done; await a.play(); return; } } catch (e) { /* fall back to the device voice */ }
       }
       if (!window.speechSynthesis) { st.speaking = false; mood(); return; }
       speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); const v = pickVoice(lang); if (v) u.voice = v; u.lang = v ? v.lang : lang; u.rate = 1.03; u.pitch = 1.05;
@@ -2839,8 +2848,10 @@
         }
       } catch (e) { if (e instanceof AuthLost) return; answer = 'I could not reach the dashboard service. Check the connection and try again.'; }
       wait.remove(); st.busy = false;
-      const b = bubble('bot', answer); showTasks(b, shown); st.lastAskedQuestion = /\?\s*$|\?\s*["”]?$/.test(answer);
-      mood(); speak(answer);
+      // The AI adds "<<say>>" + a Devanagari version for Hindi/Hinglish replies: show the first part, speak the second (correct pronunciation).
+      const [shownText, spoken] = String(answer).split(/\s*<<say>>\s*/);
+      const b = bubble('bot', shownText.trim()); showTasks(b, shown); st.lastAskedQuestion = /\?\s*$|\?\s*["”]?$/.test(shownText.trim());
+      mood(); speak((spoken || shownText).trim());
     }
 
     /* ---- basic mode (no Claude key): understands the common questions in English and Hinglish ---- */

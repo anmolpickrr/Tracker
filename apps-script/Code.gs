@@ -1584,7 +1584,7 @@ const ASSIST_MODELS = {
 };
 function assistStatus_() {
   const p = PropertiesService.getScriptProperties();
-  return { ai: !!(p.getProperty('ANTHROPIC_API_KEY') || p.getProperty('GEMINI_API_KEY')), tts: !!p.getProperty('GOOGLE_TTS_KEY'), provider: assistProvider_() };
+  return { ai: !!(p.getProperty('ANTHROPIC_API_KEY') || p.getProperty('GEMINI_API_KEY')), tts: !!(p.getProperty('GOOGLE_TTS_KEY') || p.getProperty('GEMINI_API_KEY')), provider: assistProvider_() };
 }
 // Which service answers: the admin's choice if its key is set; "auto" prefers the free Gemini key, then Claude Haiku.
 function assistProvider_() {
@@ -1602,6 +1602,8 @@ const ASSIST_SYSTEM = [
   'You are Fasty, the voice assistant inside the FASTRR Creative Ops dashboard used by an Indian creative team (designers, editors, the creative head and coordinators). You are the most knowledgeable teammate: you know every section, number and process of this dashboard, and you help people find things, understand them and get work done.',
   '',
   'Language: people speak Hindi, English, Hinglish, broken English and mixed sentences, often with speech-to-text mistakes (names misspelt, "over due", "kitne task", "yashika ka", "dikhao", "kholo"). Work out what they mean; never correct their grammar. Reply in the same language mix they used: Hinglish in Latin script for Hinglish, Hindi in Devanagari for Hindi, simple English for English. Use Indian number formatting (1,25,000) and IST.',
+  '',
+  'Spoken version: whenever your reply is in Hindi or Hinglish (any Hindi words), end it with a new line containing only <<say>> and then the same reply written entirely in Devanagari for the voice to read, with English words transliterated as Indians say them (task = टास्क, overdue = ओवरड्यू, deliver = डिलीवर, Huggler = हगलर) and numbers as digits. Keep names recognisable. The screen hides that part. For replies fully in English, add nothing.',
   '',
   'Voice style: your reply is read aloud. Be warm, natural and brief: one to three short sentences, the answer first. No markdown, bullet symbols, tables, emojis or IDs read out unless asked; say "7 tasks" not a list of 7 IDs (the screen shows the matching tasks separately, so say "I have put them on screen" when a tool returned a list). Round sensibly and mention the period you counted.',
   '',
@@ -1694,19 +1696,39 @@ function assist_(user, body) {
 }
 // Natural female voice through Google Cloud Text-to-Speech (Chirp 3 HD), when GOOGLE_TTS_KEY is set.
 function speak_(user, body) {
-  const key = PropertiesService.getScriptProperties().getProperty('GOOGLE_TTS_KEY');
-  if (!key) return { ok: false, error: 'not_configured' };
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GOOGLE_TTS_KEY'), gk = props.getProperty('GEMINI_API_KEY');
+  if (!key && !gk) return { ok: false, error: 'not_configured' };
   if (!assistLimit_(user.email, 'tts', 80)) return { ok: false, error: 'limit' };
   const text = String(body.text || '').slice(0, 700); if (!text) return { ok: false };
-  const lang = body.lang === 'hi-IN' ? 'hi-IN' : 'en-IN';
-  const cache = CacheService.getScriptCache(), ck = 'tts:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, lang + text));
-  const hit = cache.get(ck); if (hit) return { ok: true, audio: hit };
-  const res = UrlFetchApp.fetch('https://texttospeech.googleapis.com/v1/text:synthesize?key=' + encodeURIComponent(key), { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    payload: JSON.stringify({ input: { text: text }, voice: { languageCode: lang, name: lang + '-Chirp3-HD-Aoede' }, audioConfig: { audioEncoding: 'MP3', speakingRate: 1.04 } }) });
-  if (res.getResponseCode() !== 200) return { ok: false, error: 'tts ' + res.getResponseCode() };
-  const audio = JSON.parse(res.getContentText()).audioContent || '';
-  if (audio && audio.length < 90000) cache.put(ck, audio, 21600);
-  return { ok: true, audio: audio };
+  const lang = body.lang === 'hi-IN' || /[\u0900-\u097F]/.test(text) ? 'hi-IN' : 'en-IN';
+  const cache = CacheService.getScriptCache(), ck = 'tts2:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, lang + text));
+  const hit = cache.get(ck); if (hit) { const h = JSON.parse(hit); return { ok: true, audio: h.a, mime: h.m }; }
+  let out = null;
+  // 1. Google Cloud Chirp 3 HD (natural, Indian English and Hindi voices), when GOOGLE_TTS_KEY is set.
+  if (key) {
+    const res = UrlFetchApp.fetch('https://texttospeech.googleapis.com/v1/text:synthesize?key=' + encodeURIComponent(key), { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({ input: { text: text }, voice: { languageCode: lang, name: lang + '-Chirp3-HD-Aoede' }, audioConfig: { audioEncoding: 'MP3', speakingRate: 1.0 } }) });
+    if (res.getResponseCode() === 200) out = { a: JSON.parse(res.getContentText()).audioContent || '', m: 'audio/mp3' };
+  }
+  // 2. Gemini text-to-speech with the same free GEMINI_API_KEY: a warm, natural female voice that speaks Hindi and Indian English.
+  if (!out && gk && !cache.get('tts-off')) out = geminiSpeak_(gk, text, lang);
+  if (!out || !out.a) { if (gk && !key) cache.put('tts-off', '1', 900); return { ok: false, error: 'tts unavailable' }; }
+  if (out.a.length < 95000) cache.put(ck, JSON.stringify(out), 21600);
+  return { ok: true, audio: out.a, mime: out.m };
+}
+function geminiSpeak_(gk, text, lang) {
+  const props = PropertiesService.getScriptProperties();
+  const models = [props.getProperty('GEMINI_TTS_MODEL'), props.getProperty('GEMINI_TTS_OK'), 'gemini-2.5-flash-preview-tts', 'gemini-2.5-flash-tts', 'gemini-flash-tts-latest', 'gemini-2.5-pro-preview-tts'].filter(function (m, i, a) { return m && a.indexOf(m) === i; });
+  const style = lang === 'hi-IN' ? 'Read this aloud in natural, conversational Hindi as a warm, friendly young Indian woman talking to a colleague; pronounce English words the Indian way: ' : 'Read this aloud in a warm, friendly Indian English accent, natural and conversational, like a helpful colleague: ';
+  for (let i = 0; i < models.length; i++) {
+    const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': gk },
+      payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: style + text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } } } }) });
+    if (res.getResponseCode() === 429) return null;
+    if (res.getResponseCode() !== 200) continue;
+    const part = ((((JSON.parse(res.getContentText()).candidates || [])[0] || {}).content || {}).parts || []).filter(function (p) { return p.inlineData; })[0];
+    if (part) { props.setProperty('GEMINI_TTS_OK', models[i]); return { a: part.inlineData.data, m: part.inlineData.mimeType || 'audio/L16;rate=24000' }; }
+  }
+  return null;
 }
 
 /* ---- Google Gemini (free tier from aistudio.google.com) ----
