@@ -456,7 +456,7 @@
   /* ================= Controls ================= */
   let shownTab = null;
   // The loading screen stays until the FASTRR reveal has landed (or 2.5 s at most), then fades.
-  const bootLanded = new Promise((res) => { const w = document.querySelector('.boot .boot-sub'); if (!w || matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); w.addEventListener('animationend', () => setTimeout(res, 120), { once: true }); setTimeout(res, 1800); });
+  const bootLanded = new Promise((res) => { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); setTimeout(res, Math.max(0, 950 - performance.now())); });
   const hideBoot = () => { const b = document.getElementById('boot'); if (!b || b.dataset.leaving) return; b.dataset.leaving = '1'; bootLanded.then(() => { b.classList.add('done'); setTimeout(() => b.remove(), 500); }); };
   function syncControls() {
     const p = dash.params();
@@ -601,7 +601,13 @@
   const greeting = () => { const h = CO.istHour(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
   const firstName = () => (A.user && A.user.name ? A.user.name.split(' ')[0] : '');
   dash.draw('page-title', (el) => { const t = curTab(); el.textContent = t === 'today' && firstName() ? greeting() + ', ' + firstName() : PAGES[t][0]; });
-  dash.draw('page-eyebrow', (el) => { const t = curTab(); el.textContent = t === 'today' && firstName() ? 'Overview' : ''; });
+  // Workspace label lives in the header (not beside the logo): "Creative Ops · Team tracker / <page>".
+  dash.draw('page-eyebrow', (el) => {
+    const t = curTab(); el.replaceChildren();
+    const chip = document.createElement('span'); chip.className = 'ws-chip'; const dot = document.createElement('i'); const sm = document.createElement('small'); sm.textContent = 'Team tracker'; chip.append(dot, 'Creative Ops', sm);
+    el.append(chip);
+    if (t === 'today' && firstName()) { const sep = document.createElement('span'); sep.className = 'ws-sep'; sep.textContent = '/'; const pg = document.createElement('span'); pg.className = 'ws-page'; pg.textContent = 'Overview'; el.append(sep, pg); }
+  });
   dash.draw('top-av', (el) => { el.replaceChildren(); if (A.user) { const a = CO.av(A.user.name || A.user.email); a.title = (A.user.name || A.user.email) + ' · ' + (ROLE_LABEL[A.user.role] || A.user.role); el.append(a); } });
   dash.draw('page-sub', (el) => { const s = PAGES[curTab()][1]; el.textContent = typeof s === 'function' ? s() : s; });
   dash.draw('filter-count', (el) => { const p = dash.params(); const n = ['src', 'designer', 'brand', 'type'].filter((k) => p[k]).length; el.textContent = n ? String(n) : ''; });

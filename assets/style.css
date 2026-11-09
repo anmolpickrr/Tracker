@@ -70,8 +70,8 @@ svg { flex: none; }
 .side-brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 18px; }
 .side-brand b { display: block; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
 .side-brand small { display: block; font-size: 11.5px; color: var(--muted); }
-.side-logo { width: 34px; height: 34px; display: grid; place-items: center; flex: none; }
-.side-logo .logo { width: 30px; height: auto; }
+.side-logo { width: 40px; height: 34px; display: grid; place-items: center start; flex: none; }
+.side-logo .logo { width: 38px; height: auto; }
 .side-name { display: grid; gap: 3px; }
 .side-nav { display: grid; gap: 3px; }
 .nav-h { margin: 16px 12px 6px; font: 600 12px/1 var(--font-body); color: var(--muted); }
@@ -98,7 +98,11 @@ svg { flex: none; }
 .main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .top { position: sticky; top: 0; z-index: 30; display: flex; align-items: flex-end; gap: 14px; padding: 10px 6px 14px; background: linear-gradient(var(--bg) 70%, color-mix(in srgb, var(--bg) 0%, transparent)); }
 .top-title { min-width: 0; flex: 1; }
-.top-eyebrow { display: block; font-size: 13px; color: var(--muted); margin-bottom: 2px; }
+.top-eyebrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.ws-chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 8px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--fg); font: 600 12px var(--font-display); letter-spacing: .01em; }
+.ws-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.ws-chip small { font: 500 12px var(--font-body); color: var(--muted); }
+.ws-sep { opacity: .5; }
 .top-eyebrow:empty { display: none; }
 .top-title h1 { margin: 0; font-size: var(--fs-title); font-weight: 600; line-height: 1.08; letter-spacing: -0.03em; }
 .top-title p { margin: 4px 0 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -455,7 +459,7 @@ tr.click, .su-item.click { cursor: pointer; }
 @media (max-width: 720px) {
   :root, :root[data-theme="light"], :root[data-theme="dark"] { --fs-title: 23px; --fs-kpi: 30px; --radius: 20px; }
   .top { gap: 8px; }
-  .top-eyebrow { display: none; }
+  .top-eyebrow .ws-sep, .top-eyebrow .ws-page, .ws-chip small { display: none; }
   .top-title h1 { font-size: clamp(20px, 6vw, 26px); text-wrap: balance; }
   .top-side { gap: 6px; }
   .icon-btn, .sync-pill { width: 38px; height: 38px; }
@@ -777,7 +781,7 @@ body[data-gate] .app, body[data-gate] .co { display: none; }
   .pm { flex: 1 1 45%; }
   .pm .co-input, .pm .co-select { min-width: 0; width: 100%; }
 }
-@media (prefers-reduced-motion: reduce) { .mark .lb, .mark .lt, .bm-word, .boot-sub { animation: none !important; } .mark .lt { opacity: 0 !important; } }
+@media (prefers-reduced-motion: reduce) { .mark .lb, .mark .lt, .mark .sl, .mark .mk-shine { animation: none !important; } .mark .lt, .mark .sl { opacity: 0 !important; } }
 
 /* Needs attention fills the height of the column beside it and scrolls inside, instead of leaving a gap. */
 .ov-grid.fill { align-items: stretch; }
@@ -1096,28 +1100,44 @@ body[data-gate] .app, body[data-gate] .co { display: none; }
 @media (max-width: 960px) { .fy-hint { right: 14px; bottom: calc(166px + env(safe-area-inset-bottom, 0px)); } }
 @media (prefers-reduced-motion: reduce) { .fy-glow, .fy-spark, .fy-hint, .ash::before, .ash::after { animation: none !important; } }
 
-/* ============ The FASTRR mark (favicon shape, FASTRR blue): the strips dash in with motion trails, overshoot and settle.
-   Same motion in the sidebar, sign-in, notes and the loading screen. Hover gives a quick forward kick; syncing streams. ============ */
+/* ============ The FASTRR mark: speed lines zip past, the strips dash in with motion trails, overshoot and settle,
+   then a light sweeps across them. The loading screen keeps revving until the data is ready. Same treatment everywhere. ============ */
 .logo { display: block; overflow: visible; }
+.mark .mk-s0 { stop-color: var(--logo); stop-opacity: 0; }
+.mark .mk-s1 { stop-color: var(--logo); stop-opacity: .55; }
 .mark .lb { fill: var(--logo); transform-box: fill-box; transform-origin: right center; animation: mk-dash .62s cubic-bezier(.12, .9, .25, 1) both; }
-.mark .lb1 { animation-delay: .04s; }
-.mark .lb2 { animation-delay: .13s; }
-@keyframes mk-dash { 0% { transform: translateX(-240%) scaleX(2.2); opacity: 0; } 22% { opacity: 1; } 64% { transform: translateX(7%) scaleX(1.16); } 82% { transform: translateX(-2.5%) scaleX(.96); } 100% { transform: none; opacity: 1; } }
-.mark .lt { fill: var(--logo); opacity: 0; transform-box: fill-box; transform-origin: right center; animation: mk-trail .62s cubic-bezier(.2, .7, .2, 1) both; }
-.mark .lt1 { animation-delay: .1s; }
-.mark .lt2 { animation-delay: .19s; }
-@keyframes mk-trail { 0% { opacity: 0; transform: translateX(-60%) scaleX(.4); } 35% { opacity: .35; } 100% { opacity: 0; transform: translateX(30%) scaleX(1); } }
+.mark .lb1 { animation-delay: .12s; }
+.mark .lb2 { animation-delay: .2s; }
+@keyframes mk-dash { 0% { transform: translateX(-260%) scaleX(2.4); opacity: 0; } 22% { opacity: 1; } 64% { transform: translateX(7%) scaleX(1.16); } 82% { transform: translateX(-2.5%) scaleX(.96); } 100% { transform: none; opacity: 1; } }
+.mark .lt { opacity: 0; transform-box: fill-box; transform-origin: right center; animation: mk-trail .62s cubic-bezier(.2, .7, .2, 1) both; }
+.mark .lt1 { animation-delay: .18s; } .mark .lt2 { animation-delay: .26s; }
+@keyframes mk-trail { 0% { opacity: 0; transform: translateX(-70%) scaleX(.3); } 35% { opacity: 1; } 100% { opacity: 0; transform: translateX(35%) scaleX(1); } }
+.mark .sl { opacity: 0; transform-box: fill-box; transform-origin: left center; animation: mk-zip .7s cubic-bezier(.3, .6, .2, 1) both; }
+.mark .sl.lime { fill: #ddff00; }
+.mark .sl2 { animation-delay: .06s; } .mark .sl3 { animation-delay: .12s; } .mark .sl4 { animation-delay: .18s; }
+@keyframes mk-zip { 0% { opacity: 0; transform: translateX(-30%) scaleX(.25); } 30% { opacity: .9; } 100% { opacity: 0; transform: translateX(150%) scaleX(1.1); } }
+.mark .mk-shine { transform: translateX(-160px); animation: mk-shine .75s .78s cubic-bezier(.45, 0, .2, 1) both; }
+@keyframes mk-shine { from { transform: translateX(-160px); } to { transform: translateX(560px); } }
+/* sidebar: hover gives a quick forward kick with a fresh streak; syncing keeps the strips running */
 .side-brand:hover .mark .lb, .gate-logo:hover .mark .lb { animation: mk-kick .5s cubic-bezier(.3, 0, .2, 1); }
 .side-brand:hover .mark .lb2, .gate-logo:hover .mark .lb2 { animation-delay: .06s; }
 .side-brand:hover .mark .lt, .gate-logo:hover .mark .lt { animation: mk-trail .5s cubic-bezier(.2, .7, .2, 1); }
+.side-brand:hover .mark .sl, .gate-logo:hover .mark .sl { animation: mk-zip .55s cubic-bezier(.3, .6, .2, 1); }
+.side-brand:hover .mark .mk-shine { animation: mk-shine .6s .1s cubic-bezier(.45, 0, .2, 1) both; }
 @keyframes mk-kick { 40% { transform: translateX(12%) scaleX(1.15); } 100% { transform: none; } }
 body.syncing .side-logo .mark .lb1 { animation: mk-run 1s ease-in-out infinite; }
 body.syncing .side-logo .mark .lb2 { animation: mk-run 1s .14s ease-in-out infinite; }
 @keyframes mk-run { 0%, 100% { transform: none; } 45% { transform: translateX(14%) scaleX(1.12); opacity: .6; } }
-/* Loading screen: same mark, then the wordmark and "Creative Ops" follow quickly (about a second in all) */
-.boot-mark .mark .lb { animation-duration: .6s; }
-.bm-word { animation-delay: .55s !important; animation-duration: .5s !important; }
-.boot-sub { animation-delay: .9s !important; animation-duration: .35s !important; }
+/* loading screen: icon only, larger; after landing it revs every 1.4 s with fresh speed lines and a shine */
+.boot-lock { display: grid; place-items: center; }
+.boot-mark { width: clamp(120px, 16vw, 176px); height: auto; }
+.boot .mark .lb { animation: mk-dash .62s cubic-bezier(.12, .9, .25, 1) both, mk-rev 1.4s 1.25s cubic-bezier(.3, 0, .2, 1) infinite; }
+.boot .mark .lb2 { animation-delay: .2s, 1.31s; }
+@keyframes mk-rev { 0%, 55%, 100% { transform: none; } 70% { transform: translateX(11%) scaleX(1.14); } 85% { transform: translateX(-2%) scaleX(.97); } }
+.boot .mark .sl { animation: mk-zip .7s cubic-bezier(.3, .6, .2, 1) both, mk-zip-loop 1.4s 1.25s linear infinite; }
+@keyframes mk-zip-loop { 0%, 48% { opacity: 0; transform: translateX(-30%) scaleX(.25); } 60% { opacity: .9; } 85%, 100% { opacity: 0; transform: translateX(150%) scaleX(1.1); } }
+.boot .mark .mk-shine { animation: mk-shine .75s .78s cubic-bezier(.45, 0, .2, 1) both, mk-shine-loop 1.4s 1.25s cubic-bezier(.45, 0, .2, 1) infinite; }
+@keyframes mk-shine-loop { 0%, 60% { transform: translateX(-160px); } 100% { transform: translateX(560px); } }
 
 /* ============ Notes: a colourful sticky-note board ============
    Quick capture on top (type, Enter, done); stickies in a masonry board, coloured by kind; to-dos tick on the sticky;
