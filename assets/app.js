@@ -2330,7 +2330,19 @@
       client.requestAccessToken();
     }).catch((e) => { CAL.err = e.message; dash.draw('cal'); });
   }
+  // First choice: the web app reads the signed-in person's own calendar, so nobody has to connect anything.
+  async function calServer(force) {
+    if (A.mode !== 'auth' || CAL.busy || (!force && CAL.via === 'server' && Date.now() - CAL.at < 2 * 60 * 1000)) return;
+    CAL.busy = true;
+    try {
+      const b = await callApi({ action: 'meetings' });
+      if (b.ok) { const now = new Date(); CAL.events = (b.events || []).filter((e) => new Date(e.end) > now).map((e) => Object.assign({ allDay: false }, e)); CAL.via = 'server'; CAL.server = true; CAL.err = ''; CAL.at = Date.now(); }
+      else { CAL.server = false; CAL.serverErr = b.error || 'error'; }
+    } catch (e) { if (e instanceof AuthLost) return; CAL.server = false; CAL.serverErr = 'error'; }
+    CAL.busy = false; dash.draw('cal'); syncControls(); dash.draw('np-list');
+  }
   async function calLoad(force) {
+    if (CAL.via === 'server') return calServer(force);
     if (!CAL.token || CAL.exp < Date.now() + 30000) { CAL.token = ''; dash.draw('cal'); return; }
     if (CAL.busy || (!force && CAL.events && Date.now() - CAL.at < 4 * 60 * 1000)) return;
     CAL.busy = true;
@@ -2358,7 +2370,7 @@
     } catch (e) { if (e.message !== 'expired') CAL.err = e.message; }
     CAL.busy = false; dash.draw('cal'); syncControls(); dash.draw('np-list');
   }
-  setInterval(() => { if (CAL.token && document.visibilityState === 'visible') calLoad(); }, 60 * 1000);
+  setInterval(() => { if ((CAL.token || CAL.via === 'server') && document.visibilityState === 'visible') calLoad(); }, 60 * 1000);
   const fmtRange = (a, b) => CO.istTime(a) + ' – ' + CO.istTime(b);
   const untilText = (iso) => { const m = Math.round((new Date(iso) - Date.now()) / 60000); if (m <= 0) return 'Now'; if (m < 60) return 'in ' + m + ' min'; const h = Math.floor(m / 60); return m < 24 * 60 ? 'in ' + h + ' h ' + (m % 60 ? (m % 60) + ' min' : '') : CO.istDateTime(iso); };
   function meetingNote(ev) {
@@ -2375,9 +2387,10 @@
     const hd = document.createElement('div'); const h = document.createElement('h2'); h.className = 'co-h2'; h.textContent = 'Meetings'; const n = document.createElement('p'); n.className = 'co-note'; n.textContent = 'Your Google Calendar, today and the next two days.'; hd.append(h, n); head.append(hd);
     el.append(head);
     if (A.mode !== 'auth') return;
-    if (!CAL.token) {
+    if (CAL.server === undefined && !CAL.token) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Loading your meetings…'; el.append(p); calServer(); return; }
+    if (!CAL.token && CAL.via !== 'server') {
       const box = document.createElement('div'); box.className = 'cal-empty';
-      const p = document.createElement('p'); p.textContent = LS.get('co.cal', '') === '1' ? 'Reconnect to show your next meetings (Google asks again every hour or so).' : 'See your next meeting, who is in it and a Join button for Google Meet. Read-only; only you see your calendar.';
+      const p = document.createElement('p'); p.textContent = (CAL.serverErr === 'not_shared' ? 'Your calendar is not shared inside the company, so connect it here (or ask the admin to turn on company-wide calendar sharing). ' : '') + (LS.get('co.cal', '') === '1' ? 'Reconnect to show your next meetings (Google asks again every hour or so).' : 'See your next meeting, who is in it and a Join button for Google Meet. Read-only; only you see your calendar.');
       const b = document.createElement('button'); b.type = 'button'; b.className = 'co-btn primary'; b.textContent = LS.get('co.cal', '') === '1' ? 'Show my meetings' : 'Connect Google Calendar'; b.addEventListener('click', calConnect);
       box.append(p, b); if (CAL.err) { const e = document.createElement('p'); e.className = 'co-note bad'; e.textContent = CAL.err; box.append(e); }
       el.append(box); return;

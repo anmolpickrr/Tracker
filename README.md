@@ -113,7 +113,7 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 The Overview's Meetings card shows the next meeting with a countdown, who is in it, a Join Google Meet button and a Take notes button (which starts a meeting note with the title and attendees filled in), plus the rest of today and the next two days. Each person connects their own calendar once, read-only; the access lasts for the browser session and is never sent to the web app or stored in the sheets.
 
-One-time setup by the owner: in Google Cloud, project "Creative Ops Tracker", go to APIs & Services, Library, Google Calendar API, and choose Enable. Optionally add the `calendar.events.readonly` scope under Google Auth Platform, Data Access, so the consent screen lists it.
+**Automatic for everyone:** the web app reads the signed-in person's own calendar, so team members see their meetings with no setup, as long as calendars share event details inside the company (Google Admin console → Apps → Google Workspace → Calendar → Sharing settings → Internal sharing options: *Share all information*). Run `testMeetings` in Apps Script to see who is covered. Anyone whose calendar isn't shared sees a **Connect Google Calendar** button instead (needs the Google Calendar API enabled in the "Creative Ops Tracker" Google Cloud project).
 
 ## Who's online (admins)
 

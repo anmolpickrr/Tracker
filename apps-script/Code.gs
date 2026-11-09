@@ -22,7 +22,7 @@
 
 /* Roles, lowest first. Viewer: sees everything. Editor: also edits tasks. Admin: also team list, access and the audit log. */
 const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -239,6 +239,7 @@ function doPost(e) {
       return json_(out);
     }
     if (body.action === 'feed') return json_(feed_(user));
+    if (body.action === 'meetings') return json_(meetings_(user));
     if (body.action === 'assist') return json_(assist_(user, body));
     if (body.action === 'speak') return json_(speak_(user, body));
     if (body.action === 'history') return json_({ ok: true, days: history_() });
@@ -1877,3 +1878,36 @@ function autoUpdate_(log) {
 }
 /** Run from the editor (choose updateNow, then Run) to install the newest version from GitHub straight away. */
 function updateNow() { autoUpdate_(true); }
+
+/* ============================ Meetings for everyone ============================
+ * The web app (running as the deploying account) reads the signed-in person's own Google Calendar, so nobody has to
+ * connect anything. It works for everyone whose calendar shares event details inside the company (the usual Workspace
+ * setting); anyone else gets "not_shared" and the dashboard offers its personal Connect button instead.
+ * Only the signed-in person's own calendar is ever read for them. */
+function meetings_(user) {
+  const c = CacheService.getScriptCache(), k = 'mtg:' + user.email, hit = c.get(k); if (hit) return JSON.parse(hit);
+  let out;
+  try {
+    if (typeof Calendar === 'undefined') throw new Error('service_off');
+    const now = new Date(), r = Calendar.Events.list(user.email, { timeMin: new Date(now - 3600e3).toISOString(), timeMax: new Date(+now + 3 * 864e5).toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 25 });
+    const me = user.email.toLowerCase();
+    const events = (r.items || []).filter(function (e) { return e.status !== 'cancelled' && e.start && e.start.dateTime && !(e.attendees || []).some(function (a) { return String(a.email).toLowerCase() === me && a.responseStatus === 'declined'; }); }).map(function (e) {
+      const meet = e.hangoutLink || ((e.conferenceData && e.conferenceData.entryPoints) || []).filter(function (p) { return p.entryPointType === 'video'; }).map(function (p) { return p.uri; })[0] || '';
+      return { id: e.id, title: e.summary || (e.visibility === 'private' ? 'Private event' : '(No title)'), start: e.start.dateTime, end: e.end.dateTime, meet: /^https:\/\/meet\.google\.com\//.test(meet) ? meet : '', link: /^https:\/\/www\.google\.com\/calendar\//.test(e.htmlLink || '') ? e.htmlLink : '',
+        people: (e.attendees || []).filter(function (a) { return !a.resource; }).map(function (a) { return { name: a.displayName || String(a.email).split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, function (x) { return x.toUpperCase(); }), email: a.email, self: String(a.email).toLowerCase() === me, rsvp: a.responseStatus }; }) };
+    });
+    out = { ok: true, events: events };
+  } catch (e) {
+    const m = String(e.message || e);
+    out = { ok: false, error: m === 'service_off' ? 'service_off' : /not ?found|forbidden|403|404|insufficient|access/i.test(m) ? 'not_shared' : 'error', detail: m.slice(0, 160) };
+  }
+  c.put(k, JSON.stringify(out), out.ok ? 120 : 900);
+  return out;
+}
+/** Run from the editor (choose testMeetings, then Run): shows whose meetings the dashboard can show automatically. */
+function testMeetings() {
+  const people = users_().list.filter(function (u) { return u.status === 'Approved'; });
+  let okN = 0;
+  people.forEach(function (u) { CacheService.getScriptCache().remove('mtg:' + u.email); const r = meetings_(u); if (r.ok) okN++; console.log((r.ok ? 'OK   ' : 'NO   ') + u.email + (r.ok ? ': ' + r.events.length + ' meetings in the next 3 days' : ': ' + r.error + ' (' + (r.detail || '') + ')')); });
+  console.log(okN + ' of ' + people.length + ' people get their meetings automatically.' + (okN < people.length ? ' For the rest: in the Google Admin console, Apps > Google Workspace > Calendar > Sharing settings > Internal sharing: "Share all information", or each person shares their calendar with this account.' : ''));
+}
