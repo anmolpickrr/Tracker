@@ -984,6 +984,7 @@ function prefs_(b, u) {
 /* ================= Daily reminders (IST) ================= */
 /* Runs every 10 minutes (setup installs it). Sends the 10:00 and 18:00 IST emails once a day each, and note reminders when due. */
 function remindersTick() {
+  try { maintenance_(); } catch (e) { console.log('maintenance: ' + e); }
   if (!authOn_() || !hasAccessBook_()) return;
   const now = new Date(), day = Utilities.formatDate(now, IST, 'yyyy-MM-dd');
   const mins = Number(Utilities.formatDate(now, IST, 'H')) * 60 + Number(Utilities.formatDate(now, IST, 'mm'));
@@ -1760,27 +1761,48 @@ function testFasty() {
   const p = PropertiesService.getScriptProperties(), prov = assistProvider_(), gk = p.getProperty('GEMINI_API_KEY') || '';
   console.log('1. Provider: ' + prov + ' | GEMINI_API_KEY set: ' + !!gk + ' (' + gk.length + ' characters) | model setting: ' + settings_().model);
   if (prov === 'none') { console.log('No AI key found. Add GEMINI_API_KEY under Project Settings > Script properties.'); return; }
-  if (prov === 'gemini') {
-    const tries = [
-      ['gemini-flash-lite-latest', { thinkingBudget: 0 }], ['gemini-flash-lite-latest', null],
-      ['gemini-2.5-flash-lite', { thinkingBudget: 0 }], ['gemini-flash-latest', { thinkingBudget: 0 }],
-      ['gemini-flash-latest', { thinkingLevel: 'low' }], ['gemini-2.5-flash', { thinkingBudget: 0 }], ['gemini-flash-latest', null]];
-    let best = null;
-    tries.forEach(function (tr) {
-      if (best && best.ms < 4000) return;
-      const body = { contents: [{ role: 'user', parts: [{ text: 'Reply with: ok' }] }], generationConfig: tr[1] ? { thinkingConfig: tr[1] } : {} };
-      const t = Date.now(); let code = 0, txt = '';
-      try { const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + tr[0] + ':generateContent', { method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': gk }, muteHttpExceptions: true, payload: JSON.stringify(body) }); code = r.getResponseCode(); txt = r.getContentText(); } catch (e) { txt = String(e); }
-      const ms = Date.now() - t;
-      console.log('2. ' + tr[0] + (tr[1] ? ' ' + JSON.stringify(tr[1]) : ' (default thinking)') + ': HTTP ' + code + ' in ' + ms + ' ms' + (code === 200 ? '' : ' ' + txt.slice(0, 160)));
-      if (code === 200 && (!best || ms < best.ms)) best = { model: tr[0], thinking: tr[1], ms: ms };
-    });
-    if (!best) { console.log('No Gemini model answered. Check the key in AI Studio (it should start with AIza) and the Rate Limit page.'); return; }
-    p.setProperty('GEMINI_TUNE', JSON.stringify({ model: best.model, thinking: best.thinking }));
-    console.log('3. Saved for Fasty: ' + best.model + (best.thinking ? ' ' + JSON.stringify(best.thinking) : '') + ' (' + best.ms + ' ms)');
-  }
+  if (prov === 'gemini') { const best = tuneGemini_(true); if (!best) return; console.log('3. Saved for Fasty: ' + best.model + (best.thinking ? ' ' + JSON.stringify(best.thinking) : '') + ' (' + best.ms + ' ms)'); }
+
   const t0 = Date.now();
   const res = assist_({ email: 'test@local', name: 'Test', role: 'Viewer' }, { messages: [{ role: 'user', content: [{ type: 'text', text: 'aaj kitne tasks overdue hain?' }] }] });
   console.log('4. Full Fasty request: ' + (Date.now() - t0) + ' ms: ' + JSON.stringify(res).slice(0, 400));
   console.log(res.ok ? 'Fasty is working.' : 'Fasty is NOT working: ' + res.error);
+}
+
+/* Times the free Gemini models (thinking off where allowed) and saves the fastest that works as GEMINI_TUNE. */
+function tuneGemini_(log) {
+  const p = PropertiesService.getScriptProperties(), gk = p.getProperty('GEMINI_API_KEY'); if (!gk) return null;
+  const tries = [
+    ['gemini-flash-lite-latest', { thinkingBudget: 0 }], ['gemini-flash-lite-latest', null],
+    ['gemini-2.5-flash-lite', { thinkingBudget: 0 }], ['gemini-flash-latest', { thinkingBudget: 0 }],
+    ['gemini-flash-latest', { thinkingLevel: 'low' }], ['gemini-2.5-flash', { thinkingBudget: 0 }], ['gemini-flash-latest', null]];
+  let best = null;
+  tries.forEach(function (tr) {
+    if (best && best.ms < 4000) return;
+    const body = { contents: [{ role: 'user', parts: [{ text: 'Reply with: ok' }] }], generationConfig: tr[1] ? { thinkingConfig: tr[1] } : {} };
+    const t = Date.now(); let code = 0, txt = '';
+    try { const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + tr[0] + ':generateContent', { method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': gk }, muteHttpExceptions: true, payload: JSON.stringify(body) }); code = r.getResponseCode(); txt = r.getContentText(); } catch (e) { txt = String(e); }
+    const ms = Date.now() - t;
+    if (log) console.log('2. ' + tr[0] + (tr[1] ? ' ' + JSON.stringify(tr[1]) : ' (default thinking)') + ': HTTP ' + code + ' in ' + ms + ' ms' + (code === 200 ? '' : ' ' + txt.slice(0, 160)));
+    if (code === 200 && (!best || ms < best.ms)) best = { model: tr[0], thinking: tr[1], ms: ms };
+  });
+  if (best) p.setProperty('GEMINI_TUNE', JSON.stringify({ model: best.model, thinking: best.thinking, at: Date.now(), ms: best.ms }));
+  else if (log) console.log('No Gemini model answered. Check the key in AI Studio (it should start with AIza) and the Rate Limit page.');
+  return best;
+}
+/* Housekeeping on the 10-minute timer, so nobody has to run anything by hand:
+ * - once: replace SESSION_SECRET and API_KEY (their values were shared in a screenshot on 10 Nov 2026; everyone signs in again);
+ * - pick the fastest working Gemini model when there is none yet, then once a week. */
+function maintenance_() {
+  const p = PropertiesService.getScriptProperties();
+  if (!p.getProperty('ROTATED_2026_11_10')) {
+    p.setProperty('SESSION_SECRET', newSecret_());
+    p.setProperty('API_KEY', Utilities.getUuid().replace(/-/g, ''));
+    p.setProperty('ROTATED_2026_11_10', new Date().toISOString());
+    try { audit_([{ who: Session.getEffectiveUser().getEmail(), role: 'Script owner', action: 'Signed everyone out', details: 'Secrets replaced automatically after they were shared in a screenshot', via: 'Apps Script' }]); } catch (e) { /* log optional */ }
+  }
+  if (p.getProperty('GEMINI_API_KEY')) {
+    let tune = {}; try { tune = JSON.parse(p.getProperty('GEMINI_TUNE') || '{}'); } catch (e) { tune = {}; }
+    if (!tune.model || !tune.at || Date.now() - tune.at > 7 * 864e5) tuneGemini_(false);
+  }
 }
