@@ -263,3 +263,42 @@ tr.click, .su-item.click { cursor: pointer; }
   details.co-defs dl { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Signed-in user and sign-out (shown only with Google sign-in) */
+.co-me { font-size: var(--fs-cap); color: var(--fg); max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-me:empty, body:not([data-mode="auth"]) #btn-signout { display: none; }
+body[data-mode="auth"] #btn-settings { display: none; }
+
+/* Sign-in screen: nothing of the dashboard is shown behind it */
+body[data-gate] .co { display: none; }
+.gate { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; background:
+  radial-gradient(60rem 30rem at 15% -10%, color-mix(in srgb, var(--c1) 16%, transparent), transparent 70%),
+  radial-gradient(50rem 26rem at 110% 110%, color-mix(in srgb, var(--c2) 14%, transparent), transparent 70%), var(--bg); }
+.gate-card { width: min(26rem, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 28px 26px 22px; display: grid; gap: 14px; box-shadow: var(--shadow); }
+.gate-title { margin: 0; font: 600 28px/1.1 var(--font-display); letter-spacing: -0.02em; }
+.gate-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); }
+.gate-tabs button { border: 0; background: none; border-radius: 999px; padding: 7px 0; cursor: pointer; font-weight: 500; color: var(--muted); }
+.gate-tabs button[aria-selected="true"] { background: var(--panel); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.gate-panel { display: grid; gap: 12px; }
+.gate-panel textarea { resize: vertical; font: inherit; }
+.gate-google { min-height: 44px; display: flex; justify-content: center; }
+.gate-asme { justify-self: stretch; padding: 10px 14px; font-size: var(--fs-body); }
+.gate-state { display: grid; gap: 8px; padding: 14px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--c1) 7%, var(--panel)); border: 1px solid color-mix(in srgb, var(--c1) 30%, var(--line)); }
+.gate-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gate-msg { margin: 0; font-size: var(--fs-cap); color: var(--muted); min-height: 1em; }
+.gate-msg:empty { display: none; }
+.gate-msg.bad { color: var(--bad); }
+.gate-foot { border-top: 1px solid var(--line); padding-top: 12px; }
+
+/* Access tab */
+.ax-req { display: grid; gap: 10px; }
+.ax-req-item { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); }
+.ax-req-info { display: grid; gap: 2px; min-width: 0; }
+.ax-req-info > * { overflow-wrap: anywhere; }
+.ax-req-act { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ax-add, .ax-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ax-add .co-input { width: 17rem; }
+.ax-log td.ax-val { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-log td.ax-before { color: var(--muted); }
+.ax-more { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 720px) { .ax-add .co-input, .ax-filters .co-search { width: 100%; } }

@@ -10,7 +10,12 @@
   const DEFAULTS = { tab: 'today', src: '', designer: '', brand: '', type: '', stage: 'active', susort: 'urgent', who: 'active', rpreset: 'this-month', rfrom: '', rto: '' };
   const P = Object.assign({}, DEFAULTS);
   try { Object.assign(P, JSON.parse(LS.get('co.view', '{}'))); } catch (e) { /* ignore */ }
-  const TABS = ['today', 'standup', 'tasks', 'team', 'reports', 'health'];
+  const TABS = ['today', 'standup', 'tasks', 'team', 'reports', 'health', 'access'];
+  /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
+  const CFG = window.CO_CONFIG || {};
+  const RANK = { Viewer: 1, Editor: 2, Admin: 3 };
+  const A = { mode: null, url: '', clientId: '', domains: [], session: LS.get('co.session', ''), user: null };
+  const can = (need) => A.mode === 'key' || !!(A.user && RANK[A.user.role] >= RANK[need]);
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
 
   const S = { status: 'idle', error: '', tasks: null, team: null, teamRaw: [], sources: {}, generatedAt: null, loadedAt: null };
@@ -23,6 +28,7 @@
       Object.assign(P, o);
       LS.set('co.view', JSON.stringify({ src: P.src, designer: P.designer, brand: P.brand, type: P.type, stage: P.stage, susort: P.susort, who: P.who, rpreset: P.rpreset, rfrom: P.rfrom, rto: P.rto }));
       if (o.tab) { try { history.replaceState(null, '', '#' + o.tab); } catch (e) { /* ignore */ } }
+      if (o.tab === 'access') axRefresh(true);
       renderAll();
     },
     setLink(id) { try { history.replaceState(null, '', '#' + id); } catch (e) { /* ignore */ } },
@@ -50,19 +56,35 @@
   window.addEventListener('resize', () => { if (Math.abs(window.innerWidth - lastW) > 20) { lastW = window.innerWidth; renderAll(); } });
 
   /* ================= Data loading ================= */
-  const conn = () => ({ url: LS.get('co.api', ''), key: LS.get('co.key', '') });
-  async function load(fresh) {
+  const conn = () => ({ url: LS.get('co.api', '') || CFG.webApp || '', key: LS.get('co.key', '') });
+  class AuthLost extends Error {}
+  const parse = (text) => {
+    try { return JSON.parse(text); } catch (e) { throw new Error(/<html/i.test(text) ? 'The web app answered with a web page instead of data. Check that it is deployed with access set to "Anyone".' : 'The web app returned something that is not data.'); }
+  };
+  /* Signed-in requests: everything goes by POST with the session, never in the URL. */
+  async function callApi(payload) {
+    const res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)) });
+    const body = parse(await res.text());
+    if (!body.ok && ['signin_required', 'session_expired', 'no_access'].includes(body.error)) { lostAccess(body); throw new AuthLost(body.error); }
+    return body;
+  }
+  async function keyGet(params) {
     const { url, key } = conn();
-    if (!url || !key) { S.status = 'unconfigured'; renderAll(); return; }
+    const u = new URL(url); u.searchParams.set('key', key);
+    Object.keys(params).forEach((k) => u.searchParams.set(k, params[k]));
+    return parse(await (await fetch(u.toString(), { redirect: 'follow' })).text());
+  }
+  const probeVer = () => (A.mode === 'auth' ? callApi({ action: 'ver' }) : keyGet({ mode: 'ver' }));
+  const errText = (e) => (e === 'bad_key' ? 'The key was not accepted. Copy it again from the Apps Script execution log after running setup.' : e === 'forbidden' ? 'Your role does not allow this. Ask the admin for more access.' : 'The web app reported: ' + e);
+
+  async function load(fresh) {
+    if (A.mode === 'auth' && !A.user) return;
+    if (A.mode !== 'auth') { const { url, key } = conn(); if (!url || !key) { S.status = 'unconfigured'; renderAll(); return; } }
     if (S.status !== 'ok') S.status = 'loading';
     S.refreshing = true; renderAll();
     try {
-      const u = new URL(url); u.searchParams.set('key', key); if (fresh) u.searchParams.set('fresh', '1');
-      const res = await fetch(u.toString(), { redirect: 'follow' });
-      const text = await res.text();
-      let body;
-      try { body = JSON.parse(text); } catch (e) { throw new Error(/<html/i.test(text) ? 'The web app answered with a web page instead of data. Check that it is deployed with access set to "Anyone".' : 'The web app returned something that is not data.'); }
-      if (!body.ok) throw new Error(body.error === 'bad_key' ? 'The key was not accepted. Copy it again from the Apps Script execution log after running setup.' : 'The web app reported: ' + body.error);
+      const body = A.mode === 'auth' ? await callApi({ action: 'data', fresh: !!fresh }) : await keyGet(fresh ? { fresh: '1' } : {});
+      if (!body.ok) throw new Error(errText(body.error));
       const src = body.sources || {};
       const taskKeys = Object.keys(src).filter((k) => CODATA.kindOf(k, src[k].kind) !== 'team' && !src[k].optional);
       if (taskKeys.length && taskKeys.every((k) => src[k].error)) throw new Error('None of the task sheets could be opened by the web app: ' + src[taskKeys[0]].error);
@@ -77,19 +99,21 @@
       S.cols = {}; Object.keys(src).forEach((k) => { S.cols[k] = CODATA.columnsOf(src[k]); });
       S.ver = body.ver || null;
       S.generatedAt = body.generatedAt; S.loadedAt = new Date();
-      S.status = 'ok'; S.error = '';
+      S.status = 'ok'; S.error = ''; S.staleError = '';
       loadHealth();
+      if (P.tab === 'access') axRefresh(true);
       LS.set('co.cacheAt', S.generatedAt);
     } catch (err) {
+      if (err instanceof AuthLost) { S.refreshing = false; return; }
       S.error = err && err.message ? err.message : String(err);
       if (err instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(S.error)) {
         // Google's own error pages carry no cross-site header, so a script error looks like a network failure.
         // The version check touches no sheets: if it answers, the web app is reachable and the sheets are the problem.
         let reachable = false;
-        try { const { url, key } = conn(); const u = new URL(url); u.searchParams.set('key', key); u.searchParams.set('mode', 'ver'); reachable = !!JSON.parse(await (await fetch(u.toString(), { redirect: 'follow' })).text()).ok; } catch (e2) { /* unreachable */ }
+        try { reachable = !!(await probeVer()).ok; } catch (e2) { /* unreachable */ }
         S.error = reachable
           ? 'The web app is connected but could not open the sheets. In Apps Script, signed in as the account the web app runs as (Deploy → Manage deployments shows it), run setup once and approve the permissions, then click Refresh.'
-          : 'This browser could not reach the web app. Check the URL is the full link ending in /exec, then turn off ad or privacy blockers for this page (or try a private window) and click Refresh.';
+          : 'This browser could not reach the web app. Check your connection, turn off ad or privacy blockers for this page (or try a private window) and click Refresh.';
       }
       if (S.status !== 'ok') S.status = 'error';
       else S.staleError = S.error;
@@ -97,21 +121,24 @@
     S.refreshing = false;
     renderAll();
   }
-  /* Integration health from the web app (account, change detection, edit access). Best effort. */
+  /* Integration health from the web app (account, change detection, edit access). Admins only. Best effort. */
   async function loadHealth() {
+    if (!can('Admin')) { S.health = null; return; }
     try {
-      const { url, key } = conn();
-      const u = new URL(url); u.searchParams.set('key', key); u.searchParams.set('mode', 'health');
-      const body = JSON.parse(await (await fetch(u.toString(), { redirect: 'follow' })).text());
+      const body = A.mode === 'auth' ? await callApi({ action: 'health' }) : await keyGet({ mode: 'health' });
       S.health = body.ok ? body : null;
     } catch (e) { S.health = null; }
     dash.draw('integration');
   }
   async function post(payload) {
-    const { url, key } = conn();
-    const res = await fetch(url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ key }, payload)) });
-    const body = JSON.parse(await res.text());
-    if (!body.ok) throw new Error(body.error || 'save failed');
+    let body;
+    if (A.mode === 'auth') body = await callApi(payload);
+    else {
+      const { url, key } = conn();
+      const res = await fetch(url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ key }, payload)) });
+      body = parse(await res.text());
+    }
+    if (!body.ok) throw new Error(body.error === 'forbidden' ? 'your role (' + (A.user ? A.user.role : '?') + ') cannot do this' : body.error || 'save failed');
     return body;
   }
   /* Live sync: every 30 s ask the web app whether a sheet changed (a tiny request), and reload only then.
@@ -121,10 +148,12 @@
     if (checking || S.refreshing || S.status !== 'ok' || document.visibilityState !== 'visible') return;
     checking = true;
     try {
-      const { url, key } = conn();
-      const u = new URL(url); u.searchParams.set('key', key); u.searchParams.set('mode', 'ver');
-      const body = JSON.parse(await (await fetch(u.toString(), { redirect: 'follow' })).text());
+      const body = await probeVer();
       S.checkedAt = new Date();
+      if (A.mode === 'auth' && body.ok && body.role && A.user && body.role !== A.user.role) {
+        A.user.role = body.role; toast('Your access is now ' + body.role + '.'); renderAll(); loadHealth();
+      }
+      if (P.tab === 'access') axRefresh(false);
       if (body.ok && body.ver && S.ver && body.ver !== S.ver) await load(false);
       dash.draw('sync-text');
     } catch (e) { /* a missed check is retried on the next tick */ }
@@ -302,7 +331,7 @@
       return fmtDate(f, true) + ' – ' + fmtDate(t, true);
     };
     const csv = (filename, header, rows) => {
-      const q = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      const q = (v) => { let s = v == null ? '' : String(v); if (/^[=+\-@]/.test(s)) s = "'" + s; return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
       const text = [header.map(q).join(',')].concat(rows.map((r) => r.map(q).join(','))).join('\n');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }));
@@ -315,7 +344,10 @@
   /* ================= Controls ================= */
   function syncControls() {
     const p = dash.params();
-    const tab = TABS.includes(p.tab) ? p.tab : 'today';
+    const admin = A.mode === 'auth' && can('Admin');
+    document.querySelector('.co-tab[data-tab="access"]').hidden = !admin;
+    document.getElementById('add-member').hidden = !can('Admin');
+    const tab = TABS.includes(p.tab) && (p.tab !== 'access' || admin) ? p.tab : 'today';
     document.querySelectorAll('[data-panel]').forEach((s) => { s.hidden = s.dataset.panel !== tab; });
     document.querySelectorAll('.co-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     const val = (sel, v) => { const el = document.querySelector(sel); if (el && el !== document.activeElement) el.value = v; };
@@ -324,6 +356,7 @@
     val('#r-from', pr.all ? '' : pr.from); val('#r-to', pr.all ? '' : pr.to);
     const banner = document.getElementById('banner');
     banner.hidden = !(S.status === 'unconfigured' || S.status === 'error');
+    document.getElementById('btn-connect').hidden = A.mode === 'auth';
   }
   document.querySelectorAll('.co-tab').forEach((b) => b.addEventListener('click', () => dash.setParams({ tab: b.dataset.tab })));
   document.querySelectorAll('.co-f').forEach((s) => s.addEventListener('change', () => dash.setParams({ [s.dataset.param]: s.value })));
@@ -349,7 +382,7 @@
   });
   const themeLabel = () => { const root = document.documentElement; const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; document.getElementById('btn-theme').textContent = dark ? 'Light theme' : 'Dark theme'; };
   themeLabel();
-  document.getElementById('btn-refresh').addEventListener('click', () => load(true));
+  document.getElementById('btn-refresh').addEventListener('click', () => (A.mode ? load(true) : start()));
   document.getElementById('btn-theme').addEventListener('click', () => {
     const root = document.documentElement;
     const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
@@ -412,6 +445,7 @@
       el.title = live ? 'Checks the sheets for changes every 30 seconds' : 'Run setup() in Apps Script to turn on instant change detection';
     } else el.textContent = S.status === 'loading' ? 'Loading sheets…' : S.status === 'error' ? 'Could not load' : 'Not connected';
   });
+  dash.draw('me', (el) => { el.textContent = A.user ? (A.user.name || A.user.email) + ' · ' + A.user.role : ''; el.title = A.user ? A.user.email : ''; });
   dash.draw('banner-title', (el) => { el.textContent = S.status === 'error' ? 'The sheets could not be loaded' : 'Connect the dashboard to your sheets'; });
   dash.draw('banner-text', (el) => { el.textContent = S.status === 'error' ? S.error : 'Paste the web app URL and key from the Apps Script set-up (see the README). They are kept in this browser only.'; });
   dash.draw('foot', (el) => {
@@ -715,6 +749,7 @@
       const tag = document.createElement('span');
       tag.className = m.status === 'New' ? 'tag-new' : m.status === 'Inactive' ? 'tag-off' : 'chip s-ok';
       tag.textContent = m.status === 'New' ? 'New · not on list' : m.status;
+      if (!can('Admin')) { wrap.append(tag); return wrap; }
       const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'co-link';
       btn.textContent = m.status === 'New' ? 'Add to team' : m.status === 'Active' ? 'Set inactive' : 'Set active';
       btn.addEventListener('click', (e) => { e.stopPropagation(); setMember(name, m.status === 'Active' ? 'Inactive' : 'Active'); });
@@ -976,6 +1011,12 @@
       const links = CO.links(r); $('ed-links').replaceChildren(links);
       $('ed-msg').textContent = r.id ? '' : 'This row has no ID in the sheet, so it can only be edited there.';
       $('ed-save').disabled = !r.id; $('ed-save').textContent = 'Save to sheet';
+      const edit = can('Editor');
+      ['ed-status', 'ed-eta', 'ed-designer', 'ed-qty'].forEach((id) => { $(id).disabled = !edit; });
+      if (!edit) $('ed-priority').disabled = true;
+      $('ed-save').hidden = !edit;
+      if (!edit) $('ed-msg').textContent = 'View only. Ask the admin for Editor access to change tasks.';
+      $('ed-history').hidden = !(A.mode === 'auth' && can('Admin') && r.id);
       if (dlgE.showModal) dlgE.showModal(); else dlgE.setAttribute('open', '');
     }
     const openFrom = (e) => {
@@ -985,9 +1026,10 @@
     document.querySelector('.co').addEventListener('click', openFrom);
     document.querySelector('.co').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('.su-item[data-uid]')) openEditor(e.target.dataset.uid); });
     $('ed-cancel').addEventListener('click', () => dlgE.close());
+    $('ed-history').addEventListener('click', () => { if (!current) return; dlgE.close(); AX.q = current.id; AX.kind = ''; document.getElementById('ax-q').value = current.id; document.getElementById('ax-kind').value = ''; dash.setParams({ tab: 'access' }); });
     $('editor-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const r = current; if (!r) return;
+      const r = current; if (!r || !can('Editor')) return;
       const now = { status: $('ed-status').value, eta: $('ed-eta').value, designer: $('ed-designer').value.replace(/\s*\+\s*/g, ', ').replace(/\s+/g, ' ').trim(), priority: $('ed-priority').value, qty: $('ed-qty').value };
       if ($('ed-eta').value && !$('ed-eta').validity.valid) { $('ed-msg').textContent = 'Pick a complete date.'; return; }
       const fields = {};
@@ -1022,6 +1064,247 @@
 
   /* ================= Start ================= */
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (TABS.includes(h) && h !== P.tab) dash.setParams({ tab: h }); });
+  /* ================= Access (admins): requests, people, activity log ================= */
+  const AX = { users: null, you: '', log: null, next: null, total: 0, q: '', kind: '', err: '', busy: false };
+  async function axRefresh(withLog) {
+    if (A.mode !== 'auth' || !can('Admin')) return;
+    try {
+      const b = await callApi({ action: 'users' });
+      if (b.ok) { AX.users = b.users; AX.you = b.you; AX.err = ''; } else AX.err = errText(b.error);
+    } catch (e) { if (e instanceof AuthLost) return; AX.err = e.message; }
+    dash.draw('ax-pending'); dash.draw('ax-users');
+    // On the 30-second tick the log is refreshed only while it shows the newest page, so "Load older" is not undone.
+    if (withLog || !AX.log || AX.log.length <= 200) axLog(false);
+  }
+  async function axLog(more) {
+    if (AX.busy) return; AX.busy = true;
+    try {
+      const b = await callApi({ action: 'audit', limit: 200, q: AX.q, kind: AX.kind, before: more ? AX.next : undefined });
+      if (b.ok) { AX.log = more ? (AX.log || []).concat(b.entries) : b.entries; AX.next = b.next; AX.total = b.total; AX.err = ''; } else AX.err = errText(b.error);
+    } catch (e) { if (!(e instanceof AuthLost)) AX.err = e.message; }
+    AX.busy = false;
+    dash.draw('ax-log'); dash.draw('ax-count');
+  }
+  async function setAccess(email, patch, okText) {
+    try { await post(Object.assign({ action: 'setAccess', email }, patch)); toast(okText); }
+    catch (err) { toast('Not saved: ' + err.message, true); }
+    axRefresh(true);
+  }
+  const when = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined, hour: 'numeric', minute: '2-digit' }); };
+  const nameOf = (email) => { const u = (AX.users || []).find((x) => x.email === String(email).toLowerCase()); return u && u.name ? u.name : email; };
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const roleSelect = (value) => { const s = el('select', 'co-select'); ['Viewer', 'Editor', 'Admin'].forEach((r) => s.append(new Option(r, r))); s.value = value || 'Viewer'; s.setAttribute('aria-label', 'Role'); return s; };
+
+  dash.draw('ax-pending', (box) => {
+    box.replaceChildren();
+    if (!AX.users) { box.append(el('p', 'co-note', AX.err || 'Loading…')); return; }
+    const list = AX.users.filter((u) => u.status === 'Pending').sort((a, b) => String(b.requestedOn).localeCompare(String(a.requestedOn)));
+    if (!list.length) { box.append(el('p', 'co-note', 'No requests waiting.')); return; }
+    list.forEach((u) => {
+      const card = el('div', 'ax-req-item');
+      const info = el('div', 'ax-req-info');
+      info.append(el('strong', '', u.name || u.email), el('span', 'co-note', u.email + ' · asked ' + when(u.requestedOn)));
+      if (u.team) info.append(el('span', '', 'Team / role: ' + u.team));
+      if (u.note) info.append(el('span', 'co-note', '“' + u.note + '”'));
+      const act = el('div', 'ax-req-act');
+      const sel = roleSelect('Viewer');
+      const ok = el('button', 'co-btn primary', 'Approve'); ok.type = 'button';
+      ok.addEventListener('click', () => setAccess(u.email, { status: 'Approved', role: sel.value }, (u.name || u.email) + ' approved as ' + sel.value));
+      const no = el('button', 'co-btn', 'Decline'); no.type = 'button';
+      no.addEventListener('click', () => { if (confirm('Decline the request from ' + u.email + '?')) setAccess(u.email, { status: 'Denied' }, 'Request from ' + u.email + ' declined'); });
+      act.append(sel, ok, no);
+      card.append(info, act); box.append(card);
+    });
+  });
+  dash.draw('ax-users', (tb) => {
+    tb.replaceChildren();
+    if (!AX.users) { CO.emptyRow(tb, 7, AX.err || 'Loading…'); return; }
+    const order = { Approved: 0, Revoked: 1, Denied: 2 };
+    const list = AX.users.filter((u) => u.status !== 'Pending').sort((a, b) => (order[a.status] - order[b.status]) || (RANK[b.role] - RANK[a.role]) || (a.name || a.email).localeCompare(b.name || b.email));
+    if (!list.length) { CO.emptyRow(tb, 7, 'Nobody yet.'); return; }
+    list.forEach((u) => {
+      const tr = tb.insertRow();
+      const locked = u.owner || u.email === AX.you;
+      CO.td(tr, (u.name || '—') + (u.owner ? ' (owner)' : u.email === AX.you ? ' (you)' : ''), 'co-nowrap');
+      CO.td(tr, u.email, 'co-nowrap');
+      const rc = tr.insertCell();
+      if (locked || u.status !== 'Approved') rc.textContent = u.role;
+      else { const s = roleSelect(u.role); s.addEventListener('change', () => setAccess(u.email, { role: s.value }, (u.name || u.email) + ' is now ' + s.value)); rc.append(s); }
+      const sc = tr.insertCell(); const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : 's-mute'), u.status === 'Approved' ? 'Has access' : u.status === 'Denied' ? 'Declined' : 'Revoked'); sc.append(chip);
+      CO.td(tr, when(u.lastSignIn), 'co-nowrap');
+      CO.td(tr, u.decidedBy ? nameOf(u.decidedBy) + ' · ' + when(u.decidedOn) : '—', 'co-nowrap co-muted');
+      const ac = tr.insertCell();
+      if (!locked) {
+        const b = el('button', 'co-link', u.status === 'Approved' ? 'Revoke' : 'Give access again'); b.type = 'button';
+        b.addEventListener('click', () => {
+          if (u.status === 'Approved') { if (confirm('Remove access for ' + (u.name || u.email) + '? They are signed out within 30 seconds, and their past changes stay in the log.')) setAccess(u.email, { status: 'Revoked' }, 'Access removed for ' + (u.name || u.email)); }
+          else setAccess(u.email, { status: 'Approved' }, (u.name || u.email) + ' has access again (' + u.role + ')');
+        });
+        ac.append(b);
+      }
+    });
+  });
+  dash.draw('ax-log', (tb) => {
+    tb.replaceChildren();
+    if (!AX.log) { CO.emptyRow(tb, 8, AX.err || 'Loading…'); return; }
+    if (!AX.log.length) { CO.emptyRow(tb, 8, AX.q || AX.kind ? 'Nothing matches.' : 'No activity recorded yet.'); return; }
+    AX.log.forEach((e) => {
+      const tr = tb.insertRow();
+      CO.td(tr, when(e.when), 'co-nowrap');
+      const w = CO.td(tr, e.who.includes('@') ? nameOf(e.who) : e.who, 'co-nowrap'); w.title = e.who + (e.role ? ' · ' + e.role : '');
+      CO.td(tr, e.action, 'co-nowrap');
+      CO.td(tr, e.record || '—', 'co-id');
+      CO.td(tr, e.field || (e.details ? '' : '—'));
+      const bc = CO.td(tr, e.before === '' ? (e.field ? '(blank)' : '') : e.before, 'ax-val ax-before'); bc.title = e.before;
+      const acell = CO.td(tr, e.after === '' ? (e.field ? '(blank)' : e.details) : e.after, 'ax-val'); acell.title = e.after || e.details;
+      CO.td(tr, [[e.sheet, e.tab].filter(Boolean).join(' / '), e.row ? 'row ' + e.row : '', e.via].filter(Boolean).join(' · '), 'co-muted');
+    });
+  });
+  dash.draw('ax-count', (n) => {
+    const older = document.getElementById('ax-older');
+    older.hidden = !AX.next; older.disabled = AX.busy;
+    n.textContent = AX.log ? 'Showing ' + CO.num(AX.log.length) + (AX.q || AX.kind ? ' matching' : '') + ' of ' + CO.num(AX.total) + ' entries.' : '';
+  });
+  let axTimer = 0;
+  document.getElementById('ax-q').addEventListener('input', (e) => { clearTimeout(axTimer); axTimer = setTimeout(() => { AX.q = e.target.value.trim(); axLog(false); }, 400); });
+  document.getElementById('ax-kind').addEventListener('change', (e) => { AX.kind = e.target.value; axLog(false); });
+  document.getElementById('ax-older').addEventListener('click', () => axLog(true));
+  document.getElementById('ax-csv').addEventListener('click', () => {
+    CO.csv('activity-log-' + CO.today() + '.csv', ['When', 'Who', 'Their role', 'Action', 'Sheet', 'Tab', 'Task / record', 'Row', 'Field', 'Before', 'After', 'Details', 'Via'],
+      (AX.log || []).map((e) => [e.when, e.who, e.role, e.action, e.sheet, e.tab, e.record, e.row, e.field, e.before, e.after, e.details, e.via]));
+  });
+  document.getElementById('ax-add').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = document.getElementById('ax-email').value.trim().toLowerCase(), role = document.getElementById('ax-role').value;
+    const msg = document.getElementById('ax-msg');
+    if (!A.domains.some((d) => email.endsWith('@' + d))) { msg.textContent = 'Use a ' + A.domains.map((d) => '@' + d).join(' or ') + ' address.'; return; }
+    const exists = (AX.users || []).find((u) => u.email === email);
+    msg.textContent = '';
+    setAccess(email, exists ? { status: 'Approved', role } : { status: 'Approved', role }, email + ' can now sign in as ' + role);
+    e.target.reset();
+  });
+
+  /* ================= Sign-in ================= */
+  const gate = document.getElementById('gate');
+  const $g = (id) => document.getElementById(id);
+  const G = { tab: 'login', cred: null, credAt: 0, unknown: null };
+  let gisReady = null;
+  function gis() {
+    if (!gisReady) {
+      gisReady = new Promise((res, rej) => {
+        if (window.google && google.accounts && google.accounts.id) return res();
+        const sc = document.createElement('script');
+        sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
+        sc.onload = () => res(); sc.onerror = () => { gisReady = null; rej(new Error('Google sign-in could not load. Turn off ad or privacy blockers for this page and reload.')); };
+        document.head.append(sc);
+      }).then(() => {
+        google.accounts.id.initialize({ client_id: A.clientId, callback: (r) => onCredential(r.credential), auto_select: true, cancel_on_tap_outside: true, itp_support: true, use_fedcm_for_prompt: true });
+      });
+    }
+    return gisReady;
+  }
+  const gateMsg = (text, bad) => { const m = $g('gate-msg'); m.textContent = text || ''; m.classList.toggle('bad', !!bad); };
+  function gateTab(t) {
+    G.tab = t;
+    $g('gate-state').hidden = true; $g('gate-tabs').hidden = false;
+    document.querySelectorAll('[data-gtab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.gtab === t)));
+    document.querySelectorAll('[data-gpanel]').forEach((p) => { p.hidden = p.dataset.gpanel !== t; });
+    const asMe = !!(G.cred && G.unknown && t === 'signup');
+    $g('gate-asme').hidden = !asMe; $g('g-signup').hidden = asMe;
+    if (asMe) $g('gate-asme').textContent = 'Request access as ' + G.unknown.email;
+  }
+  function gateState(title, text, again) {
+    $g('gate-tabs').hidden = true; document.querySelectorAll('[data-gpanel]').forEach((p) => { p.hidden = true; });
+    $g('gate-state').hidden = false; $g('gs-title').textContent = title; $g('gs-text').textContent = text; $g('gs-again').hidden = !again;
+    gateMsg('');
+  }
+  async function showGate(msg) {
+    document.body.dataset.gate = '1'; gate.hidden = false;
+    let m = msg; try { m = m || sessionStorage.getItem('co.gatemsg') || ''; sessionStorage.removeItem('co.gatemsg'); } catch (e) { /* ignore */ }
+    gateTab(G.tab); gateMsg(m);
+    $g('gate-domains').textContent = A.domains.map((d) => '@' + d).join(' or ');
+    try {
+      await gis();
+      const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      const opts = (text) => ({ type: 'standard', theme: dark ? 'filled_black' : 'outline', size: 'large', text, shape: 'pill', logo_alignment: 'left', width: 280 });
+      google.accounts.id.renderButton($g('g-login'), opts('signin_with'));
+      google.accounts.id.renderButton($g('g-signup'), opts('signup_with'));
+      if (!m) google.accounts.id.prompt();
+    } catch (e) { gateMsg(e.message, true); }
+  }
+  function onCredential(cred) { if (!cred) return; G.cred = cred; G.credAt = Date.now(); signin(G.tab === 'signup' ? 'signup' : 'login'); }
+  async function signin(intent) {
+    if (!G.cred || Date.now() - G.credAt > 50 * 60 * 1000) { G.cred = null; gateTab(intent === 'signup' ? 'signup' : 'login'); gateMsg('Click the Google button to continue.'); return; }
+    gateMsg('Checking your access…');
+    let body;
+    try {
+      const res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'signin', idToken: G.cred, intent, profile: intent === 'signup' ? { team: $g('gate-team').value, note: $g('gate-note').value } : undefined }) });
+      body = parse(await res.text());
+    } catch (e) { gateMsg('Could not reach the dashboard server. Check your connection and try again.', true); return; }
+    const domains = A.domains.map((d) => '@' + d).join(' or ');
+    if (!body.ok) {
+      if (body.error === 'domain') { G.cred = null; gateMsg(body.email + ' cannot be used here. Sign in with your company Google account (' + domains + ').', true); try { google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ } return; }
+      if (body.error === 'bad_token') { G.cred = null; gateMsg('Google sign-in did not complete. Try again.', true); return; }
+      gateMsg('Sign-in failed: ' + body.error, true); return;
+    }
+    const who = body.user || {}, first = who.name ? ' ' + who.name.split(' ')[0] : '';
+    if (body.status === 'approved') {
+      A.session = body.session; LS.set('co.session', body.session);
+      G.cred = null; signedIn(body.user); return;
+    }
+    if (body.status === 'unknown') { G.unknown = who; gateTab('signup'); gateMsg(who.email + ' does not have access yet. Tell us your team and request access.'); return; }
+    if (body.status === 'pending') return gateState('Waiting for approval', 'Thanks' + first + '. Your request for ' + who.email + ' is with the Creative Head. You will get an email once it is approved, then log in here. Until then the dashboard shows no data.', true);
+    if (body.status === 'denied') return gateState('Request declined', 'The request for ' + who.email + ' was declined. Talk to the Creative Head if you need access.', false);
+    return gateState('Access removed', 'Access for ' + who.email + ' has been removed. Talk to the Creative Head if you need it back.', false);
+  }
+  document.querySelectorAll('[data-gtab]').forEach((b) => b.addEventListener('click', () => { gateTab(b.dataset.gtab); gateMsg(''); }));
+  $g('gate-signup').addEventListener('submit', (e) => { e.preventDefault(); if (G.cred) signin('signup'); });
+  $g('gs-again').addEventListener('click', () => signin('login'));
+  $g('gs-other').addEventListener('click', () => { G.cred = null; G.unknown = null; try { google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ } gateTab('login'); });
+
+  function signedIn(user) {
+    A.user = user; gate.hidden = true; delete document.body.dataset.gate;
+    renderAll(); load(false);
+  }
+  /* The session ended or access was removed: forget it and clear the page, so no data stays on screen. */
+  function lostAccess(body) {
+    const msg = body.error === 'session_expired' ? 'Your sign-in has ended. Log in again to continue.'
+      : body.error === 'no_access' ? (body.status === 'Pending' ? 'Your access request is still waiting for approval.' : 'Your access to this dashboard has been removed. Talk to the Creative Head if you need it back.')
+      : '';
+    A.session = ''; LS.set('co.session', null);
+    if (A.user) { try { sessionStorage.setItem('co.gatemsg', msg); } catch (e) { /* ignore */ } A.user = null; location.reload(); return; }
+    showGate(msg);
+  }
+  document.getElementById('btn-signout').addEventListener('click', async () => {
+    try { await callApi({ action: 'signout' }); } catch (e) { /* signing out locally is what matters */ }
+    A.session = ''; LS.set('co.session', null);
+    try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ }
+    try { sessionStorage.setItem('co.gatemsg', 'You are signed out.'); } catch (e) { /* ignore */ }
+    location.reload();
+  });
+
+  async function start() {
+    const url = conn().url;
+    if (!url) { A.mode = 'key'; document.body.dataset.mode = 'key'; S.status = 'unconfigured'; renderAll(); return; }
+    A.url = url; S.status = 'loading'; renderAll();
+    let cfg = null, reached = false;
+    try {
+      const u = new URL(url); u.searchParams.set('mode', 'config');
+      const text = await (await fetch(u.toString(), { redirect: 'follow' })).text(); reached = true;
+      cfg = JSON.parse(text);
+    } catch (e) { /* unreachable, or an older web app */ }
+    if (cfg && cfg.ok && cfg.auth) {
+      A.mode = 'auth'; A.clientId = cfg.clientId; A.domains = cfg.domains || []; document.body.dataset.mode = 'auth';
+      if (A.session) {
+        try { const me = await callApi({ action: 'me' }); if (me.ok) { signedIn(me.user); return; } }
+        catch (e) { if (e instanceof AuthLost) return; S.status = 'error'; S.error = 'This browser could not reach the web app. Check your connection and click Refresh.'; A.mode = null; renderAll(); return; }
+      }
+      showGate(); return;
+    }
+    if (!reached) { S.status = 'error'; S.error = 'This browser could not reach the web app. Check your connection, turn off ad or privacy blockers for this page and click Refresh.'; renderAll(); return; }
+    A.mode = 'key'; document.body.dataset.mode = 'key'; load(false);
+  }
+
   renderAll();
-  load(false);
+  start();
 })();

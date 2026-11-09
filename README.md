@@ -14,18 +14,19 @@ A live dashboard for the Fastrr creative team: the daily stand-up, who is workin
 | **Team** | Scorecard per person (open, WIP, overdue, delivered this month and last, monthly average, type mix), a designer-by-month delivery grid, and Active / Inactive switches. |
 | **Reports** | Creatives delivered for any month, quarter, year or custom date range, compared with the period before, broken down by brand, designer and creative type. Download as CSV. |
 | **Sheet health** | Rows that make tracking unreliable: open work with no ETA or designer, unknown statuses, mistyped dates, delivered work with no link. |
+| **Access** (admins) | Access requests to approve or decline, everyone's role, and the activity log of every change. |
 
 Filters for sheet, designer, brand and creative type apply to every tab.
 
 ## How it works
 
 ```
-Google Sheets ──► Apps Script web app (runs as you, needs a key) ──► this page (GitHub Pages)
+Google Sheets ──► Apps Script web app (runs as design.tools, checks who is asking) ──► this page (GitHub Pages)
 ```
 
-This repository and the site are public, but they contain **no data**. The page asks for the web app URL and key once, keeps them in that browser only, and loads the sheets through it. Edits made on the dashboard go back through the same web app into the sheets.
+This repository and the site are public, but they contain **no data**: the page is only a shell. All data comes from the web app, which gives it only to people who have signed in with an approved Google work account (see [Access and sign-in](#access-and-sign-in)). Edits made on the dashboard go back through the same web app into the sheets, and each one is recorded in the activity log.
 
-Sources read by the web app (`apps-script/Code.gs`, `CONFIG`):
+Sources read by the web app (`CONFIG` in `apps-script/Config.gs`):
 
 | Source | Sheet | Tab |
 | --- | --- | --- |
@@ -44,7 +45,8 @@ One Google account runs the whole integration, so nothing depends on which accou
 | Team list sheet | design.tools@pickrr.com | Owned by the same account that edits it. |
 | Requirement sheets | Owned by anmol.sharma@pickrr.com; **design.tools must stay an Editor** | If that access is removed, the dashboard can no longer read or save. Sheet health shows it. |
 | GitHub repository and Pages site | anmolpickrr | Code only: no keys, sheet links or data. |
-| People using the dashboard | Any browser, no Google sign-in | They only need the web app URL and key, entered once per browser. |
+| People using the dashboard | Their own @pickrr.com / @shiprocket.com Google account | Each person signs in with Google and gets the role an admin gave them. |
+| Access list and activity log | design.tools@pickrr.com | A spreadsheet that `setup()` creates, *Creative Ops Tracker – Access & Audit Log*. Only the web app writes to it; the owners can view it. |
 
 **Do Apps Script work in a browser profile signed into design.tools@pickrr.com only.** Apps Script misbehaves when one browser is signed into several Google accounts: scripts end up authorised or run as the wrong account, which shows as "Action not allowed" or "You do not have permission to access the requested document". A separate Chrome profile for design.tools avoids this permanently.
 
@@ -53,18 +55,86 @@ One Google account runs the whole integration, so nothing depends on which accou
 Do this in a browser profile signed into **design.tools@pickrr.com only** (see above). That account needs Editor access to both requirement sheets.
 
 1. Go to https://script.google.com and click **New project**. Name it "Creative Ops Tracker API".
-2. Delete the sample code and paste in the script:
-   - from the private file **"Creative Ops Tracker – Apps Script code v4"** in design.tools' Google Drive, which already has your sheet links filled in, or
-   - from [`apps-script/Code.gs`](apps-script/Code.gs), then replace the four `PASTE_…` placeholders in `CONFIG` with the links to your sheets. Keep the real links in Apps Script only: this repository is public.
+2. The project has two script files:
+   - **Code.gs**: delete the sample code and paste in [`apps-script/Code.gs`](https://raw.githubusercontent.com/anmolpickrr/Tracker/main/apps-script/Code.gs) from this repository, unchanged. It holds no links or keys.
+   - **Config.gs**: click **+ → Script**, name it `Config`, and paste the private Drive file **"Creative Ops Tracker – Config.gs"**. That copy already has your sheet links and owner filled in. Alternatively, paste [`apps-script/Config.gs`](apps-script/Config.gs) and replace its `PASTE_…` placeholders. Keep the real links in Apps Script only: this repository is public.
 3. Save, pick **setup** in the function menu at the top, and click **Run**. Allow the permissions it asks for (read and edit your spreadsheets, run triggers). Open **Execution log**: it lists the rows found in each sheet, the account the web app runs as, which sheets have change detection, and your **key**.
 4. Click **Deploy → New deployment**, type **Web app**, **Execute as: Me**, **Who has access: Anyone**. Click **Deploy** and copy the **Web app URL** (it ends in `/exec`).
 5. Open https://anmolpickrr.github.io/Tracker/, click **Connect**, paste the URL and the key, and click **Save and load**.
 
-To give someone else access, send them the site link plus the URL and key (privately). Anyone without the key gets nothing. Anyone with the key can also edit tasks through the dashboard, so share it only with the team.
+**To update the script later**, replace Code.gs only; Config.gs keeps your settings. Then use **Deploy → Manage deployments → Edit → Version: New version** so the URL stays the same.
 
-**If you edit the script later**, use **Deploy → Manage deployments → Edit → Version: New version** so the URL stays the same.
+Until Google sign-in is switched on, the dashboard uses the older shared key: anyone with the URL and key can see and edit everything, and nobody's changes can be told apart. Switch sign-in on (next section) to end that.
 
-**To revoke access**, run `createKey` (old keys stop working) and share the new key with the people who should still have it.
+## Access and sign-in
+
+### Who can do what
+
+Nobody sees any data until an admin approves them.
+
+| Role | Can |
+| --- | --- |
+| *(not approved)* | See the sign-in screen. Nothing else: the web app gives no data without an approved sign-in. |
+| **Viewer** | See every tab and download CSVs. Task details open read-only. |
+| **Editor** | Viewer, plus change tasks: design status, Design ETA, designer, priority and number of creatives. |
+| **Admin** | Editor, plus the team list (Active / Inactive, add members), the **Access** tab (approve, change roles, revoke), the activity log and the integration checks on Sheet health. |
+| **Owner** | Admin who can never be revoked or demoted from the dashboard (`CONFIG.access.owners`), so you can't be locked out. |
+
+The web app checks the role on **every** request. Hiding buttons on the page is only for convenience, so changing the page's code gains nothing. Role changes and revocations reach open dashboards within 30 seconds. A revoked person's screen is cleared, they are signed out, and they cannot sign back in.
+
+### How a person gets in
+
+1. They open the site and choose **Sign up**. They enter their team and an optional note, then click **Sign up with Google** with their work account.
+2. Only Google Workspace accounts on **@pickrr.com** or **@shiprocket.com** are accepted (`CONFIG.access.domains`). Personal Google accounts and other domains are refused, and the refusal is logged.
+3. The admins get an email. The request appears under **Access → Access requests**.
+4. An admin picks a role and clicks **Approve**, or clicks **Decline**. The person gets an email and can then **Log in**.
+
+Admins can also give access directly: **Access → Give access**, with the person's email and role.
+
+A sign-in lasts 12 hours on a browser (`sessionHours`), then Google signs the person back in with one click. To end every session at once, run `signOutEveryone` in Apps Script.
+
+### Activity log
+
+**Access → Activity log** lists every change, newest first: when, who (and their role), what, which task or record, which column, the value **before and after**, and where (sheet, tab, row). You can search it by task ID, person, brand or value, filter it by kind, and download it as CSV. Opening a task and clicking **Change history** shows that task's entries.
+
+| Recorded | Who is recorded | Before and after |
+| --- | --- | --- |
+| Task edits made on the dashboard | The signed-in person | Yes, every cell written |
+| Edits typed into the sheets (tabs the dashboard reads) | The Google account, when Google reports it (it usually does inside your company; otherwise "Not reported by Google") | Yes for single cells. For pastes and fills, Google only gives the new values; the sheet's version history has the old ones |
+| Rows or columns added or deleted in the sheets | As above | Google doesn't say which rows; see version history |
+| Team list changes, access requests, approvals, role changes, revocations | The admin, or the person asking | Yes |
+| Sign-ins, sign-outs, refused sign-ins | The person | — |
+
+The log is kept in the *Creative Ops Tracker – Access & Audit Log* spreadsheet in design.tools' Drive. Only the web app writes to it, and its tabs are protected. Owners can view it but nobody can edit or delete entries through the dashboard. Edits made by other scripts and integrations (they don't fire Google's edit triggers) still sync to the dashboard, but they are not in this log; the sheet's version history has them.
+
+The dashboard controls who can use the **dashboard**. It doesn't change who can open the **Google Sheets** themselves: that is still set by each sheet's Share settings. The requirement sheets are currently editable by everyone at pickrr.com. Edits made there are logged as above.
+
+### Switching sign-in on (once, about 10 minutes)
+
+Do this in the browser profile signed into **design.tools@pickrr.com** only.
+
+**1. Create the Google sign-in client** at https://console.cloud.google.com
+
+1. Create a project named **Creative Ops Tracker** (top bar → project picker → **New project**).
+2. Go to **Google Auth Platform** (search for "Google Auth Platform", or open **APIs & Services → OAuth consent screen**) and click **Get started**:
+   - App name **Creative Ops Tracker**; support email design.tools@pickrr.com.
+   - Audience **External**. Users from both @pickrr.com and @shiprocket.com have to sign in, and the web app enforces the two domains itself.
+   - Contact email design.tools@pickrr.com. Agree, then click **Create**.
+3. **Audience → Publish app → Confirm.** Sign-in only uses the basic name and email scopes, so Google doesn't review the app.
+4. **Clients → Create client**:
+   - Type **Web application**, name **Tracker site**.
+   - **Authorised JavaScript origins:** `https://anmolpickrr.github.io`
+   - Leave redirect URIs empty and click **Create**.
+5. Copy the **Client ID** (it ends in `.apps.googleusercontent.com`). It is not a secret.
+
+**2. Update the web app** at https://script.google.com, project *Creative Ops Tracker API*:
+
+1. Replace everything in **Code.gs** with [this repository's `Code.gs`](https://raw.githubusercontent.com/anmolpickrr/Tracker/main/apps-script/Code.gs). Then add a second file: **+ → Script**, named `Config`, holding the Drive file *Creative Ops Tracker – Config.gs*. In Config.gs, paste the client ID over `PASTE_GOOGLE_CLIENT_ID`.
+2. **Project Settings → Show "appsscript.json"**, then paste [`apps-script/appsscript.json`](apps-script/appsscript.json) over it. It adds permission to check sign-ins with Google and to send the approval emails.
+3. Save, run **setup** and allow the permissions. The log prints the address of the access list and log, and says *Sign-in is ON*.
+4. **Deploy → Manage deployments → Edit → Version: New version → Deploy.** The URL stays the same.
+
+From then on, the shared key no longer works. Everyone, including you, signs in with Google at https://anmolpickrr.github.io/Tracker/. Ask the team to sign up, then approve them under **Access**.
 
 ## Live sync
 
@@ -94,7 +164,7 @@ Rows without an ID, or whose ID appears twice in a tab, are not edited from the 
 
 ## Managing the team
 
-- Switch people between **Active** and **Inactive** on the **Team** tab, or edit the Status column of the *Creative Team List (Dashboard)* sheet directly. Inactive people leave the stand-up and workload views; their past work stays in reports.
+- Admins switch people between **Active** and **Inactive** on the **Team** tab, or edit the Status column of the *Creative Team List (Dashboard)* sheet directly. Inactive people leave the stand-up and workload views; their past work stays in reports.
 - Anyone new who appears as a designer in the task sheets shows up automatically, marked **New**. Click **Add to team** to put them on the list.
 - **Also written as** in the team sheet holds other spellings (for example "Yashika" for "Yashika Agrawal").
 
@@ -127,7 +197,7 @@ The dashboard picks these up automatically by their header name:
 
 ## Adding a sheet or tab (for example, a new year)
 
-Every sheet tab the dashboard reads is one line in `CONFIG.sources` in the Apps Script (in the design.tools browser profile):
+Every sheet tab the dashboard reads is one line in `CONFIG.sources` in the **Config.gs** file of the Apps Script project (in the design.tools browser profile):
 
 ```js
 mkt2027: { sheet: 'https://docs.google.com/spreadsheets/d/…/edit', tab: 'Sheet1', kind: 'mkt' },
@@ -142,11 +212,17 @@ mkt2027: { sheet: 'https://docs.google.com/spreadsheets/d/…/edit', tab: 'Sheet
 ## Files
 
 ```
-index.html          page structure
-assets/style.css    Fastrr look, light and dark themes
-assets/data.js      turns sheet rows into one clean task list (statuses, designers, dates)
-assets/app.js       views, filters, charts, connection, team edits
-apps-script/Code.gs the data API that runs in Google Apps Script
+index.html             page structure, sign-in screen
+assets/config.js       the web app address (public; it serves nothing without sign-in)
+assets/theme.js        applies the saved light/dark theme before the page paints
+assets/style.css       Fastrr look, light and dark themes
+assets/data.js         turns sheet rows into one clean task list (statuses, designers, dates)
+assets/app.js          views, filters, charts, sign-in, roles, access and activity log
+apps-script/Code.gs    the data API that runs in Google Apps Script: reads, edits, sign-in, roles, audit log
+apps-script/Config.gs  its settings: sheet links, sign-in client ID, owners, domains (placeholders here)
+apps-script/appsscript.json  its permissions
 ```
+
+The page sets a Content Security Policy: scripts only from this site, jsDelivr (d3) and Google sign-in, and data only from the Apps Script web app.
 
 No build step: edit and push to `main`, and GitHub Pages publishes the site.

@@ -6,11 +6,12 @@
 <title>Creative Ops Tracker</title>
 <meta name="description" content="Fastrr Creative Studio: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
 <meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; form-action 'none'; base-uri 'none'; object-src 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="assets/style.css">
-<script>try { var t = localStorage.getItem('co.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+<script src="assets/theme.js"></script>
 </head>
 <body>
 <div class="co">
@@ -27,6 +28,8 @@
         <span data-draw="sync-text">Not connected</span>
         <button class="co-btn" id="btn-refresh" type="button">Refresh</button>
         <button class="co-btn" id="btn-settings" type="button">Connection</button>
+        <span class="co-me" data-draw="me"></span>
+        <button class="co-btn" id="btn-signout" type="button">Sign out</button>
         <button class="co-btn" id="btn-theme" type="button">Dark theme</button>
       </div>
     </div>
@@ -48,6 +51,7 @@
       <button class="co-tab" role="tab" data-tab="team" aria-selected="false">Team</button>
       <button class="co-tab" role="tab" data-tab="reports" aria-selected="false">Reports</button>
       <button class="co-tab" role="tab" data-tab="health" aria-selected="false">Sheet health</button>
+      <button class="co-tab" role="tab" data-tab="access" aria-selected="false" hidden>Access</button>
     </div>
     <div class="co-filters">
       <select class="co-select co-f" id="f-src" data-param="src" aria-label="Sheet">
@@ -327,7 +331,90 @@
     </details>
   </section>
 
+  <!-- ACCESS (admins only; the web app refuses these requests from anyone else) -->
+  <section class="co-panel" id="access" data-panel="access" hidden>
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">Access requests</h2>
+        <p class="co-note">People who signed up with their work Google account. They see nothing until you approve them.</p>
+      </div>
+      <div class="ax-req" data-draw="ax-pending"></div>
+    </div>
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">People with access</h2>
+        <p class="co-note"><b>Viewer</b> sees everything and downloads reports. <b>Editor</b> also changes tasks. <b>Admin</b> also manages the team list, access and the activity log. Changes apply within 30 seconds, even on dashboards that are already open.</p>
+      </div>
+      <form class="ax-add" id="ax-add" autocomplete="off">
+        <input class="co-input" id="ax-email" type="email" placeholder="name@pickrr.com" aria-label="Work email" required maxlength="120">
+        <select class="co-select" id="ax-role" aria-label="Role"><option>Viewer</option><option>Editor</option><option>Admin</option></select>
+        <button class="co-btn primary" type="submit">Give access</button>
+        <span class="co-note" id="ax-msg" role="status"></span>
+      </form>
+      <div class="co-tablewrap short">
+        <table class="co-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Decided by</th><th></th></tr></thead>
+          <tbody data-draw="ax-users"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="co-card">
+      <div class="co-card-head">
+        <h2 class="co-h2">Activity log</h2>
+        <p class="co-note">Every change made on the dashboard or typed into the sheets, with the value before and after, newest first. Nobody can edit or delete it.</p>
+      </div>
+      <div class="ax-filters">
+        <input class="co-input co-search" id="ax-q" type="search" placeholder="Search: task ID, person, brand, value…" aria-label="Search the activity log">
+        <select class="co-select" id="ax-kind" aria-label="Kind of activity">
+          <option value="">All activity</option>
+          <option value="tasks">Task and sheet edits</option>
+          <option value="team">Team list</option>
+          <option value="access">Access changes</option>
+          <option value="signins">Sign-ins</option>
+        </select>
+        <button class="co-btn" id="ax-csv" type="button">Download CSV</button>
+      </div>
+      <div class="co-tablewrap">
+        <table class="co-table ax-log">
+          <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Task / record</th><th>Field</th><th>Before</th><th>After</th><th>Where</th></tr></thead>
+          <tbody data-draw="ax-log"></tbody>
+        </table>
+      </div>
+      <div class="ax-more"><span class="co-note" data-draw="ax-count"></span><button class="co-btn" id="ax-older" type="button" hidden>Load older</button></div>
+    </div>
+  </section>
+
   <footer class="co-foot"><span data-draw="foot">—</span></footer>
+</div>
+
+<div class="gate" id="gate" hidden>
+  <div class="gate-card">
+    <p class="co-eyebrow"><i></i>Fastrr Creative Studio</p>
+    <h1 class="gate-title">Creative Ops Tracker</h1>
+    <p class="co-note">For the creative team. Use your <b id="gate-domains">work</b> Google account.</p>
+    <div class="gate-tabs" id="gate-tabs" role="tablist" aria-label="Log in or sign up">
+      <button type="button" role="tab" data-gtab="login" aria-selected="true">Log in</button>
+      <button type="button" role="tab" data-gtab="signup" aria-selected="false">Sign up</button>
+    </div>
+    <div class="gate-panel" data-gpanel="login">
+      <p class="co-note">Already approved? Continue with Google.</p>
+      <div class="gate-google" id="g-login"></div>
+    </div>
+    <form class="gate-panel" data-gpanel="signup" id="gate-signup" autocomplete="off" hidden>
+      <p class="co-note">New here? Ask for access. The Creative Head approves every request, and you see no data until then.</p>
+      <label class="co-field">Your team or role<input class="co-input" id="gate-team" maxlength="80" placeholder="e.g. Designer, Marketing, Paid ads"></label>
+      <label class="co-field">Note for the admin (optional)<textarea class="co-input" id="gate-note" maxlength="300" rows="2"></textarea></label>
+      <div class="gate-google" id="g-signup"></div>
+      <button class="co-btn primary gate-asme" id="gate-asme" type="submit" hidden>Request access</button>
+    </form>
+    <div class="gate-state" id="gate-state" hidden>
+      <strong class="co-h2" id="gs-title"></strong>
+      <p class="co-note" id="gs-text"></p>
+      <div class="gate-actions"><button class="co-link" id="gs-other" type="button">Use a different account</button><button class="co-btn primary" id="gs-again" type="button">Check again</button></div>
+    </div>
+    <p class="gate-msg" id="gate-msg" role="status"></p>
+    <p class="co-note gate-foot">Only people the admin approves can see or change anything here, and every change is recorded.</p>
+  </div>
 </div>
 
 <dialog id="settings" class="co-dialog" aria-labelledby="settings-title">
@@ -376,6 +463,7 @@
     <p class="co-note" id="ed-links"></p>
     <p class="co-note ed-msg" id="ed-msg" role="status"></p>
     <div class="co-dialog-actions">
+      <button class="co-link" type="button" id="ed-history" hidden>Change history</button>
       <button class="co-btn" type="button" id="ed-cancel">Cancel</button>
       <button class="co-btn primary" type="submit" id="ed-save">Save to sheet</button>
     </div>
@@ -383,6 +471,7 @@
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="assets/config.js"></script>
 <script src="assets/data.js"></script>
 <script src="assets/app.js"></script>
 </body>
