@@ -44,6 +44,16 @@ Sources read by the web app (`CONFIG` in `apps-script/Config.gs`):
 | Marketing history | Design Requirements | `2025` (optional) |
 | Team list | Creative Team List (Dashboard) | first tab |
 
+## Updates install themselves
+
+Changes pushed to GitHub reach everyone without anyone copying code:
+
+- **Dashboard** (this site): GitHub Pages publishes it within a minute or two.
+- **Web app** (Apps Script): every 10 minutes it checks GitHub for a newer `apps-script/Code.gs`. If there is one, it makes sure the code is complete and has no errors, installs it with the Apps Script API, saves a new version and points the live web app at it (same URL). `Config.gs`, with the private sheet links, is never touched. If a new `appsscript.json` asks for extra Google permissions, it is not installed by itself: the System check asks the owner to approve it once.
+- Run `updateNow` in the Apps Script editor to install straight away. Set the script property `AUTO_UPDATE` to `off` to pause updates.
+
+One-time setup (owner): switch on **Google Apps Script API** at script.google.com/home/usersettings, paste this `Code.gs` and `appsscript.json` one last time, run `updateNow` and approve the two new permissions (manage this script's code and deployments), then deploy a new version.
+
 ## Accounts and ownership
 
 One Google account runs the whole integration, so nothing depends on which account a person happens to be signed into.

@@ -233,7 +233,7 @@ function doPost(e) {
     if (body.action === 'me') return json_({ ok: true, user: publicUser_(user) });
     if (body.action === 'ver') {
       const set = settings_();
-      const out = { ok: true, ver: liveVersion_(), role: user.role, remind: { morning: set.morning, evening: set.evening }, presenceOn: set.presence, assist: assistStatus_() };
+      const out = { ok: true, ver: liveVersion_(), role: user.role, update: updateStatus_(), remind: { morning: set.morning, evening: set.evening }, presenceOn: set.presence, assist: assistStatus_() };
       if (set.presence) presenceBeat_(user, body.at);
       if (user.role === 'Admin') { out.pending = users_().list.filter(function (u) { return u.status === 'Pending'; }).length; if (set.presence) out.presence = presenceList_(); }
       return json_(out);
@@ -1827,4 +1827,53 @@ function maintenance_() {
     let tune = {}; try { tune = JSON.parse(p.getProperty('GEMINI_TUNE') || '{}'); } catch (e) { tune = {}; }
     if (!tune.model || !tune.at || Date.now() - tune.at > 7 * 864e5) tuneGemini_(false);
   }
+  autoUpdate_(false);
 }
+
+/* ============================ Automatic updates ============================
+ * Every 10 minutes the web app checks GitHub for a newer Code.gs (and appsscript.json). If there is one, it checks the
+ * code parses, installs it with the Apps Script API (Config.gs, with the private links, is never touched), saves a new
+ * version and points the live web app deployment at it. Nobody has to copy, paste or deploy again.
+ * Needs, once: the Apps Script API switched on at script.google.com/home/usersettings, and the two script.* permissions.
+ * If GitHub's appsscript.json asks for new permissions, it is not installed automatically: the System check asks the owner. */
+const UPDATE_SRC = 'https://raw.githubusercontent.com/anmolpickrr/Tracker/main/apps-script/';
+function updateStatus_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('UPDATE_STATUS') || '{}'); } catch (e) { return {}; } }
+function hash_(t) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, t)); }
+function autoUpdate_(log) {
+  const p = PropertiesService.getScriptProperties(), st = updateStatus_(), say = function (m) { if (log) console.log(m); };
+  const save = function (o) { p.setProperty('UPDATE_STATUS', JSON.stringify(Object.assign(st, o, { checked: Date.now() }))); };
+  if (p.getProperty('AUTO_UPDATE') === 'off') { say('Automatic updates are off (script property AUTO_UPDATE = off).'); return; }
+  try {
+    const get = function (f) { const r = UrlFetchApp.fetch(UPDATE_SRC + f + '?t=' + Date.now(), { muteHttpExceptions: true }); if (r.getResponseCode() !== 200) throw new Error('GitHub ' + f + ': HTTP ' + r.getResponseCode()); return r.getContentText(); };
+    const code = get('Code.gs'), manifest = get('appsscript.json'), h = hash_(code + manifest);
+    if (h === st.hash) { say('Already up to date (' + (st.version ? 'version ' + st.version : 'no version yet') + ').'); save({ err: '' }); return; }
+    // Safety: the new code must parse and still be the dashboard's web app.
+    try { new Function(code); } catch (e) { if (e instanceof SyntaxError) { save({ err: 'The newest Code.gs on GitHub has an error and was not installed: ' + e.message }); say(st.err); return; } }
+    if (!/function doPost\(/.test(code) || !/function doGet\(/.test(code)) { save({ err: 'The newest Code.gs on GitHub does not look complete; not installed.' }); return; }
+    const token = ScriptApp.getOAuthToken(), id = ScriptApp.getScriptId(), api = 'https://script.googleapis.com/v1/projects/' + id;
+    const call = function (method, path, body) {
+      const r = UrlFetchApp.fetch(api + path, { method: method, contentType: 'application/json', headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true, payload: body ? JSON.stringify(body) : undefined });
+      const t = r.getContentText(); if (r.getResponseCode() >= 300) throw new Error('Apps Script API ' + path + ': HTTP ' + r.getResponseCode() + ' ' + t.slice(0, 220)); return t ? JSON.parse(t) : {};
+    };
+    const content = call('get', '/content');
+    const files = content.files.map(function (f) { return { name: f.name, type: f.type, source: f.source }; });
+    const cur = files.filter(function (f) { return f.name === 'appsscript'; })[0];
+    const scopes = function (m) { try { return (JSON.parse(m).oauthScopes || []).slice().sort().join(' '); } catch (e) { return ''; } };
+    let newManifest = manifest, needsOwner = '';
+    if (cur && scopes(cur.source) !== scopes(manifest)) { newManifest = cur.source; needsOwner = 'GitHub asks for new permissions. Paste appsscript.json from GitHub into Apps Script once and approve, then updates continue.'; }
+    files.forEach(function (f) { if (f.name === 'Code') f.source = code; if (f.name === 'appsscript') f.source = newManifest; });
+    call('put', '/content', { files: files });
+    const ver = call('post', '/versions', { description: 'Automatic update from GitHub ' + Utilities.formatDate(new Date(), IST, 'd MMM yyyy, HH:mm') });
+    // Point the live web app deployment (the one the dashboard uses) at the new version; the URL does not change.
+    const deps = (call('get', '/deployments').deployments || []).filter(function (d) { return d.deploymentConfig && d.deploymentConfig.versionNumber && (d.entryPoints || []).some(function (e) { return e.entryPointType === 'WEB_APP'; }); });
+    deps.forEach(function (d) { call('put', '/deployments/' + d.deploymentId, { deploymentConfig: { scriptId: id, versionNumber: ver.versionNumber, manifestFileName: 'appsscript', description: 'Automatic update' } }); });
+    save({ hash: needsOwner ? '' : h, version: ver.versionNumber, at: Date.now(), err: needsOwner, deployments: deps.length });
+    say('Installed version ' + ver.versionNumber + ' and updated ' + deps.length + ' web app deployment(s).' + (needsOwner ? ' ' + needsOwner : ''));
+  } catch (e) {
+    const m = String(e.message || e);
+    save({ err: /has not been used|disabled|SERVICE_DISABLED|User has not enabled/i.test(m) ? 'Switch on "Google Apps Script API" at script.google.com/home/usersettings so updates can install themselves.' : /insufficient|PERMISSION_DENIED|scope/i.test(m) ? 'Automatic updates need permission: open Apps Script, run updateNow once and approve.' : 'Automatic update failed: ' + m.slice(0, 200) });
+    say('Automatic update failed: ' + m);
+  }
+}
+/** Run from the editor (choose updateNow, then Run) to install the newest version from GitHub straight away. */
+function updateNow() { autoUpdate_(true); }
