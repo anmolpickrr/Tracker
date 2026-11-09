@@ -168,24 +168,14 @@ Limits: each person can make 40 assistant calls (about 20 questions) and 80 voic
 
 ## Notes
 
-The **Notes** page is a sticky-note board for daily meetings, discussions, minutes, action items and personal notes. Each note is a sticky coloured by type (meetings violet, discussions sun glare, personal orange) showing its title, the first lines, the date, action-item progress (for example 1/3 done), brand and author; pinned notes carry a pin. Stickies sit in lanes: Pinned, Today, Yesterday, This week, then by month. Open one and it becomes a ruled, spiral-bound notebook page, with the other stickies stacked alongside.
+The **Notes** page is a sticky-note board for meeting notes, daily updates, ideas and personal notes.
 
-- **Writing:** start from a template (**Stand-up** pre-fills attendees, updates, blockers, decisions and today's overdue list), or a blank or personal note. Each note has a title, meeting date, type (meeting, discussion or personal), brand and category.
-- **People:** type `@` to mention someone. Add action items with an assignee and a due date, plus follow-up points and a reminder time (IST).
-- **Finding notes:** search the text and filter by Mine, Shared with me, Meetings, Personal or Open actions, by brand and by category. Notes can be pinned to the first lane.
-- **Who sees a note:**
-
-  | Setting | Visible to |
-  | --- | --- |
-  | Only me | the author |
-  | People I mention or add | the author, everyone @mentioned, everyone added to it, and everyone with an action item |
-  | Everyone with access | the whole team |
-
-  Admins can see every note.
-- **Who changes it:** only the author or an admin can edit or delete a note. Anyone with an action item can tick it off.
-- **Storage:** notes are saved to the *Notes* tab of the access spreadsheet, owned by design.tools. Each note records its author's work email, when it was created, and who last edited it and when. Every create, edit, delete and action-item tick is in the activity log (Access → Activity log → Notes). A deleted note disappears from the dashboard but stays in the spreadsheet, marked deleted.
-- **Safety:** unsaved writing is kept in the browser as a draft, and saving over someone else's newer edit is refused, so nothing is lost.
-- **Reminders and mentions:** a reminder emails the author, and anyone with an open action item, at the time set. Mentions and action items also appear in each person's notification bell.
+- **Quick capture:** type in the sticky at the top and press **Enter**. The first line becomes the title; lines starting with `[]` become to-dos for you; **Shift+Enter** adds a line. Pick **Meeting**, **Idea / discussion** or **Personal** first (personal notes are private; the others are visible to the team).
+- **The board:** stickies are coloured by kind (meetings violet, ideas lime, personal orange, stand-ups cream with lime tape), pinned ones first, then this week, then earlier. Tick to-dos right on the sticky; hover a sticky to **pin** or **delete** it. Search and the filters above narrow the board.
+- **Open a note:** click a sticky to open it as a large sticky over the board: title, text (type `@` to mention someone), action items with an owner and due date, and **Details** (date, brand, category, who can see it, sharing, follow-ups, email reminder). **Save & close** (or Ctrl/⌘+S) saves; **Esc** closes.
+- **Templates:** **Stand-up** pre-fills attendees, updates, blockers, decisions and today's overdue list.
+- **Who sees a note:** Only me; people I mention or add (plus anyone with an action item); or everyone with access. Admins can see every note. Only the author or an admin can edit or delete; anyone with an action item can tick it.
+- **Storage:** the *Notes* tab of the access spreadsheet. Every create, edit, delete and tick is in the activity log; deleted notes stay in the spreadsheet, marked deleted. Unsaved writing is kept as a draft in the browser, and saving over someone else's newer edit is refused.
 
 ## Access and sign-in
 

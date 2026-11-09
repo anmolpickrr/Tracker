@@ -2058,37 +2058,102 @@
     };
     /* The board: every note is a sticky, coloured by type (meeting violet, discussion sun glare, personal orange),
        grouped by when it is from. Open one and the board becomes a narrow stack beside the notebook. */
-    const tilt = (id) => { let h = 0; String(id).split('').forEach((c) => { h = (h * 31 + c.charCodeAt(0)) | 0; }); return ((Math.abs(h) % 7) - 3) * 0.45; };
+    /* The board: stickies coloured by kind (meeting violet, idea lime, personal orange; stand-ups cream with lime tape),
+       pinned ones first, in a masonry layout. To-dos tick right on the sticky; pin and delete sit on hover. */
+    const tilt = (id) => { let h = 0; String(id).split('').forEach((c) => { h = (h * 31 + c.charCodeAt(0)) | 0; }); return ((Math.abs(h) % 7) - 3) * 0.5; };
+    const ICO = { pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></svg>', del: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>' };
+    async function quickSave(n, patch) {
+      const x = Object.assign({}, n, patch);
+      try { await post({ action: 'noteSave', id: n.id, updatedAt: n.updatedAt, note: { title: x.title, date: x.date, type: x.type, brand: x.brand, category: x.category, visibility: x.visibility, sharedWith: x.sharedWith, mentions: x.mentions, body: x.body, actions: x.actions, reminder: x.reminder, followUps: x.followUps, pinned: x.pinned } }); await load(true); }
+      catch (err) { toast('Not saved: ' + err.message, true); }
+    }
+    const card = (n) => {
+      const type = String(n.type || 'Meeting'), standup = /stand-?up/i.test(n.category || '') || /stand-?up/i.test(n.title || '');
+      const b = document.createElement('div'); b.className = 'nb-item sticky t-' + type.toLowerCase() + (standup ? ' t-standup' : '') + (n.pinned ? ' pinned' : '');
+      b.dataset.id = n.id; b.tabIndex = 0; b.setAttribute('role', 'button'); b.setAttribute('aria-label', 'Open note: ' + (n.title || 'Untitled'));
+      b.style.setProperty('--tilt', tilt(n.id) + 'deg'); b.setAttribute('aria-current', String(!!st.cur && st.cur.id === n.id));
+      const deco = document.createElement('span'); deco.className = n.pinned ? 'st-pin' : 'st-tape'; deco.setAttribute('aria-hidden', 'true');
+      const top = document.createElement('div'); top.className = 'st-top';
+      const kind = document.createElement('span'); kind.className = 'st-kind'; kind.textContent = (standup ? 'Stand-up' : type === 'Discussion' ? 'Idea' : type) + ' · ' + CO.fmtDate(n.date);
+      top.append(kind);
+      if (n.canEdit) {
+        const tools = document.createElement('span'); tools.className = 'st-tools';
+        const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'st-tool' + (n.pinned ? ' on' : ''); pin.innerHTML = ICO.pin; pin.title = n.pinned ? 'Unpin' : 'Pin to the top'; pin.setAttribute('aria-label', pin.title);
+        pin.addEventListener('click', (e) => { e.stopPropagation(); quickSave(n, { pinned: !n.pinned }); });
+        const del = document.createElement('button'); del.type = 'button'; del.className = 'st-tool'; del.innerHTML = ICO.del; del.title = 'Delete'; del.setAttribute('aria-label', 'Delete note');
+        del.addEventListener('click', async (e) => { e.stopPropagation(); if (!confirm('Delete "' + (n.title || 'this note') + '"? It disappears for everyone. (It stays in the activity log.)')) return; try { await post({ action: 'noteDelete', id: n.id }); await load(true); toast('Note deleted'); } catch (err) { toast('Not deleted: ' + err.message, true); } });
+        tools.append(pin, del); top.append(tools);
+      }
+      const t = document.createElement('span'); t.className = 'st-title t'; t.textContent = n.title || 'Untitled';
+      const body = (n.body || '').replace(/\n{2,}/g, '\n').trim();
+      b.append(deco, top, t);
+      if (body) { const s2 = document.createElement('span'); s2.className = 'st-body s'; s2.textContent = body; b.append(s2); }
+      const acts = n.actions || [];
+      if (acts.length) {
+        const ul = document.createElement('ul'); ul.className = 'st-todo';
+        acts.slice(0, 5).forEach((x) => {
+          const li = document.createElement('li'); li.className = x.done ? 'done' : '';
+          const box = document.createElement('button'); box.type = 'button'; box.className = 'st-box'; box.setAttribute('role', 'checkbox'); box.setAttribute('aria-checked', String(!!x.done)); box.setAttribute('aria-label', (x.done ? 'Mark not done: ' : 'Mark done: ') + x.text);
+          const canTick = n.canEdit || (A.user && x.email === A.user.email);
+          box.disabled = !canTick;
+          box.addEventListener('click', async (e) => { e.stopPropagation(); li.classList.toggle('done'); box.setAttribute('aria-checked', String(!x.done)); try { const r = await post({ action: 'noteAction', id: n.id, actionId: x.id, done: !x.done }); n.actions = r.actions; x.done = !x.done; const all = n.actions.every((y) => y.done); if (all) toast('All to-dos done on "' + (n.title || 'note') + '"'); dash.draw('nb-list'); } catch (err) { li.classList.toggle('done'); toast('Not saved: ' + err.message, true); } });
+          const tx = document.createElement('span'); tx.textContent = x.text; if (x.assignee) tx.title = 'For ' + x.assignee + (x.due ? ' · due ' + CO.fmtDate(x.due) : '');
+          li.append(box, tx); ul.append(li);
+        });
+        if (acts.length > 5) { const li = document.createElement('li'); li.className = 'more'; li.textContent = '+' + (acts.length - 5) + ' more'; ul.append(li); }
+        b.append(ul);
+      }
+      const foot = document.createElement('span'); foot.className = 'st-foot m';
+      const done = acts.filter((x) => x.done).length;
+      if (acts.length && done === acts.length) { const x = document.createElement('span'); x.className = 'st-done'; x.textContent = 'All done'; foot.append(x); }
+      else if (acts.length) { const x = document.createElement('span'); x.className = 'st-acts'; x.style.setProperty('--p', (done / acts.length * 100) + '%'); x.textContent = done + '/' + acts.length; x.title = done + ' of ' + acts.length + ' to-dos done'; foot.append(x); }
+      if (n.brand) { const x = document.createElement('span'); x.className = 'nb-tag'; x.textContent = n.brand; foot.append(x); }
+      if (n.visibility === 'private') { const x = document.createElement('span'); x.className = 'st-lock'; x.textContent = 'Only me'; foot.append(x); }
+      const faces = document.createElement('span'); faces.className = 'st-faces';
+      [n.createdByName || n.createdBy].concat((n.mentions || []).map((m) => m.name)).filter(Boolean).slice(0, 3).forEach((nm) => { const av = CO.av(nm); av.title = nm; faces.append(av); });
+      foot.append(faces); b.append(foot);
+      const go = () => select(n.id);
+      b.addEventListener('click', go); b.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === b) go(); });
+      return b;
+    };
     dash.draw('nb-list', (el) => {
       el.replaceChildren();
-      $n('nb-empty').hidden = !!st.cur || !st.loaded || st.notes.length > 0;
+      $n('nb-empty').hidden = !st.loaded || st.notes.length > 0;
       if (!st.loaded) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = st.loading ? 'Loading notes…' : ''; el.append(p); return; }
-      const list = filtered().sort((a, b) => (b.pinned - a.pinned) || String(b.date).localeCompare(String(a.date)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
+      const list = filtered().sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
       if (!list.length) { if (st.notes.length) { const p = document.createElement('p'); p.className = 'co-note nb-none'; p.textContent = 'No notes match. Clear the search or filters to see them all.'; el.append(p); } return; }
-      // One lane per group (Pinned, Today, Yesterday, This week, then months), side by side like columns on a board.
-      let last = '', lane = null;
-      list.forEach((n) => {
-        const g = groupOf(n);
-        if (g !== last) { lane = document.createElement('section'); lane.className = 'nb-lane'; const h = document.createElement('h3'); h.className = 'nb-group'; h.textContent = g; const c = document.createElement('span'); c.className = 'nb-count'; lane.append(h); h.append(c); el.append(lane); last = g; }
-        lane.querySelector('.nb-count').textContent = String(lane.querySelectorAll('.sticky').length + 1);
-        const type = String(n.type || 'Meeting'), b = document.createElement('button'); b.type = 'button';
-        b.className = 'nb-item sticky t-' + type.toLowerCase(); b.dataset.id = n.id; b.style.setProperty('--tilt', tilt(n.id) + 'deg');
-        b.setAttribute('aria-current', String(!!st.cur && st.cur.id === n.id));
-        const deco = document.createElement('span'); deco.className = n.pinned ? 'st-pin' : 'st-tape'; deco.setAttribute('aria-hidden', 'true'); if (n.pinned) deco.title = 'Pinned';
-        const kind = document.createElement('span'); kind.className = 'st-kind'; kind.textContent = [type, n.category].filter(Boolean).join(' · ');
-        const t = document.createElement('span'); t.className = 'st-title t'; t.textContent = n.title || 'Untitled';
-        const body = (n.body || n.followUps || '').replace(/\n{2,}/g, '\n').trim();
-        const s2 = document.createElement('span'); s2.className = 'st-body s'; s2.textContent = body || 'No text yet';
-        const foot = document.createElement('span'); foot.className = 'st-foot m';
-        const d = document.createElement('span'); d.className = 'st-date'; d.textContent = CO.fmtDate(n.date); foot.append(d);
-        const acts = n.actions || [], done = acts.filter((x) => x.done).length;
-        if (acts.length) { const p = document.createElement('span'); p.className = 'st-acts' + (done === acts.length ? ' all' : ''); p.style.setProperty('--p', (done / acts.length * 100) + '%'); p.title = done + ' of ' + acts.length + ' action items done'; p.textContent = done + '/' + acts.length; foot.append(p); }
-        if (n.brand) { const x = document.createElement('span'); x.className = 'nb-tag'; x.textContent = n.brand; foot.append(x); }
-        if (n.visibility === 'private') { const x = document.createElement('span'); x.className = 'st-lock'; x.title = 'Only you can see this'; x.textContent = 'Only me'; foot.append(x); }
-        const av = CO.av(n.createdByName || n.createdBy); av.title = 'By ' + (n.createdByName || n.createdBy); foot.append(av);
-        b.append(deco, kind, t, s2, foot); b.addEventListener('click', () => select(n.id)); lane.append(b);
-      });
+      const block = (title, notes) => { if (!notes.length) return; const h = document.createElement('h3'); h.className = 'nb-group'; h.textContent = title + ' · ' + notes.length; const m = document.createElement('div'); m.className = 'nb-mason'; notes.forEach((n) => m.append(card(n))); el.append(h, m); };
+      block('Pinned', list.filter((n) => n.pinned));
+      const rest = list.filter((n) => !n.pinned), t = CO.today();
+      block('This week', rest.filter((n) => (n.date || '') > CO.addDays(t, -7)));
+      block('Earlier', rest.filter((n) => !((n.date || '') > CO.addDays(t, -7))));
     });
+    /* Quick capture: type, press Enter, done. First line = title; lines starting with [] or - [ ] become to-dos for you. */
+    let qType = 'Meeting';
+    const qWho = () => { $n('nb-quick-who').textContent = qType === 'Personal' ? 'Only you can see it' : 'Visible to everyone'; };
+    document.querySelectorAll('[data-qt]').forEach((b2) => b2.addEventListener('click', () => { qType = b2.dataset.qt; document.querySelectorAll('[data-qt]').forEach((x) => x.setAttribute('aria-checked', String(x === b2))); $n('nb-quick').dataset.type = qType.toLowerCase(); qWho(); $n('nb-quick-text').focus(); }));
+    $n('nb-quick').dataset.type = 'meeting';
+    async function quickAdd() {
+      const raw = $n('nb-quick-text').value.trim(); if (!raw) { $n('nb-quick-text').focus(); return; }
+      const lines = raw.split('\n'), todo = /^\s*(?:-\s*)?\[\s?\]\s*/;
+      const title = lines[0].replace(todo, '').slice(0, 160), actions = [], body = [];
+      lines.slice(1).forEach((l) => { if (todo.test(l)) actions.push({ text: l.replace(todo, '').trim(), assignee: A.user ? A.user.name || A.user.email : '', email: A.user ? A.user.email : '', due: '', done: false }); else body.push(l); });
+      if (todo.test(lines[0])) actions.unshift({ text: title, assignee: A.user ? A.user.name || A.user.email : '', email: A.user ? A.user.email : '', due: '', done: false });
+      const btn = $n('nb-quick-add'); btn.disabled = true; btn.textContent = 'Adding…';
+      try {
+        await post({ action: 'noteSave', note: { title, date: CO.today(), type: qType, brand: '', category: '', visibility: qType === 'Personal' ? 'private' : 'team', sharedWith: [], mentions: [], body: body.join('\n').trim(), actions: actions.filter((x) => x.text), reminder: '', followUps: '', pinned: false } });
+        $n('nb-quick-text').value = ''; $n('nb-quick-text').style.height = ''; await load(true); toast('Sticky added');
+      } catch (err) { toast('Not added: ' + err.message, true); }
+      btn.disabled = false; btn.textContent = 'Add sticky';
+    }
+    $n('nb-quick').addEventListener('submit', (e) => { e.preventDefault(); quickAdd(); });
+    $n('nb-quick-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); quickAdd(); } });
+    $n('nb-quick-text').addEventListener('input', (e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(220, e.target.scrollHeight) + 'px'; });
+    // Kind chips in the open note
+    const paintChips = () => { const ty = st.cur ? st.cur.type : ''; document.querySelectorAll('[data-tt]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.tt === ty))); paper.dataset.type = String(ty || 'Meeting').toLowerCase(); };
+    document.querySelectorAll('[data-tt]').forEach((b2) => b2.addEventListener('click', () => { if (!st.cur || !st.cur.canEdit) return; $n('nb-type').value = b2.dataset.tt; $n('nb-type').dispatchEvent(new Event('change')); paintChips(); }));
+    $n('nb-scrim').addEventListener('click', () => $n('nb-back').click());
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && st.cur && !document.querySelector('dialog[open]') && $n('nb-pop').hidden) $n('nb-back').click(); });
     function fillFilters() {
       const fill = (sel, label, vals) => { const cur = sel.value; sel.replaceChildren(new Option(label, ''), ...vals.map((v) => new Option(v, v))); sel.value = vals.includes(cur) ? cur : ''; };
       fill($n('nb-f-brand'), 'All brands', [...new Set(st.notes.map((n) => n.brand).filter(Boolean))].sort());
@@ -2126,8 +2191,9 @@
     }
     function show() {
       const n = st.cur;
-      empty.hidden = !!n || !st.loaded || st.notes.length > 0; form.hidden = !n; wrap.classList.toggle('editing', !!n); dash.draw('nb-list');
+      empty.hidden = !st.loaded || st.notes.length > 0; form.hidden = !n; wrap.classList.toggle('editing', !!n); $n('nb-scrim').hidden = !n; document.body.classList.toggle('nb-open', !!n); dash.draw('nb-list');
       if (!n) return;
+      paintChips(); $n('nb-details').open = !n.id ? false : $n('nb-details').open;
       const ro = !n.canEdit; paper.classList.toggle('readonly', ro);
       $n('nb-title').value = n.title; $n('nb-date').value = n.date || ''; $n('nb-type').value = n.type; $n('nb-brand').value = n.brand || ''; $n('nb-cat').value = n.category || ''; $n('nb-vis').value = n.visibility;
       $n('nb-body').value = n.body || ''; $n('nb-follow').value = n.followUps || ''; $n('nb-remind').value = n.reminder || '';
@@ -2241,8 +2307,8 @@
         const res = await post({ action: 'noteSave', id: n.id || undefined, updatedAt: n.updatedAt || undefined, note: { title: n.title, date: n.date, type: n.type, brand: n.brand, category: n.category, visibility: n.visibility, sharedWith: n.sharedWith, mentions: n.mentions, body: n.body, actions: (n.actions || []).filter((a) => a.text.trim()), reminder: n.reminder, followUps: n.followUps, pinned: n.pinned } });
         LS.set('co.nbdraft.' + (n.id || 'new'), null);
         st.dirty = false; await load(true);
-        const fresh = st.notes.find((x) => x.id === res.id); st.cur = fresh ? JSON.parse(JSON.stringify(fresh)) : st.cur; show();
-        toast(n.id ? 'Note saved' : 'Note created and saved to ' + me());
+        st.cur = null; show();
+        toast(n.id ? 'Note saved' : 'Note saved');
       } catch (err) {
         if (/stale/.test(err.message)) { toast('Someone else changed this note while you were editing. Your text is kept as a draft; reopen the note to see their version.', true); status('Not saved: changed by someone else'); }
         else { toast('Not saved: ' + err.message, true); status('Not saved'); }
@@ -2541,7 +2607,9 @@
     if (can('Admin')) callApi({ action: 'ver' }).then((b) => { if (b.ok && typeof b.pending === 'number') { AX.pending = b.pending; syncControls(); } }).catch(() => {});
   }
   /* The session ended or access was removed: forget it and clear the page, so no data stays on screen. */
+  let signingOut = false; // a background check that ends during sign-out must not replace the 'signed out' message
   function lostAccess(body) {
+    if (signingOut) return;
     const msg = body.error === 'session_expired' ? 'Your sign-in has ended. Log in again to continue.'
       : body.error === 'no_access' ? (body.status === 'Pending' ? 'Your access request is still waiting for approval.' : 'Your access to this dashboard has been removed. Talk to the Creative Head if you need it back.')
       : '';
@@ -2550,6 +2618,7 @@
     showGate(msg);
   }
   document.getElementById('btn-signout').addEventListener('click', async () => {
+    signingOut = true;
     try { await callApi({ action: 'signout' }); } catch (e) { /* signing out locally is what matters */ }
     A.session = ''; LS.set('co.session', null); LS.set('co.me', null); DC.clear();
     try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ }
