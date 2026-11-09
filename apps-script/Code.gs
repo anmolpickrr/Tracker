@@ -1752,12 +1752,22 @@ function gemini_(messages, who) {
   return { ok: true, stop_reason: content.some(function (b) { return b.type === 'tool_use'; }) ? 'tool_use' : 'end_turn', content: content };
 }
 
-/** Run from the Apps Script editor (choose testFasty, then Run) to check Fasty's AI connection. Results appear in the Execution log. */
+/** Run from the Apps Script editor (choose testFasty, then Run) to check Fasty's AI connection step by step. Results appear in the Execution log. */
 function testFasty() {
-  const p = PropertiesService.getScriptProperties(), t0 = Date.now(), prov = assistProvider_();
-  console.log('Provider: ' + prov + ' | GEMINI_API_KEY set: ' + !!p.getProperty('GEMINI_API_KEY') + ' | ANTHROPIC_API_KEY set: ' + !!p.getProperty('ANTHROPIC_API_KEY') + ' | model setting: ' + settings_().model);
+  const p = PropertiesService.getScriptProperties(), prov = assistProvider_(), gk = p.getProperty('GEMINI_API_KEY') || '';
+  console.log('1. Provider: ' + prov + ' | GEMINI_API_KEY set: ' + !!gk + ' (starts "' + gk.slice(0, 4) + '", ' + gk.length + ' characters) | model setting: ' + settings_().model);
   if (prov === 'none') { console.log('No AI key found. Add GEMINI_API_KEY under Project Settings > Script properties.'); return; }
-  const r = assist_({ email: 'test@local', name: 'Test', role: 'Viewer' }, { messages: [{ role: 'user', content: [{ type: 'text', text: 'Say hello in one short sentence.' }] }] });
-  console.log('Took ' + (Date.now() - t0) + ' ms. Result: ' + JSON.stringify(r).slice(0, 600));
-  console.log(r.ok ? 'Fasty is working.' : 'Fasty is NOT working: ' + r.error);
+  if (prov === 'gemini') {
+    const model = p.getProperty('GEMINI_MODEL') || 'gemini-flash-latest';
+    let t = Date.now(), r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=5', { headers: { 'x-goog-api-key': gk }, muteHttpExceptions: true });
+    console.log('2. Key check: HTTP ' + r.getResponseCode() + ' in ' + (Date.now() - t) + ' ms ' + (r.getResponseCode() === 200 ? '(key accepted)' : r.getContentText().slice(0, 300)));
+    if (r.getResponseCode() !== 200) return;
+    t = Date.now(); r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', { method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': gk }, muteHttpExceptions: true, payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Say hi in 3 words.' }] }] }) });
+    console.log('3. Tiny request to ' + model + ': HTTP ' + r.getResponseCode() + ' in ' + (Date.now() - t) + ' ms: ' + r.getContentText().slice(0, 300));
+    if (r.getResponseCode() !== 200) return;
+  }
+  const t0 = Date.now();
+  const res = assist_({ email: 'test@local', name: 'Test', role: 'Viewer' }, { messages: [{ role: 'user', content: [{ type: 'text', text: 'aaj kitne tasks overdue hain?' }] }] });
+  console.log('4. Full Fasty request: ' + (Date.now() - t0) + ' ms: ' + JSON.stringify(res).slice(0, 500));
+  console.log(res.ok ? 'Fasty is working.' : 'Fasty is NOT working: ' + res.error);
 }
