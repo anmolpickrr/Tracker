@@ -211,7 +211,11 @@ function doPost(e) {
     if (ROLES[user.role] < ROLES[need]) return json_({ ok: false, error: 'forbidden', need: need, role: user.role });
     // Reads
     if (body.action === 'me') return json_({ ok: true, user: publicUser_(user) });
-    if (body.action === 'ver') return json_({ ok: true, ver: liveVersion_(), role: user.role });
+    if (body.action === 'ver') {
+      const out = { ok: true, ver: liveVersion_(), role: user.role };
+      if (user.role === 'Admin') out.pending = users_().list.filter(function (u) { return u.status === 'Pending'; }).length;
+      return json_(out);
+    }
     if (body.action === 'data') return text_(dataText_(!!body.fresh));
     if (body.action === 'health') return json_(health_());
     if (body.action === 'users') return json_({ ok: true, users: users_().list.map(publicUser_), you: user.email, owners: owners_() });
@@ -441,7 +445,7 @@ function listOptions_(cell) {
  * Nobody else can edit it; owners get view access.
  */
 const UNKNOWN_EDITOR = 'Not reported by Google';
-const USER_HEAD = ['Email', 'Name', 'Role', 'Status', 'Team / role', 'Note', 'Requested on', 'Decided by', 'Decided on', 'Last sign-in', 'Sessions valid from'];
+const USER_HEAD = ['Email', 'Name', 'Role', 'Status', 'Team / role', 'Note', 'Requested on', 'Decided by', 'Decided on', 'Last sign-in', 'Sessions valid from', 'Photo'];
 const AUDIT_HEAD = ['When', 'Who', 'Their role', 'Action', 'Sheet', 'Tab', 'Task / record', 'Row', 'Field', 'Before', 'After', 'Details', 'Via'];
 
 function authOn_() { const id = String(CONFIG.access && CONFIG.access.clientId || ''); return !!id && !/^PASTE_/.test(id); }
@@ -512,24 +516,36 @@ function signin_(body) {
       appendUser_({ email: g.email, name: g.name, role: 'Admin', status: 'Approved', note: 'Owner (CONFIG.access.owners)', requestedOn: now, decidedBy: 'Owner', decidedOn: now });
       u = userByEmail_(g.email);
     }
-    if (u && u.status === 'Approved') {
+    const photo = photo_(g.picture);
+    if (u) {
+      // Every sign-in attempt refreshes the profile shown to admins (name, photo, last sign-in).
       const patch = { lastSignIn: now };
-      if (!u.name && g.name) patch.name = g.name;
+      if (g.name && g.name !== u.name) patch.name = g.name;
+      if (photo && photo !== u.photo) patch.photo = photo;
+      if (u.status === 'Pending' && body.intent === 'signup' && body.profile) {
+        const pr = profile_(body.profile);
+        if (pr.team) patch.team = pr.team;
+        if (pr.note) patch.note = pr.note;
+      }
       updateUser_(u, patch);
+      u = Object.assign({}, u, patch);
+    }
+    if (u && u.status === 'Approved') {
       audit_([{ who: u.email, role: u.role, action: 'Signed in' }]);
-      return { ok: true, status: 'approved', session: makeSession_(u.email), user: publicUser_(Object.assign({}, u, patch)) };
+      return { ok: true, status: 'approved', session: makeSession_(u.email), user: publicUser_(u) };
     }
-    if (u && u.status === 'Pending') {
-      if (body.intent === 'signup' && body.profile) updateUser_(u, profile_(body.profile));
-      return { ok: true, status: 'pending', user: publicUser_(u) };
+    if (u && u.status === 'Pending') return { ok: true, status: 'pending', user: publicUser_(u) };
+    if (u) {
+      audit_([{ who: u.email, role: 'No access', action: 'Sign-in blocked', record: u.email, details: u.status === 'Denied' ? 'Request was declined' : 'Access was revoked' }]);
+      return { ok: true, status: u.status === 'Denied' ? 'denied' : 'revoked', user: publicUser_(u) };
     }
-    if (u) return { ok: true, status: u.status === 'Denied' ? 'denied' : 'revoked', user: publicUser_(u) };
-    if (body.intent !== 'signup') return { ok: true, status: 'unknown', user: { email: g.email, name: g.name } };
+    // Someone new, from an allowed domain: whether they chose Log in or Sign up, they become a
+    // pending request. They get no session and no data until an admin approves them.
     const pr = profile_(body.profile || {});
-    appendUser_({ email: g.email, name: g.name, role: 'Viewer', status: 'Pending', team: pr.team || '', note: pr.note || '', requestedOn: now });
-    audit_([{ who: g.email, action: 'Access requested', record: g.email, details: [pr.team ? 'Team / role: ' + pr.team : '', pr.note ? 'Note: ' + pr.note : ''].filter(String).join('; ') }]);
+    appendUser_({ email: g.email, name: g.name, role: 'Viewer', status: 'Pending', team: pr.team || '', note: pr.note || '', requestedOn: now, lastSignIn: now, photo: photo });
+    audit_([{ who: g.email, action: 'Access requested', record: g.email, details: [body.intent === 'signup' ? 'Signed up' : 'Logged in without access', pr.team ? 'Team / role: ' + pr.team : '', pr.note ? 'Note: ' + pr.note : ''].filter(String).join('; ') }]);
     notifyAdmins_(g, pr);
-    return { ok: true, status: 'pending', user: { email: g.email, name: g.name } };
+    return { ok: true, status: 'pending', isNew: true, user: publicUser_(userByEmail_(g.email) || { email: g.email, name: g.name, role: 'Viewer', status: 'Pending' }) };
   } finally {
     lock.releaseLock();
   }
@@ -596,7 +612,7 @@ function users_() {
         row: i + 1, email: email, name: clean_(v[i][1]), role: ROLES[clean_(v[i][2])] ? clean_(v[i][2]) : 'Viewer',
         status: ['Approved', 'Pending', 'Revoked', 'Denied'].indexOf(clean_(v[i][3])) >= 0 ? clean_(v[i][3]) : 'Pending',
         team: clean_(v[i][4]), note: clean_(v[i][5]), requestedOn: iso_(v[i][6]), decidedBy: clean_(v[i][7]), decidedOn: iso_(v[i][8]), lastSignIn: iso_(v[i][9]),
-        validFrom: Number(v[i][10]) || 0
+        validFrom: Number(v[i][10]) || 0, photo: photo_(v[i][11])
       };
       if (isOwner_(email)) { u.role = 'Admin'; u.status = 'Approved'; u.owner = true; }
       out.list.push(u);
@@ -610,11 +626,15 @@ function userByEmail_(email) {
   return users_().list.filter(function (u) { return u.email === email; })[0] || null;
 }
 function publicUser_(u) {
-  return { email: u.email, name: u.name || '', role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', owner: !!u.owner || isOwner_(u.email) };
+  return { email: u.email, name: u.name || '', role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), owner: !!u.owner || isOwner_(u.email) };
 }
+/* Only Google profile photos are kept and shown. */
+function photo_(url) { const s = String(url || ''); return /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\/[^\s"'<>]+$/i.test(s) ? s.slice(0, 500) : ''; }
+function userHeader_(sh) { if (String(sh.getRange(1, 12).getValue()) !== 'Photo') sh.getRange(1, 12).setValue('Photo'); }
 function appendUser_(u) {
   const sh = accessBook_().getSheetByName('Users');
-  sh.appendRow([u.email, u.name || '', u.role, u.status, u.team || '', u.note || '', u.requestedOn || '', u.decidedBy || '', u.decidedOn || '', u.lastSignIn || '', ''].map(safe_));
+  userHeader_(sh);
+  sh.appendRow([u.email, u.name || '', u.role, u.status, u.team || '', u.note || '', u.requestedOn || '', u.decidedBy || '', u.decidedOn || '', u.lastSignIn || '', '', u.photo || ''].map(safe_));
   CacheService.getScriptCache().remove('users');
 }
 function updateUser_(u, patch) {
@@ -623,7 +643,8 @@ function updateUser_(u, patch) {
   const emails = sh.getRange(1, 1, Math.max(1, sh.getLastRow()), 1).getValues().map(function (r) { return clean_(r[0]).toLowerCase(); });
   const row = emails.indexOf(u.email) + 1;
   if (row < 2) throw new Error('User ' + u.email + ' is no longer in the access list');
-  const cols = { name: 2, role: 3, status: 4, team: 5, note: 6, decidedBy: 8, decidedOn: 9, lastSignIn: 10, validFrom: 11 };
+  userHeader_(sh);
+  const cols = { name: 2, role: 3, status: 4, team: 5, note: 6, decidedBy: 8, decidedOn: 9, lastSignIn: 10, validFrom: 11, photo: 12 };
   Object.keys(patch).forEach(function (k) { if (cols[k] && patch[k] != null) sh.getRange(row, cols[k]).setValue(safe_(patch[k])); });
   CacheService.getScriptCache().remove('users');
 }

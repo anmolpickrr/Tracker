@@ -302,3 +302,31 @@ body[data-gate] .co { display: none; }
 .ax-log td.ax-before { color: var(--muted); }
 .ax-more { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 720px) { .ax-add .co-input, .ax-filters .co-search { width: 100%; } }
+
+/* People: photo, profile */
+.ax-avatar { width: 26px; height: 26px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; overflow: hidden; background: color-mix(in srgb, var(--c1) 18%, var(--panel)); color: var(--c1); font: 600 12px/1 var(--font-body); }
+.ax-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.ax-avatar.lg { width: 56px; height: 56px; font-size: 22px; }
+.ax-person { display: inline-flex; align-items: center; gap: 8px; background: none; border: 0; padding: 0; cursor: pointer; font-weight: 500; text-align: left; }
+.ax-person:hover span:last-child { text-decoration: underline; text-underline-offset: 2px; }
+.ax-acts { display: flex; gap: 12px; }
+.co-link.ax-revoke { color: var(--bad); }
+.co-btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.pr-dialog { width: min(36rem, calc(100vw - 32px)); }
+.pr-body { display: grid; gap: 14px; }
+.pr-head { display: flex; gap: 14px; align-items: center; }
+.pr-who { display: grid; gap: 4px; min-width: 0; justify-items: start; }
+.pr-who > * { overflow-wrap: anywhere; }
+.pr-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: var(--fs-cap); }
+.pr-facts dt { color: var(--muted); }
+.pr-facts dd { margin: 0; overflow-wrap: anywhere; }
+.pr-facts:empty { display: none; }
+.pr-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding: 12px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--line); }
+.pr-actions .co-field { margin-right: auto; }
+.pr-sec { display: grid; gap: 8px; }
+.pr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 16rem; overflow: auto; font-size: var(--fs-cap); }
+.pr-list li { display: grid; grid-template-columns: 7.5rem 1fr; gap: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.pr-when { color: var(--muted); white-space: nowrap; }
+.pr-what { overflow-wrap: anywhere; }
+.pr-what .ax-before { color: var(--muted); }
+@media (max-width: 520px) { .pr-list li { grid-template-columns: 1fr; gap: 2px; } }

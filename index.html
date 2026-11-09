@@ -336,35 +336,36 @@
     <div class="co-card">
       <div class="co-card-head">
         <h2 class="co-h2">Access requests</h2>
-        <p class="co-note">People who signed up with their work Google account. They see nothing until you approve them.</p>
+        <p class="co-note">Everyone who signed up or tried to log in with their work Google account. They see nothing until you approve them. Click a name to see their profile.</p>
       </div>
       <div class="ax-req" data-draw="ax-pending"></div>
     </div>
     <div class="co-card">
       <div class="co-card-head">
         <h2 class="co-h2">People with access</h2>
-        <p class="co-note"><b>Viewer</b> sees everything and downloads reports. <b>Editor</b> also changes tasks. <b>Admin</b> also manages the team list, access and the activity log. Changes apply within 30 seconds, even on dashboards that are already open.</p>
+        <p class="co-note"><b>View only</b>: sees every tab and downloads reports. <b>Can edit</b>: also changes tasks. <b>Admin</b>: also manages the team list, access and the activity log. Changes apply within 30 seconds, even on dashboards that are already open.</p>
       </div>
       <form class="ax-add" id="ax-add" autocomplete="off">
         <input class="co-input" id="ax-email" type="email" placeholder="name@pickrr.com" aria-label="Work email" required maxlength="120">
-        <select class="co-select" id="ax-role" aria-label="Role"><option>Viewer</option><option>Editor</option><option>Admin</option></select>
+        <select class="co-select" id="ax-role" aria-label="Access level"><option value="Viewer">View only</option><option value="Editor">Can edit</option><option value="Admin">Admin</option></select>
         <button class="co-btn primary" type="submit">Give access</button>
         <span class="co-note" id="ax-msg" role="status"></span>
       </form>
       <div class="co-tablewrap short">
         <table class="co-table">
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Decided by</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Access level</th><th>Status</th><th>Last sign-in</th><th>Decided by</th><th></th></tr></thead>
           <tbody data-draw="ax-users"></tbody>
         </table>
       </div>
     </div>
-    <div class="co-card">
+    <div class="co-card" id="ax-log-card">
       <div class="co-card-head">
         <h2 class="co-h2">Activity log</h2>
         <p class="co-note">Every change made on the dashboard or typed into the sheets, with the value before and after, newest first. Nobody can edit or delete it.</p>
       </div>
       <div class="ax-filters">
         <input class="co-input co-search" id="ax-q" type="search" placeholder="Search: task ID, person, brand, value…" aria-label="Search the activity log">
+        <select class="co-select" id="ax-who" aria-label="Person"><option value="">Everyone</option></select>
         <select class="co-select" id="ax-kind" aria-label="Kind of activity">
           <option value="">All activity</option>
           <option value="tasks">Task and sheet edits</option>
@@ -430,6 +431,16 @@
       <button class="co-btn primary" id="set-save" type="submit">Save and load</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="person" class="co-dialog pr-dialog" aria-labelledby="pr-head">
+  <div class="pr-body">
+    <div class="pr-head" id="pr-head"></div>
+    <dl class="pr-facts" id="pr-facts"></dl>
+    <div class="pr-actions" id="pr-actions"></div>
+    <div class="pr-sec"><h3 class="co-h2">Activity</h3><div id="pr-log"></div></div>
+    <div class="co-dialog-actions"><button class="co-link" type="button" id="pr-all">Full activity in the log</button><button class="co-btn" type="button" id="pr-close">Close</button></div>
+  </div>
 </dialog>
 
 <dialog id="editor" class="co-dialog" aria-labelledby="ed-title">

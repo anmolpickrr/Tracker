@@ -14,6 +14,7 @@
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
   const CFG = window.CO_CONFIG || {};
   const RANK = { Viewer: 1, Editor: 2, Admin: 3 };
+  const ROLE_LABEL = { Viewer: 'View only', Editor: 'Can edit', Admin: 'Admin' };
   const A = { mode: null, url: '', clientId: '', domains: [], session: LS.get('co.session', ''), user: null };
   const can = (need) => A.mode === 'key' || !!(A.user && RANK[A.user.role] >= RANK[need]);
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
@@ -151,8 +152,9 @@
       const body = await probeVer();
       S.checkedAt = new Date();
       if (A.mode === 'auth' && body.ok && body.role && A.user && body.role !== A.user.role) {
-        A.user.role = body.role; toast('Your access is now ' + body.role + '.'); renderAll(); loadHealth();
+        A.user.role = body.role; toast('Your access is now: ' + ROLE_LABEL[body.role] + '.'); renderAll(); loadHealth();
       }
+      if (A.mode === 'auth' && body.ok && typeof body.pending === 'number' && body.pending !== AX.pending) { AX.pending = body.pending; syncControls(); }
       if (P.tab === 'access') axRefresh(false);
       if (body.ok && body.ver && S.ver && body.ver !== S.ver) await load(false);
       dash.draw('sync-text');
@@ -345,7 +347,9 @@
   function syncControls() {
     const p = dash.params();
     const admin = A.mode === 'auth' && can('Admin');
-    document.querySelector('.co-tab[data-tab="access"]').hidden = !admin;
+    const axTab = document.querySelector('.co-tab[data-tab="access"]');
+    axTab.hidden = !admin;
+    axTab.textContent = AX.pending ? 'Access (' + AX.pending + ' waiting)' : 'Access';
     document.getElementById('add-member').hidden = !can('Admin');
     const tab = TABS.includes(p.tab) && (p.tab !== 'access' || admin) ? p.tab : 'today';
     document.querySelectorAll('[data-panel]').forEach((s) => { s.hidden = s.dataset.panel !== tab; });
@@ -445,7 +449,7 @@
       el.title = live ? 'Checks the sheets for changes every 30 seconds' : 'Run setup() in Apps Script to turn on instant change detection';
     } else el.textContent = S.status === 'loading' ? 'Loading sheets…' : S.status === 'error' ? 'Could not load' : 'Not connected';
   });
-  dash.draw('me', (el) => { el.textContent = A.user ? (A.user.name || A.user.email) + ' · ' + A.user.role : ''; el.title = A.user ? A.user.email : ''; });
+  dash.draw('me', (el) => { el.textContent = A.user ? (A.user.name || A.user.email) + ' · ' + (ROLE_LABEL[A.user.role] || A.user.role) : ''; el.title = A.user ? A.user.email : ''; });
   dash.draw('banner-title', (el) => { el.textContent = S.status === 'error' ? 'The sheets could not be loaded' : 'Connect the dashboard to your sheets'; });
   dash.draw('banner-text', (el) => { el.textContent = S.status === 'error' ? S.error : 'Paste the web app URL and key from the Apps Script set-up (see the README). They are kept in this browser only.'; });
   dash.draw('foot', (el) => {
@@ -1065,12 +1069,12 @@
   /* ================= Start ================= */
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (TABS.includes(h) && h !== P.tab) dash.setParams({ tab: h }); });
   /* ================= Access (admins): requests, people, activity log ================= */
-  const AX = { users: null, you: '', log: null, next: null, total: 0, q: '', kind: '', err: '', busy: false };
+  const AX = { users: null, you: '', log: null, next: null, total: 0, q: '', kind: '', who: '', err: '', busy: false, pending: 0 };
   async function axRefresh(withLog) {
     if (A.mode !== 'auth' || !can('Admin')) return;
     try {
       const b = await callApi({ action: 'users' });
-      if (b.ok) { AX.users = b.users; AX.you = b.you; AX.err = ''; } else AX.err = errText(b.error);
+      if (b.ok) { AX.users = b.users; AX.you = b.you; AX.err = ''; AX.pending = b.users.filter((u) => u.status === 'Pending').length; syncControls(); fillWho(); if (PR.email) drawPerson(); } else AX.err = errText(b.error);
     } catch (e) { if (e instanceof AuthLost) return; AX.err = e.message; }
     dash.draw('ax-pending'); dash.draw('ax-users');
     // On the 30-second tick the log is refreshed only while it shows the newest page, so "Load older" is not undone.
@@ -1079,7 +1083,7 @@
   async function axLog(more) {
     if (AX.busy) return; AX.busy = true;
     try {
-      const b = await callApi({ action: 'audit', limit: 200, q: AX.q, kind: AX.kind, before: more ? AX.next : undefined });
+      const b = await callApi({ action: 'audit', limit: 200, q: AX.q, kind: AX.kind, who: AX.who, before: more ? AX.next : undefined });
       if (b.ok) { AX.log = more ? (AX.log || []).concat(b.entries) : b.entries; AX.next = b.next; AX.total = b.total; AX.err = ''; } else AX.err = errText(b.error);
     } catch (e) { if (!(e instanceof AuthLost)) AX.err = e.message; }
     AX.busy = false;
@@ -1093,7 +1097,87 @@
   const when = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined, hour: 'numeric', minute: '2-digit' }); };
   const nameOf = (email) => { const u = (AX.users || []).find((x) => x.email === String(email).toLowerCase()); return u && u.name ? u.name : email; };
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const roleSelect = (value) => { const s = el('select', 'co-select'); ['Viewer', 'Editor', 'Admin'].forEach((r) => s.append(new Option(r, r))); s.value = value || 'Viewer'; s.setAttribute('aria-label', 'Role'); return s; };
+  const roleSelect = (value) => { const s = el('select', 'co-select'); ['Viewer', 'Editor', 'Admin'].forEach((r) => s.append(new Option(ROLE_LABEL[r], r))); s.value = value || 'Viewer'; s.setAttribute('aria-label', 'Access level'); return s; };
+  const STATUS_LABEL = { Approved: 'Has access', Pending: 'Waiting for approval', Revoked: 'Revoked', Denied: 'Declined' };
+  /* Google profile photo, or the person's initial. */
+  const avatar = (u, size) => {
+    const box = el('span', 'ax-avatar' + (size ? ' ' + size : ''));
+    if (u.photo && /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\//i.test(u.photo)) { const i = document.createElement('img'); i.src = u.photo; i.alt = ''; i.referrerPolicy = 'no-referrer'; i.loading = 'lazy'; i.onerror = () => { i.remove(); box.textContent = (u.name || u.email).charAt(0).toUpperCase(); }; box.append(i); }
+    else box.textContent = (u.name || u.email || '?').charAt(0).toUpperCase();
+    return box;
+  };
+  const personLink = (u) => {
+    const b = el('button', 'ax-person'); b.type = 'button';
+    b.append(avatar(u), el('span', '', (u.name || u.email) + (u.owner ? ' (owner)' : u.email === AX.you ? ' (you)' : '')));
+    b.addEventListener('click', () => openPerson(u.email));
+    return b;
+  };
+  function fillWho() {
+    const sel = document.getElementById('ax-who'); if (!sel || sel === document.activeElement) return;
+    const cur = AX.who;
+    sel.replaceChildren(new Option('Everyone', ''), ...(AX.users || []).slice().sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email)).map((u) => new Option((u.name || u.email) + (u.name ? ' · ' + u.email : ''), u.email)));
+    sel.value = cur;
+  }
+  const showActivityOf = (email) => { AX.who = email; AX.q = ''; AX.kind = ''; document.getElementById('ax-q').value = ''; document.getElementById('ax-kind').value = ''; fillWho(); document.getElementById('ax-who').value = email; axLog(false); document.getElementById('ax-log-card').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+
+  /* Person profile: details, access controls and their own activity. */
+  const PR = { email: '', log: null, busy: false };
+  const dlgP = document.getElementById('person');
+  async function openPerson(email) {
+    PR.email = email; PR.log = null; drawPerson();
+    if (dlgP.showModal && !dlgP.open) dlgP.showModal(); else dlgP.setAttribute('open', '');
+    try { const b = await callApi({ action: 'audit', who: email, limit: 50 }); PR.log = b.ok ? b.entries : []; PR.total = b.ok ? b.entries.length : 0; PR.more = b.ok && !!b.next; } catch (e) { if (!(e instanceof AuthLost)) PR.log = []; }
+    if (PR.email === email) drawPerson();
+  }
+  function drawPerson() {
+    const u = (AX.users || []).find((x) => x.email === PR.email);
+    const head = document.getElementById('pr-head'), facts = document.getElementById('pr-facts'), act = document.getElementById('pr-actions'), log = document.getElementById('pr-log');
+    head.replaceChildren(); facts.replaceChildren(); act.replaceChildren(); log.replaceChildren();
+    if (!u) { head.append(el('p', 'co-note', 'Not on the access list.')); return; }
+    const who = el('div', 'pr-who');
+    who.append(el('h2', 'co-h2', u.name || u.email), el('span', 'co-note', u.email));
+    const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : u.status === 'Pending' ? 's-warn' : 's-mute'), STATUS_LABEL[u.status] + (u.status === 'Approved' ? ' · ' + ROLE_LABEL[u.role] : ''));
+    who.append(chip);
+    head.append(avatar(u, 'lg'), who);
+    const fact = (k, v) => { if (!v) return; facts.append(el('dt', '', k), el('dd', '', v)); };
+    fact('Team / role', u.team); fact('Note to admin', u.note); fact('First asked', when(u.requestedOn));
+    fact('Decided by', u.decidedBy ? nameOf(u.decidedBy) + ' · ' + when(u.decidedOn) : ''); fact('Last sign-in', when(u.lastSignIn));
+    const locked = u.owner || u.email === AX.you;
+    if (locked) act.append(el('p', 'co-note', u.owner ? 'The owner always has Admin access.' : 'You cannot change your own access.'));
+    else {
+      const sel = roleSelect(u.role);
+      const lab = el('label', 'co-field', 'Access level'); lab.append(sel);
+      act.append(lab);
+      const btn = (text, cls, fn) => { const b = el('button', 'co-btn' + (cls ? ' ' + cls : ''), text); b.type = 'button'; b.addEventListener('click', fn); act.append(b); };
+      if (u.status === 'Pending') {
+        btn('Approve', 'primary', () => setAccess(u.email, { status: 'Approved', role: sel.value }, (u.name || u.email) + ' approved: ' + ROLE_LABEL[sel.value]));
+        btn('Reject', '', () => { if (confirm('Reject the request from ' + u.email + '?')) setAccess(u.email, { status: 'Denied' }, 'Request from ' + u.email + ' rejected'); });
+      } else if (u.status === 'Approved') {
+        sel.addEventListener('change', () => setAccess(u.email, { role: sel.value }, (u.name || u.email) + ': ' + ROLE_LABEL[sel.value]));
+        btn('Revoke access', 'danger', () => { if (confirm('Revoke access for ' + (u.name || u.email) + '? They are signed out within 30 seconds. Their past changes stay in the log.')) setAccess(u.email, { status: 'Revoked' }, 'Access revoked for ' + (u.name || u.email)); });
+      } else {
+        btn('Give access', 'primary', () => setAccess(u.email, { status: 'Approved', role: sel.value }, (u.name || u.email) + ' has access: ' + ROLE_LABEL[sel.value]));
+      }
+    }
+    if (!PR.log) { log.append(el('p', 'co-note', 'Loading activity…')); return; }
+    if (!PR.log.length) { log.append(el('p', 'co-note', 'No activity yet.')); return; }
+    const ul = el('ul', 'pr-list');
+    PR.log.forEach((e) => {
+      const li = el('li');
+      li.append(el('span', 'pr-when', when(e.when)));
+      const what = el('span', 'pr-what');
+      what.append(el('b', '', e.action));
+      if (e.record) what.append(document.createTextNode(' · ' + e.record));
+      if (e.field) what.append(document.createTextNode(' · ' + e.field + ': '), el('span', 'ax-before', e.before === '' ? '(blank)' : e.before), document.createTextNode(' → '), el('span', '', e.after === '' ? '(blank)' : e.after));
+      else if (e.details) what.append(document.createTextNode(' · ' + e.details));
+      li.append(what); ul.append(li);
+    });
+    log.append(ul);
+    if (PR.more) log.append(el('p', 'co-note', 'Showing the latest 50. Use "Full activity" for everything.'));
+  }
+  document.getElementById('pr-close').addEventListener('click', () => { dlgP.close(); });
+  dlgP.addEventListener('close', () => { PR.email = ''; });
+  document.getElementById('pr-all').addEventListener('click', () => { const e = PR.email; dlgP.close(); showActivityOf(e); });
 
   dash.draw('ax-pending', (box) => {
     box.replaceChildren();
@@ -1103,15 +1187,15 @@
     list.forEach((u) => {
       const card = el('div', 'ax-req-item');
       const info = el('div', 'ax-req-info');
-      info.append(el('strong', '', u.name || u.email), el('span', 'co-note', u.email + ' · asked ' + when(u.requestedOn)));
+      info.append(personLink(u), el('span', 'co-note', u.email + ' · asked ' + when(u.requestedOn) + (u.lastSignIn && u.lastSignIn !== u.requestedOn ? ' · last tried ' + when(u.lastSignIn) : '')));
       if (u.team) info.append(el('span', '', 'Team / role: ' + u.team));
       if (u.note) info.append(el('span', 'co-note', '“' + u.note + '”'));
       const act = el('div', 'ax-req-act');
       const sel = roleSelect('Viewer');
       const ok = el('button', 'co-btn primary', 'Approve'); ok.type = 'button';
-      ok.addEventListener('click', () => setAccess(u.email, { status: 'Approved', role: sel.value }, (u.name || u.email) + ' approved as ' + sel.value));
-      const no = el('button', 'co-btn', 'Decline'); no.type = 'button';
-      no.addEventListener('click', () => { if (confirm('Decline the request from ' + u.email + '?')) setAccess(u.email, { status: 'Denied' }, 'Request from ' + u.email + ' declined'); });
+      ok.addEventListener('click', () => setAccess(u.email, { status: 'Approved', role: sel.value }, (u.name || u.email) + ' approved: ' + ROLE_LABEL[sel.value]));
+      const no = el('button', 'co-btn', 'Reject'); no.type = 'button';
+      no.addEventListener('click', () => { if (confirm('Reject the request from ' + u.email + '?')) setAccess(u.email, { status: 'Denied' }, 'Request from ' + u.email + ' rejected'); });
       act.append(sel, ok, no);
       card.append(info, act); box.append(card);
     });
@@ -1125,17 +1209,19 @@
     list.forEach((u) => {
       const tr = tb.insertRow();
       const locked = u.owner || u.email === AX.you;
-      CO.td(tr, (u.name || '—') + (u.owner ? ' (owner)' : u.email === AX.you ? ' (you)' : ''), 'co-nowrap');
+      CO.td(tr, personLink(u), 'co-nowrap');
       CO.td(tr, u.email, 'co-nowrap');
       const rc = tr.insertCell();
-      if (locked || u.status !== 'Approved') rc.textContent = u.role;
-      else { const s = roleSelect(u.role); s.addEventListener('change', () => setAccess(u.email, { role: s.value }, (u.name || u.email) + ' is now ' + s.value)); rc.append(s); }
-      const sc = tr.insertCell(); const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : 's-mute'), u.status === 'Approved' ? 'Has access' : u.status === 'Denied' ? 'Declined' : 'Revoked'); sc.append(chip);
+      if (locked || u.status !== 'Approved') rc.textContent = ROLE_LABEL[u.role];
+      else { const s = roleSelect(u.role); s.addEventListener('change', () => setAccess(u.email, { role: s.value }, (u.name || u.email) + ': ' + ROLE_LABEL[s.value])); rc.append(s); }
+      const sc = tr.insertCell(); const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : 's-mute'), STATUS_LABEL[u.status]); sc.append(chip);
       CO.td(tr, when(u.lastSignIn), 'co-nowrap');
       CO.td(tr, u.decidedBy ? nameOf(u.decidedBy) + ' · ' + when(u.decidedOn) : '—', 'co-nowrap co-muted');
-      const ac = tr.insertCell();
+      const ac = tr.insertCell(); ac.className = 'co-nowrap ax-acts';
+      const actv = el('button', 'co-link', 'Activity'); actv.type = 'button'; actv.addEventListener('click', () => showActivityOf(u.email)); ac.append(actv);
       if (!locked) {
         const b = el('button', 'co-link', u.status === 'Approved' ? 'Revoke' : 'Give access again'); b.type = 'button';
+        b.classList.add(u.status === 'Approved' ? 'ax-revoke' : 'ax-restore');
         b.addEventListener('click', () => {
           if (u.status === 'Approved') { if (confirm('Remove access for ' + (u.name || u.email) + '? They are signed out within 30 seconds, and their past changes stay in the log.')) setAccess(u.email, { status: 'Revoked' }, 'Access removed for ' + (u.name || u.email)); }
           else setAccess(u.email, { status: 'Approved' }, (u.name || u.email) + ' has access again (' + u.role + ')');
@@ -1147,11 +1233,11 @@
   dash.draw('ax-log', (tb) => {
     tb.replaceChildren();
     if (!AX.log) { CO.emptyRow(tb, 8, AX.err || 'Loading…'); return; }
-    if (!AX.log.length) { CO.emptyRow(tb, 8, AX.q || AX.kind ? 'Nothing matches.' : 'No activity recorded yet.'); return; }
+    if (!AX.log.length) { CO.emptyRow(tb, 8, AX.q || AX.kind || AX.who ? 'Nothing matches.' : 'No activity recorded yet.'); return; }
     AX.log.forEach((e) => {
       const tr = tb.insertRow();
       CO.td(tr, when(e.when), 'co-nowrap');
-      const w = CO.td(tr, e.who.includes('@') ? nameOf(e.who) : e.who, 'co-nowrap'); w.title = e.who + (e.role ? ' · ' + e.role : '');
+      const w = CO.td(tr, e.who.includes('@') ? nameOf(e.who) : e.who, 'co-nowrap'); w.title = e.who + (e.role ? ' · ' + (ROLE_LABEL[e.role] || e.role) : '');
       CO.td(tr, e.action, 'co-nowrap');
       CO.td(tr, e.record || '—', 'co-id');
       CO.td(tr, e.field || (e.details ? '' : '—'));
@@ -1163,11 +1249,12 @@
   dash.draw('ax-count', (n) => {
     const older = document.getElementById('ax-older');
     older.hidden = !AX.next; older.disabled = AX.busy;
-    n.textContent = AX.log ? 'Showing ' + CO.num(AX.log.length) + (AX.q || AX.kind ? ' matching' : '') + ' of ' + CO.num(AX.total) + ' entries.' : '';
+    n.textContent = AX.log ? 'Showing ' + CO.num(AX.log.length) + (AX.q || AX.kind || AX.who ? ' matching' : '') + ' of ' + CO.num(AX.total) + ' entries.' : '';
   });
   let axTimer = 0;
   document.getElementById('ax-q').addEventListener('input', (e) => { clearTimeout(axTimer); axTimer = setTimeout(() => { AX.q = e.target.value.trim(); axLog(false); }, 400); });
   document.getElementById('ax-kind').addEventListener('change', (e) => { AX.kind = e.target.value; axLog(false); });
+  document.getElementById('ax-who').addEventListener('change', (e) => { AX.who = e.target.value; axLog(false); });
   document.getElementById('ax-older').addEventListener('click', () => axLog(true));
   document.getElementById('ax-csv').addEventListener('click', () => {
     CO.csv('activity-log-' + CO.today() + '.csv', ['When', 'Who', 'Their role', 'Action', 'Sheet', 'Tab', 'Task / record', 'Row', 'Field', 'Before', 'After', 'Details', 'Via'],
@@ -1180,7 +1267,7 @@
     if (!A.domains.some((d) => email.endsWith('@' + d))) { msg.textContent = 'Use a ' + A.domains.map((d) => '@' + d).join(' or ') + ' address.'; return; }
     const exists = (AX.users || []).find((u) => u.email === email);
     msg.textContent = '';
-    setAccess(email, exists ? { status: 'Approved', role } : { status: 'Approved', role }, email + ' can now sign in as ' + role);
+    setAccess(email, exists ? { status: 'Approved', role } : { status: 'Approved', role }, email + ' can now sign in: ' + ROLE_LABEL[role]);
     e.target.reset();
   });
 
@@ -1253,7 +1340,7 @@
       G.cred = null; signedIn(body.user); return;
     }
     if (body.status === 'unknown') { G.unknown = who; gateTab('signup'); gateMsg(who.email + ' does not have access yet. Tell us your team and request access.'); return; }
-    if (body.status === 'pending') return gateState('Waiting for approval', 'Thanks' + first + '. Your request for ' + who.email + ' is with the Creative Head. You will get an email once it is approved, then log in here. Until then the dashboard shows no data.', true);
+    if (body.status === 'pending') return gateState(body.isNew ? 'Request sent' : 'Waiting for approval', (body.isNew ? 'Thanks' + first + '. ' + who.email + ' does not have access yet, so a request has been sent to the Creative Head.' : 'Your request for ' + who.email + ' is still with the Creative Head.') + ' You will get an email once it is approved, then log in here. Until then the dashboard shows no data.', true);
     if (body.status === 'denied') return gateState('Request declined', 'The request for ' + who.email + ' was declined. Talk to the Creative Head if you need access.', false);
     return gateState('Access removed', 'Access for ' + who.email + ' has been removed. Talk to the Creative Head if you need it back.', false);
   }
@@ -1265,6 +1352,8 @@
   function signedIn(user) {
     A.user = user; gate.hidden = true; delete document.body.dataset.gate;
     renderAll(); load(false);
+    // Admins see how many access requests are waiting as soon as they open the dashboard.
+    if (can('Admin')) callApi({ action: 'ver' }).then((b) => { if (b.ok && typeof b.pending === 'number') { AX.pending = b.pending; syncControls(); } }).catch(() => {});
   }
   /* The session ended or access was removed: forget it and clear the page, so no data stays on screen. */
   function lostAccess(body) {

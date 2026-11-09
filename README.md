@@ -75,21 +75,27 @@ Nobody sees any data until an admin approves them.
 | Role | Can |
 | --- | --- |
 | *(not approved)* | See the sign-in screen. Nothing else: the web app gives no data without an approved sign-in. |
-| **Viewer** | See every tab and download CSVs. Task details open read-only. |
-| **Editor** | Viewer, plus change tasks: design status, Design ETA, designer, priority and number of creatives. |
-| **Admin** | Editor, plus the team list (Active / Inactive, add members), the **Access** tab (approve, change roles, revoke), the activity log and the integration checks on Sheet health. |
+| **View only** | See every tab and download CSVs. Task details open read-only. |
+| **Can edit** | View only, plus change tasks: design status, Design ETA, designer, priority and number of creatives. |
+| **Admin** | Can edit, plus the team list (Active / Inactive, add members), the **Access** tab (approve, change roles, revoke), the activity log and the integration checks on Sheet health. |
 | **Owner** | Admin who can never be revoked or demoted from the dashboard (`CONFIG.access.owners`), so you can't be locked out. |
 
 The web app checks the role on **every** request. Hiding buttons on the page is only for convenience, so changing the page's code gains nothing. Role changes and revocations reach open dashboards within 30 seconds. A revoked person's screen is cleared, they are signed out, and they cannot sign back in.
 
 ### How a person gets in
 
-1. They open the site and choose **Sign up**. They enter their team and an optional note, then click **Sign up with Google** with their work account.
+1. They open the site and choose **Sign up**: they enter their team and an optional note, then continue with their work Google account. Choosing **Log in** without having access does the same, just without the team and note. Either way, all they get is a request, and no data.
 2. Only Google Workspace accounts on **@pickrr.com** or **@shiprocket.com** are accepted (`CONFIG.access.domains`). Personal Google accounts and other domains are refused, and the refusal is logged.
 3. The admins get an email. The request appears under **Access → Access requests**.
-4. An admin picks a role and clicks **Approve**, or clicks **Decline**. The person gets an email and can then **Log in**.
+4. An admin picks **View only**, **Can edit** or **Admin** and clicks **Approve**, or clicks **Reject**. The person gets an email and can then **Log in**.
 
-Admins can also give access directly: **Access → Give access**, with the person's email and role.
+Everything about access is managed on the **Access** tab, with no need to open Google Sheets or Apps Script:
+
+- The tab reads **Access (n waiting)** when requests are open.
+- Click anyone's name to open their **profile**: Google photo, name, email, team, note, when they asked, who decided and when, last sign-in, and their own activity. From the profile you can approve, reject, change their access level, revoke, or give access again.
+- **People with access** lists everyone, with an access-level menu, a **Revoke** button and an **Activity** link that filters the log to that person.
+- **Give access** adds someone directly by email, without them asking first.
+- Rejected and revoked people can't get back in by signing up again. Their attempts appear in the log as "Sign-in blocked".
 
 A sign-in lasts 12 hours on a browser (`sessionHours`), then Google signs the person back in with one click. To end every session at once, run `signOutEveryone` in Apps Script.
 
