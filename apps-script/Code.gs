@@ -1751,3 +1751,13 @@ function gemini_(messages, who) {
   });
   return { ok: true, stop_reason: content.some(function (b) { return b.type === 'tool_use'; }) ? 'tool_use' : 'end_turn', content: content };
 }
+
+/** Run from the Apps Script editor (choose testFasty, then Run) to check Fasty's AI connection. Results appear in the Execution log. */
+function testFasty() {
+  const p = PropertiesService.getScriptProperties(), t0 = Date.now(), prov = assistProvider_();
+  console.log('Provider: ' + prov + ' | GEMINI_API_KEY set: ' + !!p.getProperty('GEMINI_API_KEY') + ' | ANTHROPIC_API_KEY set: ' + !!p.getProperty('ANTHROPIC_API_KEY') + ' | model setting: ' + settings_().model);
+  if (prov === 'none') { console.log('No AI key found. Add GEMINI_API_KEY under Project Settings > Script properties.'); return; }
+  const r = assist_({ email: 'test@local', name: 'Test', role: 'Viewer' }, { messages: [{ role: 'user', content: [{ type: 'text', text: 'Say hello in one short sentence.' }] }] });
+  console.log('Took ' + (Date.now() - t0) + ' ms. Result: ' + JSON.stringify(r).slice(0, 600));
+  console.log(r.ok ? 'Fasty is working.' : 'Fasty is NOT working: ' + r.error);
+}

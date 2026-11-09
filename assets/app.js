@@ -2588,7 +2588,7 @@
       voiceB.innerHTML = st.voiceOn ? ICON.vol : ICON.mute; voiceB.setAttribute('aria-label', st.voiceOn ? 'Turn voice replies off' : 'Turn voice replies on'); voiceB.setAttribute('aria-pressed', String(st.voiceOn));
       micB.setAttribute('aria-label', st.listening ? 'Stop listening' : 'Speak'); micB.disabled = !SR;
       if (!SR) micB.title = 'Voice input needs Chrome, Edge or Safari. You can type instead.';
-      note.textContent = st.ai === false ? 'Basic mode: the admin can connect an AI service for full conversations (README, Fasty).' : 'Answers use ' + (st.provider === 'gemini' ? 'Google Gemini' : 'Claude (Anthropic)') + ' on the data you can see. Speech is turned into text by your browser.';
+      note.textContent = st.ai === false ? 'Basic mode: the admin can connect an AI service for full conversations (README, Fasty).' : 'Answers use ' + (st.provider === 'gemini' ? 'Google Gemini' : st.provider ? 'Claude (Anthropic)' : 'AI') + ' on the data you can see. Speech is turned into text by your browser.';
     };
     const setMood = (m) => { [fab, panel].forEach((x) => { x.dataset.mood = m; }); };
     const mood = () => setMood(st.listening ? 'listening' : st.busy ? 'thinking' : st.speaking ? 'speaking' : 'idle');
@@ -2813,8 +2813,9 @@
         else {
           st.msgs.push({ role: 'user', content: [{ type: 'text', text: q }] }); trim();
           for (let hop = 0; hop < 7; hop++) {
-            const res = await callApi({ action: 'assist', messages: st.msgs, context: ctx() });
-            if (!res.ok && res.error === 'busy') { st.msgs.pop(); answer = local(q) + ' (Quick answer: the free AI service is busy right now, so I used basic mode.)'; break; }
+            // Never wait forever: after 30 seconds answer in basic mode and say why.
+            const res = await Promise.race([callApi({ action: 'assist', messages: st.msgs, context: ctx() }), new Promise((r) => setTimeout(() => r({ ok: false, error: 'busy', slow: true }), 30000))]);
+            if (!res.ok && res.error === 'busy') { st.msgs.pop(); answer = local(q) + (res.slow ? ' (Quick answer: the AI service did not reply in 30 seconds, so I used basic mode.)' : ' (Quick answer: the AI service is busy right now, so I used basic mode.)'); break; }
             if (!res.ok) { if (res.error === 'not_configured') { st.ai = false; paintHead(); st.msgs.pop(); answer = local(q); } else answer = res.error || 'Something went wrong. Try again.'; break; }
             if (res.stop_reason === 'refusal') { st.msgs.pop(); answer = 'I can not help with that one. Ask me about tasks, the team or reports.'; break; }
             st.msgs.push({ role: 'assistant', content: res.content });
