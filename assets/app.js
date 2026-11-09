@@ -77,7 +77,15 @@
       LS.set('co.cacheAt', S.generatedAt);
     } catch (err) {
       S.error = err && err.message ? err.message : String(err);
-      if (err instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(S.error)) S.error = 'This browser could not reach the web app. Check the URL is the full link ending in /exec, then turn off ad or privacy blockers for this page (or try a private window) and click Refresh.';
+      if (err instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(S.error)) {
+        // Google's own error pages carry no cross-site header, so a script error looks like a network failure.
+        // The version check touches no sheets: if it answers, the web app is reachable and the sheets are the problem.
+        let reachable = false;
+        try { const { url, key } = conn(); const u = new URL(url); u.searchParams.set('key', key); u.searchParams.set('mode', 'ver'); reachable = !!JSON.parse(await (await fetch(u.toString(), { redirect: 'follow' })).text()).ok; } catch (e2) { /* unreachable */ }
+        S.error = reachable
+          ? 'The web app is connected but could not open the sheets. In Apps Script, signed in as the account the web app runs as (Deploy → Manage deployments shows it), run setup once and approve the permissions, then click Refresh.'
+          : 'This browser could not reach the web app. Check the URL is the full link ending in /exec, then turn off ad or privacy blockers for this page (or try a private window) and click Refresh.';
+      }
       if (S.status !== 'ok') S.status = 'error';
       else S.staleError = S.error;
     }
