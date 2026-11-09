@@ -233,7 +233,7 @@ function doPost(e) {
     if (body.action === 'me') return json_({ ok: true, user: publicUser_(user) });
     if (body.action === 'ver') {
       const set = settings_();
-      const out = { ok: true, ver: liveVersion_(), role: user.role, update: updateStatus_(), remind: { morning: set.morning, evening: set.evening }, presenceOn: set.presence, assist: assistStatus_() };
+      const out = { ok: true, ver: liveVersion_(), role: user.role, update: updateStatus_(), calOff: user.role === 'Admin' ? PropertiesService.getScriptProperties().getProperty('CAL_API_OFF') || '' : '', remind: { morning: set.morning, evening: set.evening }, presenceOn: set.presence, assist: assistStatus_() };
       if (set.presence) presenceBeat_(user, body.at);
       if (user.role === 'Admin') { out.pending = users_().list.filter(function (u) { return u.status === 'Pending'; }).length; if (set.presence) out.presence = presenceList_(); }
       return json_(out);
@@ -1900,9 +1900,12 @@ function meetings_(user) {
     out = { ok: true, events: events };
   } catch (e) {
     const m = String(e.message || e);
-    out = { ok: false, error: m === 'service_off' ? 'service_off' : /not ?found|forbidden|403|404|insufficient|access/i.test(m) ? 'not_shared' : 'error', detail: m.slice(0, 160) };
+    const proj = (m.match(/project (\d+)/) || [])[1];
+    out = { ok: false, error: m === 'service_off' ? 'service_off' : proj && /has not been used|disabled/i.test(m) ? 'api_off' : /not ?found|forbidden|403|404|insufficient|access/i.test(m) ? 'not_shared' : 'error', detail: m.slice(0, 160) };
+    if (out.error === 'api_off') { out.enable = 'https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=' + proj; PropertiesService.getScriptProperties().setProperty('CAL_API_OFF', out.enable); }
   }
-  c.put(k, JSON.stringify(out), out.ok ? 120 : 900);
+  if (out.ok) PropertiesService.getScriptProperties().deleteProperty('CAL_API_OFF');
+  c.put(k, JSON.stringify(out), out.ok ? 120 : out.error === 'api_off' ? 60 : 900);
   return out;
 }
 /** Run from the editor (choose testMeetings, then Run): shows whose meetings the dashboard can show automatically. */
@@ -1910,5 +1913,6 @@ function testMeetings() {
   const people = users_().list.filter(function (u) { return u.status === 'Approved'; });
   let okN = 0;
   people.forEach(function (u) { CacheService.getScriptCache().remove('mtg:' + u.email); const r = meetings_(u); if (r.ok) okN++; console.log((r.ok ? 'OK   ' : 'NO   ') + u.email + (r.ok ? ': ' + r.events.length + ' meetings in the next 3 days' : ': ' + r.error + ' (' + (r.detail || '') + ')')); });
+  const off = PropertiesService.getScriptProperties().getProperty('CAL_API_OFF'); if (off) { console.log('The Google Calendar API is switched off in this script\'s Google Cloud project. Open ' + off + ', click Enable, wait 2 minutes and run testMeetings again.'); return; }
   console.log(okN + ' of ' + people.length + ' people get their meetings automatically.' + (okN < people.length ? ' For the rest: in the Google Admin console, Apps > Google Workspace > Calendar > Sharing settings > Internal sharing: "Share all information", or each person shares their calendar with this account.' : ''));
 }

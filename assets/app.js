@@ -2907,6 +2907,7 @@
       // 2. Web app and integrations (admins can fix these)
       if (A.mode === 'auth' && S.verBody) {
         if (admin && S.verBody.update && S.verBody.update.err) add('warn', 'Automatic updates need attention', S.verBody.update.err);
+        if (admin && S.verBody.calOff) add('warn', 'Meetings are switched off for everyone', 'Enable the Google Calendar API in the web app\'s Google Cloud project, then everyone\'s meetings load automatically.', ['Enable Calendar API', () => window.open(S.verBody.calOff, '_blank', 'noopener')]);
         if (!('assist' in S.verBody)) add('warn', admin ? 'The web app is running an older Code.gs' : 'Some features are waiting for an update', admin ? 'Paste the latest Code.gs from GitHub into Apps Script, run setup, and deploy a new version. Until then the assistant, history comparisons and reminder settings may not work.' : 'The admin needs to update the web app. Everything else works.');
         else if (admin && S.verBody.assist && !S.verBody.assist.ai) add('info', 'Fasty is in basic mode', 'Add a free GEMINI_API_KEY script property in Apps Script for full conversations in Hindi, English and Hinglish (README, Fasty).');
       }
