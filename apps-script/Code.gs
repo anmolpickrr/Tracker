@@ -939,12 +939,14 @@ function noteRowValues_(id, created, createdBy, n, now, by, reminderSent) {
     // Dates and times are kept as plain text (IST), so Sheets never turns them into another time zone.
     .map(function (v, i) { return i === 1 || i === 3 || typeof v === 'boolean' ? v : (i === 6 || i === 15 || i === 17) && v ? "'" + v : safe_(v); });
 }
+// The note as stored after a save (new updatedAt, to-do ids), so the dashboard can update in place without reloading every note.
+function savedNote_(id, u) { try { SpreadsheetApp.flush(); const n = allNotes_().filter(function (x) { return x.id === id; })[0]; return n ? publicNote_(n, u) : null; } catch (e) { return null; } }
 function noteSave_(b, u) {
   const n = noteInput_(b.note || {}), now = new Date(), sh = notesSheet_();
   if (!b.id) {
     const id = 'N' + Utilities.formatDate(now, IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 6);
     sh.appendRow(noteRowValues_(id, now, u.email, n, now, u.email, ''));
-    return { ok: true, id: id, changes: [{ action: 'Note created', sheet: 'Notes', record: n.title, field: 'Visibility', after: n.visibility, details: n.type + (n.brand ? ' · ' + n.brand : '') + ' · ' + n.actions.length + ' action items' }] };
+    return { ok: true, id: id, note: savedNote_(id, u), changes: [{ action: 'Note created', sheet: 'Notes', record: n.title, field: 'Visibility', after: n.visibility, details: n.type + (n.brand ? ' · ' + n.brand : '') + ' · ' + n.actions.length + ' action items' }] };
   }
   const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
   if (!cur || cur.deleted) return { ok: false, error: 'This note no longer exists.' };
@@ -956,7 +958,7 @@ function noteSave_(b, u) {
   const changed = ['title', 'date', 'type', 'brand', 'category', 'visibility', 'body', 'reminder', 'followUps'].filter(function (k) { return String(cur[k] || '') !== String(n[k] || ''); });
   if (JSON.stringify(cur.actions) !== JSON.stringify(n.actions)) changed.push('action items');
   if (JSON.stringify(cur.sharedWith) !== JSON.stringify(n.sharedWith)) changed.push('shared with');
-  return { ok: true, id: cur.id, changes: changed.length ? [{ action: 'Note edited', sheet: 'Notes', record: n.title, field: changed.join(', '), before: cur.visibility === n.visibility ? '' : cur.visibility, after: cur.visibility === n.visibility ? '' : n.visibility, details: cur.createdBy === u.email ? '' : 'Note by ' + cur.createdBy }] : [] };
+  return { ok: true, id: cur.id, note: savedNote_(cur.id, u), changes: changed.length ? [{ action: 'Note edited', sheet: 'Notes', record: n.title, field: changed.join(', '), before: cur.visibility === n.visibility ? '' : cur.visibility, after: cur.visibility === n.visibility ? '' : n.visibility, details: cur.createdBy === u.email ? '' : 'Note by ' + cur.createdBy }] : [] };
 }
 function noteDelete_(b, u) {
   const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];

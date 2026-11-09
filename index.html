@@ -7,13 +7,13 @@
 <meta name="description" content="Creative Ops: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
 <meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/ https://www.googleapis.com; frame-src https://accounts.google.com/gsi/; media-src data: blob:; form-action 'none'; base-uri 'none'; object-src 'none'">
-<link rel="icon" href="assets/favicon.svg?v=20261110o" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.svg?v=20261110q" type="image/svg+xml">
 <meta name="theme-color" content="#0f0f0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=20261110o">
-<script src="assets/theme.js?v=20261110o"></script>
+<link rel="stylesheet" href="assets/style.css?v=20261110q">
+<script src="assets/theme.js?v=20261110q"></script>
 </head>
 <body>
 <div class="boot" id="boot" aria-hidden="true"><div class="boot-lock"><svg class="logo mark boot-mark" viewBox="30 140 452 212" aria-hidden="true"><defs><clipPath id="mk-c-boot"><path d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></clipPath><linearGradient id="mk-t-boot" x1="0" x2="1"><stop offset="0" class="mk-s0"/><stop offset="1" class="mk-s1"/></linearGradient><linearGradient id="mk-h-boot" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect class="sl sl1" x="-170" y="160" width="300" height="9" rx="4.5" fill="url(#mk-t-boot)"/><rect class="sl sl2" x="-230" y="244" width="360" height="7" rx="3.5" fill="url(#mk-t-boot)"/><rect class="sl sl3 lime" x="-120" y="214" width="220" height="6" rx="3" /><rect class="sl sl4" x="-260" y="350" width="330" height="8" rx="4" fill="url(#mk-t-boot)"/><rect class="lt lt1" x="20" y="176" width="190" height="24" rx="12" fill="url(#mk-t-boot)"/><rect class="lt lt2" x="-150" y="292" width="200" height="24" rx="12" fill="url(#mk-t-boot)"/><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/><g clip-path="url(#mk-c-boot)"><rect class="mk-shine" x="0" y="140" width="130" height="212" fill="url(#mk-h-boot)"/></g></svg></div></div>
@@ -377,11 +377,6 @@
   <section class="co-panel" id="notes" data-panel="notes" hidden>
     <div class="nb">
       <div class="nb-bar nb-index" aria-label="Notes">
-        <div class="nb-new">
-          <button class="co-btn primary" type="button" data-new-note="blank"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New note</button>
-          <button class="co-btn" type="button" data-new-note="standup">Stand-up</button>
-          <button class="co-btn" type="button" data-new-note="personal">Personal</button>
-        </div>
         <input class="co-input co-search" id="nb-q" type="search" placeholder="Search notes, people, brands…" aria-label="Search notes">
         <div class="seg chips" data-draw="nb-chips" role="group" aria-label="Show"></div>
         <div class="nb-filters">
@@ -389,15 +384,9 @@
           <select class="co-select" id="nb-f-cat" aria-label="Category"><option value="">All categories</option></select>
         </div>
       </div>
-      <div class="nb-empty" id="nb-empty">
-        <span class="paper-empty-logo"><svg class="logo mark" viewBox="30 140 452 212" aria-hidden="true"><defs><clipPath id="mk-c-notes"><path d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></clipPath><linearGradient id="mk-t-notes" x1="0" x2="1"><stop offset="0" class="mk-s0"/><stop offset="1" class="mk-s1"/></linearGradient><linearGradient id="mk-h-notes" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect class="sl sl1" x="-170" y="160" width="300" height="9" rx="4.5" fill="url(#mk-t-notes)"/><rect class="sl sl2" x="-230" y="244" width="360" height="7" rx="3.5" fill="url(#mk-t-notes)"/><rect class="sl sl3 lime" x="-120" y="214" width="220" height="6" rx="3" /><rect class="sl sl4" x="-260" y="350" width="330" height="8" rx="4" fill="url(#mk-t-notes)"/><rect class="lt lt1" x="20" y="176" width="190" height="24" rx="12" fill="url(#mk-t-notes)"/><rect class="lt lt2" x="-150" y="292" width="200" height="24" rx="12" fill="url(#mk-t-notes)"/><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/><g clip-path="url(#mk-c-notes)"><rect class="mk-shine" x="0" y="140" width="130" height="212" fill="url(#mk-h-notes)"/></g></svg></span>
-        <h2>Your team notebook</h2>
-        <p>Meeting minutes, discussions, action items and personal notes, saved to your work account. Each note is a sticky on this board; open one to write in the notebook.</p>
-        <div class="nb-new"><button class="co-btn primary" type="button" data-new-note="standup">Start today's stand-up notes</button><button class="co-btn" type="button" data-new-note="blank">Blank note</button></div>
-      </div>
       <form class="nb-quick" id="nb-quick" autocomplete="off">
         <span class="nbq-tape" aria-hidden="true"></span>
-        <textarea id="nb-quick-text" rows="2" maxlength="4000" aria-label="Quick note" placeholder="Jot a quick note… the first line is the title. Start a line with [] for a to-do. Enter to save, Shift+Enter for a new line."></textarea>
+        <textarea id="nb-quick-text" rows="2" maxlength="4000" aria-label="Quick note" placeholder="Jot a quick note and press Enter…"></textarea>
         <div class="nbq-bar">
           <div class="nbq-types" role="radiogroup" aria-label="Kind of note">
             <button type="button" role="radio" data-qt="Meeting" aria-checked="true"><i></i>Meeting</button>
@@ -405,9 +394,16 @@
             <button type="button" role="radio" data-qt="Personal" aria-checked="false"><i></i>Personal</button>
           </div>
           <span class="nbq-who" id="nb-quick-who">Visible to everyone</span>
+          <span class="nbq-tip">First line = title · <kbd>[]</kbd> = to-do · <kbd>Shift</kbd>+<kbd>Enter</kbd> = new line</span>
+          <button class="co-link nbq-more" type="button" data-new-note="standup" title="Start today's stand-up notes from the template">Stand-up template</button>
+          <button class="co-link nbq-more" type="button" id="nb-quick-full" title="Open the full note editor (mentions, owners, due dates, reminders)">Full editor</button>
           <button class="co-btn primary" type="submit" id="nb-quick-add">Add sticky</button>
         </div>
       </form>
+      <div class="nb-empty" id="nb-empty">
+        <svg class="nb-doodle" viewBox="0 0 120 60" aria-hidden="true"><path d="M8 44c14-22 30-30 46-18s28 10 40-6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 9"/><path d="M98 12l10 8-12 4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <p><b>Your board is empty.</b> Type a note above and press Enter, or start from the stand-up template.</p>
+      </div>
       <div class="nb-board nb-list" data-draw="nb-list"></div>
       <div class="nb-scrim" id="nb-scrim" hidden></div>
       <article class="paper" id="nb-paper"><span class="paper-rings" aria-hidden="true"></span>
@@ -650,8 +646,8 @@
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-<script src="assets/config.js?v=20261110o"></script>
-<script src="assets/data.js?v=20261110o"></script>
-<script src="assets/app.js?v=20261110o"></script>
+<script src="assets/config.js?v=20261110q"></script>
+<script src="assets/data.js?v=20261110q"></script>
+<script src="assets/app.js?v=20261110q"></script>
 </body>
 </html>

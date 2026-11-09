@@ -579,11 +579,12 @@
     setMember(name, 'Active', role); e.target.reset(); document.getElementById('add-msg').textContent = '';
   });
   let toastTimer = 0;
-  function toast(text, bad) {
+  function toast(text, bad, action) {
     let t = document.querySelector('.co-toast');
     if (!t) { t = document.createElement('div'); t.className = 'co-toast'; t.setAttribute('role', 'status'); document.body.append(t); }
-    t.textContent = text; t.classList.toggle('bad', !!bad); t.hidden = false;
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
+    t.replaceChildren(text); t.classList.toggle('bad', !!bad); t.hidden = false;
+    if (action) { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-toast-act'; b.textContent = action.label; b.addEventListener('click', () => { t.hidden = true; action.fn(); }); t.append(b); }
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; if (action && action.onTimeout) action.onTimeout(); }, action ? 5000 : 4000);
   }
 
   /* ================= Header, sync state and filters ================= */
@@ -2038,7 +2039,7 @@
       fillFilters(); dash.draw('nb-list'); dash.draw('nb-chips'); syncControls(); dash.draw('np-list');
     }
     const open = () => { if (!st.loaded) load(); };
-    setInterval(() => { if (A.mode === 'auth' && A.user && !st.dirty) load(true); }, 2 * 60 * 1000);
+    setInterval(() => { if (A.mode === 'auth' && A.user && !st.dirty && !pendingOps && !pendingDel.size) load(true); }, 2 * 60 * 1000);
 
     /* ---- list ---- */
     const CHIPS = [['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me'], ['Meeting', 'Meetings'], ['Personal', 'Personal'], ['actions', 'Open actions']];
@@ -2068,11 +2069,33 @@
        pinned ones first, in a masonry layout. To-dos tick right on the sticky; pin and delete sit on hover. */
     const tilt = (id) => { let h = 0; String(id).split('').forEach((c) => { h = (h * 31 + c.charCodeAt(0)) | 0; }); return ((Math.abs(h) % 7) - 3) * 0.5; };
     const ICO = { pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></svg>', del: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>' };
-    async function quickSave(n, patch) {
-      const x = Object.assign({}, n, patch);
-      try { await post({ action: 'noteSave', id: n.id, updatedAt: n.updatedAt, note: { title: x.title, date: x.date, type: x.type, brand: x.brand, category: x.category, visibility: x.visibility, sharedWith: x.sharedWith, mentions: x.mentions, body: x.body, actions: x.actions, reminder: x.reminder, followUps: x.followUps, pinned: x.pinned } }); await load(true); }
-      catch (err) { toast('Not saved: ' + err.message, true); }
+    /* Instant changes: the board updates at once and the save runs in the background. If the web app refuses,
+       the change is undone and a message says why. Background refreshes wait while anything is still saving. */
+    let pendingOps = 0;
+    const named = (note, old) => Object.assign({}, note, { createdByName: (old && old.createdByName) || (A.user && note.createdBy === A.user.email ? A.user.name || A.user.email : note.createdBy), canEdit: true });
+    const redraw = () => { fillFilters(); dash.draw('nb-list'); dash.draw('nb-chips'); syncControls(); dash.draw('np-list'); };
+    const putLocal = (note) => { const i = st.notes.findIndex((x) => x.id === note.id); if (i >= 0) st.notes[i] = note; else st.notes.unshift(note); };
+    const payload = (x) => ({ title: x.title, date: x.date, type: x.type, brand: x.brand, category: x.category, visibility: x.visibility, sharedWith: x.sharedWith || [], mentions: x.mentions || [], body: x.body, actions: (x.actions || []).filter((a) => String(a.text || '').trim()), reminder: x.reminder || '', followUps: x.followUps || '', pinned: !!x.pinned });
+    async function bg(fn, undo, what) {
+      pendingOps++;
+      try { await fn(); } catch (err) { if (!(err instanceof AuthLost)) { undo(); redraw(); toast(what + ' not saved: ' + (/stale/.test(err.message) ? 'someone else changed this note; reopen it to see their version.' : err.message), true); } }
+      pendingOps--;
     }
+    async function quickSave(n, patch) {
+      const before = Object.assign({}, n); Object.assign(n, patch); redraw();
+      bg(async () => { const r = await post({ action: 'noteSave', id: n.id, updatedAt: n.updatedAt, note: payload(n) }); if (r.note) putLocal(named(r.note, n)); redraw(); }, () => putLocal(before), 'Change');
+    }
+    // Delete: gone at once, with Undo for 5 seconds; the web app is told after that (or straight away if the page closes).
+    const pendingDel = new Map();
+    function softDelete(n) {
+      const i = st.notes.findIndex((x) => x.id === n.id); if (i < 0) return;
+      st.notes.splice(i, 1); redraw();
+      const send = () => { if (!pendingDel.has(n.id)) return; pendingDel.delete(n.id); bg(() => post({ action: 'noteDelete', id: n.id }), () => { st.notes.splice(Math.min(i, st.notes.length), 0, n); }, 'Delete'); };
+      pendingDel.set(n.id, send);
+      toast('Note deleted', false, { label: 'Undo', fn: () => { pendingDel.delete(n.id); st.notes.splice(Math.min(i, st.notes.length), 0, n); redraw(); }, onTimeout: send });
+      setTimeout(send, 5200);
+    }
+    window.addEventListener('pagehide', () => { pendingDel.forEach((send, id) => { try { fetch(A.url, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ session: A.session, action: 'noteDelete', id }) }); } catch (e) { /* best effort */ } }); });
     const card = (n) => {
       const type = String(n.type || 'Meeting'), standup = /stand-?up/i.test(n.category || '') || /stand-?up/i.test(n.title || '');
       const b = document.createElement('div'); b.className = 'nb-item sticky t-' + type.toLowerCase() + (standup ? ' t-standup' : '') + (n.pinned ? ' pinned' : '');
@@ -2087,7 +2110,7 @@
         const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'st-tool' + (n.pinned ? ' on' : ''); pin.innerHTML = ICO.pin; pin.title = n.pinned ? 'Unpin' : 'Pin to the top'; pin.setAttribute('aria-label', pin.title);
         pin.addEventListener('click', (e) => { e.stopPropagation(); quickSave(n, { pinned: !n.pinned }); });
         const del = document.createElement('button'); del.type = 'button'; del.className = 'st-tool'; del.innerHTML = ICO.del; del.title = 'Delete'; del.setAttribute('aria-label', 'Delete note');
-        del.addEventListener('click', async (e) => { e.stopPropagation(); if (!confirm('Delete "' + (n.title || 'this note') + '"? It disappears for everyone. (It stays in the activity log.)')) return; try { await post({ action: 'noteDelete', id: n.id }); await load(true); toast('Note deleted'); } catch (err) { toast('Not deleted: ' + err.message, true); } });
+        del.addEventListener('click', (e) => { e.stopPropagation(); softDelete(n); });
         tools.append(pin, del); top.append(tools);
       }
       const t = document.createElement('span'); t.className = 'st-title t'; t.textContent = n.title || 'Untitled';
@@ -2102,7 +2125,7 @@
           const box = document.createElement('button'); box.type = 'button'; box.className = 'st-box'; box.setAttribute('role', 'checkbox'); box.setAttribute('aria-checked', String(!!x.done)); box.setAttribute('aria-label', (x.done ? 'Mark not done: ' : 'Mark done: ') + x.text);
           const canTick = n.canEdit || (A.user && x.email === A.user.email);
           box.disabled = !canTick;
-          box.addEventListener('click', async (e) => { e.stopPropagation(); li.classList.toggle('done'); box.setAttribute('aria-checked', String(!x.done)); try { const r = await post({ action: 'noteAction', id: n.id, actionId: x.id, done: !x.done }); n.actions = r.actions; x.done = !x.done; const all = n.actions.every((y) => y.done); if (all) toast('All to-dos done on "' + (n.title || 'note') + '"'); dash.draw('nb-list'); } catch (err) { li.classList.toggle('done'); toast('Not saved: ' + err.message, true); } });
+          box.addEventListener('click', (e) => { e.stopPropagation(); if (n.pending) return; x.done = !x.done; redraw(); if (x.done && n.actions.every((y) => y.done)) toast('All to-dos done on "' + (n.title || 'note') + '"'); bg(async () => { const r = await post({ action: 'noteAction', id: n.id, actionId: x.id, done: x.done }); n.actions = r.actions; }, () => { x.done = !x.done; }, 'Tick'); });
           const tx = document.createElement('span'); tx.textContent = x.text; if (x.assignee) tx.title = 'For ' + x.assignee + (x.due ? ' · due ' + CO.fmtDate(x.due) : '');
           li.append(box, tx); ul.append(li);
         });
@@ -2118,7 +2141,8 @@
       const faces = document.createElement('span'); faces.className = 'st-faces';
       [n.createdByName || n.createdBy].concat((n.mentions || []).map((m) => m.name)).filter(Boolean).slice(0, 3).forEach((nm) => { const av = CO.av(nm); av.title = nm; faces.append(av); });
       foot.append(faces); b.append(foot);
-      const go = () => select(n.id);
+      if (n.pending) { b.classList.add('pending'); const sv = document.createElement('span'); sv.className = 'st-saving'; sv.textContent = 'Saving…'; foot.prepend(sv); }
+      const go = () => { if (!n.pending) select(n.id); };
       b.addEventListener('click', go); b.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === b) go(); });
       return b;
     };
@@ -2129,10 +2153,10 @@
       const list = filtered().sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
       if (!list.length) { if (st.notes.length) { const p = document.createElement('p'); p.className = 'co-note nb-none'; p.textContent = 'No notes match. Clear the search or filters to see them all.'; el.append(p); } return; }
       const block = (title, notes) => { if (!notes.length) return; const h = document.createElement('h3'); h.className = 'nb-group'; h.textContent = title + ' · ' + notes.length; const m = document.createElement('div'); m.className = 'nb-mason'; notes.forEach((n) => m.append(card(n))); el.append(h, m); };
-      block('Pinned', list.filter((n) => n.pinned));
-      const rest = list.filter((n) => !n.pinned), t = CO.today();
-      block('This week', rest.filter((n) => (n.date || '') > CO.addDays(t, -7)));
-      block('Earlier', rest.filter((n) => !((n.date || '') > CO.addDays(t, -7))));
+      // One continuous board, pinned first (they carry an orange pin), then newest first: no half-empty rows.
+      const m = document.createElement('div'); m.className = 'nb-mason';
+      list.filter((n) => n.pinned).concat(list.filter((n) => !n.pinned)).forEach((n) => m.append(card(n)));
+      el.append(m);
     });
     /* Quick capture: type, press Enter, done. First line = title; lines starting with [] or - [ ] become to-dos for you. */
     let qType = 'Meeting';
@@ -2140,19 +2164,23 @@
     document.querySelectorAll('[data-qt]').forEach((b2) => b2.addEventListener('click', () => { qType = b2.dataset.qt; document.querySelectorAll('[data-qt]').forEach((x) => x.setAttribute('aria-checked', String(x === b2))); $n('nb-quick').dataset.type = qType.toLowerCase(); qWho(); $n('nb-quick-text').focus(); }));
     $n('nb-quick').dataset.type = 'meeting';
     async function quickAdd() {
-      const raw = $n('nb-quick-text').value.trim(); if (!raw) { $n('nb-quick-text').focus(); return; }
-      const lines = raw.split('\n'), todo = /^\s*(?:-\s*)?\[\s?\]\s*/;
+      const box = $n('nb-quick-text'), raw = box.value.trim(); if (!raw) { box.focus(); return; }
+      const lines = raw.split('\n'), todo = /^\s*(?:-\s*)?\[\s?\]\s*/, me2 = A.user ? A.user.name || A.user.email : '';
+      const mk = (text) => ({ id: 'a' + Math.random().toString(36).slice(2, 8), text, assignee: me2, email: A.user ? A.user.email : '', due: '', done: false });
       const title = lines[0].replace(todo, '').slice(0, 160), actions = [], body = [];
-      lines.slice(1).forEach((l) => { if (todo.test(l)) actions.push({ text: l.replace(todo, '').trim(), assignee: A.user ? A.user.name || A.user.email : '', email: A.user ? A.user.email : '', due: '', done: false }); else body.push(l); });
-      if (todo.test(lines[0])) actions.unshift({ text: title, assignee: A.user ? A.user.name || A.user.email : '', email: A.user ? A.user.email : '', due: '', done: false });
-      const btn = $n('nb-quick-add'); btn.disabled = true; btn.textContent = 'Adding…';
-      try {
-        await post({ action: 'noteSave', note: { title, date: CO.today(), type: qType, brand: '', category: '', visibility: qType === 'Personal' ? 'private' : 'team', sharedWith: [], mentions: [], body: body.join('\n').trim(), actions: actions.filter((x) => x.text), reminder: '', followUps: '', pinned: false } });
-        $n('nb-quick-text').value = ''; $n('nb-quick-text').style.height = ''; await load(true); toast('Sticky added');
-      } catch (err) { toast('Not added: ' + err.message, true); }
-      btn.disabled = false; btn.textContent = 'Add sticky';
+      if (todo.test(lines[0])) actions.push(mk(title));
+      lines.slice(1).forEach((l) => { if (todo.test(l)) { const t2 = l.replace(todo, '').trim(); if (t2) actions.push(mk(t2)); } else body.push(l); });
+      const temp = { id: 'tmp-' + Date.now(), pending: true, title, date: CO.today(), type: qType, brand: '', category: '', visibility: qType === 'Personal' ? 'private' : 'team', sharedWith: [], mentions: [], body: body.join('\n').trim(), actions, reminder: '', followUps: '', pinned: false, canEdit: true, createdBy: A.user ? A.user.email : '', createdByName: me2, updatedAt: '' };
+      st.notes.unshift(temp); box.value = ''; box.style.height = ''; box.focus(); redraw();
+      bg(async () => { const r = await post({ action: 'noteSave', note: payload(temp) }); const i = st.notes.indexOf(temp); const real = r.note ? named(r.note, temp) : Object.assign({}, temp, { id: r.id, pending: false }); if (i >= 0) st.notes[i] = real; else putLocal(real); redraw(); },
+        () => { const i = st.notes.indexOf(temp); if (i >= 0) st.notes.splice(i, 1); if (!box.value) box.value = raw; }, 'Sticky');
     }
     $n('nb-quick').addEventListener('submit', (e) => { e.preventDefault(); quickAdd(); });
+    // Full editor: carries over what was typed and the chosen kind.
+    $n('nb-quick-full').addEventListener('click', () => {
+      const raw = $n('nb-quick-text').value; startNew(qType === 'Personal' ? 'personal' : 'blank');
+      if (st.cur) { const [first, ...rest] = raw.split('\n'); st.cur.type = qType; st.cur.title = (first || '').trim(); st.cur.body = rest.join('\n'); if (qType !== 'Personal') st.cur.visibility = 'team'; show(); st.dirty = !!raw.trim(); $n('nb-quick-text').value = ''; $n(raw.trim() ? 'nb-body' : 'nb-title').focus(); }
+    });
     $n('nb-quick-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); quickAdd(); } });
     $n('nb-quick-text').addEventListener('input', (e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(220, e.target.scrollHeight) + 'px'; });
     // Kind chips in the open note
@@ -2307,26 +2335,21 @@
     async function save() {
       const n = st.cur; if (!n || !n.canEdit) return;
       if (!(n.title || '').trim() && !(n.body || '').trim()) { toast('Give the note a title or some text first.', true); return; }
-      (n.actions || []).forEach((a) => { if (!a.text.trim()) a.text = ''; });
-      $n('nb-save').disabled = true; status('Saving…');
-      try {
-        const res = await post({ action: 'noteSave', id: n.id || undefined, updatedAt: n.updatedAt || undefined, note: { title: n.title, date: n.date, type: n.type, brand: n.brand, category: n.category, visibility: n.visibility, sharedWith: n.sharedWith, mentions: n.mentions, body: n.body, actions: (n.actions || []).filter((a) => a.text.trim()), reminder: n.reminder, followUps: n.followUps, pinned: n.pinned } });
-        LS.set('co.nbdraft.' + (n.id || 'new'), null);
-        st.dirty = false; await load(true);
-        st.cur = null; show();
-        toast(n.id ? 'Note saved' : 'Note saved');
-      } catch (err) {
-        if (/stale/.test(err.message)) { toast('Someone else changed this note while you were editing. Your text is kept as a draft; reopen the note to see their version.', true); status('Not saved: changed by someone else'); }
-        else { toast('Not saved: ' + err.message, true); status('Not saved'); }
-      }
-      $n('nb-save').disabled = false;
+      const draftKey = 'co.nbdraft.' + (n.id || 'new'), copy = JSON.parse(JSON.stringify(n)), old = n.id ? st.notes.find((x) => x.id === n.id) : null;
+      const shown = Object.assign({}, copy, { id: n.id || 'tmp-' + Date.now(), pending: true, createdBy: copy.createdBy || (A.user ? A.user.email : ''), createdByName: (old && old.createdByName) || (A.user ? A.user.name || A.user.email : '') });
+      putLocal(shown); st.dirty = false; st.cur = null; show(); redraw();
+      bg(async () => {
+        const res = await post({ action: 'noteSave', id: copy.id || undefined, updatedAt: copy.updatedAt || undefined, note: payload(copy) });
+        LS.set(draftKey, null);
+        const i = st.notes.indexOf(shown), real = res.note ? named(res.note, old || shown) : Object.assign({}, shown, { id: res.id, pending: false });
+        if (i >= 0) st.notes[i] = real; else putLocal(real); redraw();
+      }, () => { const i = st.notes.indexOf(shown); if (i >= 0) { if (old) st.notes[i] = old; else st.notes.splice(i, 1); } LS.set(draftKey, JSON.stringify({ updatedAt: copy.updatedAt, note: copy })); }, 'Note');
     }
     form.addEventListener('submit', (e) => { e.preventDefault(); save(); });
     document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && dash.params().tab === 'notes' && st.cur) { e.preventDefault(); save(); } });
     $n('nb-delete').addEventListener('click', async () => {
-      const n = st.cur; if (!n || !n.id || !confirm('Delete "' + n.title + '"? It disappears for everyone. (It stays in the activity log.)')) return;
-      try { await post({ action: 'noteDelete', id: n.id }); st.cur = null; st.dirty = false; LS.set('co.nbdraft.' + n.id, null); await load(true); show(); toast('Note deleted'); }
-      catch (err) { toast('Not deleted: ' + err.message, true); }
+      const n = st.cur; if (!n || !n.id) return;
+      const saved = st.notes.find((x) => x.id === n.id); st.cur = null; st.dirty = false; LS.set('co.nbdraft.' + n.id, null); show(); if (saved) softDelete(saved);
     });
     $n('nb-back').addEventListener('click', () => { if (!confirmDiscard()) return; st.cur = null; st.dirty = false; show(); });
     document.querySelectorAll('[data-new-note]').forEach((b) => b.addEventListener('click', () => startNew(b.dataset.newNote)));
@@ -2558,9 +2581,12 @@
     $g('gate-state').hidden = false; $g('gs-title').textContent = title; $g('gs-text').textContent = text; $g('gs-again').hidden = !again;
     gateMsg('');
   }
+  let gateNote = '';
   async function showGate(msg) {
     document.body.dataset.gate = '1'; gate.hidden = false; hideBoot();
-    let m = msg; try { m = m || sessionStorage.getItem('co.gatemsg') || ''; sessionStorage.removeItem('co.gatemsg'); } catch (e) { /* ignore */ }
+    // The one-off message (e.g. 'You are signed out.') is read once per page and kept, so a second draw of the gate cannot blank it.
+    try { const g0 = sessionStorage.getItem('co.gatemsg'); if (g0) { gateNote = g0; sessionStorage.removeItem('co.gatemsg'); } } catch (e) { /* ignore */ }
+    const m = msg || gateNote;
     gateTab(G.tab); gateMsg(m);
     $g('gate-domains').textContent = A.domains.map((d) => '@' + d).join(' or ');
     try {

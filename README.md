@@ -171,10 +171,11 @@ Limits: each person can make 40 assistant calls (about 20 questions) and 80 voic
 The **Notes** page is a sticky-note board for meeting notes, daily updates, ideas and personal notes.
 
 - **Quick capture:** type in the sticky at the top and press **Enter**. The first line becomes the title; lines starting with `[]` become to-dos for you; **Shift+Enter** adds a line. Pick **Meeting**, **Idea / discussion** or **Personal** first (personal notes are private; the others are visible to the team).
-- **The board:** stickies are coloured by kind (meetings violet, ideas lime, personal orange, stand-ups cream with lime tape), pinned ones first, then this week, then earlier. Tick to-dos right on the sticky; hover a sticky to **pin** or **delete** it. Search and the filters above narrow the board.
+- **The board:** stickies are coloured by kind (meetings violet, ideas lime, personal orange, stand-ups cream with lime tape), pinned ones first, then this week, then earlier. Tick to-dos right on the sticky; hover a sticky to **pin** or **delete** it. Pinned stickies come first. Search and the filters above narrow the board.
 - **Open a note:** click a sticky to open it as a large sticky over the board: title, text (type `@` to mention someone), action items with an owner and due date, and **Details** (date, brand, category, who can see it, sharing, follow-ups, email reminder). **Save & close** (or Ctrl/⌘+S) saves; **Esc** closes.
 - **Templates:** **Stand-up** pre-fills attendees, updates, blockers, decisions and today's overdue list.
 - **Who sees a note:** Only me; people I mention or add (plus anyone with an action item); or everyone with access. Admins can see every note. Only the author or an admin can edit or delete; anyone with an action item can tick it.
+- **Instant:** adding, ticking, pinning, saving and deleting update the board at once and save in the background (a sticky shows "Saving…" until it is stored). If a save fails, the change is undone and a message says why. Deleting shows **Undo** for 5 seconds.
 - **Storage:** the *Notes* tab of the access spreadsheet. Every create, edit, delete and tick is in the activity log; deleted notes stay in the spreadsheet, marked deleted. Unsaved writing is kept as a draft in the browser, and saving over someone else's newer edit is refused.
 
 ## Access and sign-in
