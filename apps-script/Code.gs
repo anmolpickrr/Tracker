@@ -1904,7 +1904,7 @@ function meetings_(user) {
     out = { ok: false, error: m === 'service_off' ? 'service_off' : proj && /has not been used|disabled/i.test(m) ? 'api_off' : /not ?found|forbidden|403|404|insufficient|access/i.test(m) ? 'not_shared' : 'error', detail: m.slice(0, 160) };
     if (out.error === 'api_off') { out.enable = 'https://console.cloud.google.com/apis/library/calendar-json.googleapis.com?project=' + proj; PropertiesService.getScriptProperties().setProperty('CAL_API_OFF', out.enable); }
   }
-  if (out.ok) PropertiesService.getScriptProperties().deleteProperty('CAL_API_OFF');
+  try { if (out.ok) PropertiesService.getScriptProperties().deleteProperty('CAL_API_OFF'); } catch (e) { /* ignore */ }
   c.put(k, JSON.stringify(out), out.ok ? 120 : out.error === 'api_off' ? 60 : 900);
   return out;
 }
