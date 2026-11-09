@@ -1,2 +1,2 @@
-/* Applies the saved light/dark choice before the page paints. */
-try { var t = localStorage.getItem('co.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* private mode */ }
+/* Applies the theme before the page paints: the saved choice, else dark (the studio's default look). */
+try { document.documentElement.dataset.theme = localStorage.getItem('co.theme') || 'dark'; } catch (e) { document.documentElement.dataset.theme = 'dark'; }

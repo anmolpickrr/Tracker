@@ -18,7 +18,7 @@ Navigation is a sidebar on desktop and a bottom tab bar on phones (More opens th
 | **Data health** | Rows that make tracking unreliable (no ETA, no designer, unknown status, mistyped dates, duplicates) and the connection status of every sheet. |
 | **Access** (admins) | Access requests, people and their access level, and the activity log of every change. |
 
-Light and dark themes. Chart colours are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table.
+Studio look: charcoal and lime by default (switch to the light theme with the sun/moon button; the choice is remembered per browser), Fastrr violet for charts, Outfit for headings and numbers. Category colours in charts are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table. Secondary table columns appear only on screens wide enough for them; everything is still in the task dialog and the CSV exports.
 
 Filters for sheet, designer, brand and creative type sit above every data page (on phones behind **Filters**) and apply to all of it. Active filters are highlighted.
 

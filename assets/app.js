@@ -7,7 +7,7 @@
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } },
     set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
   };
-  const DEFAULTS = { tab: 'today', src: '', designer: '', brand: '', type: '', stage: 'active', susort: 'urgent', who: 'active', rpreset: 'this-month', rfrom: '', rto: '', rchart: 'type' };
+  const DEFAULTS = { tab: 'today', src: '', designer: '', brand: '', type: '', stage: 'active', susort: 'urgent', who: 'active', rpreset: 'this-month', rfrom: '', rto: '', rchart: 'total' };
   const P = Object.assign({}, DEFAULTS);
   try { Object.assign(P, JSON.parse(LS.get('co.view', '{}'))); } catch (e) { /* ignore */ }
   const TABS = ['today', 'standup', 'tasks', 'team', 'reports', 'health', 'access'];
@@ -374,6 +374,8 @@
     axTab.hidden = !admin;
     const badge = axTab.querySelector('.nav-badge'); badge.hidden = !AX.pending; badge.textContent = AX.pending ? AX.pending + ' waiting' : '';
     document.querySelector('.bt-dot').hidden = !(admin && AX.pending);
+    const bell = document.getElementById('btn-bell'); bell.hidden = !admin; bell.querySelector('.bell-dot').hidden = !AX.pending;
+    bell.title = AX.pending ? AX.pending + (AX.pending === 1 ? ' access request waiting' : ' access requests waiting') : 'Access and activity'; bell.setAttribute('aria-label', bell.title);
     document.getElementById('add-member').hidden = !can('Admin');
     const tab = TABS.includes(p.tab) && (p.tab !== 'access' || admin) ? p.tab : 'today';
     document.querySelectorAll('[data-panel]').forEach((s) => { s.hidden = s.dataset.panel !== tab; });
@@ -383,7 +385,7 @@
     document.getElementById('filter-bar').hidden = tab === 'access';
     ['src', 'designer', 'brand', 'type'].forEach((k) => { const el = document.querySelector('.co-f[data-param="' + k + '"]'); if (el) el.classList.toggle('is-set', !!p[k]); });
     document.getElementById('f-reset').hidden = !(p.src || p.designer || p.brand || p.type);
-    document.querySelectorAll('[data-rchart]').forEach((b) => b.setAttribute('aria-pressed', String((p.rchart || 'type') === b.dataset.rchart)));
+    document.querySelectorAll('[data-rchart]').forEach((b) => b.setAttribute('aria-pressed', String((p.rchart || 'total') === b.dataset.rchart)));
     const meta = PAGES[tab]; document.title = meta[0] + ' · Creative Ops Tracker';
     const val = (sel, v) => { const el = document.querySelector(sel); if (el && el !== document.activeElement) el.value = v; };
     val('#f-src', p.src || ''); val('#t-stage', p.stage || 'active'); val('#su-sort', p.susort || 'urgent'); val('#team-who', p.who || 'active'); val('#r-preset', p.rpreset || 'this-month');
@@ -398,6 +400,7 @@
   function closeNav() { document.body.classList.remove('nav-open'); document.getElementById('scrim').hidden = true; document.getElementById('btn-menu').setAttribute('aria-expanded', 'false'); }
   function openNav() { document.body.classList.add('nav-open'); document.getElementById('scrim').hidden = false; document.getElementById('btn-menu').setAttribute('aria-expanded', 'true'); }
   document.getElementById('btn-menu').addEventListener('click', openNav);
+  document.getElementById('btn-bell').addEventListener('click', () => dash.setParams({ tab: 'access' }));
   document.getElementById('bt-more').addEventListener('click', openNav);
   document.getElementById('scrim').addEventListener('click', closeNav);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('nav-open')) closeNav(); });
@@ -425,7 +428,7 @@
     });
     inp.addEventListener('blur', () => { const pr = CO.period(); inp.value = pr.all ? '' : (key === 'rfrom' ? pr.from : pr.to); });
   });
-  const themeLabel = () => { const root = document.documentElement; const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; document.getElementById('btn-theme').textContent = dark ? 'Light theme' : 'Dark theme'; };
+  const themeLabel = () => { const root = document.documentElement; const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; const b = document.getElementById('btn-theme'); b.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme'); b.title = b.getAttribute('aria-label'); };
   themeLabel();
   document.getElementById('btn-refresh').addEventListener('click', () => (A.mode ? load(true) : start()));
   document.getElementById('btn-theme').addEventListener('click', () => {
@@ -489,7 +492,11 @@
     access: ['Access & activity', 'Who can use the dashboard, and every change they made.']
   };
   const curTab = () => { const t = dash.params().tab; return PAGES[t] && (t !== 'access' || (A.mode === 'auth' && can('Admin'))) ? t : 'today'; };
-  dash.draw('page-title', (el) => { el.textContent = PAGES[curTab()][0]; });
+  const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
+  const firstName = () => (A.user && A.user.name ? A.user.name.split(' ')[0] : '');
+  dash.draw('page-title', (el) => { const t = curTab(); el.textContent = t === 'today' && firstName() ? greeting() + ', ' + firstName() : PAGES[t][0]; });
+  dash.draw('page-eyebrow', (el) => { const t = curTab(); el.textContent = t === 'today' && firstName() ? 'Overview' : ''; });
+  dash.draw('top-av', (el) => { el.replaceChildren(); if (A.user) { const a = CO.av(A.user.name || A.user.email); a.title = (A.user.name || A.user.email) + ' · ' + (ROLE_LABEL[A.user.role] || A.user.role); el.append(a); } });
   dash.draw('page-sub', (el) => { const s = PAGES[curTab()][1]; el.textContent = typeof s === 'function' ? s() : s; });
   dash.draw('filter-count', (el) => { const p = dash.params(); const n = ['src', 'designer', 'brand', 'type'].filter((k) => p[k]).length; el.textContent = n ? String(n) : ''; });
   dash.draw('me-card', (el) => {
@@ -683,7 +690,7 @@
     const meas = svg.append('text').attr('class', 'lbl').text(data.reduce((a, d) => d.name.length > a.length ? d.name : a, ''));
     const L = Math.min(W * 0.45, meas.node().getComputedTextLength() + 14); meas.remove();
     const x = d3.scaleLinear([0, d3.max(data, (d) => d.total)], [L, W - 34]);
-    const y = d3.scaleBand(data.map((d) => d.name), [0, H - 24]).padding(0.38);
+    const y = d3.scaleBand(data.map((d) => d.name), [0, H - 24]).padding(0.42);
     const keys = [['overdue', 'var(--bad)', 'Overdue'], ['week', 'var(--warn)', 'Due in 7 days'], ['later', 'var(--chart-muted)', 'Later or no ETA']];
     const ticks = x.ticks(Math.max(2, Math.floor((W - L) / 70))).filter(Number.isInteger);
     svg.append('g').selectAll('line').data(ticks).join('line').attr('class', 'grid').attr('x1', x).attr('x2', x).attr('y1', 0).attr('y2', H - 24);
@@ -694,7 +701,7 @@
       .on('mousemove', (e, d) => { tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = d.name + ' · ' + d.total + ' open'; tipEl.append(k); keys.forEach(([key, c, lab]) => { const r = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = c; r.append(sw, lab + ': ' + d[key]); tipEl.append(r); }); const [px, py] = d3.pointer(e, el); CO.placeTip(tipEl, el, px, py); })
       .on('mouseleave', () => { tipEl.hidden = true; });
     g.append('text').attr('class', 'lbl').attr('x', L - 8).attr('y', (d) => y(d.name) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => d.name);
-    g.each(function (d) { let x0 = 0; const gg = d3.select(this); keys.forEach(([k, c]) => { if (!d[k]) return; gg.append('rect').attr('x', x(x0)).attr('y', y(d.name)).attr('width', Math.max(2, x(x0 + d[k]) - x(x0) - 2)).attr('height', y.bandwidth()).attr('rx', 3).style('fill', c); x0 += d[k]; }); });
+    g.each(function (d) { let x0 = 0; const gg = d3.select(this); keys.forEach(([k, c]) => { if (!d[k]) return; gg.append('rect').attr('x', x(x0)).attr('y', y(d.name)).attr('width', Math.max(2, x(x0 + d[k]) - x(x0) - 2)).attr('height', y.bandwidth()).attr('rx', y.bandwidth() / 2).style('fill', c); x0 += d[k]; }); });
     // A full-width hit area per row, so the whole line is clickable, not just the bar.
     g.insert('rect', ':first-child').attr('class', 'hit').attr('x', 0).attr('width', W).attr('y', (d) => y(d.name) - y.step() * y.paddingInner() / 2).attr('height', y.step());
     g.append('text').attr('class', 'tick').attr('x', (d) => x(d.total) + 6).attr('y', (d) => y(d.name) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.total);
@@ -728,8 +735,8 @@
     const W = 72, H = 26, max = d3.max(v) || 1;
     const x = (i) => 2 + i * (W - 4) / (v.length - 1), y = (n) => H - 3 - n / max * (H - 6);
     const svg = d3.select(el).append('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Delivered per month, last six months: ' + v.join(', '));
-    svg.append('path').attr('d', d3.line().x((d, i) => x(i)).y(y)(v)).attr('fill', 'none').attr('stroke', 'var(--chart-muted)').attr('stroke-width', 2).attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round');
-    svg.append('circle').attr('cx', x(v.length - 1)).attr('cy', y(v[v.length - 1])).attr('r', 3.5).attr('fill', 'var(--brand)').attr('stroke', 'var(--panel)').attr('stroke-width', 2);
+    svg.append('path').attr('d', d3.line().curve(d3.curveMonotoneX).x((d, i) => x(i)).y(y)(v)).attr('fill', 'none').attr('stroke', 'var(--spark)').attr('stroke-opacity', 0.45).attr('stroke-width', 2).attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round');
+    svg.append('circle').attr('cx', x(v.length - 1)).attr('cy', y(v[v.length - 1])).attr('r', 4).attr('fill', 'var(--spark)').attr('stroke', 'var(--panel)').attr('stroke-width', 2);
     el.title = ms.map((k, i) => CO.fmtMonth(k) + ': ' + v[i]).join(' · ');
   });
 
@@ -866,10 +873,10 @@
       const LIMIT = 600;
       rs.slice(0, LIMIT).forEach((r) => {
         const tr = tb.insertRow(); tr.dataset.uid = r.uid; tr.className = 'click';
-        CO.td(tr, r.id || '—', 'co-id'); CO.td(tr, r.brand, 'co-nowrap'); CO.td(tr, CO.topic(r), 'co-topic'); CO.td(tr, r.type, 'co-nowrap'); CO.td(tr, String(r.qty), 'n');
+        CO.td(tr, r.id || '—', 'co-id'); CO.td(tr, r.brand, 'co-nowrap'); CO.td(tr, CO.topic(r), 'co-topic'); CO.td(tr, r.type, 'co-nowrap co-hide-md'); CO.td(tr, String(r.qty), 'n co-hide-lg');
         CO.td(tr, CO.who(r)); CO.td(tr, r.priority || '—', /^P[01]$/.test(r.priority || '') ? 'pri' : 'co-muted');
-        CO.td(tr, r.open && r.eta ? whenChip(r) : CO.fmtDate(r.eta), 'co-nowrap'); CO.td(tr, CO.chip(r)); CO.td(tr, CO.srcTag(r));
-        CO.td(tr, CO.fmtDate(r.req), 'co-hide-lg co-nowrap'); CO.td(tr, r.owner, 'co-hide-lg co-nowrap'); CO.td(tr, r.live_status, 'co-hide-lg co-nowrap'); CO.td(tr, CO.links(r), 'co-hide-lg');
+        CO.td(tr, r.open && r.eta ? whenChip(r) : CO.fmtDate(r.eta), 'co-nowrap'); CO.td(tr, CO.chip(r)); CO.td(tr, CO.srcTag(r), 'co-hide-lg');
+        CO.td(tr, CO.fmtDate(r.req), 'co-hide-xl co-nowrap'); CO.td(tr, r.owner, 'co-hide-xl co-nowrap'); CO.td(tr, r.live_status, 'co-hide-xxl co-nowrap'); CO.td(tr, CO.links(r), 'co-hide-xxl');
       });
       if (rs.length > LIMIT) CO.emptyRow(tb, 14, 'Showing the first ' + LIMIT + ' of ' + CO.num(rs.length) + '. Narrow it with search or filters, or download the CSV for all of them.');
     });
@@ -917,16 +924,16 @@
         const tr = tb.insertRow();
         const nb = document.createElement('button'); nb.type = 'button'; nb.className = 'co-name'; const nt = document.createElement('span'); nt.textContent = d.name; nb.append(CO.av(d.name), nt); nb.title = 'Open ' + d.name + "'s tasks"; nb.addEventListener('click', () => CO.goTasks('active', { designer: d.name }));
         CO.td(tr, nb, 'co-nowrap'); CO.td(tr, statusCell(d.name), 'co-nowrap');
-        const ob = document.createElement('span'); ob.className = 'co-inbar'; const bi = document.createElement('i'); bi.style.width = (d.open / maxOpen * 4) + 'rem'; ob.append(bi, String(d.open)); CO.td(tr, ob, 'n');
-        CO.td(tr, String(d.wip), 'n co-hide-md');
+        const ob = document.createElement('span'); ob.className = 'co-inbar'; const bi = document.createElement('i'); bi.style.width = (d.open / maxOpen * 3) + 'rem'; ob.append(bi, String(d.open)); CO.td(tr, ob, 'n');
+        CO.td(tr, String(d.wip), 'n co-hide-lg');
         CO.td(tr, String(d.overdue), 'n' + (d.overdue ? ' bad' : ''));
-        CO.td(tr, String(d.week), 'n'); CO.td(tr, String(d.review), 'n'); CO.td(tr, CO.num(d.thisM), 'n num-b'); CO.td(tr, CO.num(d.lastM), 'n'); CO.td(tr, d.avg ? d.avg.toFixed(1) : '—', 'n');
+        CO.td(tr, String(d.week), 'n co-hide-md'); CO.td(tr, String(d.review), 'n'); CO.td(tr, CO.num(d.thisM), 'n num-b'); CO.td(tr, CO.num(d.lastM), 'n'); CO.td(tr, d.avg ? d.avg.toFixed(1) : '—', 'n');
         CO.td(tr, d.brands, 'co-hide-lg co-clip').title = d.brands;
         const mix = document.createElement('span'); mix.className = 'co-mix';
         const total = CO.sumQty(d.del);
         top.forEach((t) => { const c = CO.sumQty(d.del.filter((r) => CO.typeOf(r, top) === t)); if (!c) return; const i = document.createElement('i'); i.style.flex = c + ' 1 0'; i.style.background = cmap.get(t); i.title = t + ': ' + c; mix.append(i); });
         mix.title = top.map((t) => t + ': ' + CO.sumQty(d.del.filter((r) => CO.typeOf(r, top) === t))).filter((x) => !/: 0$/.test(x)).join(' · ');
-        CO.td(tr, mix, 'co-hide-sm');
+        CO.td(tr, mix, 'co-hide-md');
       });
     });
     dash.draw('team-legend', (el) => {
@@ -938,7 +945,8 @@
       if (CO.notReady(table, 'table')) return;
       table.replaceChildren();
       const del = CO.rows().filter((r) => r.stage === 'Delivered' && r.month);
-      const ms = [...new Set(del.map((r) => r.month))].sort().filter((m) => m <= CO.thisMonth()).slice(-12);
+      const room = table.parentElement.clientWidth, months = room < 700 ? 6 : room < 1050 ? 9 : 12; // as many recent months as fit
+      const ms = [...new Set(del.map((r) => r.month))].sort().filter((m) => m <= CO.thisMonth()).slice(-months);
       const cell = new Map(); del.forEach((r) => r.list.forEach((d) => { const k = d + '|' + r.month; cell.set(k, (cell.get(k) || 0) + (r.qty || 1)); }));
       const names = [...new Set(del.flatMap((r) => r.list))].filter(shown);
       const tot = (d) => ms.reduce((a, m) => a + (cell.get(d + '|' + m) || 0), 0);
@@ -954,7 +962,7 @@
         const tr = tb.insertRow(); CO.td(tr, d, 'co-nowrap');
         ms.forEach((m) => {
           const v = cell.get(d + '|' + m) || 0; const c = CO.td(tr, v ? String(v) : '·', 'h');
-          if (v) { const a = 0.1 + 0.7 * (v / max); c.style.background = `color-mix(in srgb, var(--brand) ${Math.round(a * 100)}%, transparent)`; c.title = d + ', ' + CO.fmtMonth(m, true) + ': ' + v + ' creatives'; if (a > 0.5) c.classList.add('hot'); } else c.classList.add('co-muted');
+          if (v) { const a = 0.1 + 0.7 * (v / max); c.style.background = `color-mix(in srgb, var(--heat) ${Math.round(a * 100)}%, transparent)`; c.title = d + ', ' + CO.fmtMonth(m, true) + ': ' + v + ' creatives'; if (a > 0.5) c.classList.add('hot'); } else c.classList.add('co-muted');
           c.addEventListener('click', () => dash.setParams({ rpreset: 'custom', rfrom: m + '-01', rto: CO.monthEnd(m), tab: 'reports', designer: d }));
         });
         CO.td(tr, CO.num(tot(d)), 'n num-b');
@@ -991,7 +999,7 @@
     });
     dash.draw('r-legend', (el) => {
       if (CO.notReady(el, 'list')) return;
-      if ((dash.params().rchart || 'type') === 'total') { el.replaceChildren(); return; }
+      if ((dash.params().rchart || 'total') === 'total') { el.replaceChildren(); return; }
       const top = CO.topTypes(delivered(), 5), cmap = CO.typeColors(top);
       el.replaceChildren(...top.map((t) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = cmap.get(t); s.append(i, t); return s; }));
     });
@@ -1001,7 +1009,7 @@
       el.replaceChildren();
       if (!del.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'No deliveries in this view.'; el.append(p); return; }
       const pr = CO.period();
-      const byType = (dash.params().rchart || 'type') === 'type';
+      const byType = (dash.params().rchart || 'total') === 'type';
       const top = byType ? CO.topTypes(del, 5) : ['Total'], cmap = byType ? CO.typeColors(top) : new Map([['Total', 'var(--brand)']]);
       const ms = [...new Set(del.map((r) => r.month))].sort().slice(-18);
       const inSel = (m) => pr.all || (m + '-01' <= pr.to && CO.monthEnd(m) >= pr.from);
@@ -1018,13 +1026,28 @@
       const every = Math.ceil(ms.length / Math.max(1, Math.floor((W - mL) / 52)));
       svg.append('g').selectAll('text').data(ms).join('text').attr('class', (m) => 'tick' + (inSel(m) && !pr.all ? ' on' : '')).attr('x', (m) => x(m) + x.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', 'middle')
         .text((m, i) => (i % every === 0) ? CO.fmtMonth(m).replace(' 20', " '") : '');
+      if (!byType) {
+        // Total: pill bars. The report period is solid; other months are hatched so the selection reads first.
+        const pid = 'hatch-' + Math.random().toString(36).slice(2, 8);
+        const pat = svg.append('defs').append('pattern').attr('id', pid).attr('width', 7).attr('height', 7).attr('patternUnits', 'userSpaceOnUse').attr('patternTransform', 'rotate(45)');
+        pat.append('rect').attr('width', 7).attr('height', 7).style('fill', 'var(--bar)').style('opacity', 0.22);
+        pat.append('line').attr('x1', 0).attr('y1', 0).attr('x2', 0).attr('y2', 7).style('stroke', 'var(--bar)').attr('stroke-width', 2.2).style('opacity', 0.75);
+        const pw = Math.max(8, Math.min(46, x.bandwidth() * 0.78)), po = (x.bandwidth() - pw) / 2, base = yt(0);
+        svg.append('g').selectAll('rect').data(series).join('rect').attr('x', (d) => x(d.m) + po).attr('width', pw)
+          .attr('y', (d) => Math.min(yt(d.total), base - pw)).attr('height', (d) => d.total ? Math.max(pw, base - yt(d.total)) : 0).attr('rx', pw / 2)
+          .style('fill', (d) => inSel(d.m) && !pr.all ? 'var(--bar)' : 'url(#' + pid + ')');
+        svg.append('g').selectAll('circle').data(series.filter((d) => d.total)).join('circle').attr('cx', (d) => x(d.m) + x.bandwidth() / 2).attr('cy', (d) => Math.min(yt(d.total), base - pw) + pw / 2).attr('r', Math.min(5, pw / 4))
+          .style('fill', (d) => inSel(d.m) && !pr.all ? 'var(--panel)' : 'var(--bar)');
+      } else {
       const stack = d3.stack().keys(top)(series);
       const bw = Math.min(24, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
       svg.append('g').selectAll('g').data(stack).join('g').style('fill', (s) => cmap.get(s.key))
         .selectAll('rect').data((s) => s).join('rect').attr('x', (d) => x(d.data.m) + off).attr('width', bw)
         .attr('y', (d) => yt(d[1])).attr('height', (d) => Math.max(0, yt(d[0]) - yt(d[1]) - (d[1] > d[0] && d[0] > 0 ? 2 : 0))).attr('rx', 3)
         .style('opacity', (d) => inSel(d.data.m) ? 1 : 0.45);
-      svg.append('g').selectAll('text').data(series).join('text').attr('class', (d) => 'tick' + (inSel(d.m) ? ' on' : '')).attr('x', (d) => x(d.m) + x.bandwidth() / 2).attr('y', (d) => yt(d.total) - 5).attr('text-anchor', 'middle').text((d) => bw >= 16 && (x.bandwidth() >= 30 || inSel(d.m)) ? d.total : '');
+      }
+      const lw = byType ? Math.min(24, x.bandwidth()) : Math.min(46, x.bandwidth() * 0.78);
+      svg.append('g').selectAll('text').data(series).join('text').attr('class', (d) => 'tick' + (inSel(d.m) ? ' on' : '')).attr('x', (d) => x(d.m) + x.bandwidth() / 2).attr('y', (d) => (byType ? yt(d.total) : Math.min(yt(d.total), yt(0) - lw)) - 7).attr('text-anchor', 'middle').text((d) => lw >= 16 && (x.bandwidth() >= 30 || inSel(d.m)) ? d.total : '');
       const tipEl = CO.tip(el);
       svg.append('g').selectAll('rect').data(series).join('rect').attr('class', 'bar hit').attr('x', (d) => x(d.m)).attr('width', x.bandwidth()).attr('y', mT).attr('height', H - mB - mT)
         .on('click', (e, d) => dash.setParams({ rpreset: 'custom', rfrom: d.m + '-01', rto: CO.monthEnd(d.m) }))
@@ -1110,9 +1133,9 @@
       if (!rs.length) return CO.emptyRow(tb, 9, 'No issues found in this view.');
       rs.slice(0, 400).forEach((r) => {
         const tr = tb.insertRow(); tr.dataset.uid = r.uid; tr.className = 'click';
-        CO.td(tr, r.id || '—', 'co-id'); CO.td(tr, CO.srcTag(r)); CO.td(tr, r.brand, 'co-nowrap'); CO.td(tr, CO.topic(r), 'co-topic');
+        CO.td(tr, r.id || '—', 'co-id'); CO.td(tr, CO.srcTag(r), 'co-hide-md'); CO.td(tr, r.brand, 'co-nowrap'); CO.td(tr, CO.topic(r), 'co-topic');
         CO.td(tr, r.designers || 'Unassigned', r.designers ? 'co-nowrap' : 'co-muted co-nowrap'); CO.td(tr, CO.chip(r));
-        CO.td(tr, CO.fmtDate(r.req), 'co-nowrap'); CO.td(tr, CO.fmtDate(r.eta), 'co-nowrap'); CO.td(tr, r.flags);
+        CO.td(tr, CO.fmtDate(r.req), 'co-nowrap co-hide-md'); CO.td(tr, CO.fmtDate(r.eta), 'co-nowrap'); CO.td(tr, r.flags);
       });
       if (rs.length > 400) CO.emptyRow(tb, 9, 'Showing 400 of ' + CO.num(rs.length) + '. Pick a check above to narrow the list.');
     });
@@ -1350,7 +1373,7 @@
       else { const s = roleSelect(u.role); s.addEventListener('change', () => setAccess(u.email, { role: s.value }, (u.name || u.email) + ': ' + ROLE_LABEL[s.value])); rc.append(s); }
       const sc = tr.insertCell(); const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : 's-mute'), STATUS_LABEL[u.status]); sc.append(chip);
       CO.td(tr, when(u.lastSignIn), 'co-nowrap');
-      CO.td(tr, u.decidedBy ? nameOf(u.decidedBy) + ' · ' + when(u.decidedOn) : '—', 'co-nowrap co-muted');
+      CO.td(tr, u.decidedBy ? nameOf(u.decidedBy) + ' · ' + when(u.decidedOn) : '—', 'co-nowrap co-muted co-hide-md');
       const ac = tr.insertCell(); ac.className = 'co-nowrap ax-acts';
       const actv = el('button', 'co-link', 'Activity'); actv.type = 'button'; actv.addEventListener('click', () => showActivityOf(u.email)); ac.append(actv);
       if (!locked) {
