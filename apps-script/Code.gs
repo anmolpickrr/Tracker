@@ -57,6 +57,7 @@ function setup() {
   });
   bumpVersion_();
   testRead();
+  Logger.log('Web app runs as: ' + Session.getEffectiveUser().getEmail());
   Logger.log('Change detection is on for: ' + (ok.join(', ') || 'none'));
   if (viewOnly.length) Logger.log('NEEDS EDIT ACCESS: ' + viewOnly.join(', ') + '. This account can only view those sheets, so the dashboard can read them but cannot detect edits instantly or save changes to them. Ask the owner to make ' + Session.getEffectiveUser().getEmail() + ' an Editor, then run setup() again.');
   Logger.log('Your dashboard key: ' + key);
@@ -79,6 +80,7 @@ function doGet(e) {
   const p = (e && e.parameter) || {};
   if (!checkKey_(p.key)) return json_({ ok: false, error: 'bad_key' });
   if (p.mode === 'ver') return json_({ ok: true, ver: version_() });
+  if (p.mode === 'health') return json_(health_());
   const cache = CacheService.getScriptCache();
   if (!p.fresh) {
     const hit = readCache_(cache);
@@ -118,6 +120,29 @@ function readTab_(s) {
     rowNums.push(i + 1);
   }
   return { file: sheet.getParent().getName(), tab: sheet.getName(), headers: headers, rows: rows, rowNums: rowNums };
+}
+
+/* Integration health: which account the web app runs as, whether change detection is on,
+   and whether that account can open and edit each sheet. Shown on the dashboard's Sheet health tab. */
+function health_() {
+  const me = Session.getEffectiveUser().getEmail();
+  const triggers = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'onSheetChange'; }).length;
+  const out = { ok: true, runsAs: me, ver: version_(), liveTriggers: triggers, checkedAt: new Date().toISOString(), sources: {} };
+  Object.keys(CONFIG.sources).forEach(function (name) {
+    const s = CONFIG.sources[name];
+    try {
+      const sheet = openTab_(s), ss = sheet.getParent();
+      let canEdit = false;
+      try {
+        const owner = ss.getOwner();
+        canEdit = (owner && owner.getEmail() === me) || ss.getEditors().some(function (u) { return u.getEmail() === me; });
+      } catch (err) { canEdit = false; }
+      out.sources[name] = { ok: true, file: ss.getName(), tab: sheet.getName(), rows: Math.max(0, sheet.getLastRow() - 1), canEdit: canEdit };
+    } catch (err) {
+      out.sources[name] = { ok: false, error: String(err && err.message || err), optional: !!s.optional };
+    }
+  });
+  return out;
 }
 
 /* ================= Writes ================= */

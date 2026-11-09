@@ -74,6 +74,7 @@
       S.ver = body.ver || null;
       S.generatedAt = body.generatedAt; S.loadedAt = new Date();
       S.status = 'ok'; S.error = '';
+      loadHealth();
       LS.set('co.cacheAt', S.generatedAt);
     } catch (err) {
       S.error = err && err.message ? err.message : String(err);
@@ -91,6 +92,16 @@
     }
     S.refreshing = false;
     renderAll();
+  }
+  /* Integration health from the web app (account, change detection, edit access). Best effort. */
+  async function loadHealth() {
+    try {
+      const { url, key } = conn();
+      const u = new URL(url); u.searchParams.set('key', key); u.searchParams.set('mode', 'health');
+      const body = JSON.parse(await (await fetch(u.toString(), { redirect: 'follow' })).text());
+      S.health = body.ok ? body : null;
+    } catch (e) { S.health = null; }
+    dash.draw('integration');
   }
   async function post(payload) {
     const { url, key } = conn();
@@ -399,6 +410,19 @@
     const src = S.sources || {};
     const parts = ['paid', 'mkt', 'mkt2025', 'team'].filter((k) => src[k]).map((k) => (src[k].error ? '⚠ ' : '') + (src[k].file ? src[k].file + ' / ' + src[k].tab : k) + (src[k].rows ? ' (' + CO.num(src[k].rows.length) + ' rows)' : ''));
     el.textContent = parts.length ? 'Sources: ' + parts.join(' · ') : 'Data is read live from the Google Sheets through your Apps Script web app.';
+  });
+  dash.draw('integration', (el) => {
+    el.replaceChildren();
+    const h = S.health; if (!h || S.status !== 'ok') return;
+    const row = (k, v, cls) => { const r = document.createElement('div'); r.className = 'row'; const a = document.createElement('span'); a.className = 'k'; a.textContent = k; const b = document.createElement('span'); if (cls) b.className = cls; b.textContent = v; r.append(a, b); el.append(r); };
+    row('Connected as', h.runsAs || 'unknown');
+    row('Live change detection', h.liveTriggers ? 'On: sheet edits show here within about 30 seconds' : 'Off: run setup in Apps Script to turn it on (until then, changes arrive every 10 minutes)', h.liveTriggers ? 'good' : 'warn');
+    const label = { paid: 'Paid sheet', mkt: 'Marketing sheet', mkt2025: 'Marketing 2025 tab', team: 'Team list' };
+    Object.keys(h.sources || {}).forEach((k) => {
+      const s = h.sources[k];
+      if (!s.ok) return row(label[k] || k, (s.optional ? 'Not loaded (optional): ' : 'Cannot open: ') + s.error, s.optional ? 'warn' : 'bad');
+      row(label[k] || k, CO.num(s.rows) + ' rows · ' + (s.canEdit ? 'can read and edit' : 'read only: dashboard edits to this sheet will fail'), s.canEdit ? 'good' : 'warn');
+    });
   });
   dash.draw('sources-note', (el) => {
     const src = S.sources || {};

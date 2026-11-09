@@ -206,6 +206,11 @@ button.co-kpi:hover { border-color: color-mix(in srgb, var(--c1) 55%, var(--line
 .co-add .co-input { width: 15rem; }
 
 /* Health */
+.co-integ { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel-2); font-size: var(--fs-cap); }
+.co-integ:empty { display: none; }
+.co-integ .row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.co-integ .k { color: var(--muted); min-width: 11rem; }
+.co-integ .good { color: var(--ok); } .co-integ .warn { color: var(--warn); } .co-integ .bad { color: var(--bad); }
 .co-health { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
 .co-health button { text-align: left; display: flex; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; font-size: var(--fs-cap); }
 .co-health button[aria-pressed="true"] { border-color: var(--c1); box-shadow: 0 0 0 1px var(--c1); }
