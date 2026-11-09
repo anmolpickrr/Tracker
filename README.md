@@ -54,7 +54,7 @@ Do this in a browser profile signed into **design.tools@pickrr.com only** (see a
 
 1. Go to https://script.google.com and click **New project**. Name it "Creative Ops Tracker API".
 2. Delete the sample code and paste in the script:
-   - from the private file **"Creative Ops Tracker – Apps Script code v3"** in design.tools' Google Drive, which already has your sheet links filled in, or
+   - from the private file **"Creative Ops Tracker – Apps Script code v4"** in design.tools' Google Drive, which already has your sheet links filled in, or
    - from [`apps-script/Code.gs`](apps-script/Code.gs), then replace the four `PASTE_…` placeholders in `CONFIG` with the links to your sheets. Keep the real links in Apps Script only: this repository is public.
 3. Save, pick **setup** in the function menu at the top, and click **Run**. Allow the permissions it asks for (read and edit your spreadsheets, run triggers). Open **Execution log**: it lists the rows found in each sheet, the account the web app runs as, which sheets have change detection, and your **key**.
 4. Click **Deploy → New deployment**, type **Web app**, **Execute as: Me**, **Who has access: Anyone**. Click **Deploy** and copy the **Web app URL** (it ends in `/exec`).
@@ -68,11 +68,29 @@ To give someone else access, send them the site link plus the URL and key (priva
 
 ## Live sync
 
-- **Sheet → dashboard:** `setup()` installs edit triggers on the sheets. Every edit bumps a version number, and open dashboards check that number every 30 seconds, reloading only when something changed. The header shows **Live** when this is on. A full reload also runs every 10 minutes and whenever you come back to the tab, which catches edits the triggers can miss (for example, rows added by other scripts or forms).
-- **Dashboard → sheet:** click any task (in Today, Stand-up, All tasks or Sheet health) to change its **design status, Design ETA, designer or priority**, and **No. of Creatives** once that column exists. **Save to sheet** writes into that task's row, found by its ID. Status values are written in the sheet's own spelling: the dropdown's options if the column has one, otherwise the values already used (for example `WIP`, `TBP`, `DONE`, `Shared`). Marking a task Delivered also fills **Delivered On** when that column exists and is empty.
-- Team Active/Inactive switches and **Add a team member** write to the team list sheet.
-- The **Sheet health** tab shows which account the web app runs as, whether live change detection is on, and whether each sheet can be read and edited.
-- Rows without an ID, or with an ID that appears twice in the sheet, are not edited from the dashboard: the dialog says so, and they can be fixed in the sheet.
+Open dashboards ask the web app **every 30 seconds** whether anything changed, and reload only when it has:
+
+- **Edits typed in the sheets** are caught by the edit triggers that `setup()` installs.
+- **Edits made by other scripts, forms and integrations** (the Marketing sheet has two automation accounts writing to it) don't fire edit triggers, so the web app also checks each sheet's Google Drive "last modified" time. This needs the read-only Drive permission in [`apps-script/appsscript.json`](apps-script/appsscript.json): in Apps Script, **Project Settings → Show "appsscript.json" manifest file**, paste that file over it, save, and run `setup` once.
+- The web app keeps one cached copy of the sheets and serves it only while nothing has changed, so many open dashboards don't slow it down, and nobody sees a stale copy after a change.
+- A full reload also runs every 5 minutes and when you return to the tab. "Overdue" and "due today" move at midnight on their own.
+- The header shows **Live · data from <time> · checked <n>s ago**. **Sheet health** shows which account the web app runs as and whether both kinds of change detection are on.
+
+**Dashboard → sheet:** click any task (in Today, Stand-up, All tasks or Sheet health) to change its **design status, Design ETA, designer or priority**, and **No. of Creatives** once that column exists. **Save to sheet** writes into that task's row, found by its ID. Status values are written in the sheet's own spelling (its dropdown's options, else the values already used: `WIP`, `TBP`, `DONE`, `Shared`…). Marking a task Delivered also fills **Delivered On** when that column exists and is empty. Team Active/Inactive switches and **Add a team member** write to the team list sheet.
+
+Rows without an ID, or whose ID appears twice in a tab, are not edited from the dashboard: the dialog says so, and they can be fixed in the sheet.
+
+## How the numbers are worked out
+
+- **One row = one task.** Rows with no brand, creative type or creative are not tasks; they are listed in Sheet health as "Incomplete row, not counted", so nothing drops out unseen.
+- **Same task in two tabs** (for example a task carried into a new year's sheet with the same ID): counted once, from the tab listed first.
+- **Two different tasks with the same ID** in one tab: both are counted, and both are flagged "Duplicate ID" so the ID can be fixed.
+- **Creatives** = sum of "No. of Creatives" when that column exists, else 1 per task.
+- **Open** = To be planned + In progress + Changes requested (plus any status the dashboard doesn't recognise). **Overdue** = open with a Design ETA before today.
+- **Delivered** = design status DONE/Delivered, dated by **Delivered On** if the sheet has it, else the Design ETA (else the request date), and never later than today.
+- **Mistyped years** (e.g. a February 2026 request typed as 2025, or "0206") are corrected using the tab's normal date range, the neighbouring rows and the other date on the row. Every correction is listed in Sheet health; no date is changed silently.
+- Brand and creative-type spellings that differ only in case or a plural "s" are merged ("Gif"/"GIF", "Listings"/"Listing").
+- A task shared by two designers counts once in team totals and once for each designer in per-person views.
 
 ## Managing the team
 

@@ -11,7 +11,7 @@
   const mk = (y, mo, d) => { if (y < 100) y += 2000; if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return null; return String(y).padStart(4, '0') + '-' + p2(mo) + '-' + p2(d); };
   // Sheets show dates as "20-Apr-2026", "22 April 2026", "23-10-2026" (day first) or "6/3/2026" (month first).
   const parseDate = (s) => {
-    s = clean(s).replace(/_/g, '-'); if (!s) return null; let m;
+    s = clean(s).replace(/_/g, '-').replace(/\b(\d{1,2})(st|nd|rd|th)\b/i, '$1'); if (!s) return null; let m;
     if ((m = s.match(/^(\d{1,2})[-\s.\/]+([A-Za-z]{3,})[-\s.,\/]+(\d{2,4})$/)) && MON[m[2].slice(0, 3).toLowerCase()]) return mk(+m[3], MON[m[2].slice(0, 3).toLowerCase()], +m[1]);
     if ((m = s.match(/^([A-Za-z]{3,})[\s-]+(\d{1,2}),?[\s-]+(\d{4})$/)) && MON[m[1].slice(0, 3).toLowerCase()]) return mk(+m[3], MON[m[1].slice(0, 3).toLowerCase()], +m[2]);
     if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return mk(+m[1], +m[2], +m[3]);
@@ -147,63 +147,127 @@
   }
 
   /* ---------- One task list ---------- */
-  // sources: { paid: rows, mkt: rows, mkt2025: rows }  (rows from parseSource)
+  /* ---------- Dates that need a year correction ---------- */
+  const days = (a, b) => (Date.parse(b) - Date.parse(a)) / 864e5;
+  const goodYear = (d) => !!d && +d.slice(0, 4) >= 2020 && +d.slice(0, 4) <= 2100;
+  const reYear = (d, y) => { const c = String(y).padStart(4, '0') + d.slice(4); return isNaN(Date.parse(c)) ? null : c; };
+  // Re-year date d so it falls within [lo, hi] days of ref, as close to ref as possible.
+  const nearYear = (d, ref, lo, hi) => {
+    let best = null;
+    for (const y of [+ref.slice(0, 4) - 1, +ref.slice(0, 4), +ref.slice(0, 4) + 1]) {
+      const c = reYear(d, y); if (!c) continue;
+      const g = days(ref, c);
+      if (g >= lo && g <= hi && (!best || Math.abs(g) < Math.abs(best[1]))) best = [c, g];
+    }
+    return best ? best[0] : null;
+  };
+
   // sources: [{ kind: 'paid'|'mkt', rows }] in the web app's order (newest tab of each kind first),
   // or the older form { paid: rows, mkt: rows, mkt2025: rows }.
-  function buildTasks(sources) {
+  // Returns the task list; rows that are too incomplete to be a task are on its `ignored` property.
+  function buildTasks(sources, today) {
+    if (!today) { const d = new Date(); today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
     const list = Array.isArray(sources) ? sources : Object.keys(sources).map((k) => ({ kind: kindOf(k), rows: sources[k] || [] }));
     const seenIds = { paid: new Set(), mkt: new Set() };
-    const both = [];
+    const both = [], ignored = [];
     for (const s of list) {
       if (s.kind !== 'paid' && s.kind !== 'mkt') continue;
       const ids = new Set();
       for (const r of s.rows || []) {
         const id = clean(r.id);
-        if (id && seenIds[s.kind].has(id)) continue; // the same task in an older tab
+        if (id && seenIds[s.kind].has(id)) continue; // the same task in an older tab: the newer copy wins
         if (id) ids.add(id);
-        both.push([r, s.kind === 'paid' ? 'Paid' : 'Marketing']);
+        const source = s.kind === 'paid' ? 'Paid' : 'Marketing';
+        if (clean(r.brand) || clean(r.type) || clean(r.topic)) both.push([r, source]);
+        else ignored.push({ src: r.src || '', row: r.row || null, id, source, owner: clean(r.owner), status: clean(r.design_status) || clean(r.content_status), eta: r.eta, req: r.req_date });
       }
       ids.forEach((id) => seenIds[s.kind].add(id));
     }
-    for (let i = both.length - 1; i >= 0; i--) { const r = both[i][0]; if (!(clean(r.brand) || clean(r.type) || clean(r.topic))) both.splice(i, 1); }
-    const designersOf = designerSplitter(both.map(([r]) => r.designer));
-    const yr = (s) => +s.slice(0, 4);
-    const gap = (a, b) => (Date.parse(b) - Date.parse(a)) / 864e5;
-    const brandVotes = new Map();
-    for (const [r] of both) { const b = clean(r.brand); if (!b) continue; const k = b.toLowerCase(); const m = brandVotes.get(k) || new Map(); m.set(b, (m.get(b) || 0) + 1); brandVotes.set(k, m); }
-    const brandName = new Map();
-    for (const [k, m] of brandVotes) { let best = [...m].sort((a, b) => b[1] - a[1])[0][0]; if (best === best.toLowerCase()) best = best.replace(/\b\w/g, (c) => c.toUpperCase()); brandName.set(k, best); }
+
+    // Designer cells: an email becomes a name ("neha@shiprocket.com" → "Neha").
+    const fromEmail = (v) => clean(v).replace(/([A-Za-z0-9._-]+)@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m, u) => u.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+    const designersOf = designerSplitter(both.map(([r]) => fromEmail(r.designer)));
+
+    // One spelling per brand and per creative type (case, spacing and plurals merged; the most used spelling wins).
+    const canon = (values, keyOf, pretty) => {
+      const votes = new Map();
+      for (const v of values) { if (!v) continue; const k = keyOf(v); const m = votes.get(k) || new Map(); m.set(v, (m.get(v) || 0) + 1); votes.set(k, m); }
+      const out = new Map();
+      for (const [k, m] of votes) out.set(k, pretty([...m].sort((a, b) => b[1] - a[1])[0][0]));
+      return out;
+    };
+    const brandKey = (b) => b.toLowerCase();
+    const brandName = canon(both.map(([r]) => clean(r.brand)), brandKey, (b) => (b === b.toLowerCase() ? b.replace(/\b\w/g, (c) => c.toUpperCase()) : b));
+    const typeKey = (t) => t.toLowerCase().replace(/s$/, '');
+    const typeName = canon(both.map(([r]) => typeOf(r.type)), typeKey, (t) => (/^gif$/i.test(t) ? 'GIF' : t));
+
+    // Request dates of neighbouring rows (rows are entered in date order), to tell which date has a mistyped year.
+    const bySrc = new Map();
+    for (const [r] of both) { const k = r.src || ''; if (!bySrc.has(k)) bySrc.set(k, []); bySrc.get(k).push(r); }
+    const around = new Map(), span = new Map();
+    for (const [k, rows] of bySrc) {
+      // The tab's usual date range (its middle 90%, so a cluster of typos cannot stretch it).
+      const all = rows.map((r) => r.req_date).filter(goodYear).sort();
+      if (all.length >= 20) span.set(k, [all[Math.floor(all.length * 0.05)], all[Math.ceil(all.length * 0.95) - 1]]);
+      rows.sort((x, y) => (x.row || 0) - (y.row || 0));
+      rows.forEach((r, i) => {
+        const near = [];
+        for (let j = Math.max(0, i - 6); j <= Math.min(rows.length - 1, i + 6); j++) if (j !== i && goodYear(rows[j].req_date)) near.push(rows[j].req_date);
+        near.sort();
+        around.set(r, near.length >= 3 ? near[near.length >> 1] : null);
+      });
+    }
+
+    // Rows sharing an ID within one tab are different tasks: both are kept and flagged.
+    const idCount = new Map();
+    for (const [r] of both) { const id = clean(r.id); if (id) { const k = (r.src || '') + '|' + id; idCount.set(k, (idCount.get(k) || 0) + 1); } }
+
     const seen = new Set();
-    return both.map(([r, source], i) => {
+    const tasks = both.map(([r, source], i) => {
       const flags = [];
       let req = r.req_date, eta = r.eta;
-      if (req && eta && Math.abs(gap(req, eta)) > 200) {
-        const alt = yr(eta) + req.slice(4), g = gap(alt, eta);
-        if (yr(eta) >= 2020 && g >= -30 && g <= 120) { req = alt; flags.push('Request date year looks mistyped'); }
-        else { const alt2 = yr(req) + eta.slice(4), g2 = gap(req, alt2); if (yr(req) >= 2020 && g2 >= -30 && g2 <= 120) { eta = alt2; flags.push('ETA year looks mistyped'); } }
+      const mid = around.get(r), sp = span.get(r.src || '');
+      const inSpan = (d) => !sp || (days(sp[0], d) >= -60 && days(d, sp[1]) >= -60);
+      // 1. Request date: a year outside the tab's range, or far from the neighbouring rows, is a typo.
+      //    Re-year it to sit just before the ETA when the ETA looks right, else next to its neighbours.
+      if (req && (!goodYear(req) || !inSpan(req) || (mid && Math.abs(days(mid, req)) > 120))) {
+        let fix = null;
+        if (eta && goodYear(eta) && inSpan(eta)) fix = nearYear(req, eta, -150, 30);
+        if (!fix && mid) fix = nearYear(req, mid, -120, 120);
+        if (fix && fix !== req) { req = fix; flags.push('Request date year looks mistyped'); }
       }
-      if (req && yr(req) < 2020) { req = null; flags.push('Request date unreadable'); }
-      if (eta && yr(eta) < 2020) { eta = null; flags.push('ETA unreadable'); }
+      if (req && !goodYear(req)) { req = null; flags.push('Request date unreadable'); }
+      // 2. ETA: should land shortly after the request date.
+      if (eta && req && (Math.abs(days(req, eta)) > 200 || !goodYear(eta))) {
+        const fix = nearYear(eta, req, -45, 150);
+        if (fix) { eta = fix; flags.push('ETA year looks mistyped'); }
+      }
+      if (eta && !goodYear(eta)) { eta = null; flags.push('ETA unreadable'); }
       if (!req && clean(r.req_text) && !flags.includes('Request date unreadable')) flags.push('Request date unreadable');
       if (!eta && clean(r.eta_text) && !flags.includes('ETA unreadable')) flags.push('ETA unreadable');
-      if (req && eta && gap(req, eta) < 0) flags.push('ETA before request date');
+      if (req && eta && days(req, eta) < 0) flags.push('ETA before request date');
       const [stage, open] = stageOf(r.design_status, r.content_status);
       if (!KNOWN.includes(stage)) flags.push('Unrecognised status');
-      const des = designersOf(r.designer);
+      const des = designersOf(fromEmail(r.designer));
       if (open && !eta) flags.push('Open, no ETA');
       if ((open || stage === 'Under review') && !des.length) flags.push('No designer assigned');
       if (stage === 'Delivered' && !des.length) flags.push('Delivered, no designer');
       if (stage === 'Delivered' && !/^https?:/i.test(clean(r.creative_link))) flags.push('Delivered, no creative link');
       if (!clean(r.brand)) flags.push('No brand');
-      let uid = clean(r.id) || (source === 'Paid' ? 'P-row' : 'M-row') + (i + 2);
+      if (clean(r.id) && idCount.get((r.src || '') + '|' + clean(r.id)) > 1) flags.push('Duplicate ID');
+      let uid = (r.src || source) + ':' + (clean(r.id) || 'row' + (r.row || i + 2));
       while (seen.has(uid)) uid += '·';
       seen.add(uid);
-      const ddate = stage === 'Delivered' ? (r.delivered_on || eta || req || null) : null;
+      // Delivery date: the Delivered On column if the sheet has one, else the ETA (or request date).
+      // A delivered task can't have been delivered in the future, so a later ETA counts as today.
+      let ddate = stage === 'Delivered' ? (r.delivered_on || eta || req || null) : null;
+      if (ddate && ddate > today) ddate = today;
       const pri = clean(r.priority).toUpperCase();
+      const t0 = typeOf(r.type);
       return {
         uid, id: clean(r.id), source, src: r.src || '', row: r.row || null,
-        brand: clean(r.brand) ? brandName.get(clean(r.brand).toLowerCase()) : 'No brand',
-        topic: clean(r.topic), type: typeOf(r.type), channel: clean(r.channel), qty: r.qty || 1,
+        brand: clean(r.brand) ? brandName.get(brandKey(clean(r.brand))) : 'No brand',
+        topic: clean(r.topic), type: typeName.get(typeKey(t0)) || t0, channel: clean(r.channel), qty: r.qty || 1,
         priority: /^P\d$/.test(pri) ? pri : '', owner: clean(r.owner),
         designers: des.join(' + '), stage, open, design_status: clean(r.design_status), req, eta,
         ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: stage === 'Delivered' ? (r.delivered_on ? 'delivered' : eta ? 'eta' : 'request') : '',
@@ -212,6 +276,8 @@
         flags: flags.join('; ')
       };
     });
+    Object.defineProperty(tasks, 'ignored', { value: ignored, enumerable: false });
+    return tasks;
   }
 
   // Which optional columns a source has (so the editor only offers what can be saved).

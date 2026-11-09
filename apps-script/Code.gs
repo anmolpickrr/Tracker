@@ -39,7 +39,7 @@ const CONFIG = {
     // Team list: Name, Status (Active / Inactive), Role, Also written as, Notes. First tab.
     team: { sheet: 'PASTE_TEAM_LIST_SHEET_LINK', tab: '', kind: 'team' }
   },
-  cacheSeconds: 60
+  cacheSeconds: 600 // a cached copy is only used while the sheets are unchanged
 };
 
 /* The source's layout: its `kind`, else guessed from its name. */
@@ -80,6 +80,7 @@ function setup() {
   testRead();
   Logger.log('Web app runs as: ' + Session.getEffectiveUser().getEmail());
   Logger.log('Change detection is on for: ' + (ok.join(', ') || 'none'));
+  Logger.log('Edits by other scripts and integrations: ' + (driveCheckWorks_() ? 'detected too (Drive check works)' : 'NOT detected: add the Drive scope in appsscript.json (see README)'));
   if (viewOnly.length) Logger.log('NEEDS EDIT ACCESS: ' + viewOnly.join(', ') + '. This account can only view those sheets, so the dashboard can read them but cannot detect edits instantly or save changes to them. Ask the owner to make ' + Session.getEffectiveUser().getEmail() + ' an Editor, then run setup() again.');
   Logger.log('Your dashboard key: ' + key);
 }
@@ -100,20 +101,22 @@ function onSheetChange() { bumpVersion_(); clearCache_(); }
 function doGet(e) {
   const p = (e && e.parameter) || {};
   if (!checkKey_(p.key)) return json_({ ok: false, error: 'bad_key' });
-  if (p.mode === 'ver') return json_({ ok: true, ver: version_() });
+  if (p.mode === 'ver') return json_({ ok: true, ver: liveVersion_() });
   if (p.mode === 'health') return json_(health_());
+  // The cached copy is served only while the sheets are unchanged since it was read.
   const cache = CacheService.getScriptCache();
+  const ver = liveVersion_();
   if (!p.fresh) {
-    const hit = readCache_(cache);
+    const hit = readCache_(cache, ver);
     if (hit) return text_(hit);
   }
-  const body = JSON.stringify(readAll_());
-  writeCache_(cache, body);
+  const body = JSON.stringify(readAll_(ver));
+  writeCache_(cache, body, ver);
   return text_(body);
 }
 
-function readAll_() {
-  const out = { ok: true, generatedAt: new Date().toISOString(), ver: version_(), sources: {} };
+function readAll_(ver) {
+  const out = { ok: true, generatedAt: new Date().toISOString(), ver: ver || liveVersion_(), sources: {} };
   Object.keys(CONFIG.sources).forEach(function (name) {
     const s = CONFIG.sources[name];
     try {
@@ -149,7 +152,7 @@ function readTab_(s) {
 function health_() {
   const me = Session.getEffectiveUser().getEmail();
   const triggers = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'onSheetChange'; }).length;
-  const out = { ok: true, runsAs: me, ver: version_(), liveTriggers: triggers, checkedAt: new Date().toISOString(), sources: {} };
+  const out = { ok: true, runsAs: me, ver: liveVersion_(), liveTriggers: triggers, driveCheck: driveCheckWorks_(), checkedAt: new Date().toISOString(), sources: {} };
   Object.keys(CONFIG.sources).forEach(function (name) {
     const s = CONFIG.sources[name];
     try {
@@ -365,7 +368,34 @@ function openTab_(s) {
 function clean_(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
 function today_() { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
 function version_() { return PropertiesService.getScriptProperties().getProperty('DATA_VER') || '0'; }
-function bumpVersion_() { PropertiesService.getScriptProperties().setProperty('DATA_VER', String(Date.now())); }
+function bumpVersion_() { PropertiesService.getScriptProperties().setProperty('DATA_VER', String(Date.now())); try { CacheService.getScriptCache().remove('livever'); } catch (err) {} }
+
+/*
+ * The data version open dashboards poll every 30 seconds. It moves when:
+ *  - someone edits a sheet (the edit triggers installed by setup), or
+ *  - Google Drive's "last modified" time of any source sheet changes, which also covers edits by
+ *    other scripts, forms and integrations that edit triggers never see.
+ * Checked at most every 10 seconds, however many dashboards are open.
+ */
+function liveVersion_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('livever');
+  if (hit) return hit;
+  let v = Number(version_()) || 0;
+  const seen = {};
+  Object.keys(CONFIG.sources).forEach(function (name) {
+    let id;
+    try { id = sheetId_(CONFIG.sources[name].sheet); } catch (err) { return; }
+    if (seen[id]) return; seen[id] = true;
+    try { v = Math.max(v, DriveApp.getFileById(id).getLastUpdated().getTime()); } catch (err) { /* without Drive access, edit triggers still work */ }
+  });
+  const s = String(v);
+  cache.put('livever', s, 10);
+  return s;
+}
+function driveCheckWorks_() {
+  try { DriveApp.getFileById(sheetId_(CONFIG.sources[Object.keys(CONFIG.sources)[0]].sheet)).getLastUpdated(); return true; } catch (err) { return false; }
+}
 
 function checkKey_(k) {
   const key = PropertiesService.getScriptProperties().getProperty('API_KEY');
@@ -376,17 +406,18 @@ function json_(o) { return text_(JSON.stringify(o)); }
 function text_(s) { return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.JSON); }
 
 const CHUNK = 90000;
-function writeCache_(cache, body) {
+function writeCache_(cache, body, ver) {
   try {
     const parts = {}; const n = Math.ceil(body.length / CHUNK);
     for (let i = 0; i < n; i++) parts['d' + i] = body.slice(i * CHUNK, (i + 1) * CHUNK);
-    parts.meta = String(n);
+    parts.meta = n + '|' + ver;
     cache.putAll(parts, CONFIG.cacheSeconds);
   } catch (err) { /* the cache is only a speed-up */ }
 }
-function readCache_(cache) {
-  const n = Number(cache.get('meta') || 0);
-  if (!n) return null;
+function readCache_(cache, ver) {
+  const meta = String(cache.get('meta') || '').split('|');
+  const n = Number(meta[0] || 0);
+  if (!n || meta[1] !== String(ver)) return null;
   const keys = []; for (let i = 0; i < n; i++) keys.push('d' + i);
   const got = cache.getAll(keys);
   let s = ''; for (let i = 0; i < n; i++) { if (got['d' + i] == null) return null; s += got['d' + i]; }

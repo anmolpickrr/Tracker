@@ -70,6 +70,7 @@
       // Every task tab the web app reports, in its order (newest tab of each kind first).
       const keys = Object.keys(src).filter((k) => !src[k].error && CODATA.kindOf(k, src[k].kind) !== 'team');
       S.tasks = CODATA.buildTasks(keys.map((k) => ({ kind: CODATA.kindOf(k, src[k].kind), rows: CODATA.parseSource(CODATA.kindOf(k, src[k].kind), src[k], k) })));
+      S.ignored = S.tasks.ignored || [];
       const teamKey = Object.keys(src).find((k) => CODATA.kindOf(k, src[k].kind) === 'team');
       S.teamRaw = CODATA.parseTeam(teamKey ? src[teamKey] : null);
       S.team = S.teamRaw;
@@ -124,14 +125,17 @@
       const u = new URL(url); u.searchParams.set('key', key); u.searchParams.set('mode', 'ver');
       const body = JSON.parse(await (await fetch(u.toString(), { redirect: 'follow' })).text());
       S.checkedAt = new Date();
-      if (body.ok && body.ver && S.ver && body.ver !== S.ver) await load(true);
-      else dash.draw('sync-text');
+      if (body.ok && body.ver && S.ver && body.ver !== S.ver) await load(false);
+      dash.draw('sync-text');
     } catch (e) { /* a missed check is retried on the next tick */ }
     checking = false;
   }
   setInterval(checkForChanges, 30 * 1000);
-  setInterval(() => { if (document.visibilityState === 'visible' && S.status === 'ok') load(false); }, 10 * 60 * 1000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.loadedAt) { if (Date.now() - S.loadedAt > 10 * 60 * 1000) load(false); else checkForChanges(); } });
+  setInterval(() => { if (document.visibilityState === 'visible' && S.status === 'ok') load(false); }, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.loadedAt) { if (Date.now() - S.loadedAt > 5 * 60 * 1000) load(false); else checkForChanges(); } });
+  // Keep the 'checked … ago' line current, and redraw everything when the date changes (overdue and due-today move at midnight).
+  let shownDay = new Date().toDateString();
+  setInterval(() => { const d = new Date().toDateString(); if (d !== shownDay) { shownDay = d; renderAll(); } else dash.draw('sync-text'); }, 15 * 1000);
 
   /* ================= Helpers ================= */
   const CO = (() => {
@@ -403,7 +407,8 @@
     if (S.status === 'ok') {
       const at = new Date(S.generatedAt || S.loadedAt);
       const live = S.ver && S.ver !== '0';
-      el.textContent = (S.refreshing ? 'Syncing… ' : live ? 'Live · ' : '') + 'sheets read at ' + at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + (S.staleError ? ' · last refresh failed' : '');
+      const ago = S.checkedAt || S.loadedAt ? Math.max(0, Math.round((Date.now() - (S.checkedAt > S.loadedAt ? S.checkedAt : S.loadedAt)) / 1000)) : null;
+      el.textContent = (S.refreshing ? 'Syncing… ' : live ? 'Live · ' : '') + 'data from ' + at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + (ago != null && !S.refreshing ? ' · checked ' + (ago < 5 ? 'just now' : ago + 's ago') : '') + (S.staleError ? ' · last refresh failed' : '');
       el.title = live ? 'Checks the sheets for changes every 30 seconds' : 'Run setup() in Apps Script to turn on instant change detection';
     } else el.textContent = S.status === 'loading' ? 'Loading sheets…' : S.status === 'error' ? 'Could not load' : 'Not connected';
   });
@@ -419,6 +424,7 @@
     const h = S.health; if (!h || S.status !== 'ok') return;
     const row = (k, v, cls) => { const r = document.createElement('div'); r.className = 'row'; const a = document.createElement('span'); a.className = 'k'; a.textContent = k; const b = document.createElement('span'); if (cls) b.className = cls; b.textContent = v; r.append(a, b); el.append(r); };
     row('Connected as', h.runsAs || 'unknown');
+    row('Edits by scripts and integrations', h.driveCheck ? 'Detected within 30 seconds' : 'Not detected until the 5-minute refresh: add the Drive permission (README, Live sync)', h.driveCheck ? 'good' : 'warn');
     row('Live change detection', h.liveTriggers ? 'On: sheet edits show here within about 30 seconds' : 'Off: run setup in Apps Script to turn it on (until then, changes arrive every 10 minutes)', h.liveTriggers ? 'good' : 'warn');
     const label = new Proxy({}, { get: (_, k) => { const s = (h.sources || {})[k]; return s && s.file ? s.file + ' / ' + (s.tab || 'first tab') : k; } });
     Object.keys(h.sources || {}).forEach((k) => {
@@ -538,7 +544,8 @@
     const m = new Map();
     const openRows = CO.rows().filter((r) => r.open);
     const unassigned = openRows.filter((r) => !r.list.length);
-    openRows.forEach((r) => { r.list.filter(CO.isActive).forEach((d) => { const o = m.get(d) || { name: d, overdue: 0, week: 0, later: 0 }; const q = r.qty || 1; if (r.due === 'overdue') o.overdue += q; else if (r.due === 'today' || r.due === 'week') o.week += q; else o.later += q; m.set(d, o); }); });
+    // Everyone holding open work is shown; an inactive person's work is labelled so it gets reassigned.
+    openRows.forEach((r) => { r.list.forEach((d) => { const o = m.get(d) || { key: d, name: CO.isActive(d) ? d : d + ' (inactive, reassign)', overdue: 0, week: 0, later: 0 }; const q = r.qty || 1; if (r.due === 'overdue') o.overdue += q; else if (r.due === 'today' || r.due === 'week') o.week += q; else o.later += q; m.set(d, o); }); });
     const data = [...m.values()].map((d) => Object.assign(d, { total: d.overdue + d.week + d.later })).sort((a, b) => b.total - a.total);
     el.replaceChildren();
     if (unassigned.length) { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-unassigned'; b.textContent = CO.num(CO.sumQty(unassigned)) + ' open creatives have no designer yet' + (unassigned.some((r) => r.due === 'overdue') ? ', ' + unassigned.filter((r) => r.due === 'overdue').length + ' of them overdue' : '') + '. Assign them →'; b.addEventListener('click', () => CO.goTasks('open', { designer: '__none' })); el.append(b); }
@@ -555,7 +562,7 @@
     svg.append('g').selectAll('text').data(ticks).join('text').attr('class', 'tick').attr('x', x).attr('y', H - 8).attr('text-anchor', 'middle').text((d) => d);
     const tipEl = CO.tip(el);
     const g = svg.append('g').selectAll('g').data(data).join('g').attr('class', 'bar')
-      .on('click', (e, d) => CO.goTasks('open', { designer: d.name }))
+      .on('click', (e, d) => CO.goTasks('open', { designer: d.key }))
       .on('mousemove', (e, d) => { tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = d.name + ' · ' + d.total + ' open'; tipEl.append(k); keys.forEach(([key, c, lab]) => { const r = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = c; r.append(sw, lab + ': ' + d[key]); tipEl.append(r); }); const [px, py] = d3.pointer(e, el); CO.placeTip(tipEl, el, px, py); })
       .on('mouseleave', () => { tipEl.hidden = true; });
     g.append('text').attr('class', 'lbl').attr('x', L - 8).attr('y', (d) => y(d.name) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => d.name);
@@ -614,7 +621,8 @@
         const recentDone = r.stage === 'Delivered' && r.ddate && r.ddate >= wkAgo && r.ddate <= t;
         if (CO.CLOSED.has(r.stage) && !recentDone) return;
         if (!r.list.length) { if (r.open) { if (!people.has('Unassigned')) people.set('Unassigned', []); people.get('Unassigned').push(r); } return; }
-        r.list.forEach((d) => { if (!CO.isActive(d)) return; if (!people.has(d)) people.set(d, []); people.get(d).push(r); });
+        // Inactive people appear only while they still hold open work, so it can be reassigned.
+        r.list.forEach((d) => { if (!CO.isActive(d) && !r.open) return; if (!people.has(d)) people.set(d, []); people.get(d).push(r); });
       });
       const p = dash.params();
       if (p.designer && p.designer !== '__none') [...people.keys()].forEach((k) => { if (k !== p.designer) people.delete(k); });
@@ -641,6 +649,7 @@
         const mem = CO.member(c.name);
         if (mem.role) { const r = document.createElement('span'); r.className = 'su-role'; r.textContent = mem.role; nm.append(r); }
         if (mem.status === 'New' && c.name !== 'Unassigned') { const n = document.createElement('span'); n.className = 'tag-new'; n.textContent = 'New'; nm.append(n); }
+        if (mem.status === 'Inactive') { const n = document.createElement('span'); n.className = 'tag-new'; n.textContent = 'Inactive · reassign'; nm.append(n); }
         const load = document.createElement('span'); load.className = 'su-load'; load.append(CO.num(CO.sumQty(c.open))); const sm = document.createElement('small'); sm.textContent = 'open'; load.append(sm);
         head.append(nm, load); card.append(head);
         const stats = document.createElement('div'); stats.className = 'su-stats';
@@ -906,8 +915,10 @@
   /* ================= Sheet health ================= */
   (() => {
     let pick = '';
-    const ORDER = ['Open, no ETA', 'No designer assigned', 'Unrecognised status', 'Delivered, no designer', 'Delivered, no creative link', 'ETA before request date', 'Request date year looks mistyped', 'ETA year looks mistyped', 'Request date unreadable', 'ETA unreadable', 'No brand'];
-    const flagged = () => CO.rows().filter((r) => r.flags);
+    const ORDER = ['Duplicate ID', 'Incomplete row, not counted', 'Open, no ETA', 'No designer assigned', 'Unrecognised status', 'Delivered, no designer', 'Delivered, no creative link', 'ETA before request date', 'Request date year looks mistyped', 'ETA year looks mistyped', 'Request date unreadable', 'ETA unreadable', 'No brand'];
+    // Rows too incomplete to be a task are listed here so nothing drops out unseen.
+    const ignoredRows = () => (S.ignored || []).filter((x) => !dash.params().src || x.source === dash.params().src).map((x) => ({ uid: 'ignored:' + x.src + ':' + x.row, id: x.id, source: x.source, src: x.src, row: x.row, brand: '—', topic: 'Row ' + x.row + ' of ' + ((S.sources[x.src] && S.sources[x.src].tab) || x.src) + (x.owner ? ' · ' + x.owner : '') + (x.status ? ' · ' + x.status : ''), designers: '', list: [], stage: 'Not counted', req: x.req, eta: x.eta, flags: 'Incomplete row, not counted', open: false }));
+    const flagged = () => CO.rows().filter((r) => r.flags).concat(dash.params().designer || dash.params().brand || dash.params().type ? [] : ignoredRows());
     dash.draw('health-sum', (el) => {
       if (CO.notReady(el, 'box')) return;
       const rs = flagged();
