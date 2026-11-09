@@ -14,27 +14,50 @@
 <script src="assets/theme.js"></script>
 </head>
 <body>
-<div class="co">
-  <header class="co-head" id="top">
-    <div class="co-head-text">
-      <p class="co-eyebrow"><i></i>Fastrr Creative Studio</p>
-      <h1 class="co-title">Creative Ops Tracker</h1>
-      <p class="co-take"><b data-draw="t-open">—</b> tasks open with designers right now: <b class="bad" data-draw="t-overdue">—</b> overdue, <b data-draw="t-today">—</b> due today and <b data-draw="t-wip">—</b> in progress. <b data-draw="t-delivered">—</b> creatives delivered so far this month.</p>
+<div class="app">
+  <aside class="side" id="side" aria-label="Main navigation">
+    <div class="side-brand">
+      <span class="side-logo" aria-hidden="true">F</span>
+      <span><b>Creative Ops</b><small>Fastrr Creative Studio</small></span>
     </div>
-    <div class="co-head-side">
-      <span class="co-date" data-draw="today-date">—</span>
-      <div class="co-sync">
-        <span class="co-sync-dot" data-draw="sync-dot"></span>
-        <span data-draw="sync-text">Not connected</span>
-        <button class="co-btn" id="btn-refresh" type="button">Refresh</button>
-        <button class="co-btn" id="btn-settings" type="button">Connection</button>
-        <span class="co-me" data-draw="me"></span>
-        <button class="co-btn" id="btn-signout" type="button">Sign out</button>
-        <button class="co-btn" id="btn-theme" type="button">Dark theme</button>
+    <nav class="side-nav co-tabs" role="tablist" aria-label="Views">
+      <p class="nav-h">Workspace</p>
+      <button class="co-tab" role="tab" data-tab="today" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/></svg><span class="nav-l">Overview</span><span class="nav-badge" hidden></span></button>
+      <button class="co-tab" role="tab" data-tab="standup" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 13c-2.7 0-8 1.3-8 4v3h16v-3c0-2.7-5.3-4-8-4zM16 13c-.3 0-.7 0-1.1.1A4.2 4.2 0 0 1 17 17v3h7v-3c0-2.7-5.3-4-8-4z"/></svg><span class="nav-l">Stand-up</span><span class="nav-badge" hidden></span></button>
+      <button class="co-tab" role="tab" data-tab="tasks" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span class="nav-l">Tasks</span><span class="nav-badge" hidden></span></button>
+      <p class="nav-h">Insights</p>
+      <button class="co-tab" role="tab" data-tab="team" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span class="nav-l">Team</span><span class="nav-badge" hidden></span></button>
+      <button class="co-tab" role="tab" data-tab="reports" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="nav-l">Reports</span><span class="nav-badge" hidden></span></button>
+      <p class="nav-h">Admin</p>
+      <button class="co-tab" role="tab" data-tab="health" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span class="nav-l">Data health</span><span class="nav-badge" hidden></span></button>
+      <button class="co-tab" role="tab" data-tab="access" aria-selected="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.4 8.7-8 10-4.6-1.3-8-5-8-10V6z M9 12l2 2 4-4"/></svg><span class="nav-l">Access</span><span class="nav-badge" hidden></span></button>
+    </nav>
+    <div class="side-foot">
+      <div class="side-user" data-draw="me-card"></div>
+      <span class="co-me" data-draw="me"></span>
+      <div class="side-actions">
+        <button class="co-btn ghost" id="btn-theme" type="button">Dark theme</button>
+        <button class="co-btn ghost" id="btn-settings" type="button">Connection</button>
+        <button class="co-btn ghost" id="btn-signout" type="button">Sign out</button>
       </div>
     </div>
-  </header>
+  </aside>
+  <div class="side-scrim" id="scrim" hidden></div>
 
+  <div class="main">
+    <header class="top">
+      <button class="icon-btn top-menu" id="btn-menu" type="button" aria-label="Open menu" aria-controls="side" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <div class="top-title">
+        <h1 data-draw="page-title">Overview</h1>
+        <p data-draw="page-sub"></p>
+      </div>
+      <div class="top-side">
+        <span class="sync-pill"><span class="co-sync-dot" data-draw="sync-dot"></span><span data-draw="sync-text">Not connected</span></span>
+        <button class="icon-btn" id="btn-refresh" type="button" aria-label="Refresh now" title="Refresh now"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"/></svg></button>
+      </div>
+    </header>
+
+<div class="co">
   <div class="co-banner" id="banner" hidden>
     <div>
       <strong data-draw="banner-title">Connect the dashboard to your sheets</strong>
@@ -43,17 +66,9 @@
     <button class="co-btn primary" id="btn-connect" type="button">Connect</button>
   </div>
 
-  <div class="co-bar">
-    <div class="co-tabs" role="tablist" aria-label="Views">
-      <button class="co-tab" role="tab" data-tab="today" aria-selected="true">Today</button>
-      <button class="co-tab" role="tab" data-tab="standup" aria-selected="false">Stand-up</button>
-      <button class="co-tab" role="tab" data-tab="tasks" aria-selected="false">All tasks</button>
-      <button class="co-tab" role="tab" data-tab="team" aria-selected="false">Team</button>
-      <button class="co-tab" role="tab" data-tab="reports" aria-selected="false">Reports</button>
-      <button class="co-tab" role="tab" data-tab="health" aria-selected="false">Sheet health</button>
-      <button class="co-tab" role="tab" data-tab="access" aria-selected="false" hidden>Access</button>
-    </div>
-    <div class="co-filters">
+  <div class="co-bar" id="filter-bar">
+    <button class="co-btn filters-toggle" id="btn-filters" type="button" aria-expanded="false" aria-controls="filters"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>Filters <b data-draw="filter-count"></b></button>
+    <div class="co-filters" id="filters">
       <select class="co-select co-f" id="f-src" data-param="src" aria-label="Sheet">
         <option value="">Both sheets</option>
         <option value="Paid">Paid (client)</option>
@@ -66,69 +81,66 @@
     </div>
   </div>
 
-  <!-- TODAY -->
+  <!-- OVERVIEW -->
   <section class="co-panel" id="today" data-panel="today">
     <div class="co-kpis">
       <button class="co-kpi" data-go="open" type="button"><span class="co-kpi-label">Open with designers</span><span class="co-kpi-val" data-draw="kpi" data-kpi="open">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="open">—</span></button>
+      <button class="co-kpi is-bad" data-go="overdue" type="button"><span class="co-kpi-label"><i class="dot bad"></i>Overdue</span><span class="co-kpi-val" data-draw="kpi" data-kpi="overdue">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="overdue">—</span></button>
+      <button class="co-kpi is-warn" data-go="today" type="button"><span class="co-kpi-label"><i class="dot warn"></i>Due today</span><span class="co-kpi-val" data-draw="kpi" data-kpi="today">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="today">—</span></button>
       <button class="co-kpi" data-go="wip" type="button"><span class="co-kpi-label">In progress (WIP)</span><span class="co-kpi-val" data-draw="kpi" data-kpi="wip">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="wip">—</span></button>
-      <button class="co-kpi is-bad" data-go="overdue" type="button"><span class="co-kpi-label">Overdue</span><span class="co-kpi-val" data-draw="kpi" data-kpi="overdue">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="overdue">—</span></button>
-      <button class="co-kpi is-warn" data-go="today" type="button"><span class="co-kpi-label">Due today</span><span class="co-kpi-val" data-draw="kpi" data-kpi="today">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="today">—</span></button>
       <button class="co-kpi" data-go="review" type="button"><span class="co-kpi-label">Under review</span><span class="co-kpi-val" data-draw="kpi" data-kpi="review">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="review">—</span></button>
-      <button class="co-kpi" data-go="delivered-month" type="button"><span class="co-kpi-label">Creatives delivered this month</span><span class="co-kpi-val" data-draw="kpi" data-kpi="delivered">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="delivered">—</span></button>
+      <button class="co-kpi is-good" data-go="delivered-month" type="button"><span class="co-kpi-label">Delivered this month</span><span class="co-kpi-row"><span class="co-kpi-val" data-draw="kpi" data-kpi="delivered">—</span><span class="co-spark" data-draw="kpi-spark" aria-hidden="true"></span></span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="delivered">—</span></button>
     </div>
 
-    <div class="co-card">
-      <div class="co-card-head">
-        <h2 class="co-h2">Needs attention</h2>
-        <p class="co-note">Overdue, due today or tomorrow, and changes requested. Oldest deadline first.</p>
-      </div>
-      <div class="co-tablewrap short">
-        <table class="co-table">
-          <thead><tr><th>When</th><th>ID</th><th>Brand</th><th>Creative</th><th>Type</th><th class="n">Qty</th><th>Designer</th><th>Status</th><th>ETA</th><th class="co-hide-sm">Links</th></tr></thead>
-          <tbody data-draw="attention"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="co-grid">
+    <div class="ov-grid">
       <div class="co-card">
         <div class="co-card-head">
-          <h2 class="co-h2">Workload by designer</h2>
-          <p class="co-note">Open creatives each active designer holds. Click a bar to see their tasks.</p>
+          <div><h2 class="co-h2">Needs attention</h2><p class="co-note">Overdue, due today or tomorrow, and changes requested. Oldest deadline first.</p></div>
+          <button class="co-link" type="button" data-go-tasks="overdue">All overdue →</button>
+        </div>
+        <div class="co-tablewrap short">
+          <table class="co-table compact">
+            <thead><tr><th>When</th><th>Task</th><th>Designer</th><th>Status</th><th class="co-hide-lg">Links</th></tr></thead>
+            <tbody data-draw="attention"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="ov-side">
+        <div class="co-card accent-bad" data-draw="unassigned"></div>
+        <div class="co-card">
+          <div class="co-card-head"><div><h2 class="co-h2">Pipeline</h2><p class="co-note">Everything not delivered or dropped, by status.</p></div></div>
+          <div data-draw="pipeline"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ov-grid even">
+      <div class="co-card">
+        <div class="co-card-head">
+          <div><h2 class="co-h2">Workload by designer</h2><p class="co-note">Open creatives each designer holds. Click a bar for their tasks.</p></div>
         </div>
         <div class="co-legend"><span><i style="background: var(--bad)"></i>Overdue</span><span><i style="background: var(--warn)"></i>Due in 7 days</span><span><i style="background: var(--chart-muted)"></i>Later or no ETA</span></div>
         <div class="co-chart" data-draw="workload"></div>
       </div>
       <div class="co-card">
         <div class="co-card-head">
-          <h2 class="co-h2">Work in the pipeline</h2>
-          <p class="co-note">Everything not yet delivered or dropped, by design status. Click one to list it.</p>
+          <div><h2 class="co-h2">Coming up</h2><p class="co-note">Open work due in the next 14 days.</p></div>
+          <button class="co-link" type="button" data-go-tasks="noeta" data-draw="upcoming-noeta"></button>
         </div>
-        <div data-draw="pipeline"></div>
-      </div>
-    </div>
-
-    <div class="co-card">
-      <div class="co-card-head">
-        <h2 class="co-h2">Coming up next</h2>
-        <p class="co-note">Open tasks due in the next 14 days, plus open tasks that have no ETA yet.</p>
-      </div>
-      <div class="co-tablewrap short">
-        <table class="co-table">
-          <thead><tr><th>ETA</th><th>ID</th><th>Brand</th><th>Creative</th><th>Type</th><th class="n">Qty</th><th>Designer</th><th>Status</th><th>Sheet</th></tr></thead>
-          <tbody data-draw="upcoming"></tbody>
-        </table>
+        <div class="co-tablewrap short">
+          <table class="co-table compact">
+            <thead><tr><th>ETA</th><th>Task</th><th>Designer</th><th>Status</th></tr></thead>
+            <tbody data-draw="upcoming"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </section>
 
   <!-- STAND-UP -->
   <section class="co-panel" id="standup" data-panel="standup" hidden>
-    <div class="co-card-head">
-      <div>
-        <h2 class="co-h2">Daily stand-up</h2>
-        <p class="co-note">One card per active team member: what is late, due today, in progress and up next. Green cards have no open work and can take new tasks.</p>
-      </div>
+    <div class="co-pagebar">
+      <div class="su-summary" data-draw="su-summary"></div>
       <select class="co-select" id="su-sort" aria-label="Order cards">
         <option value="urgent">Most urgent first</option>
         <option value="load">Heaviest load first</option>
@@ -141,10 +153,7 @@
   <!-- ALL TASKS -->
   <section class="co-panel" id="tasks" data-panel="tasks" hidden>
     <div class="co-card">
-      <div class="co-card-head">
-        <h2 class="co-h2">All tasks</h2>
-        <p class="co-note"><span data-draw="task-count">—</span> tasks match. Click a column to sort, or a task to edit it.</p>
-      </div>
+      <div class="seg" data-draw="t-chips" role="group" aria-label="Quick status filter"></div>
       <div class="co-tools">
         <input class="co-input co-search" id="t-search" type="search" placeholder="Search ID, brand, creative, owner…" aria-label="Search tasks">
         <select class="co-select" id="t-stage" aria-label="Status">
@@ -166,25 +175,26 @@
           <option value="dropped">Dropped or rejected</option>
           <option value="all">All statuses</option>
         </select>
+        <span class="co-note tools-count"><b data-draw="task-count">—</b> tasks<span class="co-hide-sm"> · click a column to sort, a row to open it</span></span>
         <button class="co-btn" id="t-csv" type="button">Download CSV</button>
       </div>
       <div class="co-tablewrap">
         <table class="co-table" id="task-table">
           <thead><tr>
             <th data-sort="id"><button type="button">ID</button></th>
-            <th data-sort="source"><button type="button">Sheet</button></th>
             <th data-sort="brand"><button type="button">Brand</button></th>
             <th data-sort="topic"><button type="button">Creative</button></th>
             <th data-sort="type"><button type="button">Type</button></th>
             <th data-sort="qty" class="n"><button type="button">Qty</button></th>
             <th data-sort="designers"><button type="button">Designer</button></th>
             <th data-sort="priority"><button type="button">Priority</button></th>
-            <th data-sort="req"><button type="button">Requested</button></th>
             <th data-sort="eta" aria-sort="ascending"><button type="button">ETA</button></th>
             <th data-sort="stage"><button type="button">Status</button></th>
-            <th data-sort="owner" class="co-hide-sm"><button type="button">Content owner</button></th>
-            <th data-sort="live_status" class="co-hide-sm"><button type="button">Live</button></th>
-            <th>Links</th>
+            <th data-sort="source"><button type="button">Sheet</button></th>
+            <th data-sort="req" class="co-hide-lg"><button type="button">Requested</button></th>
+            <th data-sort="owner" class="co-hide-lg"><button type="button">Content owner</button></th>
+            <th data-sort="live_status" class="co-hide-lg"><button type="button">Live</button></th>
+            <th class="co-hide-lg">Links</th>
           </tr></thead>
           <tbody data-draw="tasks"></tbody>
         </table>
@@ -196,22 +206,22 @@
   <section class="co-panel" id="team" data-panel="team" hidden>
     <div class="co-card">
       <div class="co-card-head">
-        <h2 class="co-h2">Team</h2>
+        <div><h2 class="co-h2">Team scorecard</h2><p class="co-note">Load and output per person. A shared task counts for each designer on it. Click a name for their tasks.</p></div>
         <select class="co-select" id="team-who" aria-label="Members shown">
           <option value="active">Active members</option>
           <option value="all">All members, including inactive</option>
         </select>
       </div>
-      <p class="co-note">Current load and output per person. A task shared by two designers counts for both. Click a name to open their tasks. Switch someone to Inactive to take them off the stand-up and workload views; their past deliveries still count in reports. Anyone new who appears in the task sheets shows up here automatically, marked New. Changes save to the Creative Team List sheet.</p>
       <div class="co-tablewrap">
         <table class="co-table">
-          <thead><tr><th>Designer</th><th>Status</th><th class="n">Open</th><th class="n">WIP</th><th class="n">Overdue</th><th class="n">Due 7 days</th><th class="n">Under review</th><th class="n">Delivered this month</th><th class="n">Last month</th><th class="n">Monthly average</th><th class="co-hide-sm">Main brands</th><th class="co-hide-sm">Type mix (delivered)</th></tr></thead>
+          <thead><tr><th>Designer</th><th>Status</th><th class="n">Open</th><th class="n co-hide-md">WIP</th><th class="n">Overdue</th><th class="n">Due 7d</th><th class="n">In review</th><th class="n">This month</th><th class="n">Last month</th><th class="n">Avg / month</th><th class="co-hide-lg">Main brands</th><th class="co-hide-sm">Type mix (delivered)</th></tr></thead>
           <tbody data-draw="team"></tbody>
         </table>
       </div>
-      <div class="co-legend" data-draw="team-legend"></div>
+      <div class="co-legend team-legend" data-draw="team-legend"></div>
       <form class="co-add" id="add-member" autocomplete="off">
         <strong>Add a team member</strong>
+        <span class="co-note add-hint">Inactive people leave the stand-up and workload views; their past work stays in reports. New names from the sheets appear here marked New.</span>
         <input class="co-input" id="add-name" type="text" placeholder="Full name, as written in the sheets" aria-label="Name" required maxlength="80">
         <input class="co-input" id="add-role" type="text" placeholder="Role (optional)" aria-label="Role" maxlength="60">
         <button class="co-btn primary" type="submit">Add as Active</button>
@@ -220,8 +230,7 @@
     </div>
     <div class="co-card">
       <div class="co-card-head">
-        <h2 class="co-h2">Creatives delivered per designer per month</h2>
-        <p class="co-note">By delivery month. Darker means more. Click a cell to open that month in Reports.</p>
+        <div><h2 class="co-h2">Creatives delivered per designer per month</h2><p class="co-note">By delivery month. Darker means more. Click a cell to open that month in Reports.</p></div>
       </div>
       <div class="co-tablewrap">
         <table class="co-table co-heat" data-draw="heat"></table>
@@ -232,10 +241,6 @@
   <!-- REPORTS -->
   <section class="co-panel" id="reports" data-panel="reports" hidden>
     <div class="co-card">
-      <div class="co-card-head">
-        <h2 class="co-h2">Delivery report</h2>
-        <p class="co-note" data-draw="r-period">—</p>
-      </div>
       <div class="co-tools">
         <select class="co-select" id="r-preset" aria-label="Period">
           <option value="this-month">This month</option>
@@ -252,7 +257,7 @@
         <label class="co-range">To <input class="co-input" id="r-to" type="date" min="2020-01-01" max="2099-12-31"></label>
         <button class="co-btn" id="r-csv" type="button">Download report CSV</button>
       </div>
-      <p class="co-note">Sheet, designer, brand and type filters above apply to every number here. Each period is compared with the period of the same length just before it.</p>
+      <p class="co-note"><b data-draw="r-period">—</b> The filters above apply to every number here.</p>
     </div>
     <div class="co-kpis">
       <div class="co-kpi"><span class="co-kpi-label">Creatives delivered</span><span class="co-kpi-val" data-draw="rkpi" data-kpi="total">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="total">—</span></div>
@@ -264,24 +269,24 @@
     </div>
     <div class="co-card">
       <div class="co-card-head">
-        <h2 class="co-h2">Creatives delivered by month</h2>
-        <p class="co-note">Stacked by creative type; the report period is highlighted. Click a month to report on it.</p>
+        <div><h2 class="co-h2">Creatives delivered by month</h2><p class="co-note">The report period is highlighted. Click a month to report on it.</p></div>
+        <div class="seg small" role="group" aria-label="Chart breakdown"><button type="button" data-rchart="total">Total</button><button type="button" data-rchart="type">By type</button></div>
       </div>
       <div class="co-legend" data-draw="r-legend"></div>
       <div class="co-chart" data-draw="r-chart"></div>
     </div>
     <div class="co-grid">
       <div class="co-card">
-        <div class="co-card-head"><h2 class="co-h2">By brand</h2><p class="co-note">Creatives delivered in the period, by type.</p></div>
+        <div class="co-card-head"><div><h2 class="co-h2">By brand</h2><p class="co-note">Creatives delivered in the period, by type.</p></div></div>
         <div class="co-tablewrap short"><table class="co-table" data-draw="r-brand"></table></div>
       </div>
       <div class="co-card">
-        <div class="co-card-head"><h2 class="co-h2">By designer</h2><p class="co-note">Creatives delivered in the period, by type.</p></div>
+        <div class="co-card-head"><div><h2 class="co-h2">By designer</h2><p class="co-note">Creatives delivered in the period, by type.</p></div></div>
         <div class="co-tablewrap short"><table class="co-table" data-draw="r-designer"></table></div>
       </div>
     </div>
     <div class="co-card">
-      <div class="co-card-head"><h2 class="co-h2">By creative type</h2><p class="co-note">Creatives delivered in the period, against the previous period.</p></div>
+      <div class="co-card-head"><div><h2 class="co-h2">By creative type</h2><p class="co-note">Creatives delivered in the period, against the previous period.</p></div></div>
       <div class="co-tablewrap short"><table class="co-table" data-draw="r-type"></table></div>
     </div>
     <details class="co-defs">
@@ -300,8 +305,7 @@
   <section class="co-panel" id="health" data-panel="health" hidden>
     <div class="co-card">
       <div class="co-card-head">
-        <h2 class="co-h2">Sheet health</h2>
-        <p class="co-note">Rows that make tracking less reliable. Fix them in the sheet and they drop off on the next refresh. Click a check to list its rows.</p>
+        <div><h2 class="co-h2">Checks</h2><p class="co-note">Rows that make tracking less reliable. Fix them in the sheet and they drop off on the next refresh. Click a check to list its rows.</p></div>
       </div>
       <div class="co-integ" data-draw="integration"></div>
       <div class="co-health" data-draw="health-sum"></div>
@@ -335,15 +339,13 @@
   <section class="co-panel" id="access" data-panel="access" hidden>
     <div class="co-card">
       <div class="co-card-head">
-        <h2 class="co-h2">Access requests</h2>
-        <p class="co-note">Everyone who signed up or tried to log in with their work Google account. They see nothing until you approve them. Click a name to see their profile.</p>
+        <div><h2 class="co-h2">Access requests</h2><p class="co-note">Everyone who signed up or tried to log in with their work Google account. They see nothing until you approve them. Click a name to see their profile.</p></div>
       </div>
       <div class="ax-req" data-draw="ax-pending"></div>
     </div>
     <div class="co-card">
       <div class="co-card-head">
-        <h2 class="co-h2">People with access</h2>
-        <p class="co-note"><b>View only</b>: sees every tab and downloads reports. <b>Can edit</b>: also changes tasks. <b>Admin</b>: also manages the team list, access and the activity log. Changes apply within 30 seconds, even on dashboards that are already open.</p>
+        <div><h2 class="co-h2">People with access</h2><p class="co-note"><b>View only</b>: sees every tab and downloads reports. <b>Can edit</b>: also changes tasks. <b>Admin</b>: also manages the team list, access and the activity log. Changes apply within 30 seconds, even on dashboards that are already open.</p></div>
       </div>
       <form class="ax-add" id="ax-add" autocomplete="off">
         <input class="co-input" id="ax-email" type="email" placeholder="name@pickrr.com" aria-label="Work email" required maxlength="120">
@@ -360,8 +362,7 @@
     </div>
     <div class="co-card" id="ax-log-card">
       <div class="co-card-head">
-        <h2 class="co-h2">Activity log</h2>
-        <p class="co-note">Every change made on the dashboard or typed into the sheets, with the value before and after, newest first. Nobody can edit or delete it.</p>
+        <div><h2 class="co-h2">Activity log</h2><p class="co-note">Every change made on the dashboard or typed into the sheets, with the value before and after, newest first. Nobody can edit or delete it.</p></div>
       </div>
       <div class="ax-filters">
         <input class="co-input co-search" id="ax-q" type="search" placeholder="Search: task ID, person, brand, value…" aria-label="Search the activity log">
@@ -386,6 +387,15 @@
   </section>
 
   <footer class="co-foot"><span data-draw="foot">—</span></footer>
+</div>
+  </div>
+  <nav class="btabs" aria-label="Main views">
+    <button class="bt" type="button" data-tab="today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/></svg><span>Overview</span></button>
+    <button class="bt" type="button" data-tab="standup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 13c-2.7 0-8 1.3-8 4v3h16v-3c0-2.7-5.3-4-8-4zM16 13c-.3 0-.7 0-1.1.1A4.2 4.2 0 0 1 17 17v3h7v-3c0-2.7-5.3-4-8-4z"/></svg><span>Stand-up</span></button>
+    <button class="bt" type="button" data-tab="tasks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Tasks</span></button>
+    <button class="bt" type="button" data-tab="reports"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Reports</span></button>
+    <button class="bt" type="button" id="bt-more" aria-controls="side"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg><span>More</span><i class="bt-dot" hidden></i></button>
+  </nav>
 </div>
 
 <div class="gate" id="gate" hidden>

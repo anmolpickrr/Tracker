@@ -6,17 +6,21 @@ A live dashboard for the Fastrr creative team: the daily stand-up, who is workin
 
 ## What it shows
 
-| Tab | For |
-| --- | --- |
-| **Today** | Open, in-progress, overdue and due-today counts; a "Needs attention" list; workload per designer; the pipeline by design status; what is coming up in the next 14 days. |
-| **Stand-up** | One card per active team member for the daily meeting: overdue, due today, in progress, changes requested and up next. Green cards have no open work. |
-| **All tasks** | Every task from both sheets, searchable and sortable, with links to the brief, creative and source file. Click a task to edit it. Download as CSV. |
-| **Team** | Scorecard per person (open, WIP, overdue, delivered this month and last, monthly average, type mix), a designer-by-month delivery grid, and Active / Inactive switches. |
-| **Reports** | Creatives delivered for any month, quarter, year or custom date range, compared with the period before, broken down by brand, designer and creative type. Download as CSV. |
-| **Sheet health** | Rows that make tracking unreliable: open work with no ETA or designer, unknown statuses, mistyped dates, delivered work with no link. |
-| **Access** (admins) | Access requests to approve or decline, everyone's role, and the activity log of every change. |
+Navigation is a sidebar on desktop and a bottom tab bar on phones (More opens the rest).
 
-Filters for sheet, designer, brand and creative type apply to every tab.
+| Page | For |
+| --- | --- |
+| **Overview** | Open, overdue, due-today, in-progress, under-review and delivered-this-month counts (each opens the matching task list). **Needs attention**: overdue, due soon and changes requested. **Unassigned**: work nobody has picked up, oldest and overdue first. **Pipeline** by design status, **workload** per designer, and what is **coming up** in the next 14 days. |
+| **Stand-up** | One card per active team member for the daily meeting: overdue, due today, in progress, changes requested and up next, with a summary strip on top. |
+| **Tasks** | Every task from both sheets. One-click status chips with counts (Not delivered, Open, Overdue, Due this week, No ETA, Under review, Delivered this month, All), search, sorting, CSV. Click a task to open or edit it. On phones each task is a card. |
+| **Team** | Scorecard per person (open, overdue, due in 7 days, in review, delivered this month and last, monthly average, main brands, type mix), a designer-by-month delivery grid, and Active / Inactive switches (admins). |
+| **Reports** | Creatives delivered for any month, quarter, year or custom range, compared with the period before: monthly chart (total or by type), by brand, by designer, by creative type. CSV. |
+| **Data health** | Rows that make tracking unreliable (no ETA, no designer, unknown status, mistyped dates, duplicates) and the connection status of every sheet. |
+| **Access** (admins) | Access requests, people and their access level, and the activity log of every change. |
+
+Light and dark themes. Chart colours are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table.
+
+Filters for sheet, designer, brand and creative type sit above every data page (on phones behind **Filters**) and apply to all of it. Active filters are highlighted.
 
 ## How it works
 

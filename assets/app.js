@@ -7,7 +7,7 @@
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } },
     set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
   };
-  const DEFAULTS = { tab: 'today', src: '', designer: '', brand: '', type: '', stage: 'active', susort: 'urgent', who: 'active', rpreset: 'this-month', rfrom: '', rto: '' };
+  const DEFAULTS = { tab: 'today', src: '', designer: '', brand: '', type: '', stage: 'active', susort: 'urgent', who: 'active', rpreset: 'this-month', rfrom: '', rto: '', rchart: 'type' };
   const P = Object.assign({}, DEFAULTS);
   try { Object.assign(P, JSON.parse(LS.get('co.view', '{}'))); } catch (e) { /* ignore */ }
   const TABS = ['today', 'standup', 'tasks', 'team', 'reports', 'health', 'access'];
@@ -20,16 +20,18 @@
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
 
   const S = { status: 'idle', error: '', tasks: null, team: null, teamRaw: [], sources: {}, generatedAt: null, loadedAt: null };
-  const colors = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)', 'var(--c7)', 'var(--c8)'];
+  // Chart categories in a fixed, validated order (never cycled past the last slot: the tail folds into "Other").
+  const colors = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)'];
   const draws = new Map();
   const dash = {
     colors,
     params: () => P,
     setParams(o) {
       Object.assign(P, o);
-      LS.set('co.view', JSON.stringify({ src: P.src, designer: P.designer, brand: P.brand, type: P.type, stage: P.stage, susort: P.susort, who: P.who, rpreset: P.rpreset, rfrom: P.rfrom, rto: P.rto }));
+      LS.set('co.view', JSON.stringify({ src: P.src, designer: P.designer, brand: P.brand, type: P.type, stage: P.stage, susort: P.susort, who: P.who, rpreset: P.rpreset, rfrom: P.rfrom, rto: P.rto, rchart: P.rchart }));
       if (o.tab) { try { history.replaceState(null, '', '#' + o.tab); } catch (e) { /* ignore */ } }
       if (o.tab === 'access') axRefresh(true);
+      if (o.tab) { closeNav(); window.scrollTo({ top: 0 }); }
       renderAll();
     },
     setLink(id) { try { history.replaceState(null, '', '#' + id); } catch (e) { /* ignore */ } },
@@ -258,12 +260,13 @@
         default: return true;
       }
     };
-    const stageColor = (s) => ({ 'In progress': colors[0], 'Under review': colors[2], 'To be planned': colors[1], 'Awaiting brief': colors[3] })[s];
-    const chip = (r) => {
+    const stageColor = (s) => ({ 'In progress': 'var(--st-wip)', 'Under review': 'var(--st-review)', 'To be planned': 'var(--st-plan)', 'Awaiting brief': 'var(--st-await)', 'On hold': 'var(--st-hold)', 'Changes requested': 'var(--warn)', 'Delivered': 'var(--ok)' })[s];
+    // plain: the row already shows how late it is (a "when" badge), so the chip shows only the status.
+    const chip = (r, plain) => {
       const el = document.createElement('span');
       let cls = 's-mute', txt = r.stage;
-      if (r.due === 'overdue') { cls = 's-bad'; txt = r.stage + ' · late'; }
-      else if (r.due === 'today') { cls = 's-warn'; txt = r.stage + ' · today'; }
+      if (r.due === 'overdue') { cls = 's-bad'; if (!plain) txt = r.stage + ' · late'; }
+      else if (r.due === 'today') { cls = 's-warn'; if (!plain) txt = r.stage + ' · today'; }
       else if (r.stage === 'Changes requested') cls = 's-warn';
       else if (r.stage === 'Delivered') cls = 's-ok';
       else if (stageColor(r.stage)) { cls = ''; el.style.color = stageColor(r.stage); }
@@ -293,7 +296,27 @@
       return true;
     };
     const goTasks = (stage, extra) => dash.setParams(Object.assign({ tab: 'tasks', stage }, extra || {}));
-    const typeColors = (types) => { const m = new Map(); types.forEach((t, i) => m.set(t, t === 'Other' ? 'var(--chart-muted)' : colors[i % colors.length])); return m; };
+    const typeColors = (types) => { const m = new Map(); types.forEach((t, i) => m.set(t, t === 'Other' || i >= colors.length ? 'var(--chart-muted)' : colors[i])); return m; };
+    /* People: initials avatar + name. Several designers show stacked avatars. */
+    const initials = (n) => String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+    const av = (n, cls) => { const a = document.createElement('span'); a.className = 'av' + (cls ? ' ' + cls : ''); a.textContent = initials(n); a.setAttribute('aria-hidden', 'true'); return a; };
+    const who = (r) => {
+      const w = document.createElement('span'); w.className = 'who' + (r.list.length ? '' : ' none');
+      if (!r.list.length) { w.append(av('?', 'none'), 'Unassigned'); return w; }
+      r.list.slice(0, 2).forEach((n) => w.append(av(n)));
+      const t = document.createElement('span'); t.textContent = r.list.length > 2 ? r.list[0] + ' +' + (r.list.length - 1) : r.list.join(' + '); w.append(t);
+      return w;
+    };
+    /* Task: brand · creative, with ID, type, quantity, sheet and priority underneath. */
+    const task = (r) => {
+      const d = document.createElement('div'); d.className = 'tk';
+      const t = document.createElement('span'); t.className = 'tk-t'; const b = document.createElement('b'); b.textContent = r.brand; t.append(b, ' · ' + topicText(r)); t.title = r.brand + ' · ' + topicText(r);
+      const m = document.createElement('span'); m.className = 'tk-m';
+      const id = document.createElement('span'); id.className = 'co-id'; id.textContent = r.id || 'no ID';
+      m.append(id, '·', r.type + (r.qty > 1 ? ' ×' + r.qty : ''), srcTag(r));
+      if (/^P[01]$/.test(r.priority || '')) { const p = document.createElement('span'); p.className = 'pri'; p.textContent = r.priority; m.append(p); }
+      d.append(t, m); return d;
+    };
     const topTypes = (rs, n) => { const c = d3.rollups(rs, (v) => sumQty(v), (r) => r.type).sort((a, b) => b[1] - a[1]); const top = c.slice(0, n).map((d) => d[0]); return c.length > n ? top.concat('Other') : top; };
     const typeOf = (r, top) => top.includes(r.type) ? r.type : 'Other';
     const tip = (host) => { const t = document.createElement('div'); t.className = 'co-tip'; t.hidden = true; host.append(t); return t; };
@@ -340,7 +363,7 @@
       a.download = filename; document.body.append(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     };
-    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, emptyRow, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv };
+    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, emptyRow, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials };
   })();
 
   /* ================= Controls ================= */
@@ -349,11 +372,19 @@
     const admin = A.mode === 'auth' && can('Admin');
     const axTab = document.querySelector('.co-tab[data-tab="access"]');
     axTab.hidden = !admin;
-    axTab.textContent = AX.pending ? 'Access (' + AX.pending + ' waiting)' : 'Access';
+    const badge = axTab.querySelector('.nav-badge'); badge.hidden = !AX.pending; badge.textContent = AX.pending ? AX.pending + ' waiting' : '';
+    document.querySelector('.bt-dot').hidden = !(admin && AX.pending);
     document.getElementById('add-member').hidden = !can('Admin');
     const tab = TABS.includes(p.tab) && (p.tab !== 'access' || admin) ? p.tab : 'today';
     document.querySelectorAll('[data-panel]').forEach((s) => { s.hidden = s.dataset.panel !== tab; });
     document.querySelectorAll('.co-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+    document.querySelectorAll('.bt[data-tab]').forEach((b) => { if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    document.getElementById('bt-more').toggleAttribute('aria-current', !['today', 'standup', 'tasks', 'reports'].includes(tab));
+    document.getElementById('filter-bar').hidden = tab === 'access';
+    ['src', 'designer', 'brand', 'type'].forEach((k) => { const el = document.querySelector('.co-f[data-param="' + k + '"]'); if (el) el.classList.toggle('is-set', !!p[k]); });
+    document.getElementById('f-reset').hidden = !(p.src || p.designer || p.brand || p.type);
+    document.querySelectorAll('[data-rchart]').forEach((b) => b.setAttribute('aria-pressed', String((p.rchart || 'type') === b.dataset.rchart)));
+    const meta = PAGES[tab]; document.title = meta[0] + ' · Creative Ops Tracker';
     const val = (sel, v) => { const el = document.querySelector(sel); if (el && el !== document.activeElement) el.value = v; };
     val('#f-src', p.src || ''); val('#t-stage', p.stage || 'active'); val('#su-sort', p.susort || 'urgent'); val('#team-who', p.who || 'active'); val('#r-preset', p.rpreset || 'this-month');
     const pr = CO.period();
@@ -362,7 +393,17 @@
     banner.hidden = !(S.status === 'unconfigured' || S.status === 'error');
     document.getElementById('btn-connect').hidden = A.mode === 'auth';
   }
-  document.querySelectorAll('.co-tab').forEach((b) => b.addEventListener('click', () => dash.setParams({ tab: b.dataset.tab })));
+  document.querySelectorAll('.co-tab, .bt[data-tab]').forEach((b) => b.addEventListener('click', () => dash.setParams({ tab: b.dataset.tab })));
+  /* Navigation drawer (phones and narrow windows) */
+  function closeNav() { document.body.classList.remove('nav-open'); document.getElementById('scrim').hidden = true; document.getElementById('btn-menu').setAttribute('aria-expanded', 'false'); }
+  function openNav() { document.body.classList.add('nav-open'); document.getElementById('scrim').hidden = false; document.getElementById('btn-menu').setAttribute('aria-expanded', 'true'); }
+  document.getElementById('btn-menu').addEventListener('click', openNav);
+  document.getElementById('bt-more').addEventListener('click', openNav);
+  document.getElementById('scrim').addEventListener('click', closeNav);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('nav-open')) closeNav(); });
+  document.getElementById('btn-filters').addEventListener('click', (e) => { const bar = document.getElementById('filter-bar'); bar.classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', String(bar.classList.contains('open'))); });
+  document.querySelectorAll('[data-go-tasks]').forEach((b) => b.addEventListener('click', () => CO.goTasks(b.dataset.goTasks)));
+  document.querySelectorAll('[data-rchart]').forEach((b) => b.addEventListener('click', () => dash.setParams({ rchart: b.dataset.rchart })));
   document.querySelectorAll('.co-f').forEach((s) => s.addEventListener('change', () => dash.setParams({ [s.dataset.param]: s.value })));
   document.getElementById('f-reset').addEventListener('click', () => dash.setParams({ src: '', designer: '', brand: '', type: '' }));
   document.querySelectorAll('.co-kpi[data-go]').forEach((b) => b.addEventListener('click', () => CO.goTasks(b.dataset.go)));
@@ -438,6 +479,26 @@
   }
 
   /* ================= Header, sync state and filters ================= */
+  const PAGES = {
+    today: ['Overview', () => new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }) + ' · what needs attention today'],
+    standup: ['Daily stand-up', 'One card per active designer: what is late, due today, in progress and up next.'],
+    tasks: ['Tasks', 'Every task from both sheets. Click a row to open or edit it.'],
+    team: ['Team', 'Workload, output and who is on the team.'],
+    reports: ['Delivery reports', 'Creatives delivered by month, brand, designer and creative type.'],
+    health: ['Data health', 'Rows that make tracking less reliable, and the connection to the sheets.'],
+    access: ['Access & activity', 'Who can use the dashboard, and every change they made.']
+  };
+  const curTab = () => { const t = dash.params().tab; return PAGES[t] && (t !== 'access' || (A.mode === 'auth' && can('Admin'))) ? t : 'today'; };
+  dash.draw('page-title', (el) => { el.textContent = PAGES[curTab()][0]; });
+  dash.draw('page-sub', (el) => { const s = PAGES[curTab()][1]; el.textContent = typeof s === 'function' ? s() : s; });
+  dash.draw('filter-count', (el) => { const p = dash.params(); const n = ['src', 'designer', 'brand', 'type'].filter((k) => p[k]).length; el.textContent = n ? String(n) : ''; });
+  dash.draw('me-card', (el) => {
+    el.replaceChildren(); if (!A.user) return;
+    const w = document.createElement('span'); w.className = 'su-who';
+    const b = document.createElement('b'); b.textContent = A.user.name || A.user.email;
+    const sm = document.createElement('small'); sm.textContent = (ROLE_LABEL[A.user.role] || A.user.role) + ' · ' + A.user.email;
+    w.append(b, sm); el.append(CO.av(A.user.name || A.user.email, 'lg'), w); el.title = A.user.email;
+  });
   dash.draw('today-date', (el) => { el.textContent = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); });
   dash.draw('sync-dot', (el) => { el.className = 'co-sync-dot ' + (S.status === 'ok' ? (S.staleError ? 'warn' : 'ok') : S.status === 'error' ? 'bad' : S.status === 'loading' ? 'busy' : ''); });
   dash.draw('sync-text', (el) => {
@@ -544,18 +605,20 @@
       el.append(CO.delta(CO.sumQty(list), prevSame), ' vs same days of ' + CO.fmtMonth(pm).split(' ')[0]);
     }
   });
-  const whenChip = (r) => { const s = document.createElement('span'); const d = r.eta ? CO.diffDays(CO.today(), r.eta) : null; s.className = 'chip ' + (d == null ? 's-mute' : d < 0 ? 's-bad' : d === 0 ? 's-warn' : r.stage === 'Changes requested' ? 's-warn' : 's-mute'); s.textContent = d == null ? 'No ETA' : d < 0 ? (-d) + 'd late' : d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : 'In ' + d + 'd'; return s; };
+  const whenChip = (r) => { const s = document.createElement('span'); const d = r.eta ? CO.diffDays(CO.today(), r.eta) : null; s.className = 'when' + (d == null ? '' : d < 0 ? ' bad' : d <= 1 ? ' warn' : ''); s.textContent = d == null ? 'No ETA' : d < 0 ? (-d) + 'd late' : d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : CO.fmtDate(r.eta); s.title = r.eta ? 'Design ETA ' + CO.fmtDate(r.eta, true) : 'No Design ETA'; return s; };
   const cells = (tr, r, cols) => {
     tr.dataset.uid = r.uid; tr.classList.add('click');
     for (const c of cols) {
       if (c === 'when') CO.td(tr, whenChip(r), 'co-nowrap');
+      else if (c === 'task') CO.td(tr, CO.task(r));
+      else if (c === 'who') CO.td(tr, CO.who(r));
       else if (c === 'id') CO.td(tr, r.id || '—', 'co-id');
       else if (c === 'topic') CO.td(tr, CO.topic(r), 'co-topic');
-      else if (c === 'stage') CO.td(tr, CO.chip(r));
+      else if (c === 'stage') CO.td(tr, CO.chip(r, true));
       else if (c === 'eta') CO.td(tr, CO.fmtDate(r.eta), 'co-nowrap');
       else if (c === 'qty') CO.td(tr, String(r.qty), 'n');
       else if (c === 'designers') CO.td(tr, r.designers || 'Unassigned', r.designers ? 'co-nowrap' : 'co-muted co-nowrap');
-      else if (c === 'links') CO.td(tr, CO.links(r), 'co-hide-sm');
+      else if (c === 'links') CO.td(tr, CO.links(r), 'co-hide-lg');
       else if (c === 'source') CO.td(tr, CO.srcTag(r));
       else CO.td(tr, r[c], 'co-nowrap');
     }
@@ -566,34 +629,61 @@
     const tm = CO.addDays(CO.today(), 1);
     const list = CO.rows().filter((r) => r.due === 'overdue' || r.due === 'today' || (r.open && r.eta === tm) || r.stage === 'Changes requested')
       .sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || (a.priority || 'P9').localeCompare(b.priority || 'P9'));
-    if (!list.length) return CO.emptyRow(tb, 10, 'Nothing overdue or due today. The team is on schedule.');
-    list.forEach((r) => cells(tb.insertRow(), r, ['when', 'id', 'brand', 'topic', 'type', 'qty', 'designers', 'stage', 'eta', 'links']));
+    if (!list.length) return CO.emptyRow(tb, 5, 'Nothing overdue or due today. The team is on schedule.');
+    list.forEach((r) => cells(tb.insertRow(), r, ['when', 'task', 'who', 'stage', 'links']));
   });
   dash.draw('upcoming', (tb) => {
     if (CO.notReady(tb, 'table')) return;
     tb.replaceChildren();
     const t = CO.today(), lim = CO.addDays(t, 14);
-    const list = CO.rows().filter((r) => r.open && (!r.eta || (r.eta > t && r.eta <= lim))).sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999'));
-    if (!list.length) return CO.emptyRow(tb, 9, 'No open work due in the next two weeks.');
-    list.forEach((r) => { const tr = tb.insertRow(); CO.td(tr, r.eta ? CO.fmtDate(r.eta) : whenChip(r), 'co-nowrap'); cells(tr, r, ['id', 'brand', 'topic', 'type', 'qty', 'designers', 'stage', 'source']); });
+    // Dated work only: open tasks with no ETA are one click away (link in the card header), not 40 rows of noise.
+    const list = CO.rows().filter((r) => r.open && r.eta && r.eta > t && r.eta <= lim).sort((a, b) => a.eta.localeCompare(b.eta) || (a.priority || 'P9').localeCompare(b.priority || 'P9'));
+    if (!list.length) return CO.emptyRow(tb, 4, 'No open work due in the next two weeks.');
+    list.forEach((r) => cells(tb.insertRow(), r, ['when', 'task', 'who', 'stage']));
+  });
+  dash.draw('upcoming-noeta', (el) => {
+    if (CO.status() !== 'ok') { el.textContent = ''; return; }
+    const n = CO.rows().filter((r) => r.due === 'noeta').length;
+    el.textContent = n ? n + ' open with no ETA →' : '';
+  });
+  /* Overview: work nobody has picked up yet. */
+  dash.draw('unassigned', (el) => {
+    if (CO.notReady(el, 'box')) return;
+    el.replaceChildren();
+    const open = CO.rows().filter((r) => r.open && !r.list.length);
+    el.classList.toggle('accent-bad', open.length > 0); el.classList.toggle('accent-ok', !open.length);
+    const head = document.createElement('div'); head.className = 'co-card-head';
+    const hd = document.createElement('div'); const h = document.createElement('h2'); h.className = 'co-h2'; h.textContent = 'Unassigned'; const n = document.createElement('p'); n.className = 'co-note'; n.textContent = 'Open tasks with no designer yet.'; hd.append(h, n); head.append(hd);
+    if (open.length) { const go = document.createElement('button'); go.type = 'button'; go.className = 'co-link'; go.textContent = 'Open queue →'; go.addEventListener('click', () => CO.goTasks('open', { designer: '__none' })); head.append(go); }
+    el.append(head);
+    if (!open.length) { const p = document.createElement('p'); p.className = 'su-free'; p.textContent = 'Every open task has a designer.'; el.append(p); return; }
+    const late = open.filter((r) => r.due === 'overdue').length, noeta = open.filter((r) => r.due === 'noeta').length;
+    const big = document.createElement('div'); big.className = 'uq-big';
+    const b = document.createElement('b'); b.textContent = CO.num(CO.sumQty(open)); const sp = document.createElement('span');
+    sp.textContent = (CO.sumQty(open) === 1 ? 'creative' : 'creatives') + ' waiting' + (late ? ' · ' : '') ; if (late) { const x = document.createElement('span'); x.className = 'bad'; x.textContent = late + ' overdue'; sp.append(x); } if (noeta) sp.append(' · ' + noeta + ' with no ETA');
+    big.append(b, sp); el.append(big);
+    const list = document.createElement('div'); list.className = 'uq-list';
+    open.slice().sort((a, b2) => (a.due === 'overdue' ? 0 : 1) - (b2.due === 'overdue' ? 0 : 1) || (a.eta || '9999').localeCompare(b2.eta || '9999') || String(a.req || '').localeCompare(String(b2.req || ''))).slice(0, 5).forEach((r) => {
+      const row = document.createElement('div'); row.className = 'row click'; row.dataset.uid = r.uid; row.tabIndex = 0;
+      row.append(CO.task(r), whenChip(r)); list.append(row);
+    });
+    el.append(list);
   });
   dash.draw('workload', (el) => {
     if (CO.notReady(el, 'box')) return;
     const m = new Map();
     const openRows = CO.rows().filter((r) => r.open);
-    const unassigned = openRows.filter((r) => !r.list.length);
     // Everyone holding open work is shown; an inactive person's work is labelled so it gets reassigned.
     openRows.forEach((r) => { r.list.forEach((d) => { const o = m.get(d) || { key: d, name: CO.isActive(d) ? d : d + ' (inactive, reassign)', overdue: 0, week: 0, later: 0 }; const q = r.qty || 1; if (r.due === 'overdue') o.overdue += q; else if (r.due === 'today' || r.due === 'week') o.week += q; else o.later += q; m.set(d, o); }); });
     const data = [...m.values()].map((d) => Object.assign(d, { total: d.overdue + d.week + d.later })).sort((a, b) => b.total - a.total);
     el.replaceChildren();
-    if (unassigned.length) { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-unassigned'; b.textContent = CO.num(CO.sumQty(unassigned)) + ' open creatives have no designer yet' + (unassigned.some((r) => r.due === 'overdue') ? ', ' + unassigned.filter((r) => r.due === 'overdue').length + ' of them overdue' : '') + '. Assign them →'; b.addEventListener('click', () => CO.goTasks('open', { designer: '__none' })); el.append(b); }
     if (!data.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'No open work assigned in this view.'; el.append(p); return; }
-    const W = Math.max(280, el.clientWidth), rowH = 28, H = data.length * rowH + 24;
+    const W = Math.max(280, el.clientWidth), rowH = 30, H = data.length * rowH + 24;
     const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Open creatives per designer');
     const meas = svg.append('text').attr('class', 'lbl').text(data.reduce((a, d) => d.name.length > a.length ? d.name : a, ''));
     const L = Math.min(W * 0.45, meas.node().getComputedTextLength() + 14); meas.remove();
     const x = d3.scaleLinear([0, d3.max(data, (d) => d.total)], [L, W - 34]);
-    const y = d3.scaleBand(data.map((d) => d.name), [0, H - 24]).padding(0.28);
+    const y = d3.scaleBand(data.map((d) => d.name), [0, H - 24]).padding(0.38);
     const keys = [['overdue', 'var(--bad)', 'Overdue'], ['week', 'var(--warn)', 'Due in 7 days'], ['later', 'var(--chart-muted)', 'Later or no ETA']];
     const ticks = x.ticks(Math.max(2, Math.floor((W - L) / 70))).filter(Number.isInteger);
     svg.append('g').selectAll('line').data(ticks).join('line').attr('class', 'grid').attr('x1', x).attr('x2', x).attr('y1', 0).attr('y2', H - 24);
@@ -604,7 +694,9 @@
       .on('mousemove', (e, d) => { tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = d.name + ' · ' + d.total + ' open'; tipEl.append(k); keys.forEach(([key, c, lab]) => { const r = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = c; r.append(sw, lab + ': ' + d[key]); tipEl.append(r); }); const [px, py] = d3.pointer(e, el); CO.placeTip(tipEl, el, px, py); })
       .on('mouseleave', () => { tipEl.hidden = true; });
     g.append('text').attr('class', 'lbl').attr('x', L - 8).attr('y', (d) => y(d.name) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => d.name);
-    g.each(function (d) { let x0 = 0; const gg = d3.select(this); keys.forEach(([k, c]) => { if (!d[k]) return; gg.append('rect').attr('x', x(x0)).attr('y', y(d.name)).attr('width', Math.max(1, x(x0 + d[k]) - x(x0) - 1)).attr('height', y.bandwidth()).attr('rx', 3).style('fill', c); x0 += d[k]; }); });
+    g.each(function (d) { let x0 = 0; const gg = d3.select(this); keys.forEach(([k, c]) => { if (!d[k]) return; gg.append('rect').attr('x', x(x0)).attr('y', y(d.name)).attr('width', Math.max(2, x(x0 + d[k]) - x(x0) - 2)).attr('height', y.bandwidth()).attr('rx', 3).style('fill', c); x0 += d[k]; }); });
+    // A full-width hit area per row, so the whole line is clickable, not just the bar.
+    g.insert('rect', ':first-child').attr('class', 'hit').attr('x', 0).attr('width', W).attr('y', (d) => y(d.name) - y.step() * y.paddingInner() / 2).attr('height', y.step());
     g.append('text').attr('class', 'tick').attr('x', (d) => x(d.total) + 6).attr('y', (d) => y(d.name) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.total);
   });
   dash.draw('pipeline', (el) => {
@@ -613,23 +705,46 @@
     const base = [['To be planned', 'tbp'], ['In progress', 'wip'], ['Changes requested', 'changes'], ['Under review', 'review'], ['Awaiting brief', 'awaiting'], ['On hold', 'hold']];
     const known = new Set(base.map((b) => b[0]));
     const other = [...new Set(rs.map((r) => r.stage).filter((s) => !known.has(s)))];
-    const color = (s) => s === 'Changes requested' ? 'var(--warn)' : s === 'On hold' ? 'var(--chart-muted)' : CO.stageColor(s) || colors[4];
-    const st = base.concat(other.map((s) => [s, 'active'])).map(([s, go]) => ({ s, go, c: color(s), n: rs.filter((r) => r.stage === s).length }));
-    const total = d3.sum(st, (d) => d.n);
+    const st = base.concat(other.map((s) => [s, 'active'])).map(([s, go]) => ({ s, go, c: CO.stageColor(s) || 'var(--chart-muted)', n: rs.filter((r) => r.stage === s).length })).filter((d) => d.n || known.has(d.s));
+    const total = d3.sum(st, (d) => d.n), max = d3.max(st, (d) => d.n) || 1;
     el.replaceChildren();
-    const bar = document.createElement('div'); bar.className = 'co-pipe'; bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', 'Pipeline by design status');
-    st.forEach((d) => { if (!d.n) return; const s = document.createElement('div'); s.style.flex = d.n + ' 1 0'; s.style.background = d.c; bar.append(s); });
-    const leg = document.createElement('div'); leg.className = 'co-pipe-legend';
+    const box = document.createElement('div'); box.className = 'pipe';
     st.forEach((d) => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'co-pipe-item';
+      const b = document.createElement('button'); b.type = 'button'; b.title = d.s + ': ' + d.n + (total ? ' (' + Math.round(d.n / total * 100) + '%)' : '') + '. Click to list them.';
+      const l = document.createElement('span'); l.className = 'l'; const i = document.createElement('i'); i.style.background = d.c; l.append(i, d.s);
+      const tr = document.createElement('span'); tr.className = 'track'; const f = document.createElement('i'); f.style.width = (d.n / max * 100) + '%'; f.style.background = d.c; tr.append(f);
       const v = document.createElement('span'); v.className = 'v'; v.textContent = CO.num(d.n);
-      const l = document.createElement('span'); l.className = 'l'; const i = document.createElement('i'); i.style.background = d.c; l.append(i, d.s + (total ? ' · ' + Math.round(d.n / total * 100) + '%' : ''));
-      b.append(v, l); b.addEventListener('click', () => CO.goTasks(d.go)); leg.append(b);
+      b.append(l, tr, v); b.addEventListener('click', () => CO.goTasks(d.go)); box.append(b);
     });
-    el.append(bar, leg);
+    const t = document.createElement('div'); t.className = 'pipe-total'; t.append('Not yet delivered'); const tb = document.createElement('b'); tb.textContent = CO.num(total); t.append(tb);
+    el.append(box, t);
+  });
+  /* Delivered tile: the last six months, current month (partial) as the end dot. */
+  dash.draw('kpi-spark', (el) => {
+    el.replaceChildren(); if (CO.status() !== 'ok') return;
+    const m = CO.thisMonth(), ms = [-5, -4, -3, -2, -1, 0].map((k) => CO.addMonths(m, k));
+    const rs = CO.rows().filter((r) => r.stage === 'Delivered' && r.month);
+    const v = ms.map((k) => CO.sumQty(rs.filter((r) => r.month === k)));
+    const W = 72, H = 26, max = d3.max(v) || 1;
+    const x = (i) => 2 + i * (W - 4) / (v.length - 1), y = (n) => H - 3 - n / max * (H - 6);
+    const svg = d3.select(el).append('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Delivered per month, last six months: ' + v.join(', '));
+    svg.append('path').attr('d', d3.line().x((d, i) => x(i)).y(y)(v)).attr('fill', 'none').attr('stroke', 'var(--chart-muted)').attr('stroke-width', 2).attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round');
+    svg.append('circle').attr('cx', x(v.length - 1)).attr('cy', y(v[v.length - 1])).attr('r', 3.5).attr('fill', 'var(--brand)').attr('stroke', 'var(--panel)').attr('stroke-width', 2);
+    el.title = ms.map((k, i) => CO.fmtMonth(k) + ': ' + v[i]).join(' · ');
   });
 
   /* ================= Stand-up ================= */
+  const SU = { cards: null };
+  dash.draw('su-summary', (el) => {
+    el.replaceChildren(); const cs = SU.cards; if (!cs || CO.status() !== 'ok') return;
+    const people = cs.filter((c) => c.name !== 'Unassigned'), un = cs.find((c) => c.name === 'Unassigned');
+    const pill = (n, label, cls) => { const s = document.createElement('span'); if (cls) s.className = cls; const b = document.createElement('b'); b.textContent = CO.num(n); s.append(b, label); el.append(s); };
+    pill(people.length, people.length === 1 ? 'person' : 'people');
+    pill(d3.sum(cs, (c) => c.overdue.length), 'overdue', 'bad');
+    pill(d3.sum(cs, (c) => c.today.length), 'due today');
+    pill(people.filter((c) => !c.open.length).length, 'free to take work');
+    if (un) pill(un.open.length, 'unassigned', un.overdue.length ? 'bad' : '');
+  });
   (() => {
     const line = (r) => {
       const d = document.createElement('div'); d.className = 'su-item click'; d.dataset.uid = r.uid; d.tabIndex = 0;
@@ -679,11 +794,13 @@
         : sort === 'load' ? CO.sumQty(b.open) - CO.sumQty(a.open) || a.name.localeCompare(b.name)
         : b.overdue.length - a.overdue.length || b.today.length - a.today.length || CO.sumQty(b.open) - CO.sumQty(a.open) || a.name.localeCompare(b.name)));
       el.replaceChildren();
+      SU.cards = cards;
+      dash.draw('su-summary');
       if (!cards.length) { const n = document.createElement('p'); n.className = 'co-note'; n.textContent = 'No active team members match these filters.'; el.append(n); return; }
       cards.forEach((c) => {
         const card = document.createElement('article'); card.className = 'su ' + (c.overdue.length ? 'late' : c.open.length ? 'busy' : 'free');
         const head = document.createElement('div'); head.className = 'su-head';
-        const nm = document.createElement('span'); nm.className = 'su-name'; nm.append(c.name);
+        const nm = document.createElement('span'); nm.className = 'su-name'; nm.append(CO.av(c.name === 'Unassigned' ? '?' : c.name, 'lg' + (c.name === 'Unassigned' ? ' none' : '')), c.name);
         const mem = CO.member(c.name);
         if (mem.role) { const r = document.createElement('span'); r.className = 'su-role'; r.textContent = mem.role; nm.append(r); }
         if (mem.status === 'New' && c.name !== 'Unassigned') { const n = document.createElement('span'); n.className = 'tag-new'; n.textContent = 'New'; nm.append(n); }
@@ -727,6 +844,20 @@
         filtered().map((r) => [r.id, r.source, r.brand, r.topic, r.type, r.qty, r.designers, r.priority, r.req, r.eta, r.stage, r.ddate, r.owner, r.channel, r.live_status, r.brief, r.link]));
     });
     dash.draw('task-count', (el) => { if (CO.notReady(el, 'text')) return; el.textContent = CO.num(filtered().length); });
+    // One-click status views with live counts; the full list stays in the status menu.
+    const CHIPS = [['active', 'Not delivered'], ['open', 'Open'], ['overdue', 'Overdue'], ['week', 'Due this week'], ['noeta', 'No ETA'], ['review', 'Under review'], ['delivered-month', 'Delivered this month'], ['all', 'All']];
+    dash.draw('t-chips', (el) => {
+      if (CO.status() !== 'ok') { el.replaceChildren(); return; }
+      const rs = CO.rows(), ctx = CO.period(), cur = dash.params().stage || 'active';
+      el.replaceChildren(...CHIPS.map(([k, label]) => {
+        const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-pressed', String(cur === k));
+        const n = rs.filter((r) => CO.stageMatch(r, k, ctx)).length;
+        if (k === 'overdue' && n) b.className = 'bad';
+        const c = document.createElement('b'); c.textContent = CO.num(n); b.append(label, c);
+        b.addEventListener('click', () => dash.setParams({ stage: k }));
+        return b;
+      }));
+    });
     dash.draw('tasks', (tb) => {
       if (CO.notReady(tb, 'table')) return;
       tb.replaceChildren();
@@ -735,10 +866,10 @@
       const LIMIT = 600;
       rs.slice(0, LIMIT).forEach((r) => {
         const tr = tb.insertRow(); tr.dataset.uid = r.uid; tr.className = 'click';
-        CO.td(tr, r.id || '—', 'co-id'); CO.td(tr, CO.srcTag(r)); CO.td(tr, r.brand, 'co-nowrap'); CO.td(tr, CO.topic(r), 'co-topic'); CO.td(tr, r.type, 'co-nowrap'); CO.td(tr, String(r.qty), 'n');
-        CO.td(tr, r.designers || 'Unassigned', r.designers ? 'co-nowrap' : 'co-muted co-nowrap'); CO.td(tr, r.priority || '—', r.priority === 'P0' ? 'pri' : 'co-muted');
-        CO.td(tr, CO.fmtDate(r.req), 'co-nowrap'); CO.td(tr, CO.fmtDate(r.eta), 'co-nowrap'); CO.td(tr, CO.chip(r));
-        CO.td(tr, r.owner, 'co-hide-sm co-nowrap'); CO.td(tr, r.live_status, 'co-hide-sm co-nowrap'); CO.td(tr, CO.links(r));
+        CO.td(tr, r.id || '—', 'co-id'); CO.td(tr, r.brand, 'co-nowrap'); CO.td(tr, CO.topic(r), 'co-topic'); CO.td(tr, r.type, 'co-nowrap'); CO.td(tr, String(r.qty), 'n');
+        CO.td(tr, CO.who(r)); CO.td(tr, r.priority || '—', /^P[01]$/.test(r.priority || '') ? 'pri' : 'co-muted');
+        CO.td(tr, r.open && r.eta ? whenChip(r) : CO.fmtDate(r.eta), 'co-nowrap'); CO.td(tr, CO.chip(r)); CO.td(tr, CO.srcTag(r));
+        CO.td(tr, CO.fmtDate(r.req), 'co-hide-lg co-nowrap'); CO.td(tr, r.owner, 'co-hide-lg co-nowrap'); CO.td(tr, r.live_status, 'co-hide-lg co-nowrap'); CO.td(tr, CO.links(r), 'co-hide-lg');
       });
       if (rs.length > LIMIT) CO.emptyRow(tb, 14, 'Showing the first ' + LIMIT + ' of ' + CO.num(rs.length) + '. Narrow it with search or filters, or download the CSV for all of them.');
     });
@@ -763,7 +894,7 @@
       if (CO.notReady(tb, 'table')) return;
       tb.replaceChildren();
       const rs = CO.rows(), m = CO.thisMonth(), pm = CO.prevMonth(m);
-      const top = CO.topTypes(rs.filter((r) => r.stage === 'Delivered'), 6), cmap = CO.typeColors(top);
+      const top = CO.topTypes(rs.filter((r) => r.stage === 'Delivered'), 5), cmap = CO.typeColors(top);
       const by = new Map();
       CO.team().byKey.forEach((mm) => by.set(mm.name, []));
       rs.forEach((r) => r.list.forEach((d) => { if (!by.has(d)) by.set(d, []); by.get(d).push(r); }));
@@ -784,22 +915,23 @@
       const maxOpen = d3.max(data, (d) => d.open) || 1;
       data.forEach((d) => {
         const tr = tb.insertRow();
-        const nb = document.createElement('button'); nb.type = 'button'; nb.className = 'co-name'; nb.textContent = d.name; nb.addEventListener('click', () => CO.goTasks('active', { designer: d.name }));
+        const nb = document.createElement('button'); nb.type = 'button'; nb.className = 'co-name'; const nt = document.createElement('span'); nt.textContent = d.name; nb.append(CO.av(d.name), nt); nb.title = 'Open ' + d.name + "'s tasks"; nb.addEventListener('click', () => CO.goTasks('active', { designer: d.name }));
         CO.td(tr, nb, 'co-nowrap'); CO.td(tr, statusCell(d.name), 'co-nowrap');
         const ob = document.createElement('span'); ob.className = 'co-inbar'; const bi = document.createElement('i'); bi.style.width = (d.open / maxOpen * 4) + 'rem'; ob.append(bi, String(d.open)); CO.td(tr, ob, 'n');
-        CO.td(tr, String(d.wip), 'n');
+        CO.td(tr, String(d.wip), 'n co-hide-md');
         CO.td(tr, String(d.overdue), 'n' + (d.overdue ? ' bad' : ''));
         CO.td(tr, String(d.week), 'n'); CO.td(tr, String(d.review), 'n'); CO.td(tr, CO.num(d.thisM), 'n num-b'); CO.td(tr, CO.num(d.lastM), 'n'); CO.td(tr, d.avg ? d.avg.toFixed(1) : '—', 'n');
-        CO.td(tr, d.brands, 'co-hide-sm co-clip').title = d.brands;
+        CO.td(tr, d.brands, 'co-hide-lg co-clip').title = d.brands;
         const mix = document.createElement('span'); mix.className = 'co-mix';
         const total = CO.sumQty(d.del);
-        top.forEach((t) => { const c = CO.sumQty(d.del.filter((r) => CO.typeOf(r, top) === t)); if (!c) return; const i = document.createElement('i'); i.style.width = (c / total * 100) + '%'; i.style.background = cmap.get(t); i.title = t + ': ' + c; mix.append(i); });
+        top.forEach((t) => { const c = CO.sumQty(d.del.filter((r) => CO.typeOf(r, top) === t)); if (!c) return; const i = document.createElement('i'); i.style.flex = c + ' 1 0'; i.style.background = cmap.get(t); i.title = t + ': ' + c; mix.append(i); });
+        mix.title = top.map((t) => t + ': ' + CO.sumQty(d.del.filter((r) => CO.typeOf(r, top) === t))).filter((x) => !/: 0$/.test(x)).join(' · ');
         CO.td(tr, mix, 'co-hide-sm');
       });
     });
     dash.draw('team-legend', (el) => {
       if (CO.notReady(el, 'list')) return;
-      const top = CO.topTypes(CO.rows().filter((r) => r.stage === 'Delivered'), 6), cmap = CO.typeColors(top);
+      const top = CO.topTypes(CO.rows().filter((r) => r.stage === 'Delivered'), 5), cmap = CO.typeColors(top);
       el.replaceChildren(...top.map((t) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = cmap.get(t); s.append(i, t); return s; }));
     });
     dash.draw('heat', (table) => {
@@ -822,7 +954,7 @@
         const tr = tb.insertRow(); CO.td(tr, d, 'co-nowrap');
         ms.forEach((m) => {
           const v = cell.get(d + '|' + m) || 0; const c = CO.td(tr, v ? String(v) : '·', 'h');
-          if (v) { const a = 0.1 + 0.7 * (v / max); c.style.background = `color-mix(in srgb, var(--c1) ${Math.round(a * 100)}%, transparent)`; if (a > 0.5) c.classList.add('hot'); } else c.classList.add('co-muted');
+          if (v) { const a = 0.1 + 0.7 * (v / max); c.style.background = `color-mix(in srgb, var(--brand) ${Math.round(a * 100)}%, transparent)`; c.title = d + ', ' + CO.fmtMonth(m, true) + ': ' + v + ' creatives'; if (a > 0.5) c.classList.add('hot'); } else c.classList.add('co-muted');
           c.addEventListener('click', () => dash.setParams({ rpreset: 'custom', rfrom: m + '-01', rto: CO.monthEnd(m), tab: 'reports', designer: d }));
         });
         CO.td(tr, CO.num(tot(d)), 'n num-b');
@@ -859,7 +991,8 @@
     });
     dash.draw('r-legend', (el) => {
       if (CO.notReady(el, 'list')) return;
-      const top = CO.topTypes(delivered(), 7), cmap = CO.typeColors(top);
+      if ((dash.params().rchart || 'type') === 'total') { el.replaceChildren(); return; }
+      const top = CO.topTypes(delivered(), 5), cmap = CO.typeColors(top);
       el.replaceChildren(...top.map((t) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = cmap.get(t); s.append(i, t); return s; }));
     });
     dash.draw('r-chart', (el) => {
@@ -868,10 +1001,11 @@
       el.replaceChildren();
       if (!del.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'No deliveries in this view.'; el.append(p); return; }
       const pr = CO.period();
-      const top = CO.topTypes(del, 7), cmap = CO.typeColors(top);
+      const byType = (dash.params().rchart || 'type') === 'type';
+      const top = byType ? CO.topTypes(del, 5) : ['Total'], cmap = byType ? CO.typeColors(top) : new Map([['Total', 'var(--brand)']]);
       const ms = [...new Set(del.map((r) => r.month))].sort().slice(-18);
       const inSel = (m) => pr.all || (m + '-01' <= pr.to && CO.monthEnd(m) >= pr.from);
-      const series = ms.map((m) => { const o = { m }; top.forEach((t) => { o[t] = 0; }); del.filter((r) => r.month === m).forEach((r) => { o[CO.typeOf(r, top)] += r.qty || 1; }); o.total = top.reduce((a, t) => a + o[t], 0); return o; });
+      const series = ms.map((m) => { const o = { m }; top.forEach((t) => { o[t] = 0; }); del.filter((r) => r.month === m).forEach((r) => { o[byType ? CO.typeOf(r, top) : 'Total'] += r.qty || 1; }); o.total = top.reduce((a, t) => a + o[t], 0); return o; });
       const W = Math.max(300, el.clientWidth), H = 260, mB = 24, mT = 18;
       const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered by month');
       const yt = d3.scaleLinear([0, d3.max(series, (d) => d.total) || 1], [H - mB, mT]).nice();
@@ -885,16 +1019,16 @@
       svg.append('g').selectAll('text').data(ms).join('text').attr('class', (m) => 'tick' + (inSel(m) && !pr.all ? ' on' : '')).attr('x', (m) => x(m) + x.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', 'middle')
         .text((m, i) => (i % every === 0) ? CO.fmtMonth(m).replace(' 20', " '") : '');
       const stack = d3.stack().keys(top)(series);
-      const bw = Math.min(34, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
+      const bw = Math.min(24, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
       svg.append('g').selectAll('g').data(stack).join('g').style('fill', (s) => cmap.get(s.key))
         .selectAll('rect').data((s) => s).join('rect').attr('x', (d) => x(d.data.m) + off).attr('width', bw)
-        .attr('y', (d) => yt(d[1])).attr('height', (d) => Math.max(0, yt(d[0]) - yt(d[1]) - (d[1] > d[0] ? 1 : 0))).attr('rx', 2)
+        .attr('y', (d) => yt(d[1])).attr('height', (d) => Math.max(0, yt(d[0]) - yt(d[1]) - (d[1] > d[0] && d[0] > 0 ? 2 : 0))).attr('rx', 3)
         .style('opacity', (d) => inSel(d.data.m) ? 1 : 0.45);
-      svg.append('g').selectAll('text').data(series).join('text').attr('class', (d) => 'tick' + (inSel(d.m) ? ' on' : '')).attr('x', (d) => x(d.m) + x.bandwidth() / 2).attr('y', (d) => yt(d.total) - 5).attr('text-anchor', 'middle').text((d) => bw >= 20 ? d.total : '');
+      svg.append('g').selectAll('text').data(series).join('text').attr('class', (d) => 'tick' + (inSel(d.m) ? ' on' : '')).attr('x', (d) => x(d.m) + x.bandwidth() / 2).attr('y', (d) => yt(d.total) - 5).attr('text-anchor', 'middle').text((d) => bw >= 16 && (x.bandwidth() >= 30 || inSel(d.m)) ? d.total : '');
       const tipEl = CO.tip(el);
       svg.append('g').selectAll('rect').data(series).join('rect').attr('class', 'bar hit').attr('x', (d) => x(d.m)).attr('width', x.bandwidth()).attr('y', mT).attr('height', H - mB - mT)
         .on('click', (e, d) => dash.setParams({ rpreset: 'custom', rfrom: d.m + '-01', rto: CO.monthEnd(d.m) }))
-        .on('mousemove', (e, d) => { tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = CO.fmtMonth(d.m, true) + ' · ' + d.total + ' creatives'; tipEl.append(k); top.slice().reverse().forEach((t) => { if (!d[t]) return; const r = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = cmap.get(t); r.append(sw, t + ': ' + d[t]); tipEl.append(r); }); const [px] = d3.pointer(e, el); CO.placeTip(tipEl, el, px, el.clientHeight * 0.3); })
+        .on('mousemove', (e, d) => { tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = CO.fmtMonth(d.m, true) + ' · ' + d.total + ' creatives'; tipEl.append(k); (byType ? top.slice().reverse() : []).forEach((t) => { if (!d[t]) return; const r = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = cmap.get(t); r.append(sw, t + ': ' + d[t]); tipEl.append(r); }); const [px] = d3.pointer(e, el); CO.placeTip(tipEl, el, px, el.clientHeight * 0.3); })
         .on('mouseleave', () => { tipEl.hidden = true; });
     });
     const crossTable = (table, keyFn, label, tag) => {
@@ -902,11 +1036,11 @@
       table.replaceChildren();
       const pr = CO.period(), rs = inRange(CO.rows(), pr.from, pr.to);
       const prev = pr.pfrom ? inRange(CO.rows(), pr.pfrom, pr.pto) : null;
-      const top = CO.topTypes(rs, 5);
+      const top = CO.topTypes(rs, 3);
       const groups = new Map();
       rs.forEach((r) => keyFn(r).forEach((k) => { if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }));
       const hr = table.createTHead().insertRow();
-      [label].concat(top, ['Total'], prev ? ['vs previous'] : []).forEach((h, i) => { const th = document.createElement('th'); th.textContent = h; if (i) th.className = 'n'; hr.append(th); });
+      [label].concat(top, ['Total'], prev ? ['vs prev.'] : []).forEach((h, i) => { const th = document.createElement('th'); th.textContent = h; if (i) th.className = 'n'; hr.append(th); });
       const tb = table.createTBody();
       if (!groups.size) return CO.emptyRow(tb, top.length + 2 + (prev ? 1 : 0), 'Nothing delivered in this period for this view.');
       const data = [...groups].map(([k, list]) => [k, list, CO.sumQty(list)]).sort((a, b) => b[2] - a[2]);
@@ -1028,7 +1162,7 @@
       const el = e.target.closest('[data-uid]'); if (el) openEditor(el.dataset.uid);
     };
     document.querySelector('.co').addEventListener('click', openFrom);
-    document.querySelector('.co').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('.su-item[data-uid]')) openEditor(e.target.dataset.uid); });
+    document.querySelector('.co').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-uid][tabindex]')) openEditor(e.target.dataset.uid); });
     $('ed-cancel').addEventListener('click', () => dlgE.close());
     $('ed-history').addEventListener('click', () => { if (!current) return; dlgE.close(); AX.q = current.id; AX.kind = ''; document.getElementById('ax-q').value = current.id; document.getElementById('ax-kind').value = ''; dash.setParams({ tab: 'access' }); });
     $('editor-form').addEventListener('submit', async (e) => {
