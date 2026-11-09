@@ -1890,7 +1890,7 @@ function meetings_(user) {
   let out;
   try {
     if (typeof Calendar === 'undefined') throw new Error('service_off');
-    const now = new Date(), r = Calendar.Events.list(user.email, { timeMin: new Date(now - 3600e3).toISOString(), timeMax: new Date(+now + 3 * 864e5).toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 25 });
+    const now = new Date(), r = Calendar.Events.list(user.email, { timeMin: new Date(now - 3600e3).toISOString(), timeMax: new Date(+now + 3 * 864e5).toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 100 });
     const me = user.email.toLowerCase();
     const events = (r.items || []).filter(function (e) { return e.status !== 'cancelled' && e.start && e.start.dateTime && !(e.attendees || []).some(function (a) { return String(a.email).toLowerCase() === me && a.responseStatus === 'declined'; }); }).map(function (e) {
       const meet = e.hangoutLink || ((e.conferenceData && e.conferenceData.entryPoints) || []).filter(function (p) { return p.entryPointType === 'video'; }).map(function (p) { return p.uri; })[0] || '';
