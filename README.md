@@ -85,7 +85,29 @@ Each briefing arrives three ways:
 - **On the dashboard,** as a card on the Overview and an item in the notification bell. If the dashboard is open at that moment, the briefing also opens on its own.
 - **As a desktop alert,** if the person turns that on in the bell menu (only while the dashboard is open in a tab).
 
-To email yourself a sample, run `sendTestReminder` in Apps Script. The times can be changed in Config.gs with `reminders: { morning: 10, evening: 18, email: true }`.
+- **In Google Chat (optional),** as a phone notification even when nobody has the dashboard open. In Google Chat, open the team space, then Apps & integrations, Webhooks, Add webhook, and paste the link under Access > Reminders and notifications. Only `https://chat.googleapis.com/v1/spaces/...` links are accepted, and the saved link is never shown again in full.
+
+Admins change the times, the emails and the Chat space under **Access > Reminders and notifications**; each change is recorded in the activity log. The web app checks every 10 minutes, so a briefing goes out within 10 minutes of the time set, once per day. Config.gs `reminders: {...}` only sets the starting values. To email yourself a sample, run `sendTestReminder` in Apps Script.
+
+Browsers cannot show a dashboard alert when no dashboard tab is open (that would need a separate push server), which is why email and Google Chat carry the briefings in that case.
+
+## Notifications (bell)
+
+The bell lists, for the signed-in person: their overdue tasks and tasks due today or tomorrow; for admins, team overdue and unassigned totals; new requirements since yesterday; status, sheet and team changes made by others in the last 48 hours; note mentions and action items; meetings starting within 15 minutes; and the two daily briefings. Every item opens the task, note or page it is about. Emails are not read: the dashboard has no access to anyone's inbox.
+
+## Meetings (Google Calendar)
+
+The Overview's Meetings card shows the next meeting with a countdown, who is in it, a Join Google Meet button and a Take notes button (which starts a meeting note with the title and attendees filled in), plus the rest of today and the next two days. Each person connects their own calendar once, read-only; the access lasts for the browser session and is never sent to the web app or stored in the sheets.
+
+One-time setup by the owner: in Google Cloud, project "Creative Ops Tracker", go to APIs & Services, Library, Google Calendar API, and choose Enable. Optionally add the `calendar.events.readonly` scope under Google Auth Platform, Data Access, so the consent screen lists it.
+
+## Who's online (admins)
+
+Admins see, under **Access**, who has the dashboard open, which page they are on, the task they are editing (if any) and when they were last active; the header shows the faces of people online now. Nothing else is collected: no keystrokes, no screen contents, no location. Everyone sees a notice about this in the bell menu, and an admin can switch it off under Reminders and notifications. "Last active" is saved in the Users tab at most every 10 minutes.
+
+## Live clock
+
+The coral clock in the header always shows India Standard Time, whatever the computer's own time zone. Click it to switch between 12-hour and 24-hour; the choice is remembered on that device.
 
 ## Notes
 
@@ -210,6 +232,16 @@ Rows without an ID, or whose ID appears twice in a tab, are not edited from the 
 - Brand and creative-type spellings that differ only in case or a plural "s" are merged ("Gif"/"GIF", "Listings"/"Listing").
 - A task shared by two designers counts once in team totals and once for each designer in per-person views.
 
+### Change colours (green is better, red is worse)
+
+Every comparison shows the change as a coloured chip: **green when the number moved the good way, red when it moved the bad way**, and grey for no change. The good way depends on the measure: more delivered is green, but **fewer open, fewer overdue and fewer unassigned is green** and more of them is red. Under review has no good or bad direction and stays grey. The shade deepens with the size of the change and reaches full strength at a 50% change, so a small wobble stays pale.
+
+What each comparison is against:
+- **Delivered this month, Top brands, Team "This month":** the same days of last month (1 to 9 November against 1 to 9 October), so a month in progress is never compared with a full month.
+- **Monthly report bars and "vs prev." columns:** each complete month against the month before; the current month against the same days of the previous month. Bars for months outside the chosen range are faded and striped.
+- **Delivery trend:** the last complete week against the week before. The current week is drawn faintly and never counted as a drop.
+- **Open, Overdue, Under review:** against the daily snapshot closest to 7 days ago. These are counts at a moment in time, so the web app saves one snapshot a day after 09:00 IST in the History tab; the comparison appears once a week of snapshots exists and only while no filters are applied.
+
 ## Managing the team
 
 - Admins switch people between **Active** and **Inactive** on the **Team** tab, or edit the Status column of the *Creative Team List (Dashboard)* sheet directly. Inactive people leave the stand-up and workload views; their past work stays in reports.
@@ -269,7 +301,8 @@ assets/app.js          views, filters, charts, sign-in, roles, access and activi
 apps-script/Code.gs    the data API that runs in Google Apps Script: reads, edits, sign-in, roles, audit log
 apps-script/Config.gs  its settings: sheet links, sign-in client ID, owners, domains (placeholders here)
 tools/inline-data.js   copies assets/data.js into Code.gs (run after changing data.js), so reminders count exactly like the dashboard
-assets/logo.svg        the Fastrr mark, also the favicon
+assets/logo.svg        the Fastrr mark on a dark tile (home-screen icon, notifications)
+assets/favicon.svg     browser-tab icon; dark bars on light tabs, white bars on dark tabs
 apps-script/appsscript.json  its permissions
 ```
 

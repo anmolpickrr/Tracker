@@ -77,7 +77,9 @@
     Object.keys(params).forEach((k) => u.searchParams.set(k, params[k]));
     return parse(await (await fetch(u.toString(), { redirect: 'follow' })).text());
   }
-  const probeVer = () => (A.mode === 'auth' ? callApi({ action: 'ver' }) : keyGet({ mode: 'ver' }));
+  /* The 30-second check also tells the web app which page you are on and which task you are editing (shown to admins). */
+  const EDITING = { uid: '', label: '' };
+  const probeVer = () => (A.mode === 'auth' ? callApi({ action: 'ver', at: { page: P.tab, task: EDITING.uid, taskLabel: EDITING.label } }) : keyGet({ mode: 'ver' }));
   const errText = (e) => (e === 'bad_key' ? 'The key was not accepted. Copy it again from the Apps Script execution log after running setup.' : e === 'forbidden' ? 'Your role does not allow this. Ask the admin for more access.' : 'The web app reported: ' + e);
 
   async function load(fresh) {
@@ -158,6 +160,11 @@
       }
       if (A.mode === 'auth' && body.ok && typeof body.pending === 'number' && body.pending !== AX.pending) { AX.pending = body.pending; syncControls(); }
       if (P.tab === 'access') axRefresh(false);
+      if (A.mode === 'auth' && body.ok) {
+        PRS.on = body.presenceOn !== false;
+        if (body.remind) { const hm = (t) => { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? +m[1] * 60 + +m[2] : null; }; const a = hm(body.remind.morning), b = hm(body.remind.evening); if (a != null) REMIND_AT.morning = a; if (b != null) REMIND_AT.evening = b; REMIND_AT.label = body.remind; }
+        if (body.presence) { PRS.list = body.presence; dash.draw('presence-mini'); dash.draw('presence'); }
+      }
       if (body.ok && body.ver && S.ver && body.ver !== S.ver) await load(false);
       dash.draw('sync-text');
     } catch (e) { /* a missed check is retried on the next tick */ }
@@ -336,7 +343,29 @@
     const tip = (host) => { const t = document.createElement('div'); t.className = 'co-tip'; t.hidden = true; host.append(t); return t; };
     const placeTip = (t, host, x, y) => { t.hidden = false; const w = t.offsetWidth, hw = host.clientWidth; t.style.left = Math.max(0, Math.min(hw - w, x - w / 2)) + 'px'; t.style.top = Math.max(0, y - t.offsetHeight - 10) + 'px'; };
     const sign = (d) => (d > 0 ? '+' : d < 0 ? '−' : '±') + num(Math.abs(d));
-    const delta = (cur, prev) => { const d = cur - prev; const s = document.createElement('span'); s.className = d > 0 ? 'co-up' : d < 0 ? 'co-down' : ''; s.textContent = sign(d) + (prev ? ' (' + (d >= 0 ? '+' : '−') + Math.round(Math.abs(d) / prev * 100) + '%)' : ''); return s; };
+    /*
+     * Direction-aware change colours, used everywhere a number is compared with an earlier one.
+     * better: 'up' (more is better: deliveries), 'down' (less is better: overdue, unassigned), 'none' (neutral).
+     * Green = improvement, red = worse; the shade deepens with the size of the change (full strength at ±50%).
+     */
+    const tone = (diff, base, better) => {
+      if (!diff || better === 'none') return null;
+      const good = better === 'down' ? diff < 0 : diff > 0;
+      const pct = base ? Math.abs(diff) / Math.abs(base) : 1;
+      return { good, k: Math.min(1, pct / 0.5), pct };
+    };
+    const toneInk = (t) => (t ? 'color-mix(in srgb, var(' + (t.good ? '--good' : '--worse') + ') ' + Math.round(55 + t.k * 45) + '%, var(--muted))' : '');
+    const toneWash = (t) => (t ? 'color-mix(in srgb, var(' + (t.good ? '--good' : '--worse') + ') ' + Math.round(9 + t.k * 21) + '%, transparent)' : '');
+    const toneFill = (t, rest) => (t ? 'color-mix(in srgb, var(' + (t.good ? '--good' : '--worse') + ') ' + Math.round(45 + t.k * 55) + '%, ' + (rest || 'var(--chart-muted)') + ')' : (rest || 'var(--chart-muted)'));
+    const pctText = (d, prev) => (prev ? ' (' + (d >= 0 ? '+' : '−') + Math.round(Math.abs(d) / prev * 100) + '%)' : '');
+    const delta = (cur, prev, better) => {
+      const d = cur - prev, t = tone(d, prev, better || 'up'), s = document.createElement('span');
+      s.className = 'dl' + (t ? (t.good ? ' good' : ' worse') : ' flat');
+      s.textContent = (d > 0 ? '▲ ' : d < 0 ? '▼ ' : '') + sign(d) + pctText(d, prev);
+      if (t) { s.style.color = toneInk(t); s.style.background = toneWash(t); }
+      s.title = !d ? 'No change' : (t ? (t.good ? 'Better' : 'Worse') : 'Change') + ': ' + num(prev) + ' → ' + num(cur);
+      return s;
+    };
     const period = () => {
       const p = dash.params(), t = today(), m = thisMonth();
       const preset = p.rpreset || 'this-month';
@@ -377,7 +406,7 @@
       a.download = filename; document.body.append(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     };
-    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, emptyRow, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials, inr, istHour, istTime, istDateTime, istParts };
+    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, emptyRow, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials, inr, istHour, istTime, istDateTime, istParts, tone, toneInk, toneWash, toneFill, pctText };
   })();
 
   /* ================= Controls ================= */
@@ -640,15 +669,23 @@
     if (CO.notReady(el, 'text')) return;
     const rs = CO.rows(), k = el.dataset.kpi, list = tiles[k](rs);
     el.replaceChildren();
-    if (k === 'open') { const n = rs.filter((r) => r.due === 'noeta').length; el.textContent = CO.num(CO.sumQty(list)) + ' creatives' + (n ? ' · ' + n + ' without ETA' : ''); }
+    // Point-in-time numbers compare with the daily snapshot (about a week back) the web app keeps: fewer is better.
+    const hist = (key) => {
+      const p = dash.params(); if (p.src || p.designer || p.brand || p.type) return null;
+      const t = CO.today(), want = CO.addDays(t, -7);
+      const past = (HS.days || []).filter((d) => d.date < t && d[key] != null).sort((a, b) => (Math.abs(CO.diffDays(a.date, want)) - Math.abs(CO.diffDays(b.date, want))));
+      return past[0] || null;
+    };
+    const cmp = (now, key, better) => { const h = hist(key); if (!h) return; const line = document.createElement('span'); line.className = 'kpi-cmp'; line.append(CO.delta(now, h[key], better), ' vs ' + CO.fmtDate(h.date)); el.append(document.createElement('br'), line); };
+    if (k === 'open') { const n = rs.filter((r) => r.due === 'noeta').length; el.textContent = CO.num(CO.sumQty(list)) + ' creatives' + (n ? ' · ' + n + ' without ETA' : ''); cmp(list.length, 'open', 'down'); }
     else if (k === 'wip') { el.textContent = rs.filter((r) => r.stage === 'To be planned').length + ' to be planned (TBP)'; }
-    else if (k === 'overdue') { if (!list.length) { el.textContent = 'Nothing late'; return; } const worst = Math.max(...list.map((r) => CO.diffDays(r.eta, CO.today()))); el.textContent = 'Oldest ' + worst + (worst === 1 ? ' day' : ' days') + ' late'; }
+    else if (k === 'overdue') { if (!list.length) el.textContent = 'Nothing late'; else { const worst = Math.max(...list.map((r) => CO.diffDays(r.eta, CO.today()))); el.textContent = 'Oldest ' + worst + (worst === 1 ? ' day' : ' days') + ' late'; } cmp(list.length, 'overdue', 'down'); }
     else if (k === 'today') { el.textContent = rs.filter((r) => r.due === 'week').length + ' more in the next 7 days'; }
-    else if (k === 'review') { el.textContent = rs.filter((r) => r.stage === 'Awaiting brief').length + ' awaiting brief'; }
+    else if (k === 'review') { el.textContent = rs.filter((r) => r.stage === 'Awaiting brief').length + ' awaiting brief'; cmp(list.length, 'review', 'none'); }
     else if (k === 'delivered') {
       const pm = CO.prevMonth(CO.thisMonth()), day = Number(CO.today().slice(8));
       const prevSame = CO.sumQty(rs.filter((r) => r.stage === 'Delivered' && r.month === pm && Number(r.ddate.slice(8)) <= day));
-      el.append(CO.delta(CO.sumQty(list), prevSame), ' vs same days of ' + CO.fmtMonth(pm).split(' ')[0]);
+      el.append(CO.delta(CO.sumQty(list), prevSame, 'up'), ' vs same days of ' + CO.fmtMonth(pm).split(' ')[0]);
     }
   });
   const whenChip = (r) => { const s = document.createElement('span'); const d = r.eta ? CO.diffDays(CO.today(), r.eta) : null; s.className = 'when' + (d == null ? '' : d < 0 ? ' bad' : d <= 1 ? ' warn' : ''); s.textContent = d == null ? 'No ETA' : d < 0 ? (-d) + 'd late' : d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : CO.fmtDate(r.eta); s.title = r.eta ? 'Design ETA ' + CO.fmtDate(r.eta, true) : 'No Design ETA'; return s; };
@@ -690,7 +727,7 @@
   dash.draw('upcoming-noeta', (el) => {
     if (CO.status() !== 'ok') { el.textContent = ''; return; }
     const n = CO.rows().filter((r) => r.due === 'noeta').length;
-    el.textContent = n ? n + ' open with no ETA →' : '';
+    el.textContent = n ? n + ' open with no ETA' : '';
   });
   /* Overview: work nobody has picked up yet. */
   dash.draw('unassigned', (el) => {
@@ -700,7 +737,7 @@
     el.classList.toggle('accent-bad', open.length > 0); el.classList.toggle('accent-ok', !open.length);
     const head = document.createElement('div'); head.className = 'co-card-head';
     const hd = document.createElement('div'); const h = document.createElement('h2'); h.className = 'co-h2'; h.textContent = 'Unassigned'; const n = document.createElement('p'); n.className = 'co-note'; n.textContent = 'Open tasks with no designer yet.'; hd.append(h, n); head.append(hd);
-    if (open.length) { const go = document.createElement('button'); go.type = 'button'; go.className = 'co-link'; go.textContent = 'Open queue →'; go.addEventListener('click', () => CO.goTasks('open', { designer: '__none' })); head.append(go); }
+    if (open.length) { const go = document.createElement('button'); go.type = 'button'; go.className = 'co-link'; go.textContent = 'Open queue'; go.addEventListener('click', () => CO.goTasks('open', { designer: '__none' })); head.append(go); }
     el.append(head);
     if (!open.length) { const p = document.createElement('p'); p.className = 'su-free'; p.textContent = 'Every open task has a designer.'; el.append(p); return; }
     const late = open.filter((r) => r.due === 'overdue').length, noeta = open.filter((r) => r.due === 'noeta').length;
@@ -799,7 +836,7 @@
     // Compare complete weeks: the current week is still filling up.
     const a = ser[ser.length - 2].n, b = ser[ser.length - 3].n;
     const v = document.createElement('b'); v.textContent = CO.num(a);
-    el.append(v, 'last week ', CO.delta(a, b), ' vs the week before');
+    el.append(v, 'last week ', CO.delta(a, b, 'up'), ' vs the week before');
   });
   dash.draw('trend', (el) => {
     if (CO.notReady(el, 'box')) return;
@@ -842,7 +879,7 @@
       const step = x.step(), i = Math.max(0, Math.min(ser.length - 1, Math.round((px - x(ser[0].w)) / step))), d = ser[i];
       cross.attr('x1', x(d.w)).attr('x2', x(d.w)).style('opacity', 1); hov.attr('cx', x(d.w)).attr('cy', y(d.n)).style('opacity', 1);
       tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = (i === ser.length - 1 ? 'This week' : 'Week of ' + CO.fmtDate(d.w)) + ' · ' + CO.num(d.n) + ' creatives'; tipEl.append(k);
-      if (i) { const r = document.createElement('div'); const dd = d.n - ser[i - 1].n; const sp = document.createElement('span'); sp.className = 'd ' + (dd > 0 ? 'up' : dd < 0 ? 'down' : ''); sp.textContent = CO.sign(dd); r.append(sp, ' vs the week before'); tipEl.append(r); }
+      if (i) { const r = document.createElement('div'); r.append(CO.delta(d.n, ser[i - 1].n, 'up'), ' vs the week before'); tipEl.append(r); }
       const r2 = document.createElement('div'); r2.textContent = CO.fmtDate(d.w) + ' – ' + CO.fmtDate(CO.addDays(d.w, 6)) + (i === ser.length - 1 ? ' (so far)' : ''); r2.style.color = 'var(--muted)'; tipEl.append(r2);
       CO.placeTip(tipEl, el, x(d.w) / W * el.clientWidth, y(d.n) / H * el.clientHeight);
     };
@@ -853,7 +890,7 @@
   dash.draw('top-brands', (el) => {
     if (CO.notReady(el, 'box')) return;
     const m = CO.thisMonth(), rs = CO.rows().filter((r) => r.stage === 'Delivered' && r.month === m);
-    const pm = CO.prevMonth(m), prev = CO.rows().filter((r) => r.stage === 'Delivered' && r.month === pm);
+    const pm = CO.prevMonth(m), dayNow = Number(CO.today().slice(8)), prev = CO.rows().filter((r) => r.stage === 'Delivered' && r.month === pm && Number(r.ddate.slice(8)) <= dayNow);
     const top = d3.rollups(rs, (v) => CO.sumQty(v), (r) => r.brand).sort((a, b) => b[1] - a[1]).slice(0, 6);
     el.replaceChildren();
     if (!top.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Nothing delivered yet this month.'; el.append(p); return; }
@@ -864,10 +901,11 @@
       const rk = document.createElement('span'); rk.className = 'rk'; rk.textContent = String(i + 1).padStart(2, '0');
       const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = b;
       const v = document.createElement('span'); v.className = 'v'; v.textContent = CO.num(n);
-      const pv = CO.sumQty(prev.filter((r) => r.brand === b)); v.title = CO.num(pv) + ' last month';
+      const pv = CO.sumQty(prev.filter((r) => r.brand === b)); v.title = CO.num(pv) + ' in the same days of last month';
+      const dl = CO.delta(n, pv, 'up'); dl.classList.add('tb-dl');
       const tr = document.createElement('span'); tr.className = 'tr'; const fi = document.createElement('i'); fi.style.width = go ? '0%' : (n / max * 100) + '%'; tr.append(fi);
       if (go) requestAnimationFrame(() => requestAnimationFrame(() => { fi.style.width = (n / max * 100) + '%'; }));
-      bt.append(rk, nm, v, tr); bt.addEventListener('click', () => dash.setParams({ brand: b })); box.append(bt);
+      bt.append(rk, nm, dl, v, tr); bt.addEventListener('click', () => dash.setParams({ brand: b })); box.append(bt);
     });
     el.append(box);
   });
@@ -1046,6 +1084,7 @@
           name, open: CO.sumQty(open), wip: open.filter((r) => r.stage === 'In progress').length, overdue: list.filter((r) => r.due === 'overdue').length,
           week: list.filter((r) => r.due === 'today' || r.due === 'week').length, review: list.filter((r) => r.stage === 'Under review').length,
           thisM: CO.sumQty(del.filter((r) => r.month === m)), lastM: CO.sumQty(del.filter((r) => r.month === pm)),
+          lastSame: CO.sumQty(del.filter((r) => r.month === pm && Number(r.ddate.slice(8)) <= Number(CO.today().slice(8)))),
           avg: ms.size ? CO.sumQty(del) / ms.size : 0, del,
           brands: d3.rollups(list, (v) => v.length, (r) => r.brand).sort((a, b) => b[1] - a[1]).slice(0, 3).map((d) => d[0]).join(', ')
         };
@@ -1059,7 +1098,7 @@
         const ob = document.createElement('span'); ob.className = 'co-inbar'; const bi = document.createElement('i'); bi.style.width = (d.open / maxOpen * 3) + 'rem'; ob.append(bi, String(d.open)); CO.td(tr, ob, 'n');
         CO.td(tr, String(d.wip), 'n co-hide-lg');
         CO.td(tr, String(d.overdue), 'n' + (d.overdue ? ' bad' : ''));
-        CO.td(tr, String(d.week), 'n co-hide-md'); CO.td(tr, String(d.review), 'n'); CO.td(tr, CO.num(d.thisM), 'n num-b'); CO.td(tr, CO.num(d.lastM), 'n'); CO.td(tr, d.avg ? d.avg.toFixed(1) : '—', 'n');
+        CO.td(tr, String(d.week), 'n co-hide-md'); CO.td(tr, String(d.review), 'n'); const tm = document.createElement('span'); tm.className = 'n-with-dl'; const tb = document.createElement('b'); tb.textContent = CO.num(d.thisM); tm.append(tb, CO.delta(d.thisM, d.lastSame, 'up')); tm.lastChild.title += ' (same days of last month)'; CO.td(tr, tm, 'n'); CO.td(tr, CO.num(d.lastM), 'n'); CO.td(tr, d.avg ? d.avg.toFixed(1) : '—', 'n');
         CO.td(tr, d.brands, 'co-hide-lg co-clip').title = d.brands;
         const mix = document.createElement('span'); mix.className = 'co-mix';
         const total = CO.sumQty(d.del);
@@ -1127,11 +1166,16 @@
       if (k === 'paid' || k === 'mkt') { el.textContent = (s.total ? Math.round(s[k] / s.total * 100) : 0) + '% of the period'; return; }
       if (k === 'per') { el.textContent = s.people + (s.people === 1 ? ' person' : ' people') + ' delivered'; return; }
       if (!pr.pfrom) { el.textContent = k === 'total' ? CO.num(CO.sumQty(s.rs.filter((r) => CO.VIDEO.test(r.type)))) + ' video, reel or GIF' : ''; return; }
-      el.append(CO.delta(s[k], stats(pr.pfrom, pr.pto)[k]), ' vs previous');
+      el.append(CO.delta(s[k], stats(pr.pfrom, pr.pto)[k], 'up'), ' vs previous');
     });
     dash.draw('r-legend', (el) => {
       if (CO.notReady(el, 'list')) return;
-      if ((dash.params().rchart || 'total') === 'total') { el.replaceChildren(); return; }
+      if ((dash.params().rchart || 'total') === 'total') {
+        const sw = (good, k, label) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = CO.toneFill({ good, k }, 'var(--bar)'); s.append(i, label); return s; };
+        const n = document.createElement('span'); const ni = document.createElement('i'); ni.style.background = 'var(--bar)'; n.append(ni, 'no earlier month');
+        el.replaceChildren(sw(true, 0.25, 'a little more'), sw(true, 1, 'much more than the month before'), sw(false, 0.25, 'a little fewer'), sw(false, 1, 'much fewer'), n);
+        return;
+      }
       const top = CO.topTypes(delivered(), 5), cmap = CO.typeColors(top);
       el.replaceChildren(...top.map((t) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = cmap.get(t); s.append(i, t); return s; }));
     });
@@ -1146,6 +1190,16 @@
       const ms = [...new Set(del.map((r) => r.month))].sort().slice(-18);
       const inSel = (m) => pr.all || (m + '-01' <= pr.to && CO.monthEnd(m) >= pr.from);
       const series = ms.map((m) => { const o = { m }; top.forEach((t) => { o[t] = 0; }); del.filter((r) => r.month === m).forEach((r) => { o[byType ? CO.typeOf(r, top) : 'Total'] += r.qty || 1; }); o.total = top.reduce((a, t) => a + o[t], 0); return o; });
+      // Each month against the month before. The current month (still running) is compared with the same days of last month.
+      const curM = CO.thisMonth(), dayNow = Number(CO.today().slice(8));
+      series.forEach((o) => {
+        const pm = CO.prevMonth(o.m), partial = o.m === curM;
+        const prevRows = del.filter((r) => r.month === pm && (!partial || Number(r.ddate.slice(8)) <= dayNow));
+        const any = del.some((r) => r.month <= pm);
+        o.prev = any ? CO.sumQty(prevRows) : null;
+        o.prevLabel = partial ? 'the same days of ' + CO.fmtMonth(pm) : CO.fmtMonth(pm);
+        o.tone = o.prev == null ? null : CO.tone(o.total - o.prev, o.prev, 'up');
+      });
       const W = Math.max(300, el.clientWidth), H = 260, mB = 24, mT = 18;
       const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered by month');
       const yt = d3.scaleLinear([0, d3.max(series, (d) => d.total) || 1], [H - mB, mT]).nice();
@@ -1159,17 +1213,19 @@
       svg.append('g').selectAll('text').data(ms).join('text').attr('class', (m) => 'tick' + (inSel(m) && !pr.all ? ' on' : '')).attr('x', (m) => x(m) + x.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', 'middle')
         .text((m, i) => (i % every === 0) ? CO.fmtMonth(m).replace(' 20', " '") : '');
       if (!byType) {
-        // Total: pill bars. The report period is solid; other months are hatched so the selection reads first.
-        const pid = 'hatch-' + Math.random().toString(36).slice(2, 8);
+        // Total: pill bars coloured by the change from the month before (green up, red down, deeper = bigger change).
+        // Months outside the report period are striped and lighter, so the selection reads first.
+        const pid = 'stripe-' + Math.random().toString(36).slice(2, 8);
         const pat = svg.append('defs').append('pattern').attr('id', pid).attr('width', 7).attr('height', 7).attr('patternUnits', 'userSpaceOnUse').attr('patternTransform', 'rotate(45)');
-        pat.append('rect').attr('width', 7).attr('height', 7).style('fill', 'var(--bar)').style('opacity', 0.22);
-        pat.append('line').attr('x1', 0).attr('y1', 0).attr('x2', 0).attr('y2', 7).style('stroke', 'var(--bar)').attr('stroke-width', 2.2).style('opacity', 0.75);
+        pat.append('line').attr('x1', 0).attr('y1', 0).attr('x2', 0).attr('y2', 7).style('stroke', 'var(--panel)').attr('stroke-width', 2.6).style('opacity', 0.55);
         const pw = Math.max(8, Math.min(46, x.bandwidth() * 0.78)), po = (x.bandwidth() - pw) / 2, base = yt(0);
-        svg.append('g').selectAll('rect').data(series).join('rect').attr('class', 'mk').attr('data-m', (d) => d.m).attr('x', (d) => x(d.m) + po).attr('width', pw)
-          .attr('y', (d) => Math.min(yt(d.total), base - pw)).attr('height', (d) => d.total ? Math.max(pw, base - yt(d.total)) : 0).attr('rx', pw / 2)
-          .style('fill', (d) => inSel(d.m) && !pr.all ? 'var(--bar)' : 'url(#' + pid + ')');
+        const on = (d) => pr.all || inSel(d.m);
+        const g2 = svg.append('g').selectAll('g').data(series).join('g');
+        const bar = (sel) => sel.attr('x', (d) => x(d.m) + po).attr('width', pw).attr('y', (d) => Math.min(yt(d.total), base - pw)).attr('height', (d) => d.total ? Math.max(pw, base - yt(d.total)) : 0).attr('rx', pw / 2).attr('data-m', (d) => d.m);
+        bar(g2.append('rect').attr('class', 'mk tone-bar')).style('fill', (d) => CO.toneFill(d.tone, 'var(--bar)')).style('opacity', (d) => on(d) ? 1 : 0.42);
+        bar(g2.filter((d) => !on(d)).append('rect').attr('class', 'mk')).style('fill', 'url(#' + pid + ')');
         svg.append('g').selectAll('circle').data(series.filter((d) => d.total)).join('circle').attr('class', 'mk').attr('data-m', (d) => d.m).attr('cx', (d) => x(d.m) + x.bandwidth() / 2).attr('cy', (d) => Math.min(yt(d.total), base - pw) + pw / 2).attr('r', Math.min(5, pw / 4))
-          .style('fill', (d) => inSel(d.m) && !pr.all ? 'var(--panel)' : 'var(--bar)');
+          .style('fill', 'var(--panel)').style('opacity', (d) => on(d) ? 0.95 : 0.6);
       } else {
       const stack = d3.stack().keys(top)(series);
       const bw = Math.min(24, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
@@ -1194,7 +1250,7 @@
         .on('click', (e, d) => dash.setParams({ rpreset: 'custom', rfrom: d.m + '-01', rto: CO.monthEnd(d.m) }))
         .on('mouseenter', (e, d) => mark(d.m))
         .on('mousemove', (e, d) => { tipEl.replaceChildren(); const k = document.createElement('div'); k.className = 'k'; k.textContent = CO.fmtMonth(d.m, true) + ' · ' + CO.num(d.total) + ' creatives' + (d.m === CO.thisMonth() ? ' so far' : ''); tipEl.append(k);
-          const i = series.indexOf(d); if (i > 0) { const dd = d.total - series[i - 1].total, r = document.createElement('div'), sp = document.createElement('span'); sp.className = 'd ' + (dd > 0 ? 'up' : dd < 0 ? 'down' : ''); sp.textContent = CO.sign(dd) + (series[i - 1].total ? ' (' + (dd >= 0 ? '+' : '−') + Math.round(Math.abs(dd) / series[i - 1].total * 100) + '%)' : ''); r.append(sp, ' vs ' + CO.fmtMonth(series[i - 1].m)); tipEl.append(r); } (byType ? top.slice().reverse() : []).forEach((t) => { if (!d[t]) return; const r = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = cmap.get(t); r.append(sw, t + ': ' + d[t]); tipEl.append(r); }); const [px] = d3.pointer(e, el); CO.placeTip(tipEl, el, px, el.clientHeight * 0.3); })
+          if (d.prev != null) { const r = document.createElement('div'); r.append(CO.delta(d.total, d.prev, 'up'), ' vs ' + d.prevLabel); tipEl.append(r); } (byType ? top.slice().reverse() : []).forEach((t) => { if (!d[t]) return; const r = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = cmap.get(t); r.append(sw, t + ': ' + d[t]); tipEl.append(r); }); const [px] = d3.pointer(e, el); CO.placeTip(tipEl, el, px, el.clientHeight * 0.3); })
         .on('mouseleave', () => { tipEl.hidden = true; mark(null); });
     });
     const crossTable = (table, keyFn, label, tag) => {
@@ -1215,12 +1271,12 @@
         const tr = tb.insertRow(); const c0 = CO.td(tr, k, 'co-nowrap'); if (tag) { const t = tag(k); if (t) c0.append(' ', t); }
         top.forEach((t) => { const v = CO.sumQty(list.filter((r) => CO.typeOf(r, top) === t)); CO.td(tr, v ? CO.num(v) : '·', v ? 'n' : 'n co-muted'); });
         const b = document.createElement('span'); b.className = 'co-inbar'; const i = document.createElement('i'); i.style.width = (n / max * 3.5) + 'rem'; b.append(i, CO.num(n)); CO.td(tr, b, 'n num-b');
-        if (prev) { const d = n - CO.sumQty(prev.filter((r) => keyFn(r).includes(k))); CO.td(tr, CO.sign(d), 'n ' + (d > 0 ? 'co-up' : d < 0 ? 'co-down' : 'co-muted')); }
+        if (prev) { const p0 = CO.sumQty(prev.filter((r) => keyFn(r).includes(k))); CO.td(tr, CO.delta(n, p0, 'up'), 'n'); }
       });
       const tr = tb.insertRow(); tr.className = 'total'; CO.td(tr, 'All');
       top.forEach((t) => CO.td(tr, CO.num(CO.sumQty(rs.filter((r) => CO.typeOf(r, top) === t))), 'n'));
       CO.td(tr, CO.num(CO.sumQty(rs)), 'n');
-      if (prev) { const d = CO.sumQty(rs) - CO.sumQty(prev); CO.td(tr, CO.sign(d), 'n ' + (d > 0 ? 'co-up' : d < 0 ? 'co-down' : 'co-muted')); }
+      if (prev) CO.td(tr, CO.delta(CO.sumQty(rs), CO.sumQty(prev), 'up'), 'n');
     };
     dash.draw('r-brand', (t) => crossTable(t, (r) => [r.brand], 'Brand'));
     dash.draw('r-designer', (t) => crossTable(t, (r) => r.list.length ? r.list : ['Unassigned'], 'Designer', (k) => { const m = CO.member(k); if (k === 'Unassigned' || m.status === 'Active') return null; const s = document.createElement('span'); s.className = m.status === 'New' ? 'tag-new' : 'tag-off'; s.textContent = m.status; return s; }));
@@ -1237,7 +1293,7 @@
       types.map((t) => { const c = cur.filter((r) => r.type === t); return { t, c, n: CO.sumQty(c), p: CO.sumQty(prev.filter((r) => r.type === t)) }; }).sort((a, b) => b.n - a.n || b.p - a.p).forEach((d) => {
         const tr = tb.insertRow(); CO.td(tr, d.t, 'co-nowrap');
         CO.td(tr, CO.num(d.n), 'n num-b'); CO.td(tr, curTotal ? Math.round(d.n / curTotal * 100) + '%' : '—', 'n'); CO.td(tr, pr.pfrom ? CO.num(d.p) : '—', 'n');
-        const diff = d.n - d.p; CO.td(tr, pr.pfrom ? CO.sign(diff) : '—', 'n ' + (!pr.pfrom ? '' : diff > 0 ? 'co-up' : diff < 0 ? 'co-down' : 'co-muted'));
+        CO.td(tr, pr.pfrom ? CO.delta(d.n, d.p, 'up') : '—', 'n');
         CO.td(tr, CO.num(CO.sumQty(d.c.filter((r) => r.source === 'Paid'))), 'n'); CO.td(tr, CO.num(CO.sumQty(d.c.filter((r) => r.source === 'Marketing'))), 'n');
         CO.td(tr, String(new Set(d.c.map((r) => r.brand)).size), 'n'); CO.td(tr, String(new Set(d.c.flatMap((r) => r.list)).size), 'n');
       });
@@ -1294,6 +1350,8 @@
       if (S.status !== 'ok' || !S.tasks) return;
       const r = S.tasks.find((t) => t.uid === uid); if (!r) return;
       current = r;
+      EDITING.uid = r.src + ':' + (r.id || r.row); EDITING.label = (r.id ? r.id + ' · ' : '') + r.brand + ' · ' + CO.topicText(r).slice(0, 50);
+      if (can('Editor')) setTimeout(checkForChanges, 50);
       const list = r.designers ? [...new Set(r.designers.split(' + ').map(CO.canon))] : [];
       before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1) };
       $('ed-where').textContent = (SHEET[r.src] || r.source) + (r.row ? ' · row ' + r.row : '') + (r.id ? ' · ' + r.id : '');
@@ -1330,6 +1388,7 @@
     document.querySelector('.co').addEventListener('click', openFrom);
     document.querySelector('.co').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-uid][tabindex]')) openEditor(e.target.dataset.uid); });
     $('ed-cancel').addEventListener('click', () => dlgE.close());
+    dlgE.addEventListener('close', () => { EDITING.uid = ''; EDITING.label = ''; });
     $('ed-history').addEventListener('click', () => { if (!current) return; dlgE.close(); AX.q = current.id; AX.kind = ''; document.getElementById('ax-q').value = current.id; document.getElementById('ax-kind').value = ''; dash.setParams({ tab: 'access' }); });
     $('editor-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1571,6 +1630,45 @@
     e.target.reset();
   });
 
+  /* Reminder times (IST minutes since midnight); the web app sends the admin's settings with every check. */
+  const REMIND_AT = { morning: 600, evening: 1080, label: { morning: '10:00', evening: '18:00' } };
+  /* Presence: who is online (admins only see the list; everyone is told it is visible). */
+  const PRS = { on: true, list: [] };
+  const PAGE_NAME = { today: 'Overview', standup: 'Stand-up', tasks: 'Tasks', notes: 'Notes', team: 'Team', reports: 'Reports', health: 'Data health', access: 'Access' };
+  const agoText = (iso) => { if (!iso) return 'never'; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : CO.istDateTime(iso); };
+  dash.draw('presence-mini', (el) => {
+    el.replaceChildren(); if (!can('Admin') || A.mode !== 'auth' || !PRS.on) return;
+    const on = PRS.list.filter((p) => p.online && (!A.user || p.email !== A.user.email));
+    if (!on.length) return;
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-mini'; b.title = on.map((p) => p.name + ' · ' + (PAGE_NAME[p.page] || 'dashboard') + (p.taskLabel ? ' · editing ' + p.taskLabel : '')).join('\n');
+    on.slice(0, 4).forEach((p) => { const a = CO.av(p.name); a.classList.add('live'); b.append(a); });
+    const n = document.createElement('span'); n.textContent = on.length + ' online'; b.append(n);
+    b.addEventListener('click', () => dash.setParams({ tab: 'access' })); el.append(b);
+  });
+  dash.draw('presence', (el) => {
+    el.replaceChildren();
+    if (!PRS.on) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Presence is switched off in the reminder settings below.'; el.append(p); return; }
+    const list = PRS.list.slice().sort((a, b) => (b.online - a.online) || String(b.at).localeCompare(String(a.at)));
+    if (!list.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Checking who is online…'; el.append(p); return; }
+    list.forEach((p) => {
+      const r = document.createElement('div'); r.className = 'pr-row' + (p.online ? ' online' : '');
+      const a = CO.av(p.name); if (p.online) a.classList.add('live');
+      const t = document.createElement('div'); const n = document.createElement('b'); n.textContent = p.name; const sm = document.createElement('small');
+      sm.textContent = p.online ? 'On ' + (PAGE_NAME[p.page] || 'the dashboard') + (p.taskLabel ? ' · editing ' + p.taskLabel : '') : 'Last active ' + agoText(p.at);
+      t.append(n, sm);
+      const st = document.createElement('span'); st.className = 'pr-state'; st.textContent = p.online ? (p.taskLabel ? 'Editing' : 'Online') : 'Away';
+      r.append(a, t, st); el.append(r);
+    });
+  });
+
+  /* Daily snapshots kept by the web app (open, overdue… per day, IST), for exact before/after comparisons. */
+  const HS = { days: [], at: 0 };
+  async function loadHistory() {
+    if (A.mode !== 'auth' || !A.user || Date.now() - HS.at < 30 * 60 * 1000) return;
+    HS.at = Date.now();
+    try { const b = await callApi({ action: 'history' }); if (b.ok) { HS.days = b.days || []; dash.draw('kpi-sub'); } } catch (e) { /* older web app: no comparisons */ }
+  }
+
   /* ================= Motion helpers ================= */
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
   // Animate a chart only when what it shows changed (not on every 30-second check).
@@ -1583,7 +1681,8 @@
     moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
     user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1',
     bell: 'M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0',
-    check: 'M20 6L9 17l-5-5', at: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.5 7.1'
+    check: 'M20 6L9 17l-5-5', at: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.5 7.1',
+    clock: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', cal: 'M4 5h16v16H4zM4 10h16M9 3v4M15 3v4', plus: 'M12 5v14M5 12h14', edit: 'M4 20l4-1 11-11-3-3L5 16z', video: 'M3 7h12v10H3zM15 10l6-3v10l-6-3'
   };
   const svgIcon = (d) => { const ns = 'http://www.w3.org/2000/svg'; const s = document.createElementNS(ns, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); s.append(p); return s; };
   const myDesigner = () => { if (!A.user || !A.user.name) return null; const r = CO.team().resolve(A.user.name); return r ? r.name : null; };
@@ -1600,8 +1699,8 @@
     b.actions = NB.myActions().filter((a) => !a.done);
     return b;
   }
-  const briefKind = () => { const h = CO.istHour(); return h >= REMIND_AT.evening ? 'evening' : h >= REMIND_AT.morning ? 'morning' : null; };
-  const REMIND_AT = { morning: 10, evening: 18 };
+  const istMins = () => { const o = CO.istParts(); return +o.hour * 60 + +o.minute; };
+  const briefKind = () => { const m = istMins(); return m >= REMIND_AT.evening ? 'evening' : m >= REMIND_AT.morning ? 'morning' : null; };
   const BR = { dlg: document.getElementById('brief'), kind: 'morning' };
   dash.draw('brief-body', (el) => {
     el.replaceChildren(); const b = briefing(BR.kind); if (!b) return;
@@ -1660,8 +1759,34 @@
       if (A.mode !== 'auth' || !A.user) return [];
       const out = [], t = CO.today(), nowLocal = istNowKey();
       const k = briefKind();
-      if (k === 'evening' || k === 'morning') out.push({ id: 'brief-morning-' + t, icon: 'sun', tone: 'lime', t: 'Morning briefing', s: '10:00 IST · today\'s tasks, assignments and priorities', go: () => openBriefing('morning') });
-      if (k === 'evening') out.unshift({ id: 'brief-evening-' + t, icon: 'moon', tone: 'lime', t: 'Evening wrap-up', s: '18:00 IST · completed, pending and tomorrow', go: () => openBriefing('evening') });
+      if (k === 'evening' || k === 'morning') out.push({ id: 'brief-morning-' + t, icon: 'sun', tone: 'lime', t: 'Morning briefing', s: REMIND_AT.label.morning + ' IST · today\'s tasks, assignments and priorities', go: () => openBriefing('morning') });
+      if (k === 'evening') out.unshift({ id: 'brief-evening-' + t, icon: 'moon', tone: 'lime', t: 'Evening wrap-up', s: REMIND_AT.label.evening + ' IST · completed, pending and tomorrow', go: () => openBriefing('evening') });
+      // Tasks: your own deadlines (or, for admins, the team totals), and new requirements nobody has picked up.
+      const all = CO.status() === 'ok' ? CO.rows(true) : null;
+      if (all) {
+        const me = myDesigner(), tm = CO.addDays(t, 1);
+        const openTask = (r) => () => document.dispatchEvent(new CustomEvent('co-open-task', { detail: r.uid }));
+        if (me) {
+          all.filter((r) => r.open && r.list.includes(me) && r.due === 'overdue').slice(0, 6).forEach((r) => out.push({ id: 'od-' + r.uid + '-' + t, icon: 'clock', tone: 'bad', t: 'Overdue: ' + r.brand + ' · ' + CO.topicText(r), s: (r.id || '') + ' · ' + CO.diffDays(r.eta, t) + 'd late · ' + r.stage, go: openTask(r) }));
+          all.filter((r) => r.open && r.list.includes(me) && (r.eta === t || r.eta === tm)).slice(0, 6).forEach((r) => out.push({ id: 'due-' + r.uid + '-' + r.eta, icon: 'cal', tone: 'warn', t: (r.eta === t ? 'Due today: ' : 'Due tomorrow: ') + r.brand + ' · ' + CO.topicText(r), s: (r.id || '') + ' · ' + r.type + ' · ' + r.stage, go: openTask(r) }));
+        }
+        if (can('Admin') || !me) {
+          const od = all.filter((r) => r.due === 'overdue').length, dt = all.filter((r) => r.due === 'today').length;
+          if (od) out.push({ id: 'team-od-' + t + '-' + od, icon: 'clock', tone: 'bad', t: od + ' tasks overdue across the team', s: 'Oldest ' + Math.max(...all.filter((r) => r.due === 'overdue').map((r) => CO.diffDays(r.eta, t))) + ' days late', go: () => CO.goTasks('overdue', { designer: '' }) });
+          if (dt) out.push({ id: 'team-dt-' + t + '-' + dt, icon: 'cal', tone: 'warn', t: dt + ' tasks due today', s: 'Across the team', go: () => CO.goTasks('today', { designer: '' }) });
+        }
+        const fresh = all.filter((r) => r.open && r.req && r.req >= CO.addDays(t, -1));
+        if (fresh.length) { const un = fresh.filter((r) => !r.list.length).length; out.push({ id: 'new-' + t + '-' + fresh.length, icon: 'plus', tone: 'violet', t: fresh.length + ' new requirement' + (fresh.length === 1 ? '' : 's') + ' since yesterday', s: un ? un + ' not assigned yet' : 'All assigned', go: () => CO.goTasks('open', un ? { designer: '__none' } : {}) }); }
+      }
+      // Team updates from the activity log: task status and detail changes made by others, team list changes.
+      FD.entries.forEach((e) => {
+        const task = all && e.record ? all.find((r) => r.id === e.record) : null;
+        const who = e.who.includes('@') ? e.who.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Someone';
+        const what = /^Task|^Sheet/.test(e.action) ? (e.field ? e.field + ': ' + (e.before || '(blank)') + ' → ' + (e.after || '(blank)') : e.action) : e.action + (e.field ? ' · ' + e.field : '');
+        out.push({ id: 'fd-' + e.when + '-' + e.record + '-' + e.field, icon: /^Team/.test(e.action) ? 'user' : 'edit', tone: '', t: who + ' updated ' + (e.record || e.sheet || 'a record'), s: what.slice(0, 90) + ' · ' + agoText(e.when), go: task ? () => document.dispatchEvent(new CustomEvent('co-open-task', { detail: task.uid })) : () => dash.setParams({ tab: can('Admin') ? 'access' : 'tasks' }) });
+      });
+      // Meetings starting within 15 minutes (connected Google Calendar).
+      (CAL.events || []).forEach((ev) => { const m = (new Date(ev.start) - Date.now()) / 60000; if (m <= 15 && m > -5) out.unshift({ id: 'mtg-' + ev.id + '-' + ev.start, icon: 'video', tone: 'lime', t: (m > 0 ? 'Starts ' + untilText(ev.start) + ': ' : 'Now: ') + ev.title, s: fmtRange(ev.start, ev.end) + (ev.people.length ? ' · ' + ev.people.length + ' people' : ''), go: () => { if (ev.meet) window.open(ev.meet, '_blank', 'noopener'); else dash.setParams({ tab: 'today' }); } }); });
       if (can('Admin') && AX.pending) out.unshift({ id: 'access-' + AX.pending + '-' + t, icon: 'user', tone: 'violet', t: AX.pending + (AX.pending === 1 ? ' access request' : ' access requests') + ' waiting', s: 'Approve or reject on the Access page', go: () => dash.setParams({ tab: 'access' }) });
       NB.notes.forEach((n) => {
         if (n.reminder && n.reminder <= nowLocal && n.reminder.slice(0, 10) >= CO.addDays(t, -2) && (n.createdBy === A.user.email || (n.actions || []).some((a) => !a.done && a.email === A.user.email))) out.unshift({ id: 'rem-' + n.id + '-' + n.reminder, icon: 'bell', tone: 'bad', t: 'Reminder: ' + n.title, s: CO.istDateTime(n.reminder + ':00+05:30') + (n.followUps ? ' · ' + n.followUps.slice(0, 60) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } });
@@ -1683,6 +1808,7 @@
       });
     });
     const desk = document.getElementById('np-desktop'), mail = document.getElementById('np-email');
+    const privacy = document.getElementById('np-privacy');
     const close = () => { panel.hidden = true; document.getElementById('btn-bell').setAttribute('aria-expanded', 'false'); };
     const toggle = () => {
       if (!panel.hidden) return close();
@@ -1690,6 +1816,7 @@
       desk.checked = LS.get('co.desktop', '') === '1' && 'Notification' in window && Notification.permission === 'granted';
       desk.disabled = !('Notification' in window);
       mail.checked = !A.user || A.user.reminders !== false;
+      privacy.hidden = !PRS.on;
       dash.draw('np-list');
     };
     document.addEventListener('click', (e) => { if (!panel.hidden && !panel.contains(e.target) && !e.target.closest('#btn-bell')) close(); });
@@ -1717,11 +1844,11 @@
     const tick = () => {
       if (A.mode !== 'auth' || !A.user || CO.status() !== 'ok') return;
       const k = briefKind(), key = k && 'brief-' + k + '-' + CO.today();
-      if (k && CO.istHour() < REMIND_AT[k] + 3 && alertOnce(key, k === 'morning' ? 'Morning briefing' : 'Evening wrap-up', k === 'morning' ? 'Review today\'s tasks, assignments and priorities.' : 'Review completed work, pending tasks and tomorrow\'s priorities.', () => openBriefing(k))) {
+      if (k && istMins() < REMIND_AT[k] + 180 && alertOnce(key, k === 'morning' ? 'Morning briefing' : 'Evening wrap-up', k === 'morning' ? 'Review today\'s tasks, assignments and priorities.' : 'Review completed work, pending tasks and tomorrow\'s priorities.', () => openBriefing(k))) {
         toast(k === 'morning' ? 'Good morning. Your 10:00 briefing is ready.' : 'Your 18:00 wrap-up is ready.');
         if (document.visibilityState === 'visible') openBriefing(k);
       }
-      items().filter((i) => /^rem-/.test(i.id)).forEach((i) => { if (alertOnce(i.id, i.t, i.s, i.go)) toast(i.t); });
+      items().filter((i) => /^(rem|mtg)-/.test(i.id)).forEach((i) => { if (alertOnce(i.id, i.t, i.s, i.go)) toast(i.t); });
       syncControls(); dash.draw('brief-card');
     };
     setInterval(tick, 30 * 1000);
@@ -1796,7 +1923,7 @@
       let last = '';
       list.forEach((n) => {
         const g = groupOf(n); if (g !== last) { const h = document.createElement('div'); h.className = 'nb-group'; h.textContent = g; el.append(h); last = g; }
-        const b = document.createElement('button'); b.type = 'button'; b.className = 'nb-item'; b.dataset.id = n.id; b.setAttribute('aria-current', String(!!st.cur && st.cur.id === n.id));
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'nb-item t-' + String(n.type || 'meeting').toLowerCase(); b.dataset.id = n.id; b.setAttribute('aria-current', String(!!st.cur && st.cur.id === n.id));
         const t = document.createElement('div'); t.className = 't'; if (n.pinned) { const pin = document.createElement('span'); pin.className = 'pin'; pin.textContent = '●'; t.append(pin); } const tt = document.createElement('span'); tt.textContent = n.title; t.append(tt);
         const s2 = document.createElement('div'); s2.className = 's'; s2.textContent = CO.fmtDate(n.date) + ' · ' + (n.body || n.followUps || 'No text yet').replace(/\s+/g, ' ').slice(0, 90);
         const m = document.createElement('div'); m.className = 'm';
@@ -1988,6 +2115,162 @@
   })();
   document.addEventListener('co-open-task', (e) => { const el = document.querySelector('[data-uid="' + CSS.escape(e.detail) + '"]'); if (el) el.click(); else { dash.setParams({ tab: 'tasks', stage: 'all' }); setTimeout(() => { const x = document.querySelector('[data-uid="' + CSS.escape(e.detail) + '"]'); if (x) x.click(); }, 300); } });
 
+  /* ================= Live IST clock (header) ================= */
+  (() => {
+    const el = document.getElementById('clock'); if (!el) return;
+    const digits = el.querySelector('.clk-t'), date = el.querySelector('.clk-d'), ring = el.querySelector('.clk-ring');
+    let h24 = LS.get('co.clock24', '') === '1', last = '';
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const parts = () => { const o = {}; new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', weekday: 'short', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).forEach((p) => { o[p.type] = p.value; }); return o; };
+    const paint = () => {
+      const o = parts(), H = +o.hour, M = o.minute, S2 = +o.second;
+      const hh = h24 ? String(H).padStart(2, '0') : String(H % 12 || 12).padStart(2, '0');
+      const txt = hh + ':' + M;
+      if (txt !== last) {
+        // Each changed digit flips in.
+        const prev = last; last = txt;
+        digits.replaceChildren(...txt.split('').map((c, i) => { const sp = document.createElement('span'); sp.className = c === ':' ? 'clk-colon' : 'clk-dg'; sp.textContent = c; if (prev && prev[i] !== c && !REDUCED) sp.classList.add('flip'); return sp; }));
+        if (!h24) { const ap = document.createElement('span'); ap.className = 'clk-ap'; ap.textContent = H < 12 ? 'AM' : 'PM'; digits.append(ap); }
+        date.replaceChildren(Object.assign(document.createElement('b'), { textContent: o.weekday }), ' ' + o.day + ' ' + MON[+o.month - 1]);
+        el.setAttribute('aria-label', 'India Standard Time ' + txt + (h24 ? '' : (H < 12 ? ' AM' : ' PM')) + ', ' + o.weekday + ' ' + o.day + ' ' + MON[+o.month - 1]);
+      }
+      ring.style.setProperty('--s', S2 / 60);
+    };
+    el.addEventListener('click', () => { h24 = !h24; LS.set('co.clock24', h24 ? '1' : null); last = ''; paint(); toast(h24 ? '24-hour clock' : '12-hour clock'); });
+    paint(); setInterval(paint, 1000);
+  })();
+
+  /* ================= Admin: reminder and presence settings ================= */
+  const ST = { s: null };
+  async function loadSettings() {
+    if (A.mode !== 'auth' || !can('Admin')) return;
+    try { const b = await callApi({ action: 'settings' }); if (b.ok) { ST.s = b.settings; fillSettings(); } } catch (e) { /* older web app */ }
+  }
+  function fillSettings() {
+    const s2 = ST.s; if (!s2) return;
+    const $s = (id) => document.getElementById(id);
+    $s('st-morning').value = s2.morning; $s('st-evening').value = s2.evening; $s('st-email').checked = !!s2.email; $s('st-presence').checked = s2.presence !== false;
+    $s('st-chat').value = ''; $s('st-chat').placeholder = s2.chat ? 'Connected. Paste a new link to replace it, or clear below.' : 'https://chat.googleapis.com/v1/spaces/…';
+    $s('st-chat-clear').hidden = !s2.chat;
+  }
+  document.getElementById('st-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const $s = (id) => document.getElementById(id), body = { action: 'saveSettings', morning: $s('st-morning').value, evening: $s('st-evening').value, email: $s('st-email').checked, presence: $s('st-presence').checked };
+    if ($s('st-chat').value.trim()) body.chat = $s('st-chat').value.trim();
+    try { const r = await post(body); ST.s = r.settings; fillSettings(); toast('Reminder settings saved. They apply from the next check (within 10 minutes).'); }
+    catch (err) { toast('Not saved: ' + err.message, true); }
+  });
+  document.getElementById('st-chat-clear').addEventListener('click', async () => {
+    try { const r = await post({ action: 'saveSettings', chat: '' }); ST.s = r.settings; fillSettings(); toast('Google Chat reminders turned off.'); } catch (err) { toast('Not saved: ' + err.message, true); }
+  });
+
+  /* ================= Team activity feed (for the bell) ================= */
+  const FD = { entries: [], at: 0 };
+  async function loadFeed(force) {
+    if (A.mode !== 'auth' || !A.user || (!force && Date.now() - FD.at < 110 * 1000)) return;
+    FD.at = Date.now();
+    try { const b = await callApi({ action: 'feed' }); if (b.ok) { FD.entries = b.entries || []; syncControls(); dash.draw('np-list'); } } catch (e) { /* older web app */ }
+  }
+  setInterval(() => { if (document.visibilityState === 'visible') loadFeed(); }, 60 * 1000);
+
+  /* ================= Google Calendar and Meet ================= */
+  /*
+   * Each person connects their own calendar, read-only, in their own browser (Google's consent screen).
+   * The access token stays in this browser tab (session storage, about an hour) and is never sent to the web app.
+   */
+  const CAL = { token: '', exp: 0, events: null, err: '', busy: false };
+  try { const t = JSON.parse(sessionStorage.getItem('co.calToken') || 'null'); if (t && t.exp > Date.now() + 60000) { CAL.token = t.token; CAL.exp = t.exp; } } catch (e) { /* none */ }
+  const CAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events.readonly';
+  function calConnect() {
+    gis().then(() => {
+      if (!google.accounts.oauth2) throw new Error('Google sign-in did not load');
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: A.clientId, scope: CAL_SCOPE, hint: A.user ? A.user.email : undefined, prompt: LS.get('co.cal', '') === '1' ? '' : 'consent',
+        callback: (r) => {
+          if (!r || r.error || !r.access_token) { CAL.err = r && r.error === 'access_denied' ? 'Calendar access was not allowed.' : 'Google Calendar did not connect' + (r && r.error ? ' (' + r.error + ')' : '') + '.'; dash.draw('cal'); return; }
+          CAL.token = r.access_token; CAL.exp = Date.now() + (Number(r.expires_in) || 3600) * 1000; CAL.err = '';
+          try { sessionStorage.setItem('co.calToken', JSON.stringify({ token: CAL.token, exp: CAL.exp })); } catch (e) { /* ignore */ }
+          LS.set('co.cal', '1'); calLoad(true);
+        },
+        error_callback: (e) => { CAL.err = e && e.type === 'popup_closed' ? '' : 'Google Calendar did not connect. Allow pop-ups for this page and try again.'; dash.draw('cal'); }
+      });
+      client.requestAccessToken();
+    }).catch((e) => { CAL.err = e.message; dash.draw('cal'); });
+  }
+  async function calLoad(force) {
+    if (!CAL.token || CAL.exp < Date.now() + 30000) { CAL.token = ''; dash.draw('cal'); return; }
+    if (CAL.busy || (!force && CAL.events && Date.now() - CAL.at < 4 * 60 * 1000)) return;
+    CAL.busy = true;
+    try {
+      const now = new Date(), u = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+      u.searchParams.set('timeMin', new Date(now - 60 * 60 * 1000).toISOString()); u.searchParams.set('timeMax', new Date(+now + 3 * 864e5).toISOString());
+      u.searchParams.set('singleEvents', 'true'); u.searchParams.set('orderBy', 'startTime'); u.searchParams.set('maxResults', '25');
+      const res = await fetch(u.toString(), { headers: { Authorization: 'Bearer ' + CAL.token } });
+      if (res.status === 401) { CAL.token = ''; sessionStorage.removeItem('co.calToken'); throw new Error('expired'); }
+      if (res.status === 403) throw new Error('The Google Calendar API is not switched on for this dashboard yet (admin step in the README).');
+      const body = await res.json();
+      CAL.events = (body.items || []).filter((e) => e.status !== 'cancelled' && !(e.attendees || []).some((a) => a.self && a.responseStatus === 'declined')).map((e) => {
+        const meet = e.hangoutLink || ((e.conferenceData && e.conferenceData.entryPoints) || []).filter((p) => p.entryPointType === 'video').map((p) => p.uri)[0] || '';
+        return { id: e.id, title: e.summary || '(No title)', start: e.start.dateTime || e.start.date, end: e.end.dateTime || e.end.date, allDay: !e.start.dateTime, meet: /^https:\/\/meet\.google\.com\//.test(meet) ? meet : '', link: /^https:\/\/www\.google\.com\/calendar\//.test(e.htmlLink || '') ? e.htmlLink : '',
+          people: (e.attendees || []).filter((a) => !a.resource).map((a) => ({ name: a.displayName || a.email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()), email: a.email, self: !!a.self, rsvp: a.responseStatus })) };
+      }).filter((e) => !e.allDay && new Date(e.end) > now);
+      CAL.err = ''; CAL.at = Date.now();
+    } catch (e) { if (e.message !== 'expired') CAL.err = e.message; }
+    CAL.busy = false; dash.draw('cal'); syncControls(); dash.draw('np-list');
+  }
+  setInterval(() => { if (CAL.token && document.visibilityState === 'visible') calLoad(); }, 60 * 1000);
+  const fmtRange = (a, b) => CO.istTime(a) + ' – ' + CO.istTime(b);
+  const untilText = (iso) => { const m = Math.round((new Date(iso) - Date.now()) / 60000); if (m <= 0) return 'Now'; if (m < 60) return 'in ' + m + ' min'; const h = Math.floor(m / 60); return m < 24 * 60 ? 'in ' + h + ' h ' + (m % 60 ? (m % 60) + ' min' : '') : CO.istDateTime(iso); };
+  function meetingNote(ev) {
+    NB.startNew('blank');
+    setTimeout(() => {
+      const t = document.getElementById('nb-title'); t.value = ev.title; t.dispatchEvent(new Event('input'));
+      const b = document.getElementById('nb-body');
+      b.value = 'Attendees: ' + ev.people.map((p) => '@' + p.name).join(' ') + '\n\nAgenda\n• \n\nNotes\n• \n\nDecisions\n• \n'; b.dispatchEvent(new Event('input'));
+    }, 80);
+  }
+  dash.draw('cal', (el) => {
+    el.replaceChildren();
+    const head = document.createElement('div'); head.className = 'co-card-head';
+    const hd = document.createElement('div'); const h = document.createElement('h2'); h.className = 'co-h2'; h.textContent = 'Meetings'; const n = document.createElement('p'); n.className = 'co-note'; n.textContent = 'Your Google Calendar, today and the next two days.'; hd.append(h, n); head.append(hd);
+    el.append(head);
+    if (A.mode !== 'auth') return;
+    if (!CAL.token) {
+      const box = document.createElement('div'); box.className = 'cal-empty';
+      const p = document.createElement('p'); p.textContent = LS.get('co.cal', '') === '1' ? 'Reconnect to show your next meetings (Google asks again every hour or so).' : 'See your next meeting, who is in it and a Join button for Google Meet. Read-only; only you see your calendar.';
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'co-btn primary'; b.textContent = LS.get('co.cal', '') === '1' ? 'Show my meetings' : 'Connect Google Calendar'; b.addEventListener('click', calConnect);
+      box.append(p, b); if (CAL.err) { const e = document.createElement('p'); e.className = 'co-note bad'; e.textContent = CAL.err; box.append(e); }
+      el.append(box); return;
+    }
+    if (!CAL.events) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = CAL.err || 'Loading your calendar…'; el.append(p); calLoad(); return; }
+    if (CAL.err) { const p = document.createElement('p'); p.className = 'co-note bad'; p.textContent = CAL.err; el.append(p); }
+    const evs = CAL.events; if (!evs.length) { const p = document.createElement('p'); p.className = 'cal-free'; p.textContent = 'No meetings in the next three days.'; el.append(p); return; }
+    const next = evs[0], live = new Date(next.start) <= new Date();
+    const card = document.createElement('div'); card.className = 'cal-next' + (live ? ' live' : '');
+    const when = document.createElement('span'); when.className = 'cal-when'; when.textContent = live ? 'Happening now' : 'Next · ' + untilText(next.start);
+    const t = document.createElement('b'); t.className = 'cal-title'; t.textContent = next.title;
+    const tm = document.createElement('span'); tm.className = 'cal-time'; tm.textContent = fmtRange(next.start, next.end) + ' IST';
+    const ppl = document.createElement('span'); ppl.className = 'cal-ppl';
+    next.people.slice(0, 5).forEach((p) => { const a = CO.av(p.name); a.title = p.name + (p.rsvp === 'accepted' ? ' · going' : p.rsvp === 'tentative' ? ' · maybe' : ''); ppl.append(a); });
+    if (next.people.length > 5) ppl.append(Object.assign(document.createElement('span'), { className: 'cal-more', textContent: '+' + (next.people.length - 5) }));
+    const acts = document.createElement('div'); acts.className = 'cal-acts';
+    if (next.meet) { const j = document.createElement('a'); j.className = 'co-btn primary'; j.href = next.meet; j.target = '_blank'; j.rel = 'noopener'; j.textContent = 'Join Google Meet'; acts.append(j); }
+    const nt = document.createElement('button'); nt.type = 'button'; nt.className = 'co-btn'; nt.textContent = 'Take notes'; nt.addEventListener('click', () => meetingNote(next)); acts.append(nt);
+    card.append(when, t, tm, ppl, acts); el.append(card);
+    const rest = evs.slice(1, 6);
+    if (rest.length) {
+      const ul = document.createElement('ul'); ul.className = 'cal-list';
+      rest.forEach((e) => {
+        const li = document.createElement('li');
+        const a = document.createElement('span'); a.className = 'cal-li-t'; a.textContent = CO.istTime(e.start); const b = document.createElement('span'); b.className = 'cal-li-n'; b.textContent = e.title; b.title = e.people.map((p) => p.name).join(', ');
+        li.append(a, b);
+        if (e.meet) { const j = document.createElement('a'); j.href = e.meet; j.target = '_blank'; j.rel = 'noopener'; j.className = 'cal-join'; j.textContent = 'Join'; li.append(j); }
+        ul.append(li);
+      });
+      el.append(ul);
+    }
+  });
+
   /* ================= Sign-in ================= */
   const gate = document.getElementById('gate');
   const $g = (id) => document.getElementById(id);
@@ -2068,7 +2351,7 @@
 
   function signedIn(user) {
     A.user = user; gate.hidden = true; delete document.body.dataset.gate;
-    renderAll(); load(false); NB.load();
+    renderAll(); load(false); NB.load(); loadHistory(); loadFeed(true); loadSettings(); dash.draw('cal'); setTimeout(checkForChanges, 2500);
     // Admins see how many access requests are waiting as soon as they open the dashboard.
     if (can('Admin')) callApi({ action: 'ver' }).then((b) => { if (b.ok && typeof b.pending === 'number') { AX.pending = b.pending; syncControls(); } }).catch(() => {});
   }
