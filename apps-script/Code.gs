@@ -1872,7 +1872,8 @@ function autoUpdate_(log) {
     say('Installed version ' + ver.versionNumber + ' and updated ' + deps.length + ' web app deployment(s).' + (needsOwner ? ' ' + needsOwner : ''));
   } catch (e) {
     const m = String(e.message || e);
-    save({ err: /has not been used|disabled|SERVICE_DISABLED|User has not enabled/i.test(m) ? 'Switch on "Google Apps Script API" at script.google.com/home/usersettings so updates can install themselves.' : /insufficient|PERMISSION_DENIED|scope/i.test(m) ? 'Automatic updates need permission: open Apps Script, run updateNow once and approve.' : 'Automatic update failed: ' + m.slice(0, 200) });
+    const proj = (m.match(/project (\d+)/) || [])[1];
+    save({ err: proj && /has not been used|disabled|SERVICE_DISABLED/i.test(m) ? 'Enable the Apps Script API in this script\'s Google Cloud project: https://console.cloud.google.com/apis/library/script.googleapis.com?project=' + proj + ' (click Enable, wait 2 minutes, run updateNow).' : /has not been used|disabled|SERVICE_DISABLED|User has not enabled/i.test(m) ? 'Switch on "Google Apps Script API" at script.google.com/home/usersettings so updates can install themselves.' : /insufficient|PERMISSION_DENIED|scope/i.test(m) ? 'Automatic updates need permission: open Apps Script, run updateNow once and approve.' : 'Automatic update failed: ' + m.slice(0, 200) });
     say('Automatic update failed: ' + m);
   }
 }
