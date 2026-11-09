@@ -411,7 +411,9 @@
 
   /* ================= Controls ================= */
   let shownTab = null;
-  const hideBoot = () => { const b = document.getElementById('boot'); if (b && !b.classList.contains('done')) { b.classList.add('done'); setTimeout(() => b.remove(), 500); } };
+  // The loading screen stays until the FASTRR reveal has landed (or 2.5 s at most), then fades.
+  const bootLanded = new Promise((res) => { const w = document.querySelector('.boot .fastrr-xl .fr-word'); if (!w || matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); w.addEventListener('animationend', () => setTimeout(res, 250), { once: true }); setTimeout(res, 2500); });
+  const hideBoot = () => { const b = document.getElementById('boot'); if (!b || b.dataset.leaving) return; b.dataset.leaving = '1'; bootLanded.then(() => { b.classList.add('done'); setTimeout(() => b.remove(), 500); }); };
   function syncControls() {
     const p = dash.params();
     const admin = A.mode === 'auth' && can('Admin');

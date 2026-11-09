@@ -1,4 +1,4 @@
-/* Creative Ops Tracker — Fastrr Creative Studio.
+/* Creative Ops Tracker (FASTRR).
    Charcoal + lime studio look (dark by default, light available): floating rounded panels, pill navigation,
    round icon buttons, large geometric numbers, one highlighted hero card per row. */
 :root, :root[data-theme="light"] {
@@ -64,9 +64,9 @@ svg { flex: none; }
 .side-brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 18px; }
 .side-brand b { display: block; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
 .side-brand small { display: block; font-size: 11.5px; color: var(--muted); }
-.side-logo { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; background: #141414; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06); flex: none; }
-:root[data-theme="light"] .side-logo { background: #111; }
-.side-logo .logo { width: 30px; height: 30px; }
+.side-logo { width: 40px; height: 40px; display: grid; place-items: center; flex: none; }
+.side-logo .logo { width: 40px; height: 40px; }
+.side-name { display: grid; gap: 3px; }
 .side-nav { display: grid; gap: 3px; }
 .nav-h { margin: 16px 12px 6px; font: 600 12px/1 var(--font-body); color: var(--muted); }
 .nav-h:first-child { margin-top: 0; }
@@ -512,8 +512,8 @@ body[data-gate] .app, body[data-gate] .co { display: none; }
   radial-gradient(36rem 24rem at 92% 95%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%), var(--bg); }
 .gate-card { width: min(27rem, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 28px; padding: 32px 30px 24px; display: grid; gap: 16px; box-shadow: var(--shadow-lg); }
 .gate-card .co-eyebrow { margin: 0; display: flex; align-items: center; gap: 10px; font: 600 11px/1 var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-.gate-logo { width: 34px; height: 34px; border-radius: 10px; background: #141414; display: grid; place-items: center; }
-.gate-logo .logo { width: 24px; height: 24px; }
+.gate-logo { width: 34px; height: 34px; display: grid; place-items: center; }
+.gate-logo .logo { width: 34px; height: 34px; }
 .gate-title { margin: 0; font: 600 34px/1.05 var(--font-display); letter-spacing: -0.03em; }
 .gate-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border-radius: 999px; background: var(--sunken); border: 1px solid var(--line); }
 .gate-tabs button { border: 0; background: none; border-radius: 999px; padding: 9px 0; cursor: pointer; font-weight: 500; color: var(--muted); }
@@ -573,7 +573,7 @@ body[data-gate] .app, body[data-gate] .co { display: none; }
 /* ============ Brand mark (two bars) and motion ============ */
 .logo { display: block; overflow: visible; }
 .logo .lb1 { fill: var(--accent); }
-.logo .lb2 { fill: #fff; }
+.logo .lb2 { fill: var(--fg); }
 .logo .lb { transform-box: fill-box; transform-origin: left center; animation: lb-in .7s cubic-bezier(.2, .8, .2, 1) both; }
 .logo .lb2 { animation-delay: .12s; }
 @keyframes lb-in { from { transform: translateX(-28%) scaleX(.4); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -587,11 +587,6 @@ body.syncing .side-logo .lb2 { animation: lb-run 1.1s .15s ease-in-out infinite;
 
 .boot { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: var(--bg); transition: opacity .4s ease, visibility .4s; }
 .boot.done { opacity: 0; visibility: hidden; }
-.boot-logo { width: 84px; height: 84px; border-radius: 24px; background: #141414; display: grid; place-items: center; box-shadow: 0 20px 60px -20px rgba(0, 0, 0, .6); }
-.boot-logo .logo { width: 58px; height: 58px; }
-.boot-logo .lb { animation: lb-in .7s cubic-bezier(.2, .8, .2, 1) both, lb-run 1.2s .8s ease-in-out infinite; }
-.boot-logo .lb2 { animation-delay: .12s, .95s; }
-
 /* Page and card entrances */
 .co-panel.enter { animation: panel-in .38s cubic-bezier(.2, .8, .2, 1) both; }
 .co-panel.enter > *, .co-panel.enter .co-kpis > *, .co-panel.enter .ov-side > *, .co-panel.enter .co-board > * { animation: rise .5s cubic-bezier(.2, .8, .2, 1) both; }
@@ -726,8 +721,8 @@ body.syncing .side-logo .lb2 { animation: lb-run 1.1s .15s ease-in-out infinite;
 :root[data-theme="dark"] .paper { --paper: #1f1e1a; --paper-ink: #ece8dd; --paper-muted: #8f897b; --paper-line: rgba(214, 243, 107, .07); --paper-margin: rgba(255, 120, 100, .22); --paper-edge: #2c2a24; }
 .paper::before { content: ""; position: absolute; top: 0; bottom: 0; left: 64px; width: 1px; background: var(--paper-margin); pointer-events: none; }
 .paper-empty { display: grid; justify-items: center; text-align: center; gap: 10px; padding: 14vh 30px; }
-.paper-empty-logo { width: 70px; height: 70px; border-radius: 20px; background: #141414; display: grid; place-items: center; margin-bottom: 6px; }
-.paper-empty-logo .logo { width: 46px; height: 46px; }
+.paper-empty-logo { width: 72px; height: 72px; display: grid; place-items: center; margin-bottom: 6px; --fg: #1d1d1b; }
+.paper-empty-logo .logo { width: 72px; height: 72px; }
 .paper-empty h2 { margin: 0; font: 500 30px var(--font-notes, 'Newsreader', Georgia, serif); letter-spacing: -0.01em; }
 .paper-empty p { margin: 0; max-width: 34rem; color: var(--paper-muted); font-size: 14px; }
 .paper-empty .nb-new { justify-content: center; margin-top: 8px; }
@@ -812,7 +807,7 @@ body.syncing .side-logo .lb2 { animation: lb-run 1.1s .15s ease-in-out infinite;
   .pm { flex: 1 1 45%; }
   .pm .co-input, .pm .co-select { min-width: 0; width: 100%; }
 }
-@media (prefers-reduced-motion: reduce) { .logo .lb, .boot-logo .lb { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .logo .lb, .boot-bg .lb, .fastrr *, .boot-co { animation: none !important; } }
 
 /* Needs attention fills the height of the column beside it and scrolls inside, instead of leaving a gap. */
 .ov-grid.fill { align-items: stretch; }
@@ -930,3 +925,40 @@ body.syncing .side-logo .lb2 { animation: lb-run 1.1s .15s ease-in-out infinite;
   .st-grid { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .clk-colon { animation: none; } .av.live::after { animation: none; } }
+
+/* ============ FASTRR wordmark: streaks shoot through, letters land with a skid ============ */
+.fastrr { --fr: 12px; position: relative; display: inline-block; font: italic 900 var(--fr)/1 'Montserrat', var(--font-display); letter-spacing: .04em; color: var(--fg); white-space: nowrap; isolation: isolate; }
+.fr-word { display: inline-block; transform-origin: left bottom; animation: fr-land .62s .78s cubic-bezier(.16, 1.2, .3, 1) both; }
+@keyframes fr-land {
+  0% { opacity: 0; transform: translateX(-70%) skewX(-28deg) scaleX(1.5); filter: blur(5px); clip-path: inset(0 100% 0 0); }
+  45% { opacity: 1; filter: blur(1.5px); clip-path: inset(0 0 0 0); }
+  70% { transform: translateX(4%) skewX(8deg) scaleX(.97); filter: none; }
+  100% { opacity: 1; transform: none; clip-path: inset(0 0 0 0); }
+}
+.fr-streak { position: absolute; z-index: -1; left: -6%; height: max(1.5px, calc(var(--fr) * .09)); width: 60%; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--accent)); opacity: 0; animation: fr-streak .55s .7s cubic-bezier(.3, .7, .2, 1) both; }
+.fr-streak:nth-child(1) { top: 26%; }
+.fr-streak:nth-child(2) { top: 58%; width: 44%; animation-delay: .76s; }
+.fr-streak:nth-child(3) { top: 84%; width: 30%; animation-delay: .82s; }
+@keyframes fr-streak { 0% { opacity: 0; transform: translateX(-80%) scaleX(.3); } 35% { opacity: 1; } 100% { opacity: 0; transform: translateX(160%) scaleX(1); } }
+.side-brand .fastrr { --fr: 12.5px; }
+.side-brand:hover .fr-word { animation: fr-rev .5s cubic-bezier(.16, 1.2, .3, 1); }
+.side-brand:hover .fr-streak { animation: fr-streak .5s cubic-bezier(.3, .7, .2, 1); }
+@keyframes fr-rev { 30% { transform: translateX(6%) skewX(-14deg); } }
+.gate-card .co-eyebrow { display: flex; align-items: center; gap: 10px; }
+.gate-card .fastrr { --fr: 15px; }
+
+/* Loading screen: the mark drifts in large and faint behind; the wordmark lands in front */
+.boot-bg { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; overflow: hidden; }
+.boot-bg .logo { width: min(78vmin, 640px); height: auto; opacity: .09; }
+.boot-bg .lb { animation: lb-in 1s cubic-bezier(.2, .8, .2, 1) both, boot-drift 2.4s 1s ease-in-out infinite alternate; }
+.boot-bg .lb2 { animation-delay: .14s, 1.14s; }
+@keyframes boot-drift { to { transform: translateX(5%); } }
+.boot-mark { position: relative; display: grid; justify-items: center; gap: 10px; }
+.boot-co { font: 600 15px var(--font-display); color: var(--muted); animation: boot-co .5s .2s ease both; }
+@keyframes boot-co { from { opacity: 0; transform: translateY(6px); } }
+.fastrr-xl { --fr: clamp(44px, 11vw, 92px); letter-spacing: .02em; }
+.fastrr-xl .fr-word { animation-delay: .62s; }
+.fastrr-xl .fr-streak { animation-delay: .55s; }
+.fastrr-xl .fr-streak:nth-child(2) { animation-delay: .6s; }
+.fastrr-xl .fr-streak:nth-child(3) { animation-delay: .66s; }
+.boot.done { transition: opacity .45s ease, visibility .45s, transform .45s ease; transform: scale(1.03); }

@@ -301,7 +301,7 @@ assets/app.js          views, filters, charts, sign-in, roles, access and activi
 apps-script/Code.gs    the data API that runs in Google Apps Script: reads, edits, sign-in, roles, audit log
 apps-script/Config.gs  its settings: sheet links, sign-in client ID, owners, domains (placeholders here)
 tools/inline-data.js   copies assets/data.js into Code.gs (run after changing data.js), so reminders count exactly like the dashboard
-assets/logo.svg        the Fastrr mark on a dark tile (home-screen icon, notifications)
+assets/logo.svg        the FASTRR mark on a transparent background (notifications)
 assets/favicon.svg     browser-tab icon; dark bars on light tabs, white bars on dark tabs
 apps-script/appsscript.json  its permissions
 ```
