@@ -424,7 +424,7 @@
     Object.keys(h.sources || {}).forEach((k) => {
       const s = h.sources[k];
       if (!s.ok) return row(label[k] || k, (s.optional ? 'Not loaded (optional): ' : 'Cannot open: ') + s.error, s.optional ? 'warn' : 'bad');
-      row(label[k] || k, CO.num(s.rows) + ' rows · ' + (s.canEdit ? 'can read and edit' : 'read only: dashboard edits to this sheet will fail'), s.canEdit ? 'good' : 'warn');
+      row(label[k] || k, (s.canEdit ? 'can read and edit' : 'read only: dashboard edits to this sheet will fail') + ' (tab size ' + CO.num(s.rows) + ' rows)', s.canEdit ? 'good' : 'warn');
     });
   });
   dash.draw('sources-note', (el) => {
