@@ -119,11 +119,25 @@ Everyone lands on **My work** showing their own work (the owner lands on the Ove
 
 **Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) opens with how long approvals take: the typical (median) and longest wait, then bars for up to 7 days, 8–14, 15–30 and over 30 days (orange = over 14 days), each with its count and share. Click a bar (or press Enter on it) to list only those tasks; click again for all. Below that it groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
 
-## Live team activity (owner only)
+## Access levels and sections
 
-On the Overview (and the Access page) the owner sees **who is online**: a status dot (green = active, amber = idle for 2+ minutes, grey = away/offline), the page they are on, what they are doing there, their last action and how long they have been online. Below it, an **Activity** feed lists everyone's recent dashboard actions as they happen: pages opened, buttons clicked, boxes ticked, filters chosen, searches, tasks opened and updates saved (*Updates only* narrows it to changes). Dashboards report every 15 seconds and a few seconds after an action; the owner's view refreshes every 5 seconds. Times use the server clock. Nothing typed in notes is sent. Everyone is told about this in the privacy notice; it is kept 30 minutes and can be switched off in Settings.
+- **View only** and **Can edit** see only their own work by default (tasks assigned to them, or whose brief they own) across My work, Overview, Tasks and the rest; **Admin** and the owner see everyone's. The owner or an Admin can change this per person.
+- **Sections:** when you add someone, approve a request or give access back, the *Sections they can open* dropdown picks one, several or all sections; the rest are hidden from their menu and cannot be opened. Click a name on the Access page to change it later. My work is always included.
+- **Admins** (and the owner) manage access and see the activity log and live team activity. Admins cannot change the owner's access or their own. Settings stay owner-only.
+- Every role sees the same layout and design; only which sections and controls appear changes.
 
-## Fasty speed
+## Live team activity (owner and Admins)
+
+The owner and Admins see **who is online**: a status dot (green = active, amber = idle for 2+ minutes, grey = away/offline), the page they are on, what they are doing there, their last action and how long they have been online. Below it, an **Activity** feed lists everyone's recent dashboard actions as they happen: pages opened, buttons clicked, boxes ticked, filters chosen, searches, tasks opened and updates saved (*Updates only* narrows it to changes). Dashboards report every 15 seconds and a few seconds after an action; the view refreshes every 5 seconds. Times use the server clock. Nothing typed in notes is sent. Everyone is told about this in the privacy notice; it is kept 30 minutes and can be switched off in Settings.
+
+## Notes
+
+Quick sticky notes. Type a note; **@name** tags someone and shares the note with them; **Assign** gives it to teammates (each gets a tick box on the sticky and a bell notification until it is done); **Remind** sets a reminder (in 1 hour, today 6 pm, tomorrow 10 am, Monday 10 am or any time), shown in the bell and emailed. Who can see a note is shown on it: only you, you and the people tagged or assigned, or everyone (*Everyone can see*). Private notes are visible only to their author. Click your own sticky to edit it in place; tabs filter All, Mine, Shared with me, Assigned to me and Reminders. Changes by others appear within 30 seconds.
+
+## Fasty: languages, voice and speed
+
+Fasty detects the language of each question (English, Hindi, Hinglish, Marathi, Bengali, Tamil, Telugu, Gujarati, Kannada, Malayalam, Punjabi) and replies, listens and speaks in it for the rest of the conversation until you switch (also selectable in the header). Voice replies always use the same natural female voice (Google Chirp 3 HD Aoede, or Gemini's Aoede), in every language; if natural speech is unavailable, the device's female voice is used.
+
 
 Simple questions whose every word Fasty understands (what is overdue / due today / tomorrow, someone's open work, deliveries this month, "open Tasks") are answered instantly from the data already on screen, with no AI round trip. Everything else goes to the AI with today's headline numbers attached, so count questions need no extra lookup; if the AI takes over 20 seconds, Fasty answers in basic mode.
 

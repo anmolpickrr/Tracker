@@ -25,15 +25,19 @@ const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
 /* ============================ Access model ============================
  * The OWNER (CONFIG.access.owners: the Creative Head, Admin and Team Manager) has every permission and is the only
  * person who can grant or change access, read the activity log, see live team activity and change settings.
- * Everyone else gets a role (View only / Can edit / Manager) whose defaults the owner can fine-tune per person:
+ * Everyone else gets a role (View only / Can edit / Admin) whose defaults the owner and Admins can fine-tune per person:
  * which pages they see, and whether they can edit tasks, download data, see workload estimates and other people's
  * work, manage the team list and use Fasty, and whether they see all tasks or only their own. */
 const PAGE_KEYS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health'];
-const OWNER_ONLY = { users: 1, setAccess: 1, audit: 1, settings: 1, saveSettings: 1, presence: 1 };
+const OWNER_ONLY = { settings: 1, saveSettings: 1 };
+// The owner and everyone with the Admin role manage access and see the activity log and live team activity.
+const ADMIN_ONLY = { users: 1, setAccess: 1, audit: 1, presence: 1 };
+function isAdminUser_(u) { return !!u && (u.owner || isOwner_(u.email) || u.role === 'Admin'); }
 function defaultPerms_(role) {
-  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'all' };
+  // View only and Can edit see only their own work by default (Creative Head, Nov 2026); Admins see everyone's.
+  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own' };
   if (role === 'Editor') p.edit = true;
-  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; }
+  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; }
   return p;
 }
 function permsOf_(u) {
@@ -57,6 +61,7 @@ function cleanPerms_(o) {
 function allowed_(u, action) {
   if (!NEEDS[action]) return false;
   if (OWNER_ONLY[action]) return !!(u.owner || isOwner_(u.email));
+  if (ADMIN_ONLY[action]) return isAdminUser_(u);
   const p = permsOf_(u);
   if (action === 'updateTask') return p.edit;
   if (action === 'setMember') return p.team;
@@ -279,7 +284,7 @@ function doPost(e) {
       const set = settings_();
       const out = { ok: true, ver: liveVersion_(), role: user.role, perms: permsOf_(user), custom: !!(user.perms && Object.keys(user.perms).length), update: updateStatus_(), calOff: isOwner_(user.email) ? PropertiesService.getScriptProperties().getProperty('CAL_API_OFF') || '' : '', remind: { morning: set.morning, evening: set.evening }, presenceOn: set.presence, assist: assistStatus_() };
       if (set.presence) presenceBeat_(user, body.at);
-      if (isOwner_(user.email)) { out.pending = users_().list.filter(function (u) { return u.status === 'Pending'; }).length; if (set.presence) out.presence = presenceList_(); }
+      if (isAdminUser_(user)) { out.pending = users_().list.filter(function (u) { return u.status === 'Pending'; }).length; if (set.presence) out.presence = presenceList_(); }
       return json_(out);
     }
     if (body.action === 'feed') return json_(feed_(user));
@@ -914,8 +919,8 @@ function iso_(v) { return v instanceof Date && !isNaN(v) ? v.toISOString() : (v 
 /*
  * Stored in the Notes tab of the access book (owned by the web app account, not shared for editing).
  * Who sees a note:
- *   private – its author (and admins)          team – everyone with dashboard access
- *   people  – its author, the people it is shared with, everyone @mentioned and everyone with an action item (and admins)
+ *   private – only its author                   team – everyone with dashboard access
+ *   people  – its author, the people it is shared with, everyone @mentioned and everyone it is assigned to
  * Who changes it: its author or an admin. Anyone with an action item can tick that item.
  * Every create, edit and delete is in the audit log; deleted notes are kept, marked deleted.
  */
@@ -945,10 +950,11 @@ function noteReaders_(n) {
 }
 function canSeeNote_(n, u) {
   if (n.deleted) return false;
-  if (isOwner_(u.email) || n.createdBy === u.email || n.visibility === 'team') return true;
+  if (n.createdBy === u.email || n.visibility === 'team') return true;
+  // Shared notes: the people it is shared with, everyone @mentioned and everyone a note is assigned to. Private notes: only the author.
   return n.visibility === 'people' && !!noteReaders_(n)[u.email];
 }
-function canEditNote_(n, u) { return isOwner_(u.email) || n.createdBy === u.email; }
+function canEditNote_(n, u) { return n.createdBy === u.email || (isOwner_(u.email) && canSeeNote_(n, u)); }
 function allNotes_() {
   if (!hasAccessBook_()) return [];
   const sh = notesSheet_(), last = sh.getLastRow();
@@ -1193,11 +1199,11 @@ function presenceList_() {
 }
 /* Recent changes for the notification bell: task and team changes for everyone; notes and access only for admins. */
 function feed_(u) {
-  const r = auditRead_({ limit: 60 }), since = Date.now() - 2 * 864e5, admin = isOwner_(u.email);
+  const r = auditRead_({ limit: 60 }), since = Date.now() - 2 * 864e5, admin = isAdminUser_(u);
   return { ok: true, entries: (r.entries || []).filter(function (e) {
     if (new Date(e.when) < since || e.who === u.email) return false;
     if (/^(Task updated|Sheet edited|Rows (added|deleted)|Team member)/.test(e.action)) return true;
-    return admin && /^(Note created|Access requested|Note action)/.test(e.action);
+    return admin && /^Access requested/.test(e.action); // note activity reaches people through their own notes, never someone else's
   }).slice(0, 30).map(function (e) { return { when: e.when, who: e.who, action: e.action, record: e.record, field: e.field, before: e.before, after: e.after, sheet: e.sheet }; }) };
 }
 /* Daily snapshots (IST), kept in the History tab: the numbers that have no history in the sheets themselves. */
@@ -1706,7 +1712,7 @@ function assistLimit_(email, kind, max) {
 const ASSIST_SYSTEM = [
   'You are Fasty, the voice assistant inside the FASTRR Creative Ops dashboard used by an Indian creative team (designers, editors, the creative head and coordinators). You are the most knowledgeable teammate: you know every section, number and process of this dashboard, and you help people find things, understand them and get work done.',
   '',
-  'Language: people speak Hindi, English, Hinglish, broken English and mixed sentences, often with speech-to-text mistakes (names misspelt, "over due", "kitne task", "yashika ka", "dikhao", "kholo"). Work out what they mean; never correct their grammar. Reply in the same language mix they used: Hinglish in Latin script for Hinglish, Hindi in Devanagari for Hindi, simple English for English. Use Indian number formatting (1,25,000) and IST.',
+  'Language: people speak Hindi, English, Hinglish, broken English and mixed sentences, often with speech-to-text mistakes (names misspelt, "over due", "kitne task", "yashika ka", "dikhao", "kholo"). Work out what they mean; never correct their grammar. Reply in the same language they used, and keep that language for the whole conversation until they switch: Hinglish in Latin script for Hinglish, Hindi in Devanagari for Hindi, simple English for English, and Marathi, Bengali, Tamil, Telugu, Gujarati, Kannada, Malayalam or Punjabi in their own script when they use those. The detected reply language is given below; follow it. Keep task IDs, brand names and people\'s names as they are. Use Indian number formatting (1,25,000) and IST.',
   '',
   'Spoken version: whenever your reply is in Hindi or Hinglish (any Hindi words), end it with a new line containing only <<say>> and then the same reply written entirely in Devanagari for the voice to read, with English words transliterated as Indians say them (task = टास्क, overdue = ओवरड्यू, deliver = डिलीवर, Huggler = हगलर) and numbers as digits. Keep names recognisable. The screen hides that part. For replies fully in English, add nothing.',
   '',
@@ -1774,7 +1780,8 @@ function assist_(user, body) {
   const ctx = body.context || {};
   const who = 'Signed-in person: ' + (user.name || user.email) + ' (' + user.email + '), role ' + user.role + (user.role === 'Viewer' ? ' (view only: cannot change tasks)' : user.role === 'Editor' ? ' (can edit tasks)' : ' (admin)') + '.\n' +
     'Now: ' + Utilities.formatDate(new Date(), 'Asia/Kolkata', "EEEE d MMMM yyyy, h:mm a") + ' IST.\n' +
-    'On screen: ' + String(ctx.page || 'overview').slice(0, 40) + (ctx.filters ? '; filters: ' + String(ctx.filters).slice(0, 200) : '') + (ctx.lang ? '; speech language setting: ' + String(ctx.lang).slice(0, 10) : '') + '.' +
+    'On screen: ' + String(ctx.page || 'overview').slice(0, 40) + (ctx.filters ? '; filters: ' + String(ctx.filters).slice(0, 200) : '') + '.' +
+    (ctx.reply ? '\nReply language: ' + String(ctx.reply).replace(/[^A-Za-z ()-]/g, '').slice(0, 40) + '.' : '') +
     (ctx.snap ? '\nLive numbers for the current filters (answer simple count questions from these directly; call a tool only for task lists, names, dates or anything not here): ' + String(ctx.snap).slice(0, 1500) : '');
   if (prov === 'gemini') return gemini_(messages, who);
   // Gemini-only fields are dropped if the admin switched to Claude mid-conversation.
@@ -1806,7 +1813,15 @@ function assist_(user, body) {
  * answer (attachVoice_), so the text and the voice arrive together, and the rest is fetched by the browser while the
  * first part plays. Several parts are synthesised in parallel (UrlFetchApp.fetchAll). Voices: Google Cloud Chirp 3 HD
  * when GOOGLE_TTS_KEY is set (fastest), else Gemini text-to-speech with the free GEMINI_API_KEY. */
-function voiceLang_(text, pref) { return pref === 'hi-IN' || /[ऀ-ॿ]/.test(text) ? 'hi-IN' : 'en-IN'; }
+/* The voice's language follows the script of what is read out (Devanagari is Marathi when the conversation is Marathi). */
+const VOICE_LANGS = { 'en-IN': 'Indian English', 'hi-IN': 'Hindi', 'mr-IN': 'Marathi', 'bn-IN': 'Bengali', 'ta-IN': 'Tamil', 'te-IN': 'Telugu', 'gu-IN': 'Gujarati', 'kn-IN': 'Kannada', 'ml-IN': 'Malayalam', 'pa-IN': 'Punjabi' };
+function voiceLang_(text, pref) {
+  const t = String(text || '');
+  if (/[\u0980-\u09FF]/.test(t)) return 'bn-IN'; if (/[\u0B80-\u0BFF]/.test(t)) return 'ta-IN'; if (/[\u0C00-\u0C7F]/.test(t)) return 'te-IN';
+  if (/[\u0A80-\u0AFF]/.test(t)) return 'gu-IN'; if (/[\u0C80-\u0CFF]/.test(t)) return 'kn-IN'; if (/[\u0D00-\u0D7F]/.test(t)) return 'ml-IN'; if (/[\u0A00-\u0A7F]/.test(t)) return 'pa-IN';
+  if (/[\u0900-\u097F]/.test(t)) return pref === 'mr-IN' ? 'mr-IN' : 'hi-IN';
+  return 'en-IN';
+}
 function spokenOf_(text) {
   const parts = String(text || '').split(/\s*<<say>>\s*/);
   return String(parts[1] || parts[0] || '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[*_#`>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 900);
@@ -1881,13 +1896,13 @@ function speak_(user, body) {
   return { ok: true, audio: res[0].a, mime: res[0].m };
 }
 function geminiTtsBody_(text, lang) {
-  const style = lang === 'hi-IN' ? 'Read this aloud in natural, conversational Hindi as a warm, friendly young Indian woman talking to a colleague; pronounce English words the Indian way: ' : 'Read this aloud in a warm, friendly Indian English accent, natural and conversational, like a helpful colleague: ';
+  const style = 'Read this aloud in natural, conversational ' + (VOICE_LANGS[lang] || 'Indian English') + ' as a warm, friendly young Indian woman talking to a colleague (always the same calm, clear voice); pronounce English words and names the Indian way: ';
   return { contents: [{ role: 'user', parts: [{ text: style + text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } } } };
 }
 function geminiSpeak_(gk, text, lang) {
   const props = PropertiesService.getScriptProperties();
   const models = [props.getProperty('GEMINI_TTS_MODEL'), props.getProperty('GEMINI_TTS_OK'), 'gemini-2.5-flash-preview-tts', 'gemini-2.5-flash-tts', 'gemini-flash-tts-latest', 'gemini-2.5-pro-preview-tts'].filter(function (m, i, a) { return m && a.indexOf(m) === i; });
-  const style = lang === 'hi-IN' ? 'Read this aloud in natural, conversational Hindi as a warm, friendly young Indian woman talking to a colleague; pronounce English words the Indian way: ' : 'Read this aloud in a warm, friendly Indian English accent, natural and conversational, like a helpful colleague: ';
+  const style = 'Read this aloud in natural, conversational ' + (VOICE_LANGS[lang] || 'Indian English') + ' as a warm, friendly young Indian woman talking to a colleague (always the same calm, clear voice); pronounce English words and names the Indian way: ';
   for (let i = 0; i < models.length; i++) {
     const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': gk },
       payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: style + text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } } } }) });

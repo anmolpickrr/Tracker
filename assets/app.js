@@ -15,15 +15,17 @@
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
   const CFG = window.CO_CONFIG || {};
   const RANK = { Viewer: 1, Editor: 2, Admin: 3 };
-  const ROLE_LABEL = { Viewer: 'View only', Editor: 'Can edit', Admin: 'Manager' };
+  const ROLE_LABEL = { Viewer: 'View only', Editor: 'Can edit', Admin: 'Admin' };
   const roleText = (u) => u && u.owner ? 'Admin · Team Manager' : (ROLE_LABEL[u && u.role] || (u && u.role) || '') + (u && u.custom ? ' (custom)' : '');
   const A = { mode: null, url: '', clientId: '', domains: [], session: LS.get('co.session', ''), user: null };
   const can = (need) => A.mode === 'key' || !!(A.user && RANK[A.user.role] >= RANK[need]);
   /* Permissions come from the web app (role defaults, fine-tuned per person by the owner). The owner (the Creative Head:
      Admin and Team Manager) has all of them and is the only one who manages access, the activity log, live activity and settings. */
   const isOwner = () => A.mode === 'key' || !!(A.user && A.user.owner);
+  // Access management, the activity log and live team activity: the owner and everyone with the Admin role.
+  const isAdmin = () => isOwner() || !!(A.user && A.user.role === 'Admin');
   const perm = (k) => A.mode === 'key' || !!(A.user && (A.user.owner || (A.user.perms ? !!A.user.perms[k] : (k === 'edit' ? RANK[A.user.role] >= 2 : k === 'export' || k === 'fasty' ? true : RANK[A.user.role] >= 3))));
-  const pageOk = (t) => { if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access'; if (t === 'access') return isOwner(); if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
+  const pageOk = (t) => { if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access'; if (t === 'access') return isAdmin(); if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
 
   const S = { status: 'idle', error: '', tasks: null, team: null, teamRaw: [], sources: {}, generatedAt: null, loadedAt: null };
@@ -485,9 +487,10 @@
   let landed = false;
   function syncControls() {
     const p = dash.params();
-    const admin = A.mode === 'auth' && isOwner();
+    const admin = A.mode === 'auth' && isAdmin();
     document.body.dataset.admin = A.mode === 'auth' && perm('load') ? '1' : '';
     document.body.dataset.owner = admin ? '1' : '';
+    document.querySelectorAll('[data-owner-only]').forEach((x) => { x.hidden = !(A.mode === 'auth' && isOwner()); });
     document.body.dataset.export = perm('export') ? '1' : '';
     const axTab = document.querySelector('.co-tab[data-tab="access"]');
     axTab.hidden = !admin;
@@ -500,6 +503,8 @@
     const unread = NT.unread(); bell.querySelector('.bell-dot').hidden = !unread;
     bell.title = unread ? unread + ' new notification' + (unread === 1 ? '' : 's') : 'Notifications'; bell.setAttribute('aria-label', bell.title);
     document.querySelector('.co-tab[data-tab="notes"]').hidden = !signed || !pageOk('notes');
+    // A sidebar group heading only shows when at least one of its pages does (same layout for every role otherwise).
+    document.querySelectorAll('.side .nav-h').forEach((h) => { let n = h.nextElementSibling, any = false; while (n && !n.classList.contains('nav-h')) { if (n.matches('.co-tab') && !n.hidden) any = true; n = n.nextElementSibling; } h.hidden = !any; });
     document.querySelector('.bt[data-tab="notes"]').hidden = !signed;
     document.querySelector('.btabs').classList.toggle('four', !signed);
     document.body.classList.toggle('syncing', !!S.refreshing || S.status === 'loading');
@@ -641,7 +646,7 @@
     mine: ['My work', 'Your overdue work, what is due today, what is next and what you delivered this week.'],
     today: ['Overview', () => 'What needs attention today.'],
     brands: ['Brands', 'Every brand at a glance, and the work waiting on clients.'],
-    notes: ['Notes', 'Meeting minutes, discussions, action items and personal notes.'],
+    notes: ['Notes', 'Quick notes for the team: tag people with @ to share, assign them and set reminders.'],
     standup: ['Daily stand-up', 'One card per active designer: what is late, due today, in progress and up next.'],
     tasks: ['Tasks', 'Every task from both sheets. Click a row to open or edit it.'],
     team: ['Team', 'Workload, output and who is on the team.'],
@@ -851,7 +856,7 @@
     tog.addEventListener('click', () => { flip(() => { NA.min = !NA.min; LS.set('co.namin', NA.min ? '1' : ''); el._drawn = false; dash.draw('attn'); }); const t2 = el.querySelector('.na-tog'); if (t2) t2.focus(); });
     const acts = document.createElement('div'); acts.className = 'na-acts'; acts.append(go, tog);
     head.append(hl, acts); el.append(head);
-    el.classList.toggle('collapsed', NA.min); const grid = el.closest('.ov-grid'); if (grid) grid.classList.toggle('na-min', NA.min);
+    el.classList.toggle('collapsed', NA.min); const grid = el.closest('.ov-grid'); if (grid) { grid.classList.toggle('na-min', NA.min); grid.classList.toggle('na-short', !NA.min && rows.length <= 6); }
     if (NA.min) {
       if (rows.length) {
         const parts = [[rows.filter((r) => r.due === 'overdue').length, 'overdue'], [rows.filter((r) => r.due === 'today').length, 'due today'], [rows.filter((r) => r.open && r.eta === tm).length, 'due tomorrow'], [rows.filter((r) => r.stage === 'Changes requested').length, 'changes requested']].filter((x) => x[0]);
@@ -917,7 +922,7 @@
   dash.draw('upcoming-noeta', (el) => {
     if (CO.status() !== 'ok') { el.textContent = ''; return; }
     const n = CO.rows().filter((r) => r.due === 'noeta').length;
-    el.textContent = n ? n + ' open with no ETA' : '';
+    el.textContent = n ? n + ' open with no ETA' : ''; el.hidden = !n;
   });
   /* Overview: work nobody has picked up yet. */
   dash.draw('unassigned', (el) => {
@@ -1333,7 +1338,7 @@
     // header: who, role, load; admins pick the person
     const id = document.createElement('div'); id.className = 'mw-id'; const av = CO.av(who); av.classList.add('lg');
     const nm = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = who === mine ? 'Your work, ' + who.split(' ')[0] : who; const rl = document.createElement('p'); rl.className = 'co-note';
-    const L = EF.load(who); rl.textContent = [EF.role(who) || 'Role not set', open.length ? open.length + ' open' : 'nothing open', L.hours ? 'about ' + (L.days < 1 ? Math.round(L.hours) + ' h' : L.days.toFixed(1) + ' working days') + ' of work' + (L.content && !open.length ? ' (content writing)' : '') : ''].filter(Boolean).join(' · ');
+    const L = EF.load(who), rTxt = String(EF.role(who) || '').replace(/\s*\(not shown\)\s*/i, '').trim(); rl.textContent = [who === mine && isOwner() ? '' : rTxt || 'Role not set', open.length ? open.length + ' open' : 'nothing open', L.hours ? 'about ' + (L.days < 1 ? Math.round(L.hours) + ' h' : L.days.toFixed(1) + ' working days') + ' of work' + (L.content && !open.length ? ' (content writing)' : '') : ''].filter(Boolean).join(' · ');
     nm.append(h2, rl); id.append(av, nm); head.append(id);
     if (admin) {
       const sel = document.createElement('select'); sel.className = 'co-select'; sel.setAttribute('aria-label', 'View as');
@@ -1715,7 +1720,7 @@
         const tr = tb.insertRow();
         const nb = document.createElement('button'); nb.type = 'button'; nb.className = 'co-name'; const nt = document.createElement('span'); nt.textContent = d.name; nb.append(CO.av(d.name), nt); nb.title = 'Open ' + d.name + "'s tasks"; nb.addEventListener('click', () => CO.goTasks('active', { designer: d.name }));
         CO.td(tr, nb, 'co-nowrap'); CO.td(tr, statusCell(d.name), 'co-nowrap');
-        CO.td(tr, EF.role(d.name) || '—', 'co-nowrap co-muted co-hide-xl');
+        CO.td(tr, String(EF.role(d.name) || '').replace(/\s*\(not shown\)\s*/i, '').trim() || '—', 'co-nowrap co-muted co-hide-xl');
         { const L = EF.load(d.name); const b2 = document.createElement('span'); b2.className = 'ef-load ' + (L.days > 5 ? 'hi' : L.days > 2.5 ? 'mid' : 'lo'); b2.textContent = L.hours ? (L.days < 1 ? Math.round(L.hours) + ' h' : L.days.toFixed(1) + ' d') : 'free'; const c = CO.td(tr, b2, 'n adm-only co-nowrap'); c.title = L.tasks + ' open tasks ≈ ' + Math.round(L.hours) + ' hours of work = ' + L.days.toFixed(1) + ' working days at ' + EF.CAP + ' h a day' + (L.content ? ' (incl. ' + L.content + ' content in progress)' : '') + '. Estimate by creative type and role.'; }
         const ob = document.createElement('span'); ob.className = 'co-inbar'; const bi = document.createElement('i'); bi.style.width = (d.open / maxOpen * 3) + 'rem'; ob.append(bi, String(d.open)); CO.td(tr, ob, 'n');
         CO.td(tr, String(d.wip), 'n co-hide-lg');
@@ -2027,7 +2032,7 @@
       if (!edit) $('ed-priority').disabled = true;
       $('ed-save').hidden = !edit;
       if (!edit) $('ed-msg').textContent = 'View only. Ask the admin for Editor access to change tasks.';
-      $('ed-history').hidden = !(A.mode === 'auth' && isOwner() && r.id);
+      $('ed-history').hidden = !(A.mode === 'auth' && isAdmin() && r.id);
       if (dlgE.showModal) dlgE.showModal(); else dlgE.setAttribute('open', '');
     }
     const openFrom = (e) => {
@@ -2089,7 +2094,7 @@
   /* ================= Access (admins): requests, people, activity log ================= */
   const AX = { users: null, you: '', log: null, next: null, total: 0, q: '', kind: '', who: '', err: '', busy: false, pending: 0 };
   async function axRefresh(withLog) {
-    if (A.mode !== 'auth' || !isOwner()) return;
+    if (A.mode !== 'auth' || !isAdmin()) return;
     try {
       const b = await callApi({ action: 'users' });
       if (b.ok) { AX.users = b.users; AX.you = b.you; AX.err = ''; AX.pending = b.users.filter((u) => u.status === 'Pending').length; syncControls(); fillWho(); if (PR.email) drawPerson(); } else AX.err = errText(b.error);
@@ -2115,6 +2120,26 @@
   const when = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? iso : CO.istDateTime(d, d.getFullYear() !== new Date().getFullYear()); };
   const nameOf = (email) => { const u = (AX.users || []).find((x) => x.email === String(email).toLowerCase()); return u && u.name ? u.name : email; };
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  /* Section picker: which parts of the dashboard a person can open (one, several or all). A dropdown with checkboxes;
+     My work is always included. Used when adding someone, approving a request, giving access back and editing access. */
+  const SECTIONS = [['mine', 'My work'], ['today', 'Overview'], ['standup', 'Stand-up'], ['tasks', 'Tasks'], ['notes', 'Notes'], ['team', 'Team'], ['reports', 'Reports'], ['brands', 'Brands'], ['health', 'Data health']];
+  const DEF_PAGES = (role) => SECTIONS.map((x) => x[0]).filter((k) => role === 'Admin' || k !== 'health');
+  const samePages = (a, b) => a.length === b.length && a.every((k) => b.includes(k));
+  function secPicker(pages, onChange) {
+    const d = el('details', 'sec-dd'), sm = el('summary', 'sec-sum'), pan = el('div', 'sec-pan');
+    sm.setAttribute('aria-label', 'Sections they can open'); d.append(sm, pan);
+    const allL = el('label', 'sec-all'), allC = document.createElement('input'); allC.type = 'checkbox'; allL.append(allC, el('span', '', 'All sections')); pan.append(allL);
+    const boxes = SECTIONS.map(([k, l]) => { const lab = el('label', 'sec-opt'), cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = k; if (k === 'mine') { cb.disabled = true; lab.title = 'Everyone keeps their own work page'; } lab.append(cb, el('span', '', l)); pan.append(lab); return cb; });
+    const paint = () => { const on = boxes.filter((b) => b.checked); allC.checked = on.length === boxes.length; allC.indeterminate = on.length > 1 && on.length < boxes.length; sm.textContent = on.length === boxes.length ? 'All sections' : on.length === 1 ? 'My work only' : on.length + ' sections: ' + on.filter((b) => b.value !== 'mine').map((b) => SECTIONS.find((x) => x[0] === b.value)[1]).join(', '); };
+    d.set = (pg) => { boxes.forEach((b) => { b.checked = b.value === 'mine' || pg.includes(b.value); }); paint(); };
+    d.read = () => boxes.filter((b) => b.checked).map((b) => b.value);
+    boxes.forEach((b) => b.addEventListener('change', () => { d.touched = true; paint(); if (onChange) onChange(d.read()); }));
+    allC.addEventListener('change', () => { d.touched = true; boxes.forEach((b) => { if (!b.disabled) b.checked = allC.checked; }); paint(); if (onChange) onChange(d.read()); });
+    document.addEventListener('click', (e) => { if (d.open && !d.contains(e.target)) d.open = false; });
+    d.set(pages); return d;
+  }
+  // Only send permissions when they differ from the role's defaults (so "defaults" stay defaults).
+  const permsFor = (role, pages) => (samePages(pages, DEF_PAGES(role)) ? undefined : { pages });
   const roleSelect = (value) => { const s = el('select', 'co-select'); ['Viewer', 'Editor', 'Admin'].forEach((r) => s.append(new Option(ROLE_LABEL[r], r))); s.value = value || 'Viewer'; s.setAttribute('aria-label', 'Access level'); return s; };
   const STATUS_LABEL = { Approved: 'Has access', Pending: 'Waiting for approval', Revoked: 'Revoked', Denied: 'Declined' };
   /* Google profile photo, or the person's initial. */
@@ -2166,34 +2191,38 @@
       const sel = roleSelect(u.role);
       const lab = el('label', 'co-field', 'Access level'); lab.append(sel);
       act.append(lab);
+      let pick = null;
+      if (u.status !== 'Approved') {
+        pick = secPicker(DEF_PAGES(u.role)); const pl = el('div', 'co-field'); pl.append(el('span', '', 'Sections they can open'), pick); act.append(pl);
+        sel.addEventListener('change', () => { if (!pick.touched) pick.set(DEF_PAGES(sel.value)); });
+      }
+      const withPerms = (o) => { const pm = pick ? permsFor(sel.value, pick.read()) : undefined; return pm ? Object.assign(o, { perms: pm }) : o; };
       const btn = (text, cls, fn) => { const b = el('button', 'co-btn' + (cls ? ' ' + cls : ''), text); b.type = 'button'; b.addEventListener('click', fn); act.append(b); };
       if (u.status === 'Pending') {
-        btn('Approve', 'primary', () => setAccess(u.email, { status: 'Approved', role: sel.value }, (u.name || u.email) + ' approved: ' + ROLE_LABEL[sel.value]));
+        btn('Approve', 'primary', () => setAccess(u.email, withPerms({ status: 'Approved', role: sel.value }), (u.name || u.email) + ' approved: ' + ROLE_LABEL[sel.value]));
         btn('Reject', '', () => { if (confirm('Reject the request from ' + u.email + '?')) setAccess(u.email, { status: 'Denied' }, 'Request from ' + u.email + ' rejected'); });
       } else if (u.status === 'Approved') {
         sel.addEventListener('change', () => setAccess(u.email, { role: sel.value }, (u.name || u.email) + ': ' + ROLE_LABEL[sel.value]));
         btn('Revoke access', 'danger', () => { if (confirm('Revoke access for ' + (u.name || u.email) + '? They are signed out within 30 seconds. Their past changes stay in the log.')) setAccess(u.email, { status: 'Revoked' }, 'Access revoked for ' + (u.name || u.email)); });
       } else {
-        btn('Give access', 'primary', () => setAccess(u.email, { status: 'Approved', role: sel.value }, (u.name || u.email) + ' has access: ' + ROLE_LABEL[sel.value]));
+        btn('Give access', 'primary', () => setAccess(u.email, withPerms({ status: 'Approved', role: sel.value }), (u.name || u.email) + ' has access: ' + ROLE_LABEL[sel.value]));
       }
     }
     // Fine-grained access for this person (owner only): pages, abilities and which tasks they see.
     if (!locked && u.status === 'Approved') {
       const P0 = u.perms || {}, box = el('fieldset', 'pm-box'); box.append(el('legend', '', 'What ' + ((u.name || u.email).split(' ')[0]) + ' can see and do'));
       const PAGES_L = [['mine', 'My work'], ['today', 'Overview'], ['standup', 'Stand-up'], ['tasks', 'Tasks'], ['notes', 'Notes'], ['team', 'Team'], ['reports', 'Reports'], ['brands', 'Brands'], ['health', 'Data health']];
-      const pg = el('div', 'pm-pages'); pg.append(el('span', 'pm-h', 'Pages'));
-      const pgs = el('div', 'pm-chips');
-      PAGES_L.forEach(([k, l]) => { const lab = el('label', 'pm-chip'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = k; cb.checked = (P0.pages || []).includes(k); if (k === 'mine') { cb.checked = true; cb.disabled = true; lab.title = 'Everyone keeps their own work page'; } lab.append(cb, el('span', '', l)); pgs.append(lab); });
-      pg.append(pgs); box.append(pg);
+      const pg = el('div', 'pm-pages'); pg.append(el('span', 'pm-h', 'Sections they can open'));
+      const pgs = secPicker(P0.pages || DEF_PAGES(u.role)); pg.append(pgs); box.append(pg);
       const AB = [['edit', 'Edit tasks', 'Change status, ETA, designer and priority (written to the sheet and logged)'], ['export', 'Download data', 'CSV downloads on Tasks, Reports and Brands'], ['load', 'See workload and others\' work', 'Workload estimates and "View as" on My work'], ['team', 'Manage the team list', 'Add people and set them active or inactive'], ['fasty', 'Use Fasty', 'The voice and chat assistant']];
       const ab = el('div', 'pm-abs');
       AB.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = !!P0[k]; const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); ab.append(lab); });
       box.append(ab);
-      const sc = el('label', 'co-field', 'Tasks they can see'); const scs = el('select', 'co-select'); scs.append(new Option('All tasks', 'all'), new Option('Only tasks assigned to them (or whose brief they own)', 'own')); scs.value = P0.scope || 'all'; sc.append(scs); box.append(sc);
-      box.append(el('p', 'co-note', 'Always yours only: giving access, the activity log, live team activity and settings.' + (u.custom ? ' This person has custom permissions.' : ' Using the defaults for ' + ROLE_LABEL[u.role] + '.')));
+      const sc = el('label', 'co-field', 'Tasks they can see'); const scs = el('select', 'co-select'); scs.append(new Option('All tasks', 'all'), new Option('Only tasks assigned to them (or whose brief they own)', 'own')); scs.value = P0.scope || (u.role === 'Admin' ? 'all' : 'own'); sc.append(scs); box.append(sc);
+      box.append(el('p', 'co-note', 'Only you and Admins: giving access, the activity log and live team activity. Only you: settings.' + (u.custom ? ' This person has custom permissions.' : ' Using the defaults for ' + ROLE_LABEL[u.role] + '.')));
       const row = el('div', 'pm-act');
       const save = el('button', 'co-btn primary', 'Save permissions'); save.type = 'button';
-      save.addEventListener('click', () => { const perms = { pages: [...pgs.querySelectorAll('input:checked')].map((x) => x.value), scope: scs.value }; ab.querySelectorAll('input[data-k]').forEach((x) => { perms[x.dataset.k] = x.checked; }); setAccess(u.email, { perms }, 'Permissions saved for ' + (u.name || u.email)); });
+      save.addEventListener('click', () => { const perms = { pages: pgs.read(), scope: scs.value }; ab.querySelectorAll('input[data-k]').forEach((x) => { perms[x.dataset.k] = x.checked; }); setAccess(u.email, { perms }, 'Permissions saved for ' + (u.name || u.email)); });
       row.append(save);
       if (u.custom) { const rs = el('button', 'co-btn', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
       box.append(row); act.append(box);
@@ -2304,15 +2333,19 @@
     CO.csv('activity-log-' + CO.today() + '.csv', ['When', 'Who', 'Their role', 'Action', 'Sheet', 'Tab', 'Task / record', 'Row', 'Field', 'Before', 'After', 'Details', 'Via'],
       (AX.log || []).map((e) => [e.when, e.who, e.role, e.action, e.sheet, e.tab, e.record, e.row, e.field, e.before, e.after, e.details, e.via]));
   });
+  // Section picker on the "add a person" form; follows the chosen access level until changed by hand.
+  const AXP = secPicker(DEF_PAGES('Viewer'));
+  document.getElementById('ax-role').after(AXP);
+  document.getElementById('ax-role').addEventListener('change', (e) => { if (!AXP.touched) AXP.set(DEF_PAGES(e.target.value)); });
   document.getElementById('ax-add').addEventListener('submit', (e) => {
     e.preventDefault();
-    const email = document.getElementById('ax-email').value.trim().toLowerCase(), role = document.getElementById('ax-role').value;
+    const email = document.getElementById('ax-email').value.trim().toLowerCase(), role = document.getElementById('ax-role').value, perms = permsFor(role, AXP.read());
     const msg = document.getElementById('ax-msg');
     if (!A.domains.some((d) => email.endsWith('@' + d))) { msg.textContent = 'Use a ' + A.domains.map((d) => '@' + d).join(' or ') + ' address.'; return; }
     const exists = (AX.users || []).find((u) => u.email === email);
     msg.textContent = '';
-    setAccess(email, exists ? { status: 'Approved', role } : { status: 'Approved', role }, email + ' can now sign in: ' + ROLE_LABEL[role]);
-    e.target.reset();
+    setAccess(email, Object.assign({ status: 'Approved', role }, perms ? { perms } : {}), email + ' can now sign in: ' + ROLE_LABEL[role]);
+    e.target.reset(); AXP.touched = false; AXP.set(DEF_PAGES('Viewer'));
   });
 
   /* Reminder times (IST minutes since midnight); the web app sends the admin's settings with every check. */
@@ -2322,7 +2355,7 @@
   const PAGE_NAME = { mine: 'My work', today: 'Overview', standup: 'Stand-up', tasks: 'Tasks', notes: 'Notes', team: 'Team', reports: 'Reports', brands: 'Brands', health: 'Data health', access: 'Access' };
   const agoText = (iso) => { if (!iso) return 'never'; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : CO.istDateTime(iso); };
   dash.draw('presence-mini', (el) => {
-    el.replaceChildren(); if (!isOwner() || A.mode !== 'auth' || !PRS.on) return;
+    el.replaceChildren(); if (!isAdmin() || A.mode !== 'auth' || !PRS.on) return;
     const on = PRS.list.filter((p) => p.online && (!A.user || p.email !== A.user.email));
     if (!on.length) return;
     const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-mini'; b.title = on.map((p) => p.name + ' · ' + (p.doing || PAGE_NAME[p.page] || 'dashboard')).join('\n');
@@ -2394,7 +2427,7 @@
   setInterval(sendBeat, 15 * 1000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { LIVE.since = LIVE.since || Date.now(); sendBeat(); } });
   async function pollPresence() {
-    if (A.mode !== 'auth' || !isOwner() || document.visibilityState !== 'visible') return;
+    if (A.mode !== 'auth' || !isAdmin() || document.visibilityState !== 'visible') return;
     try { const b = await callApi({ action: 'presence' }, true); if (b.ok) { PRS.on = b.on !== false; PRS.list = b.presence || []; PRS.at = Date.now(); PRS.skew = b.now ? Date.now() - b.now : 0; dash.draw('presence'); dash.draw('presence-mini'); dash.draw('live-activity'); } } catch (e) { /* next time */ }
   }
   // Faster while the live card is on screen (Overview or Access), slower otherwise (just the "online" pill).
@@ -2428,7 +2461,7 @@
     r.append(identity(p), tx, side); return r;
   };
   dash.draw('live-activity', (el) => {
-    const show = A.mode === 'auth' && isOwner() && PRS.on;
+    const show = A.mode === 'auth' && isAdmin() && PRS.on;
     el.classList.toggle('la-off', !show); if (!show) { el.replaceChildren(); return; }
     const others = PRS.list.filter((p) => !A.user || p.email !== A.user.email);
     const rank = { editing: 0, active: 1, idle: 2, away: 3, offline: 4 };
@@ -2437,7 +2470,7 @@
     el.replaceChildren();
     const hd = el2('div', 'na-head');
     const l = el2('div'); const h2 = el2('h2', 'co-h2'); h2.append(el2('i', 'la-pulse'), 'Live team activity'); h2.append(el2('span', 'na-count' + (on.length ? '' : ' ok'), on.length + ' online'));
-    l.append(h2, el2('p', 'co-note', on.length ? 'Who is on the dashboard, where, and what they are doing. Only you see this.' : 'Nobody else is on the dashboard right now. Their actions show here as soon as they open it.'));
+    l.append(h2, el2('p', 'co-note', on.length ? 'Who is on the dashboard, where, and what they are doing. Only Admins see this.' : 'Nobody else is on the dashboard right now. Their actions show here as soon as they open it.'));
     hd.append(l); el.append(hd); collapser(el, 'live', 'Live team activity');
     const body = el2('div', 'la-body');
     if (on.length) { const list = el2('div', 'la-list'); on.forEach((p) => list.append(liveRow(p))); body.append(list); }
@@ -2689,10 +2722,10 @@
       });
       // Meetings starting within 15 minutes (connected Google Calendar).
       (CAL.events || []).forEach((ev) => { const m = (new Date(ev.start) - Date.now()) / 60000; if (m <= 15 && m > -5) out.unshift({ id: 'mtg-' + ev.id + '-' + ev.start, icon: 'video', tone: 'lime', t: (m > 0 ? 'Starts ' + untilText(ev.start) + ': ' : 'Now: ') + ev.title, s: fmtRange(ev.start, ev.end) + (ev.people.length ? ' · ' + ev.people.length + ' people' : ''), go: () => { if (ev.meet) window.open(ev.meet, '_blank', 'noopener'); else dash.setParams({ tab: 'today' }); } }); });
-      if (isOwner() && AX.pending) out.unshift({ id: 'access-' + AX.pending + '-' + t, icon: 'user', tone: 'violet', t: AX.pending + (AX.pending === 1 ? ' access request' : ' access requests') + ' waiting', s: 'Approve or reject on the Access page', go: () => dash.setParams({ tab: 'access' }) });
+      if (isAdmin() && AX.pending) out.unshift({ id: 'access-' + AX.pending + '-' + t, icon: 'user', tone: 'violet', t: AX.pending + (AX.pending === 1 ? ' access request' : ' access requests') + ' waiting', s: 'Approve or reject on the Access page', go: () => dash.setParams({ tab: 'access' }) });
       NB.notes.forEach((n) => {
         if (n.reminder && n.reminder <= nowLocal && n.reminder.slice(0, 10) >= CO.addDays(t, -2) && (n.createdBy === A.user.email || (n.actions || []).some((a) => !a.done && a.email === A.user.email))) out.unshift({ id: 'rem-' + n.id + '-' + n.reminder, icon: 'bell', tone: 'bad', t: 'Reminder: ' + n.title, s: CO.istDateTime(n.reminder + ':00+05:30') + (n.followUps ? ' · ' + n.followUps.slice(0, 60) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } });
-        (n.actions || []).forEach((a) => { if (!a.done && a.email === A.user.email && (!a.due || a.due <= CO.addDays(t, 1))) out.push({ id: 'act-' + n.id + '-' + a.id + '-' + (a.due || ''), icon: 'check', tone: a.due && a.due < t ? 'bad' : '', t: a.text, s: 'Action item · ' + n.title + (a.due ? ' · due ' + CO.fmtDate(a.due) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } }); });
+        (n.actions || []).forEach((a) => { if (!a.done && a.email === A.user.email && (!a.due || a.due <= CO.addDays(t, 1))) out.push({ id: 'act-' + n.id + '-' + a.id + '-' + (a.due || ''), icon: 'check', tone: a.due && a.due < t ? 'bad' : '', t: /^as-/.test(a.id || '') ? (n.createdBy === A.user.email ? 'Your note: ' : (n.createdByName || n.createdBy).split(' ')[0] + ' assigned you: ') + n.title : a.text, s: /^as-/.test(a.id || '') ? 'Tick it off on the note when done' : 'Action item · ' + n.title + (a.due ? ' · due ' + CO.fmtDate(a.due) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } }); });
         if (n.createdBy !== A.user.email && (n.mentions || []).some((m) => m.email === A.user.email) && n.updatedAt && Date.now() - new Date(n.updatedAt) < 3 * 864e5) out.push({ id: 'men-' + n.id + '-' + n.updatedAt, icon: 'at', tone: 'violet', t: (n.createdByName || n.createdBy) + ' mentioned you', s: n.title, go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } });
       });
       return out;
@@ -2758,357 +2791,241 @@
   })();
   function istNowKey() { const o = CO.istParts(); return o.year + '-' + o.month + '-' + o.day + 'T' + o.hour + ':' + o.minute; }
 
-  /* ================= Notes: a shared notebook ================= */
+  /* ================= Notes: quick stickies =================
+     One composer: write, @tag people (the note is shared with them), assign it to teammates (each gets a tick box and a
+     bell notification), set a reminder (bell + email). Who can see a note follows from that: only you, the people tagged
+     or assigned, or everyone. Your own notes are edited in place; assignees tick theirs off. Same data as before. */
   const NB = (() => {
     const $n = (id) => document.getElementById(id);
-    const form = $n('nb-form'), empty = $n('nb-empty'), wrap = document.querySelector('.nb'), paper = $n('nb-paper');
-    const st = { notes: [], people: [], loaded: false, loading: false, cur: null, dirty: false, q: '', chip: 'all', brand: '', cat: '' };
+    const st = { notes: [], people: [], loaded: false, loading: false, q: '', f: LS.get('co.qnf', 'all'), editing: '', busy: false };
     const me = () => (A.user ? A.user.email : '');
-    const nameOf2 = (email) => { const p = st.people.find((x) => x.email === email); return p && p.name ? p.name : (A.user && email === A.user.email ? A.user.name || email : email); };
-    /* People you can mention or assign: everyone with access, plus the team list (designers without an account). */
+    const mk = (tag, cls, txt) => { const x = document.createElement(tag); if (cls) x.className = cls; if (txt != null) x.textContent = txt; return x; };
     const norm = (x) => String(x || '').toLowerCase().replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const nameOf2 = (email) => { const p = st.people.find((x) => x.email === email); return p && p.name ? p.name : (A.user && email === A.user.email ? A.user.name || email : email); };
+    const first = (n) => String(n || '').split(' ')[0];
+    /* People you can tag or assign: everyone with dashboard access, joined to their team-list name. */
     const people = () => {
-      // One entry per person: a team-list name joined to the dashboard account it belongs to (same name,
-      // email like firstname.lastname@, or the only account with that first name).
       const users = st.people.map((p) => ({ name: p.name || '', email: p.email, local: norm(p.email.split('@')[0]) }));
       const used = new Set(), out = [];
       (S.team || []).filter((m) => m.status !== 'Inactive').forEach((m) => {
         const n = norm(m.name), f = n.split(' ')[0];
         const firsts = users.filter((u) => norm(u.name || u.local).split(' ')[0] === f);
         const u = users.find((x) => norm(x.name) === n || x.local === n) || (firsts.length === 1 ? firsts[0] : null);
-        if (u && !used.has(u.email)) { used.add(u.email); out.push({ name: m.name, email: u.email }); } else out.push({ name: m.name, email: '' });
+        if (u && !used.has(u.email)) { used.add(u.email); out.push({ name: m.name, email: u.email }); }
       });
       users.forEach((u) => { if (!used.has(u.email)) out.push({ name: u.name || u.email, email: u.email }); });
-      return out.sort((a, b) => a.name.localeCompare(b.name));
+      return out.filter((p) => p.email !== me()).sort((a, b) => a.name.localeCompare(b.name));
     };
     async function load(force) {
       if (A.mode !== 'auth' || !A.user || st.loading || (st.loaded && !force)) return;
       st.loading = true;
       try {
-        const [n, d] = await Promise.all([callApi({ action: 'notes' }), st.people.length && !force ? Promise.resolve({ ok: true, people: st.people }) : callApi({ action: 'directory' })]);
+        const [n, d] = await Promise.all([callApi({ action: 'notes' }, true), st.people.length && !force ? Promise.resolve({ ok: true, people: st.people }) : callApi({ action: 'directory' }, true)]);
         if (n.ok) { st.notes = n.notes; st.loaded = true; }
         if (d.ok) st.people = d.people;
-      } catch (e) { if (!(e instanceof AuthLost)) toast('Notes could not load: ' + e.message + '. The web app may need the latest Code.gs.', true); }
+      } catch (e) { if (!(e instanceof AuthLost)) toast('Notes could not load: ' + e.message, true); }
+      st.at = Date.now();
       st.loading = false;
-      fillFilters(); dash.draw('nb-list'); dash.draw('nb-chips'); syncControls(); dash.draw('np-list');
+      if (!st.editing) dash.draw('qn-board');
+      dash.draw('qn-tabs'); syncControls(); dash.draw('np-list');
     }
-    const open = () => { if (!st.loaded) load(); };
-    setInterval(() => { if (A.mode === 'auth' && A.user && !st.dirty && !pendingOps && !pendingDel.size) load(true); }, 2 * 60 * 1000);
+    const open = () => { if (!$n('qn-new').firstChild) mountComposer(); if (!st.loaded || Date.now() - (st.at || 0) > 20000) load(st.loaded); };
+    // Others' changes show up while Notes is open (every 30 s) and in the background (every 2 min).
+    setInterval(() => { if (A.mode === 'auth' && A.user && !st.editing && !st.busy && document.visibilityState === 'visible' && curTab() === 'notes') load(true); }, 30 * 1000);
+    setInterval(() => { if (A.mode === 'auth' && A.user && !st.editing && !st.busy && curTab() !== 'notes') load(true); }, 2 * 60 * 1000);
 
-    /* ---- list ---- */
-    const CHIPS = [['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me'], ['Meeting', 'Meetings'], ['Personal', 'Personal'], ['actions', 'Open actions']];
-    dash.draw('nb-chips', (el) => {
-      el.replaceChildren(...CHIPS.map(([k, l]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = l; b.setAttribute('aria-pressed', String(st.chip === k)); b.addEventListener('click', () => { st.chip = k; dash.draw('nb-chips'); dash.draw('nb-list'); }); return b; }));
-    });
-    const filtered = () => st.notes.filter((n) => {
-      if (st.chip === 'mine' && n.createdBy !== me()) return false;
-      if (st.chip === 'shared' && n.createdBy === me()) return false;
-      if ((st.chip === 'Meeting' || st.chip === 'Personal') && (st.chip === 'Meeting' ? n.type === 'Personal' : n.type !== 'Personal')) return false;
-      if (st.chip === 'actions' && !(n.actions || []).some((a) => !a.done)) return false;
-      if (st.brand && n.brand !== st.brand) return false;
-      if (st.cat && n.category !== st.cat) return false;
-      if (st.q) { const hay = [n.title, n.body, n.brand, n.category, n.followUps, n.createdByName, (n.mentions || []).map((m) => m.name).join(' '), (n.actions || []).map((a) => a.text + ' ' + a.assignee).join(' ')].join(' ').toLowerCase(); if (!st.q.split(/\s+/).every((w) => hay.includes(w))) return false; }
-      return true;
-    });
-    const groupOf = (n) => {
-      const t = CO.today(), d = n.date || (n.createdAt || '').slice(0, 10);
-      if (n.pinned) return 'Pinned';
-      if (d === t) return 'Today'; if (d === CO.addDays(t, -1)) return 'Yesterday';
-      if (d > CO.addDays(t, -7)) return 'This week';
-      return CO.fmtMonth(d.slice(0, 7), true);
+    /* ---- reading a note ---- */
+    const isAssign = (a) => /^as-/.test(a.id || '');
+    const assignees = (n) => (n.actions || []).filter(isAssign);
+    const kindOf = (n) => (n.createdBy === me() ? 'mine' : assignees(n).some((a) => a.email === me()) ? 'assigned' : 'shared');
+    const textOf = (n) => [n.title && n.title !== 'Untitled note' ? n.title : '', n.body || ''].filter(Boolean).join('\n');
+    const istStamp = (d) => new Date(d.getTime() + 5.5 * 3600e3).toISOString().slice(0, 16);
+    const remindText = (r) => { if (!r) return ''; const d = r.slice(0, 10), t = CO.today(); const hm = new Date('2000-01-01T' + r.slice(11, 16)).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); return (d === t ? 'Today' : d === CO.addDays(t, 1) ? 'Tomorrow' : CO.fmtDate(d)) + ', ' + hm; };
+    const visText = (n) => {
+      if (n.visibility === 'team') return 'Everyone';
+      const who = new Set(); (n.mentions || []).forEach((m) => m.email && who.add(m.email)); assignees(n).forEach((a) => a.email && who.add(a.email)); (n.sharedWith || []).forEach((e) => who.add(e));
+      who.delete(n.createdBy);
+      if (n.visibility !== 'people' || !who.size) return 'Only ' + (n.createdBy === me() ? 'you' : first(nameOf2(n.createdBy)));
+      const names = [...who].map((e) => (e === me() ? 'you' : first(nameOf2(e))));
+      return (n.createdBy === me() ? 'You, ' : first(nameOf2(n.createdBy)) + ', ') + (names.length > 2 ? names.slice(0, 2).join(', ') + ' +' + (names.length - 2) : names.join(' and '));
     };
-    /* The board: every note is a sticky, coloured by type (meeting violet, discussion sun glare, personal orange),
-       grouped by when it is from. Open one and the board becomes a narrow stack beside the notebook. */
-    /* The board: stickies coloured by kind (meeting violet, idea lime, personal orange; stand-ups cream with lime tape),
-       pinned ones first, in a masonry layout. To-dos tick right on the sticky; pin and delete sit on hover. */
-    const tilt = (id) => { let h = 0; String(id).split('').forEach((c) => { h = (h * 31 + c.charCodeAt(0)) | 0; }); return ((Math.abs(h) % 7) - 3) * 0.5; };
-    const ICO = { pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></svg>', del: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>' };
-    /* Instant changes: the board updates at once and the save runs in the background. If the web app refuses,
-       the change is undone and a message says why. Background refreshes wait while anything is still saving. */
-    let pendingOps = 0;
-    const named = (note, old) => Object.assign({}, note, { createdByName: (old && old.createdByName) || (A.user && note.createdBy === A.user.email ? A.user.name || A.user.email : note.createdBy), canEdit: true });
-    const redraw = () => { fillFilters(); dash.draw('nb-list'); dash.draw('nb-chips'); syncControls(); dash.draw('np-list'); };
-    const putLocal = (note) => { const i = st.notes.findIndex((x) => x.id === note.id); if (i >= 0) st.notes[i] = note; else st.notes.unshift(note); };
-    const payload = (x) => ({ title: x.title, date: x.date, type: x.type, brand: x.brand, category: x.category, visibility: x.visibility, sharedWith: x.sharedWith || [], mentions: x.mentions || [], body: x.body, actions: (x.actions || []).filter((a) => String(a.text || '').trim()), reminder: x.reminder || '', followUps: x.followUps || '', pinned: !!x.pinned });
-    async function bg(fn, undo, what) {
-      pendingOps++;
-      try { await fn(); } catch (err) { if (!(err instanceof AuthLost)) { undo(); redraw(); toast(what + ' not saved: ' + (/stale/.test(err.message) ? 'someone else changed this note; reopen it to see their version.' : err.message), true); } }
-      pendingOps--;
-    }
-    async function quickSave(n, patch) {
-      const before = Object.assign({}, n); Object.assign(n, patch); redraw();
-      bg(async () => { const r = await post({ action: 'noteSave', id: n.id, updatedAt: n.updatedAt, note: payload(n) }); if (r.note) putLocal(named(r.note, n)); redraw(); }, () => putLocal(before), 'Change');
-    }
-    // Delete: gone at once, with Undo for 5 seconds; the web app is told after that (or straight away if the page closes).
-    const pendingDel = new Map();
-    function softDelete(n) {
-      const i = st.notes.findIndex((x) => x.id === n.id); if (i < 0) return;
-      st.notes.splice(i, 1); redraw();
-      const send = () => { if (!pendingDel.has(n.id)) return; pendingDel.delete(n.id); bg(() => post({ action: 'noteDelete', id: n.id }), () => { st.notes.splice(Math.min(i, st.notes.length), 0, n); }, 'Delete'); };
-      pendingDel.set(n.id, send);
-      toast('Note deleted', false, { label: 'Undo', fn: () => { pendingDel.delete(n.id); st.notes.splice(Math.min(i, st.notes.length), 0, n); redraw(); }, onTimeout: send });
-      setTimeout(send, 5200);
-    }
-    window.addEventListener('pagehide', () => { pendingDel.forEach((send, id) => { try { fetch(A.url, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ session: A.session, action: 'noteDelete', id }) }); } catch (e) { /* best effort */ } }); });
-    const card = (n) => {
-      const type = String(n.type || 'Meeting'), standup = /stand-?up/i.test(n.category || '') || /stand-?up/i.test(n.title || '');
-      const b = document.createElement('div'); b.className = 'nb-item sticky t-' + type.toLowerCase() + (standup ? ' t-standup' : '') + (n.pinned ? ' pinned' : '');
-      b.dataset.id = n.id; b.tabIndex = 0; b.setAttribute('role', 'button'); b.setAttribute('aria-label', 'Open note: ' + (n.title || 'Untitled'));
-      b.style.setProperty('--tilt', tilt(n.id) + 'deg'); b.setAttribute('aria-current', String(!!st.cur && st.cur.id === n.id));
-      const deco = document.createElement('span'); deco.className = n.pinned ? 'st-pin' : 'st-tape'; deco.setAttribute('aria-hidden', 'true');
-      const top = document.createElement('div'); top.className = 'st-top';
-      const kind = document.createElement('span'); kind.className = 'st-kind'; kind.textContent = (standup ? 'Stand-up' : type === 'Discussion' ? 'Idea' : type) + ' · ' + CO.fmtDate(n.date);
-      top.append(kind);
-      if (n.canEdit) {
-        const tools = document.createElement('span'); tools.className = 'st-tools';
-        const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'st-tool' + (n.pinned ? ' on' : ''); pin.innerHTML = ICO.pin; pin.title = n.pinned ? 'Unpin' : 'Pin to the top'; pin.setAttribute('aria-label', pin.title);
-        pin.addEventListener('click', (e) => { e.stopPropagation(); quickSave(n, { pinned: !n.pinned }); });
-        const del = document.createElement('button'); del.type = 'button'; del.className = 'st-tool'; del.innerHTML = ICO.del; del.title = 'Delete'; del.setAttribute('aria-label', 'Delete note');
-        del.addEventListener('click', (e) => { e.stopPropagation(); softDelete(n); });
-        tools.append(pin, del); top.append(tools);
-      }
-      const t = document.createElement('span'); t.className = 'st-title t'; t.textContent = n.title || 'Untitled';
-      const body = (n.body || '').replace(/\n{2,}/g, '\n').trim();
-      b.append(deco, top, t);
-      if (body) { const s2 = document.createElement('span'); s2.className = 'st-body s'; s2.textContent = body; b.append(s2); }
-      const acts = n.actions || [];
-      if (acts.length) {
-        const ul = document.createElement('ul'); ul.className = 'st-todo';
-        acts.slice(0, 5).forEach((x) => {
-          const li = document.createElement('li'); li.className = x.done ? 'done' : '';
-          const box = document.createElement('button'); box.type = 'button'; box.className = 'st-box'; box.setAttribute('role', 'checkbox'); box.setAttribute('aria-checked', String(!!x.done)); box.setAttribute('aria-label', (x.done ? 'Mark not done: ' : 'Mark done: ') + x.text);
-          const canTick = n.canEdit || (A.user && x.email === A.user.email);
-          box.disabled = !canTick;
-          box.addEventListener('click', (e) => { e.stopPropagation(); if (n.pending) return; x.done = !x.done; redraw(); if (x.done && n.actions.every((y) => y.done)) toast('All to-dos done on "' + (n.title || 'note') + '"'); bg(async () => { const r = await post({ action: 'noteAction', id: n.id, actionId: x.id, done: x.done }); n.actions = r.actions; }, () => { x.done = !x.done; }, 'Tick'); });
-          const tx = document.createElement('span'); tx.textContent = x.text; if (x.assignee) tx.title = 'For ' + x.assignee + (x.due ? ' · due ' + CO.fmtDate(x.due) : '');
-          li.append(box, tx); ul.append(li);
-        });
-        if (acts.length > 5) { const li = document.createElement('li'); li.className = 'more'; li.textContent = '+' + (acts.length - 5) + ' more'; ul.append(li); }
-        b.append(ul);
-      }
-      const foot = document.createElement('span'); foot.className = 'st-foot m';
-      const done = acts.filter((x) => x.done).length;
-      if (acts.length && done === acts.length) { const x = document.createElement('span'); x.className = 'st-done'; x.textContent = 'All done'; foot.append(x); }
-      else if (acts.length) { const x = document.createElement('span'); x.className = 'st-acts'; x.style.setProperty('--p', (done / acts.length * 100) + '%'); x.textContent = done + '/' + acts.length; x.title = done + ' of ' + acts.length + ' to-dos done'; foot.append(x); }
-      if (n.brand) { const x = document.createElement('span'); x.className = 'nb-tag'; x.textContent = n.brand; foot.append(x); }
-      if (n.visibility === 'private') { const x = document.createElement('span'); x.className = 'st-lock'; x.textContent = 'Only me'; foot.append(x); }
-      const faces = document.createElement('span'); faces.className = 'st-faces';
-      [n.createdByName || n.createdBy].concat((n.mentions || []).map((m) => m.name)).filter(Boolean).slice(0, 3).forEach((nm) => { const av = CO.av(nm); av.title = nm; faces.append(av); });
-      foot.append(faces); b.append(foot);
-      if (n.pending) { b.classList.add('pending'); const sv = document.createElement('span'); sv.className = 'st-saving'; sv.textContent = 'Saving…'; foot.prepend(sv); }
-      const go = () => { if (!n.pending) select(n.id); };
-      b.addEventListener('click', go); b.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === b) go(); });
-      return b;
-    };
-    dash.draw('nb-list', (el) => {
-      el.replaceChildren();
-      $n('nb-empty').hidden = !st.loaded || st.notes.length > 0;
-      if (!st.loaded) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = st.loading ? 'Loading notes…' : ''; el.append(p); return; }
-      const list = filtered().sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
-      if (!list.length) { if (st.notes.length) { const p = document.createElement('p'); p.className = 'co-note nb-none'; p.textContent = 'No notes match. Clear the search or filters to see them all.'; el.append(p); } return; }
-      const block = (title, notes) => { if (!notes.length) return; const h = document.createElement('h3'); h.className = 'nb-group'; h.textContent = title + ' · ' + notes.length; const m = document.createElement('div'); m.className = 'nb-mason'; notes.forEach((n) => m.append(card(n))); el.append(h, m); };
-      // One continuous board, pinned first (they carry an orange pin), then newest first: no half-empty rows.
-      const m = document.createElement('div'); m.className = 'nb-mason';
-      list.filter((n) => n.pinned).concat(list.filter((n) => !n.pinned)).forEach((n) => m.append(card(n)));
-      el.append(m);
-    });
-    /* Quick capture: type, press Enter, done. First line = title; lines starting with [] or - [ ] become to-dos for you. */
-    let qType = 'Meeting';
-    const qWho = () => { $n('nb-quick-who').textContent = qType === 'Personal' ? 'Only you can see it' : 'Visible to everyone'; };
-    document.querySelectorAll('[data-qt]').forEach((b2) => b2.addEventListener('click', () => { qType = b2.dataset.qt; document.querySelectorAll('[data-qt]').forEach((x) => x.setAttribute('aria-checked', String(x === b2))); $n('nb-quick').dataset.type = qType.toLowerCase(); qWho(); $n('nb-quick-text').focus(); }));
-    $n('nb-quick').dataset.type = 'meeting';
-    async function quickAdd() {
-      const box = $n('nb-quick-text'), raw = box.value.trim(); if (!raw) { box.focus(); return; }
-      const lines = raw.split('\n'), todo = /^\s*(?:-\s*)?\[\s?\]\s*/, me2 = A.user ? A.user.name || A.user.email : '';
-      const mk = (text) => ({ id: 'a' + Math.random().toString(36).slice(2, 8), text, assignee: me2, email: A.user ? A.user.email : '', due: '', done: false });
-      const title = lines[0].replace(todo, '').slice(0, 160), actions = [], body = [];
-      if (todo.test(lines[0])) actions.push(mk(title));
-      lines.slice(1).forEach((l) => { if (todo.test(l)) { const t2 = l.replace(todo, '').trim(); if (t2) actions.push(mk(t2)); } else body.push(l); });
-      const temp = { id: 'tmp-' + Date.now(), pending: true, title, date: CO.today(), type: qType, brand: '', category: '', visibility: qType === 'Personal' ? 'private' : 'team', sharedWith: [], mentions: [], body: body.join('\n').trim(), actions, reminder: '', followUps: '', pinned: false, canEdit: true, createdBy: A.user ? A.user.email : '', createdByName: me2, updatedAt: '' };
-      st.notes.unshift(temp); box.value = ''; box.style.height = ''; box.focus(); redraw();
-      bg(async () => { const r = await post({ action: 'noteSave', note: payload(temp) }); const i = st.notes.indexOf(temp); const real = r.note ? named(r.note, temp) : Object.assign({}, temp, { id: r.id, pending: false }); if (i >= 0) st.notes[i] = real; else putLocal(real); redraw(); },
-        () => { const i = st.notes.indexOf(temp); if (i >= 0) st.notes.splice(i, 1); if (!box.value) box.value = raw; }, 'Sticky');
-    }
-    $n('nb-quick').addEventListener('submit', (e) => { e.preventDefault(); quickAdd(); });
-    // Full editor: carries over what was typed and the chosen kind.
-    $n('nb-quick-full').addEventListener('click', () => {
-      const raw = $n('nb-quick-text').value; startNew(qType === 'Personal' ? 'personal' : 'blank');
-      if (st.cur) { const [first, ...rest] = raw.split('\n'); st.cur.type = qType; st.cur.title = (first || '').trim(); st.cur.body = rest.join('\n'); if (qType !== 'Personal') st.cur.visibility = 'team'; show(); st.dirty = !!raw.trim(); $n('nb-quick-text').value = ''; $n(raw.trim() ? 'nb-body' : 'nb-title').focus(); }
-    });
-    $n('nb-quick-text').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); quickAdd(); } });
-    $n('nb-quick-text').addEventListener('input', (e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(220, e.target.scrollHeight) + 'px'; });
-    // Kind chips in the open note
-    const paintChips = () => { const ty = st.cur ? st.cur.type : ''; document.querySelectorAll('[data-tt]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.tt === ty))); paper.dataset.type = String(ty || 'Meeting').toLowerCase(); };
-    document.querySelectorAll('[data-tt]').forEach((b2) => b2.addEventListener('click', () => { if (!st.cur || !st.cur.canEdit) return; $n('nb-type').value = b2.dataset.tt; $n('nb-type').dispatchEvent(new Event('change')); paintChips(); }));
-    $n('nb-scrim').addEventListener('click', () => $n('nb-back').click());
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && st.cur && !document.querySelector('dialog[open]') && $n('nb-pop').hidden) $n('nb-back').click(); });
-    function fillFilters() {
-      const fill = (sel, label, vals) => { const cur = sel.value; sel.replaceChildren(new Option(label, ''), ...vals.map((v) => new Option(v, v))); sel.value = vals.includes(cur) ? cur : ''; };
-      fill($n('nb-f-brand'), 'All brands', [...new Set(st.notes.map((n) => n.brand).filter(Boolean))].sort());
-      fill($n('nb-f-cat'), 'All categories', [...new Set(st.notes.map((n) => n.category).filter(Boolean))].sort());
-      const brands = new Set((S.tasks || []).map((t) => t.brand).filter(Boolean)); st.notes.forEach((n) => { if (n.brand) brands.add(n.brand); });
-      $n('nb-brands').replaceChildren(...[...brands].sort().map((b) => new Option(b)));
-    }
-    let qt = 0;
-    $n('nb-q').addEventListener('input', (e) => { clearTimeout(qt); qt = setTimeout(() => { st.q = e.target.value.trim().toLowerCase(); dash.draw('nb-list'); }, 150); });
-    $n('nb-f-brand').addEventListener('change', (e) => { st.brand = e.target.value; dash.draw('nb-list'); });
-    $n('nb-f-cat').addEventListener('change', (e) => { st.cat = e.target.value; dash.draw('nb-list'); });
+    const ago = (iso) => { if (!iso) return ''; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : CO.fmtDate(new Date(new Date(iso).getTime() + 5.5 * 3600e3).toISOString().slice(0, 10)); };
 
-    /* ---- editor ---- */
-    const confirmDiscard = () => !st.dirty || confirm('Discard your unsaved changes to this note?');
-    function select(id) {
-      if (st.cur && st.cur.id === id) { wrap.classList.add('editing'); return; }
-      if (!st.loaded) { load().then(() => select(id)); return; }
-      const n = st.notes.find((x) => x.id === id); if (!n || !confirmDiscard()) return;
-      st.cur = JSON.parse(JSON.stringify(n)); st.dirty = false; show();
-      const draft = LS.get('co.nbdraft.' + id, ''); if (draft && st.cur.canEdit) { try { const d = JSON.parse(draft); if (d.updatedAt === n.updatedAt && confirm('You have unsaved changes to this note from earlier. Restore them?')) { Object.assign(st.cur, d.note); st.dirty = true; show(); } else LS.set('co.nbdraft.' + id, null); } catch (e) { LS.set('co.nbdraft.' + id, null); } }
-    }
-    function startNew(tpl) {
-      if (!confirmDiscard()) return;
-      if (dash.params().tab !== 'notes') dash.setParams({ tab: 'notes' });
-      const t = CO.today(), n = { id: null, title: '', date: t, type: 'Meeting', brand: '', category: '', visibility: 'people', sharedWith: [], mentions: [], body: '', actions: [], reminder: '', followUps: '', pinned: false, canEdit: true, createdBy: me() };
-      if (tpl === 'standup') {
-        Object.assign(n, { title: 'Daily stand-up · ' + CO.fmtDate(t, true), category: 'Stand-up', visibility: 'team' });
-        const all = CO.rows(true) || [];
-        const late = all.filter((r) => r.due === 'overdue').sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 6);
-        const un = all.filter((r) => r.open && !r.list.length).length;
-        n.body = 'Attendees: \n\nUpdates\n• \n\nBlockers\n• \n\nDecisions\n• \n' + (late.length ? '\nOverdue right now (' + all.filter((r) => r.due === 'overdue').length + ')\n' + late.map((r) => '• ' + r.brand + ' · ' + CO.topicText(r) + ' (' + (r.list.join(', ') || 'unassigned') + ', ' + CO.diffDays(r.eta, t) + 'd late)').join('\n') + '\n' : '') + (un ? '\nUnassigned: ' + un + ' open tasks\n' : '');
-      } else if (tpl === 'personal') Object.assign(n, { type: 'Personal', visibility: 'private', title: '' });
-      st.cur = n; st.dirty = false; show(); $n('nb-title').focus();
-      const d = LS.get('co.nbdraft.new', ''); if (d && tpl === 'blank') { try { const x = JSON.parse(d); if (x.note && (x.note.title || x.note.body) && confirm('Restore the new note you were writing earlier?')) { Object.assign(st.cur, x.note); st.dirty = true; show(); } else LS.set('co.nbdraft.new', null); } catch (e) { LS.set('co.nbdraft.new', null); } }
-    }
-    function show() {
-      const n = st.cur;
-      empty.hidden = !st.loaded || st.notes.length > 0; form.hidden = !n; wrap.classList.toggle('editing', !!n); $n('nb-scrim').hidden = !n; document.body.classList.toggle('nb-open', !!n); dash.draw('nb-list');
-      if (!n) return;
-      paintChips(); $n('nb-details').open = !n.id ? false : $n('nb-details').open;
-      const ro = !n.canEdit; paper.classList.toggle('readonly', ro);
-      $n('nb-title').value = n.title; $n('nb-date').value = n.date || ''; $n('nb-type').value = n.type; $n('nb-brand').value = n.brand || ''; $n('nb-cat').value = n.category || ''; $n('nb-vis').value = n.visibility;
-      $n('nb-body').value = n.body || ''; $n('nb-follow').value = n.followUps || ''; $n('nb-remind').value = n.reminder || '';
-      ['nb-title', 'nb-date', 'nb-type', 'nb-brand', 'nb-cat', 'nb-vis', 'nb-body', 'nb-follow', 'nb-remind', 'nb-share-add'].forEach((id) => { $n(id).disabled = ro; });
-      $n('nb-save').hidden = ro; $n('nb-delete').hidden = ro || !n.id; $n('nb-add-action').hidden = ro; $n('nb-pin').disabled = ro;
-      $n('nb-pin').setAttribute('aria-pressed', String(!!n.pinned));
-      renderShare(); renderMentions(); renderActions(); renderFoot(); status();
-      dash.draw('nb-list');
-    }
-    const status = (text) => { const s = $n('nb-status'); s.classList.toggle('dirty', st.dirty); s.textContent = text || (!st.cur ? '' : !st.cur.canEdit ? 'View only · by ' + (st.cur.createdByName || st.cur.createdBy) : st.dirty ? 'Unsaved changes' : st.cur.id ? 'Saved' : 'New note'); };
-    function renderFoot() {
-      const n = st.cur, f = $n('nb-foot'); f.replaceChildren();
-      const add = (lab, who, at) => { const s = document.createElement('span'); s.append(lab + ' '); const b = document.createElement('b'); b.textContent = who; s.append(b, at ? ' · ' + CO.istDateTime(at, true) : ''); f.append(s); };
-      if (!n.id) { f.append('Saved to ' + (A.user ? A.user.email : 'your account') + ' when you press Save (Ctrl+S).'); return; }
-      add('Written by', n.createdByName || n.createdBy, n.createdAt);
-      if (n.updatedAt && n.updatedAt !== n.createdAt) add('Last edited by', n.updatedByName || n.updatedBy, n.updatedAt);
-      const v = document.createElement('span'); v.textContent = n.visibility === 'private' ? 'Only the author and admins can see this' : n.visibility === 'team' ? 'Everyone with dashboard access can see this' : 'Visible to the author, people mentioned, added or assigned, and admins'; f.append(v);
-    }
-    function renderShare() {
-      const n = st.cur, row = $n('nb-share'); row.hidden = n.visibility !== 'people';
-      const chips = $n('nb-share-chips'); chips.replaceChildren();
-      (n.sharedWith || []).forEach((e) => { const c = document.createElement('span'); c.className = 'chip-x'; c.append(nameOf2(e)); if (n.canEdit) { const x = document.createElement('button'); x.type = 'button'; x.setAttribute('aria-label', 'Remove ' + nameOf2(e)); x.textContent = '×'; x.addEventListener('click', () => { n.sharedWith = n.sharedWith.filter((y) => y !== e); touch(); renderShare(); }); c.append(x); } chips.append(c); });
-      const sel = $n('nb-share-add'); sel.replaceChildren(new Option('+ Add person', ''), ...st.people.filter((p) => p.email !== n.createdBy && !(n.sharedWith || []).includes(p.email)).map((p) => new Option(p.name || p.email, p.email)));
-    }
-    $n('nb-share-add').addEventListener('change', (e) => { if (!e.target.value) return; st.cur.sharedWith = (st.cur.sharedWith || []).concat(e.target.value); touch(); renderShare(); });
-    function syncMentions() { const body = st.cur.body || ''; st.cur.mentions = people().filter((p) => body.includes('@' + p.name)).map((p) => ({ name: p.name, email: p.email })); renderMentions(); }
-    function renderMentions() { const el = $n('nb-mentions'); el.replaceChildren(...(st.cur.mentions || []).map((m) => { const c = document.createElement('span'); c.className = 'mention'; c.append(CO.av(m.name), '@' + m.name); c.title = m.email ? m.email + (st.cur.visibility === 'people' ? ' · can see this note' : '') : 'On the team list (no dashboard account)'; return c; })); }
-    function renderActions() {
-      const n = st.cur, box = $n('nb-actions'); box.replaceChildren();
-      const ppl = people();
-      (n.actions || []).forEach((a) => {
-        const row = document.createElement('div'); row.className = 'ai' + (a.done ? ' done' : '');
-        const chk = document.createElement('button'); chk.type = 'button'; chk.className = 'ai-check'; chk.setAttribute('aria-label', a.done ? 'Mark not done' : 'Mark done'); chk.append(svgIcon(ICONS.check));
-        const mine = a.email && a.email === me();
-        chk.disabled = !(n.canEdit || mine);
-        chk.addEventListener('click', async () => {
-          if (n.canEdit && (!n.id || st.dirty)) { a.done = !a.done; a.doneBy = a.done ? me() : ''; touch(); renderActions(); return; }
-          try { const r = await post({ action: 'noteAction', id: n.id, actionId: a.id, done: !a.done }); n.actions = r.actions; const saved = st.notes.find((x) => x.id === n.id); if (saved) saved.actions = r.actions; renderActions(); dash.draw('nb-list'); syncControls(); toast(a.done ? 'Reopened' : 'Done ✓'); }
-          catch (err) { toast('Not saved: ' + err.message, true); }
-        });
-        const txt = document.createElement('input'); txt.className = 'ai-text'; txt.value = a.text; txt.placeholder = 'What needs doing'; txt.maxLength = 300; txt.disabled = !n.canEdit;
-        txt.addEventListener('input', () => { a.text = txt.value; touch(); });
-        const who = document.createElement('select'); who.className = 'co-select'; who.disabled = !n.canEdit; who.setAttribute('aria-label', 'Assigned to');
-        who.append(new Option('Unassigned', ''), ...ppl.map((p) => new Option(p.name, p.name)));
-        if (a.assignee && !ppl.some((p) => p.name === a.assignee)) who.append(new Option(a.assignee, a.assignee));
-        who.value = a.assignee || '';
-        who.addEventListener('change', () => { a.assignee = who.value; const p = ppl.find((x) => x.name === who.value); a.email = p ? p.email : ''; touch(); });
-        const due = document.createElement('input'); due.type = 'date'; due.className = 'co-input'; due.value = a.due || ''; due.disabled = !n.canEdit; due.setAttribute('aria-label', 'Due');
-        due.addEventListener('change', () => { a.due = due.value; touch(); });
-        const del = document.createElement('button'); del.type = 'button'; del.className = 'ai-del'; del.textContent = '×'; del.setAttribute('aria-label', 'Remove action item'); del.hidden = !n.canEdit;
-        del.addEventListener('click', () => { n.actions = n.actions.filter((x) => x !== a); touch(); renderActions(); });
-        row.append(chk, txt, who, due, del); box.append(row);
+    /* ---- the composer (new note and editing) ---- */
+    function editor(n, done) {
+      const f = mk('form', 'qn-ed'); f.autocomplete = 'off';
+      const ta = mk('textarea', 'qn-ta'); ta.rows = n ? 4 : 2; ta.maxLength = 4000; ta.placeholder = 'Write a note… type @ to tag someone'; ta.setAttribute('aria-label', 'Note'); ta.value = n ? textOf(n) : '';
+      const pop = mk('div', 'qn-pop'); pop.hidden = true; pop.setAttribute('role', 'listbox');
+      const field = mk('div', 'qn-field'); field.append(ta, pop);
+      const S2 = { assign: n ? assignees(n).map((a) => ({ name: a.assignee || nameOf2(a.email), email: a.email, done: a.done, id: a.id, doneBy: a.doneBy, doneAt: a.doneAt })) : [], reminder: n ? n.reminder || '' : '', team: n ? n.visibility === 'team' : false };
+      const chips = mk('div', 'qn-chips');
+      const row = mk('div', 'qn-row');
+      // dropdown helper: a button with a chevron and a small panel
+      const dd = (label, icon, build) => {
+        const w = mk('div', 'qn-dd'), b = mk('button', 'qn-dd-btn'); b.type = 'button'; b.setAttribute('aria-haspopup', 'true'); b.setAttribute('aria-expanded', 'false');
+        b.innerHTML = icon; b.append(mk('span', 'qn-dd-l', label)); const pan = mk('div', 'qn-dd-pan'); pan.hidden = true;
+        b.addEventListener('click', () => { const on = pan.hidden; document.querySelectorAll('.qn-dd-pan').forEach((p) => { p.hidden = true; p.previousSibling.setAttribute('aria-expanded', 'false'); }); if (on) { pan.replaceChildren(); build(pan, () => { pan.hidden = true; b.setAttribute('aria-expanded', 'false'); }); pan.hidden = false; b.setAttribute('aria-expanded', 'true'); } });
+        w.append(b, pan); w.btn = b; return w;
+      };
+      const ICON_USER = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M17 8v6M14 11h6"/></svg>';
+      const ICON_BELL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>';
+      const assignDd = dd('Assign', ICON_USER, (pan, close) => {
+        const list = people(); if (!list.length) { pan.append(mk('p', 'qn-dd-empty', 'Nobody else has dashboard access yet.')); return; }
+        list.forEach((p) => { const l = mk('label', 'qn-opt'), cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = S2.assign.some((a) => a.email === p.email); cb.addEventListener('change', () => { if (cb.checked) S2.assign.push({ name: p.name, email: p.email, done: false }); else S2.assign = S2.assign.filter((a) => a.email !== p.email); paint(); }); l.append(cb, CO.av(p.name), mk('span', '', p.name)); pan.append(l); });
+        const ok = mk('button', 'qn-dd-done', 'Done'); ok.type = 'button'; ok.addEventListener('click', close); pan.append(ok);
       });
-      if (!(n.actions || []).length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = n.canEdit ? 'Nothing yet. Add who does what, by when.' : 'No action items.'; box.append(p); }
+      const remindDd = dd('Remind', ICON_BELL, (pan, close) => {
+        const now = new Date(), t = CO.today(), at = (day, hm) => day + 'T' + hm;
+        const dow = new Date(t + 'T12:00:00Z').getUTCDay(), mon = CO.addDays(t, ((8 - dow) % 7) || 7);
+        const opts = [['In 1 hour', istStamp(new Date(now.getTime() + 3600e3))], ['Today, 6 pm', at(t, '18:00')], ['Tomorrow, 10 am', at(CO.addDays(t, 1), '10:00')], ['Monday, 10 am', at(mon, '10:00')]].filter(([, v]) => v > istStamp(now));
+        opts.forEach(([l, v]) => { const b = mk('button', 'qn-opt' + (S2.reminder === v ? ' on' : ''), l); b.type = 'button'; b.addEventListener('click', () => { S2.reminder = v; paint(); close(); }); pan.append(b); });
+        const cl = mk('label', 'qn-opt qn-custom'); cl.append(mk('span', '', 'Pick a time (IST)')); const inp = mk('input', 'co-input'); inp.type = 'datetime-local'; inp.value = S2.reminder || ''; inp.min = istStamp(now); inp.addEventListener('change', () => { S2.reminder = inp.value; paint(); }); cl.append(inp); pan.append(cl);
+        if (S2.reminder) { const x = mk('button', 'qn-opt qn-clear', 'No reminder'); x.type = 'button'; x.addEventListener('click', () => { S2.reminder = ''; paint(); close(); }); pan.append(x); }
+      });
+      const share = mk('label', 'qn-share'); const scb = document.createElement('input'); scb.type = 'checkbox'; scb.checked = S2.team; scb.addEventListener('change', () => { S2.team = scb.checked; paint(); }); share.append(scb, mk('span', '', 'Everyone can see'));
+      const vis = mk('span', 'qn-vis');
+      const acts = mk('div', 'qn-acts');
+      const save = mk('button', 'co-btn primary qn-save', n ? 'Save' : 'Add note'); save.type = 'submit';
+      if (n) {
+        const cancel = mk('button', 'co-btn', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', () => done(null));
+        const del = mk('button', 'icon-btn qn-del'); del.type = 'button'; del.setAttribute('aria-label', 'Delete note'); del.title = 'Delete note'; del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+        del.addEventListener('click', async () => { if (!confirm('Delete this note? It disappears for everyone it was shared with.')) return; st.busy = true; try { const r = await callApi({ action: 'noteDelete', id: n.id }); if (!r.ok) throw new Error(r.error || 'Not deleted'); st.notes = st.notes.filter((x) => x.id !== n.id); toast('Note deleted'); done(null); } catch (e) { toast(e.message, true); } st.busy = false; });
+        acts.append(del, cancel);
+      }
+      acts.append(save);
+      row.append(assignDd, remindDd, share, vis, acts);
+      f.append(field, chips, row);
+      // who it is tagged with, from the text
+      const tagged = () => {
+        const txt = ta.value, out = [], seen = new Set(), ps = people();
+        ps.forEach((p) => { const full = new RegExp('@' + p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w])', 'i'); const f1 = first(p.name); const uniq = ps.filter((x) => first(x.name).toLowerCase() === f1.toLowerCase()).length === 1;
+          if ((full.test(txt) || (uniq && new RegExp('@' + f1 + '(?![\\w])', 'i').test(txt))) && !seen.has(p.email)) { seen.add(p.email); out.push({ name: p.name, email: p.email }); } });
+        return out;
+      };
+      function paint() {
+        chips.replaceChildren();
+        S2.assign.forEach((a) => { const c = mk('span', 'qn-chip as'); c.append(CO.av(a.name), mk('span', '', a.name)); const x = mk('button', 'qn-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Remove ' + a.name); x.addEventListener('click', () => { S2.assign = S2.assign.filter((y) => y.email !== a.email); paint(); }); c.append(x); chips.append(c); });
+        if (S2.reminder) { const c = mk('span', 'qn-chip rm'); c.innerHTML = ICON_BELL; c.append(mk('span', '', remindText(S2.reminder))); const x = mk('button', 'qn-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Remove reminder'); x.addEventListener('click', () => { S2.reminder = ''; paint(); }); c.append(x); chips.append(c); }
+        chips.hidden = !chips.childElementCount;
+        assignDd.btn.querySelector('.qn-dd-l').textContent = S2.assign.length ? 'Assigned · ' + S2.assign.length : 'Assign';
+        remindDd.btn.querySelector('.qn-dd-l').textContent = S2.reminder ? 'Reminder set' : 'Remind';
+        const tg = tagged(), who = new Set([...tg.map((p) => p.email), ...S2.assign.map((a) => a.email)]);
+        vis.textContent = S2.team ? 'Everyone with access can see this' : who.size ? 'Visible to you and ' + [...who].map((e) => first(nameOf2(e))).slice(0, 3).join(', ') + (who.size > 3 ? ' +' + (who.size - 3) : '') : 'Only you can see this';
+        save.disabled = !ta.value.trim();
+      }
+      // @ autocomplete
+      let sel = 0, match = null;
+      const closePop = () => { pop.hidden = true; match = null; };
+      const showPop = () => {
+        const upto = ta.value.slice(0, ta.selectionStart), m = upto.match(/(^|\s)@([\w.\- ]{0,20})$/);
+        if (!m) { closePop(); return; }
+        const q = norm(m[2]), list = people().filter((p) => !q || norm(p.name).startsWith(q) || norm(p.name).split(' ').some((w) => w.startsWith(q))).slice(0, 6);
+        if (!list.length || (m[2].endsWith(' ') && !list.some((p) => norm(p.name).startsWith(q)))) { closePop(); return; }
+        match = { start: upto.length - m[2].length - 1, list }; sel = Math.min(sel, list.length - 1);
+        pop.replaceChildren(); list.forEach((p, i) => { const o = mk('button', 'qn-pop-o' + (i === sel ? ' on' : '')); o.type = 'button'; o.setAttribute('role', 'option'); o.append(CO.av(p.name), mk('span', '', p.name)); o.addEventListener('mousedown', (e) => { e.preventDefault(); pick(i); }); pop.append(o); });
+        pop.hidden = false;
+      };
+      const pick = (i) => { const p = match.list[i], v = ta.value, end = ta.selectionStart; ta.value = v.slice(0, match.start) + '@' + p.name + ' ' + v.slice(end); const c = match.start + p.name.length + 2; ta.setSelectionRange(c, c); closePop(); paint(); ta.focus(); };
+      ta.addEventListener('input', () => { sel = 0; showPop(); paint(); ta.style.height = 'auto'; ta.style.height = Math.min(320, ta.scrollHeight + 2) + 'px'; });
+      ta.addEventListener('keydown', (e) => {
+        if (match && !pop.hidden) {
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + match.list.length) % match.list.length; showPop(); return; }
+          if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(sel); return; }
+          if (e.key === 'Escape') { closePop(); return; }
+        }
+        if (e.key === 'Enter' && !e.shiftKey && !n) { e.preventDefault(); f.requestSubmit(); }
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); f.requestSubmit(); }
+        if (e.key === 'Escape' && n) done(null);
+      });
+      ta.addEventListener('blur', () => setTimeout(closePop, 150));
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault(); const txt = ta.value.trim(); if (!txt || st.busy) return;
+        const lines = txt.split('\n'), title = lines[0].trim().slice(0, 160), body = lines.slice(1).join('\n').trim();
+        const mentions = tagged();
+        const keep = n ? (n.actions || []).filter((a) => !isAssign(a)) : [];
+        const actions = keep.concat(S2.assign.map((a) => ({ id: a.id || ('as-' + a.email.split('@')[0]).slice(0, 40), text: title, assignee: a.name, email: a.email, done: !!a.done, doneBy: a.doneBy || '', doneAt: a.doneAt || '' })));
+        const visibility = S2.team ? 'team' : (mentions.length || S2.assign.length || (n && (n.sharedWith || []).length)) ? 'people' : 'private';
+        const note = { title, body, mentions, actions, visibility, reminder: S2.reminder, sharedWith: n ? n.sharedWith || [] : [], type: n ? n.type : 'Discussion', date: n ? n.date : CO.today(), brand: n ? n.brand : '', category: n ? n.category : '', followUps: n ? n.followUps : '', pinned: n ? !!n.pinned : false };
+        st.busy = true; save.disabled = true; save.textContent = 'Saving…';
+        try {
+          const r = await callApi(Object.assign({ action: 'noteSave', note }, n ? { id: n.id, updatedAt: n.updatedAt } : {}));
+          if (!r.ok) { if (r.error === 'stale') { toast('Someone changed this note meanwhile. Showing the latest version.', true); await load(true); done(null); st.busy = false; return; } throw new Error(r.error || 'Not saved'); }
+          const saved = r.note || Object.assign({ id: r.id, createdBy: me(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), canEdit: true }, note);
+          st.notes = [saved].concat(st.notes.filter((x) => x.id !== saved.id));
+          const shared = new Set([...mentions.map((m) => m.email), ...S2.assign.map((a) => a.email)]);
+          toast(n ? 'Note saved' : shared.size ? 'Note added and shared with ' + [...shared].map((x) => first(nameOf2(x))).join(', ') : 'Note added');
+          if (!n) { ta.value = ''; S2.assign = []; S2.reminder = ''; S2.team = false; scb.checked = false; ta.style.height = ''; paint(); }
+          done(saved);
+        } catch (err) { toast('Not saved: ' + err.message, true); }
+        st.busy = false; save.textContent = n ? 'Save' : 'Add note'; paint();
+      });
+      paint();
+      f.focusText = () => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); };
+      f.setText = (v) => { ta.value = v; ta.dispatchEvent(new Event('input')); };
+      return f;
     }
-    $n('nb-add-action').addEventListener('click', () => { st.cur.actions = (st.cur.actions || []).concat({ id: Math.random().toString(36).slice(2, 10), text: '', assignee: '', email: '', due: '', done: false }); touch(); renderActions(); const ins = $n('nb-actions').querySelectorAll('.ai-text'); if (ins.length) ins[ins.length - 1].focus(); });
-    let dt = 0;
-    function touch() {
-      if (!st.cur || !st.cur.canEdit) return;
-      st.dirty = true; status();
-      clearTimeout(dt); dt = setTimeout(() => { if (st.cur && st.dirty) LS.set('co.nbdraft.' + (st.cur.id || 'new'), JSON.stringify({ updatedAt: st.cur.updatedAt || '', note: st.cur })); }, 400);
-    }
-    const bind = (id, key, ev) => $n(id).addEventListener(ev || 'input', (e) => { if (!st.cur) return; st.cur[key] = e.target.value; touch(); if (key === 'visibility') { renderShare(); renderFoot(); } });
-    bind('nb-title', 'title'); bind('nb-date', 'date', 'change'); bind('nb-type', 'type', 'change'); bind('nb-brand', 'brand'); bind('nb-cat', 'category'); bind('nb-vis', 'visibility', 'change'); bind('nb-follow', 'followUps'); bind('nb-remind', 'reminder', 'change');
-    $n('nb-pin').addEventListener('click', () => { if (!st.cur || !st.cur.canEdit) return; st.cur.pinned = !st.cur.pinned; $n('nb-pin').setAttribute('aria-pressed', String(st.cur.pinned)); touch(); });
+    let composer = null;
+    function mountComposer() { const host = $n('qn-new'); composer = editor(null, () => { flip(() => dash.draw('qn-board')); dash.draw('qn-tabs'); dash.draw('np-list'); }); host.replaceChildren(composer); }
+    document.addEventListener('click', (e) => { if (!e.target.closest('.qn-dd')) document.querySelectorAll('.qn-dd-pan').forEach((p) => { p.hidden = true; p.previousSibling.setAttribute('aria-expanded', 'false'); }); });
 
-    /* ---- @mentions ---- */
-    const body = $n('nb-body'), pop = $n('nb-pop');
-    let mq = null, msel = 0, mlist = [];
-    const caretXY = () => {
-      const m = document.createElement('div'), cs = getComputedStyle(body);
-      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'padding', 'border', 'boxSizing', 'whiteSpace', 'wordWrap', 'width'].forEach((k) => { m.style[k] = cs[k]; });
-      m.style.position = 'absolute'; m.style.visibility = 'hidden'; m.style.whiteSpace = 'pre-wrap'; m.style.wordWrap = 'break-word'; m.style.width = body.clientWidth + 'px';
-      m.textContent = body.value.slice(0, body.selectionStart); const sp = document.createElement('span'); sp.textContent = '​'; m.append(sp);
-      body.parentElement.append(m); const x = sp.offsetLeft, y = sp.offsetTop - body.scrollTop + parseFloat(cs.lineHeight); m.remove(); return { x, y };
-    };
-    const closePop = () => { pop.hidden = true; mq = null; };
-    function onBody() {
-      st.cur.body = body.value; touch(); syncMentions();
-      const before = body.value.slice(0, body.selectionStart), m = before.match(/(^|[\s(])@([^\s@]{0,24}(?: [^\s@]{0,24})?)$/);
-      if (!m) return closePop();
-      const q = m[2].toLowerCase(); mq = { start: body.selectionStart - m[2].length - 1 };
-      mlist = people().filter((p) => p.name.toLowerCase().includes(q) || (p.email || '').startsWith(q)).slice(0, 7);
-      if (!mlist.length) return closePop();
-      msel = 0; drawPop(); const xy = caretXY(); pop.style.left = Math.min(xy.x, body.clientWidth - 240) + 'px'; pop.style.top = xy.y + 6 + 'px'; pop.hidden = false;
-    }
-    function drawPop() { pop.replaceChildren(...mlist.map((p, i) => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', String(i === msel)); b.append(CO.av(p.name), p.name); const sm = document.createElement('small'); sm.textContent = p.email ? 'has access' : 'team list'; b.append(sm); b.addEventListener('mousedown', (e) => { e.preventDefault(); pick(i); }); return b; })); }
-    function pick(i) {
-      const p = mlist[i]; if (!p || !mq) return;
-      const v = body.value, end = body.selectionStart, ins = '@' + p.name + ' ';
-      body.value = v.slice(0, mq.start) + ins + v.slice(end); const c = mq.start + ins.length; body.setSelectionRange(c, c); closePop();
-      st.cur.body = body.value; touch(); syncMentions();
-      if (st.cur.visibility === 'private' && p.email) toast('Mentioned ' + p.name + '. Set "Who can see it" to share the note with them.');
-    }
-    body.addEventListener('input', onBody);
-    body.addEventListener('keydown', (e) => {
-      if (pop.hidden) return;
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); msel = (msel + (e.key === 'ArrowDown' ? 1 : -1) + mlist.length) % mlist.length; drawPop(); }
-      else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(msel); }
-      else if (e.key === 'Escape') { e.preventDefault(); closePop(); }
+    /* ---- the board ---- */
+    const TABS = [['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me'], ['assigned', 'Assigned to me'], ['reminders', 'Reminders']];
+    const inTab = (n, t) => t === 'all' || (t === 'mine' ? n.createdBy === me() : t === 'shared' ? n.createdBy !== me() : t === 'assigned' ? assignees(n).some((a) => a.email === me()) : !!n.reminder);
+    const matches = (n) => { const q = norm(st.q); if (!q) return true; return norm([n.title, n.body, nameOf2(n.createdBy), ...(n.mentions || []).map((m) => m.name), ...assignees(n).map((a) => a.assignee)].join(' ')).includes(q); };
+    dash.draw('qn-tabs', (el) => {
+      el.replaceChildren();
+      TABS.forEach(([k, l]) => {
+        const n = st.notes.filter((x) => inTab(x, k)).length, b = mk('button', 'qn-tab' + (st.f === k ? ' on' : '')); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(st.f === k));
+        b.append(mk('span', '', l)); if (k !== 'all' && n) b.append(mk('span', 'qn-n', String(n)));
+        b.addEventListener('click', () => { st.f = k; LS.set('co.qnf', k); dash.draw('qn-tabs'); flip(() => dash.draw('qn-board')); }); el.append(b);
+      });
     });
-    body.addEventListener('blur', () => setTimeout(closePop, 150));
-
-    /* ---- save / delete ---- */
-    async function save() {
-      const n = st.cur; if (!n || !n.canEdit) return;
-      if (!(n.title || '').trim() && !(n.body || '').trim()) { toast('Give the note a title or some text first.', true); return; }
-      const draftKey = 'co.nbdraft.' + (n.id || 'new'), copy = JSON.parse(JSON.stringify(n)), old = n.id ? st.notes.find((x) => x.id === n.id) : null;
-      const shown = Object.assign({}, copy, { id: n.id || 'tmp-' + Date.now(), pending: true, createdBy: copy.createdBy || (A.user ? A.user.email : ''), createdByName: (old && old.createdByName) || (A.user ? A.user.name || A.user.email : '') });
-      putLocal(shown); st.dirty = false; st.cur = null; show(); redraw();
-      bg(async () => {
-        const res = await post({ action: 'noteSave', id: copy.id || undefined, updatedAt: copy.updatedAt || undefined, note: payload(copy) });
-        LS.set(draftKey, null);
-        const i = st.notes.indexOf(shown), real = res.note ? named(res.note, old || shown) : Object.assign({}, shown, { id: res.id, pending: false });
-        if (i >= 0) st.notes[i] = real; else putLocal(real); redraw();
-      }, () => { const i = st.notes.indexOf(shown); if (i >= 0) { if (old) st.notes[i] = old; else st.notes.splice(i, 1); } LS.set(draftKey, JSON.stringify({ updatedAt: copy.updatedAt, note: copy })); }, 'Note');
+    function card(n) {
+      const c = mk('article', 'qn-note k-' + kindOf(n)); c.dataset.id = n.id;
+      if (st.editing === n.id) { c.classList.add('editing'); const ed = editor(n, (saved) => { st.editing = ''; flip(() => dash.draw('qn-board')); dash.draw('qn-tabs'); dash.draw('np-list'); }); c.append(ed); setTimeout(() => ed.focusText(), 30); return c; }
+      const t = mk('div', 'qn-text'); const ttl = mk('b', 'qn-title', n.title && n.title !== 'Untitled note' ? n.title : ''); if (ttl.textContent) t.append(ttl);
+      if (n.body) { const bd = mk('p', 'qn-body', n.body.length > 600 ? n.body.slice(0, 600) + '…' : n.body); t.append(bd); }
+      // highlight @tags
+      t.querySelectorAll('b, p').forEach((x) => { const parts = x.textContent.split(/(@[A-Z][\w.]*(?: [A-Z][\w.]*)?)/g); if (parts.length > 1) { x.replaceChildren(...parts.map((s) => (/^@/.test(s) ? mk('span', 'qn-tag', s) : document.createTextNode(s)))); } });
+      c.append(t);
+      const as = assignees(n), other = (n.actions || []).filter((a) => !isAssign(a));
+      if (as.length || other.length) {
+        const ul = mk('ul', 'qn-todo');
+        as.concat(other).forEach((a) => {
+          const li = mk('li', a.done ? 'done' : ''), can = n.createdBy === me() || a.email === me();
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!a.done; cb.disabled = !can; cb.setAttribute('aria-label', (isAssign(a) ? a.assignee : a.text) + (a.done ? ': done' : ': open'));
+          cb.addEventListener('click', (e) => e.stopPropagation());
+          cb.addEventListener('change', async () => { const was = a.done; a.done = cb.checked; li.classList.toggle('done', a.done); try { const r = await callApi({ action: 'noteAction', id: n.id, actionId: a.id, done: a.done }); if (!r.ok) throw new Error(r.error || 'Not saved'); n.actions = r.actions; dash.draw('np-list'); } catch (e) { a.done = was; cb.checked = was; li.classList.toggle('done', was); toast(e.message, true); } });
+          li.append(cb); if (isAssign(a)) { li.append(CO.av(a.assignee || nameOf2(a.email)), mk('span', '', (a.email === me() ? 'You' : a.assignee || nameOf2(a.email)) + (a.done ? ' · done' : ''))); } else li.append(mk('span', '', a.text + (a.assignee ? ' · ' + a.assignee : '')));
+          ul.append(li);
+        });
+        c.append(ul);
+      }
+      const meta = mk('div', 'qn-meta');
+      if (n.reminder) { const due = n.reminder <= istStamp(new Date()); const r = mk('span', 'qn-pill rm' + (due ? ' due' : '')); r.textContent = (due ? 'Reminder ' : '⏰ ') + remindText(n.reminder); meta.append(r); }
+      meta.append(mk('span', 'qn-pill vis', visText(n)));
+      c.append(meta);
+      const ft = mk('footer', 'qn-foot'); ft.append(CO.av(nameOf2(n.createdBy)), mk('span', '', (n.createdBy === me() ? 'You' : first(nameOf2(n.createdBy))) + ' · ' + ago(n.updatedAt || n.createdAt)));
+      if (n.createdBy === me()) { const e2 = mk('button', 'qn-edit', 'Edit'); e2.type = 'button'; ft.append(e2); }
+      c.append(ft);
+      if (n.createdBy === me() || n.canEdit) { c.tabIndex = 0; c.classList.add('can'); const go = () => { st.editing = n.id; flip(() => dash.draw('qn-board')); }; c.addEventListener('click', (e) => { if (e.target.closest('input, a')) return; go(); }); c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) go(); }); }
+      return c;
     }
-    form.addEventListener('submit', (e) => { e.preventDefault(); save(); });
-    document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && dash.params().tab === 'notes' && st.cur) { e.preventDefault(); save(); } });
-    $n('nb-delete').addEventListener('click', async () => {
-      const n = st.cur; if (!n || !n.id) return;
-      const saved = st.notes.find((x) => x.id === n.id); st.cur = null; st.dirty = false; LS.set('co.nbdraft.' + n.id, null); show(); if (saved) softDelete(saved);
+    dash.draw('qn-board', (el) => {
+      el.replaceChildren();
+      if (!st.loaded) { el.append(mk('p', 'qn-empty', A.mode === 'auth' ? 'Loading notes…' : 'Sign in to use notes.')); return; }
+      const list = st.notes.filter((n) => inTab(n, st.f) && matches(n)).sort((a, b) => (b.pinned - a.pinned) || String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+      if (!list.length) { el.append(mk('p', 'qn-empty', st.q ? 'No notes match “' + st.q + '”.' : st.f === 'all' ? 'No notes yet. Write one above; tag someone with @ to share it with them.' : st.f === 'assigned' ? 'Nothing assigned to you.' : st.f === 'reminders' ? 'No reminders set.' : st.f === 'shared' ? 'Nobody has shared a note with you yet.' : 'You have not written a note yet.')); return; }
+      list.slice(0, 120).forEach((n) => el.append(card(n)));
     });
-    $n('nb-back').addEventListener('click', () => { if (!confirmDiscard()) return; st.cur = null; st.dirty = false; show(); });
-    document.querySelectorAll('[data-new-note]').forEach((b) => b.addEventListener('click', () => startNew(b.dataset.newNote)));
-    window.addEventListener('beforeunload', (e) => { if (st.dirty) { e.preventDefault(); e.returnValue = ''; } });
+    let qT = 0; $n('qn-q').addEventListener('input', (e) => { clearTimeout(qT); qT = setTimeout(() => { st.q = e.target.value.trim(); dash.draw('qn-board'); }, 200); });
 
+    /* Start a note from elsewhere (Meetings "Take notes"): opens Notes with the composer filled in. */
+    function startNew(kind, preset) {
+      dash.setParams({ tab: 'notes' });
+      setTimeout(() => { if (!composer) mountComposer(); if (preset) composer.setText(preset); composer.focusText(); }, 120);
+    }
+    const select = (id) => { dash.setParams({ tab: 'notes' }); setTimeout(() => { const c = document.querySelector('.qn-note[data-id="' + CSS.escape(id) + '"]'); if (c) { c.scrollIntoView({ behavior: 'smooth', block: 'center' }); c.classList.add('flash'); setTimeout(() => c.classList.remove('flash'), 1600); } }, 300); };
     const myActions = () => {
       const out = []; if (!A.user) return out;
       st.notes.forEach((n) => (n.actions || []).forEach((a) => { if (a.email === A.user.email) out.push(Object.assign({ note: n.title, noteId: n.id }, a)); }));
@@ -3245,13 +3162,9 @@
   const fmtRange = (a, b) => CO.istTime(a) + ' – ' + CO.istTime(b);
   const untilText = (iso) => { const m = Math.round((new Date(iso) - Date.now()) / 60000); if (m <= 0) return 'Now'; if (m < 60) return 'in ' + m + ' min'; const h = Math.floor(m / 60); return m < 24 * 60 ? 'in ' + h + ' h ' + (m % 60 ? (m % 60) + ' min' : '') : CO.istDateTime(iso); };
   function meetingNote(ev) {
-    NB.startNew('blank');
-    setTimeout(() => {
-      const t = document.getElementById('nb-title'); t.value = ev.title; t.dispatchEvent(new Event('input'));
-      const b = document.getElementById('nb-body');
-      b.value = 'Attendees: ' + ev.people.map((p) => '@' + p.name).join(' ') + '\n\nAgenda\n• \n\nNotes\n• \n\nDecisions\n• \n'; b.dispatchEvent(new Event('input'));
-    }, 80);
+    NB.startNew('meeting', ev.title + ' · ' + CO.fmtDate(CO.today()) + '\n' + ev.people.filter((p) => !p.self).slice(0, 8).map((p) => '@' + p.name).join(' ') + '\n');
   }
+
   dash.draw('cal', (el) => {
     el.replaceChildren();
     const head = document.createElement('div'); head.className = 'co-card-head';
@@ -3409,7 +3322,7 @@
     load(false);
     ASH.show(perm('fasty'));
     // Admins see how many access requests are waiting as soon as they open the dashboard.
-    if (isOwner()) callApi({ action: 'ver' }).then((b) => { if (b.ok && typeof b.pending === 'number') { AX.pending = b.pending; syncControls(); } }).catch(() => {});
+    if (isAdmin()) callApi({ action: 'ver' }).then((b) => { if (b.ok && typeof b.pending === 'number') { AX.pending = b.pending; syncControls(); } }).catch(() => {});
   }
   /* The session ended or access was removed: forget it and clear the page, so no data stays on screen. */
   let signingOut = false; // a background check that ends during sign-out must not replace the 'signed out' message
@@ -3470,7 +3383,23 @@
   const ASH = (() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const st = { msgs: [], busy: false, listening: false, speaking: false, viaVoice: false, ai: null, tts: false, rec: null, audio: null,
-      lang: LS.get('co.ashlang', 'en-IN'), voiceOn: LS.get('co.ashvoice', '1') !== '0', confirm: null };
+      lang: LS.get('co.ashlang', 'en-IN'), style: LS.get('co.ashstyle', 'english'), voiceOn: LS.get('co.ashvoice', '1') !== '0', confirm: null };
+    /* Languages: detected from what the person says or types (script, then common words), kept for the conversation
+       until they switch; the reply, the voice and the microphone all follow it. */
+    const LANGS = [['en-IN', 'English', 'English'], ['hi-IN', 'हिन्दी', 'Hindi'], ['mr-IN', 'मराठी', 'Marathi'], ['bn-IN', 'বাংলা', 'Bengali'], ['ta-IN', 'தமிழ்', 'Tamil'], ['te-IN', 'తెలుగు', 'Telugu'], ['gu-IN', 'ગુજરાતી', 'Gujarati'], ['kn-IN', 'ಕನ್ನಡ', 'Kannada'], ['ml-IN', 'മലയാളം', 'Malayalam'], ['pa-IN', 'ਪੰਜਾਬੀ', 'Punjabi']];
+    const HINGLISH = /\b(hai|hain|ho|ka|ke|ki|ko|kitne|kitna|kya|kyun|kyu|kaun|kab|kaise|dikhao|kholo|batao|bata|mera|mere|meri|aaj|kal|mahine|hafte|chalo|karo|kar|do|nahi|nahin|haan|bhi|aur|wala|wali|abhi|sab|kuch|pending|chahiye)\b/gi;
+    const MARATHI = /(आहे|आहेत|काय|मला|तुम्ही|किती|कोण|आज|उद्या|झाले|नाही|करा|दाखवा)/;
+    function detectLang(t) {
+      const x = String(t || '');
+      const scripts = [[/[\u0980-\u09FF]/, 'bn-IN'], [/[\u0B80-\u0BFF]/, 'ta-IN'], [/[\u0C00-\u0C7F]/, 'te-IN'], [/[\u0A80-\u0AFF]/, 'gu-IN'], [/[\u0C80-\u0CFF]/, 'kn-IN'], [/[\u0D00-\u0D7F]/, 'ml-IN'], [/[\u0A00-\u0A7F]/, 'pa-IN']];
+      for (const [re, code] of scripts) if (re.test(x)) return { lang: code, style: 'native' };
+      if (/[\u0900-\u097F]/.test(x)) return { lang: MARATHI.test(x) ? 'mr-IN' : 'hi-IN', style: 'native' };
+      const words = x.toLowerCase().match(/[a-z]+/g) || []; if (words.length < 2) return null;
+      const hi = (x.match(HINGLISH) || []).length;
+      return hi >= 1 && hi / words.length >= 0.15 ? { lang: 'hi-IN', style: 'hinglish' } : { lang: 'en-IN', style: 'english' };
+    }
+    const replyName = () => (st.style === 'hinglish' ? 'Hinglish (Hindi in Latin script)' : (LANGS.find((l) => l[0] === st.lang) || LANGS[0])[2]);
+    const setLang = (lang, style) => { if (lang === st.lang && style === st.style) return; st.lang = lang; st.style = style; LS.set('co.ashlang', lang); LS.set('co.ashstyle', style); if (typeof paintHead === 'function') paintHead(); };
     const el = (t, c, txt) => { const e = document.createElement(t); if (c) e.className = c; if (txt != null) e.textContent = txt; return e; };
     const ICON = {
       mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
@@ -3523,7 +3452,8 @@
     const panel = el('section', 'ash'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Fasty, dashboard assistant'); panel.hidden = true;
     const head = el('header', 'ash-head'); const hOrb = orb('sm');
     const hT = el('div', 'ash-title'); hT.append(el('b', '', 'Fasty'), el('small', '', 'Your dashboard helper'));
-    const langB = el('button', 'ash-chip'); langB.type = 'button';
+    const langB = el('select', 'ash-lang'); langB.setAttribute('aria-label', 'Language');
+    [['auto-hinglish', 'Hinglish']].concat(LANGS.map((l) => [l[0], l[1]])).forEach(([v, t]) => langB.append(new Option(t, v)));
     const voiceB = el('button', 'ash-ib'); voiceB.type = 'button';
     const closeB = el('button', 'ash-ib'); closeB.type = 'button'; closeB.innerHTML = ICON.x; closeB.setAttribute('aria-label', 'Close assistant');
     head.append(hOrb, hT, langB, voiceB, closeB);
@@ -3540,7 +3470,8 @@
     document.body.append(fab, hint, panel);
 
     const paintHead = () => {
-      langB.textContent = st.lang === 'hi-IN' ? 'हिन्दी' : 'English'; langB.title = 'Listening for ' + (st.lang === 'hi-IN' ? 'Hindi' : 'English and Hinglish') + '. Click to switch.';
+      langB.value = st.style === 'hinglish' ? 'auto-hinglish' : st.lang; langB.title = 'Fasty replies and listens in ' + replyName() + '. It switches automatically when you use another language.';
+      input.placeholder = st.style === 'hinglish' ? 'Kuch bhi poocho…' : st.lang === 'hi-IN' ? 'कुछ भी पूछिए…' : 'Ask anything, in any Indian language…';
       voiceB.innerHTML = st.voiceOn ? ICON.vol : ICON.mute; voiceB.setAttribute('aria-label', st.voiceOn ? 'Turn voice replies off' : 'Turn voice replies on'); voiceB.setAttribute('aria-pressed', String(st.voiceOn));
       micB.setAttribute('aria-label', st.listening ? 'Stop listening' : 'Speak'); micB.disabled = !SR;
       if (!SR) micB.title = 'Voice input needs Chrome, Edge or Safari. You can type instead.';
@@ -3561,14 +3492,14 @@
       if (log.childElementCount) return;
       const h = Number(CO.istParts ? CO.istParts().hour : new Date().getHours());
       const part = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-      bubble('bot', part + (A.user && A.user.name ? ', ' + A.user.name.split(' ')[0] : '') + '! I am Fasty. Ask me about tasks, deadlines, the team or reports, or tell me where to go. Hindi, English, Hinglish, sab chalega.');
+      bubble('bot', part + (A.user && A.user.name ? ', ' + A.user.name.split(' ')[0] : '') + '! I am Fasty. Ask me about tasks, deadlines, the team or reports, or tell me where to go. Speak or type in English, Hindi, Hinglish or any Indian language, and I will reply in the same one.');
     };
     let warmAt = 0; const warm = () => { if (A.mode === 'auth' && Date.now() - warmAt > 90 * 1000) { warmAt = Date.now(); callApi({ action: 'me' }).catch(() => {}); } };
     function open() { warm(); hint.hidden = true; panel.hidden = false; fab.classList.add('on'); paintHead(); greet(); drawSugg(); mood(); setTimeout(() => input.focus(), 60); }
     function close() { panel.hidden = true; fab.classList.remove('on'); stopListening(); stopSpeaking(); }
     fab.addEventListener('click', () => (panel.hidden ? open() : close()));
     closeB.addEventListener('click', close);
-    langB.addEventListener('click', () => { st.lang = st.lang === 'hi-IN' ? 'en-IN' : 'hi-IN'; LS.set('co.ashlang', st.lang); paintHead(); });
+    langB.addEventListener('change', () => { const v = langB.value; if (v === 'auto-hinglish') setLang('hi-IN', 'hinglish'); else setLang(v, v === 'en-IN' ? 'english' : 'native'); });
     voiceB.addEventListener('click', () => { st.voiceOn = !st.voiceOn; LS.set('co.ashvoice', st.voiceOn ? '1' : '0'); if (!st.voiceOn) stopSpeaking(); paintHead(); });
     document.addEventListener('keydown', (e) => {
       if (e.altKey && (e.key === 'a' || e.key === 'A')) { e.preventDefault(); if (panel.hidden) open(); else close(); }
@@ -3592,13 +3523,17 @@
 
     /* ---- speaking ---- */
     const plain = (t) => String(t).replace(/[*_#`>|]/g, '').replace(/\s+/g, ' ').trim();
-    const langOf = (t) => (/[ऀ-ॿ]/.test(t) ? 'hi-IN' : 'en-IN');
+    const langOf = (t) => { const d = detectLang(t); return d && d.style === 'native' ? (d.lang === 'hi-IN' && st.lang === 'mr-IN' ? 'mr-IN' : d.lang) : 'en-IN'; };
     let voices = []; const loadVoices = () => { try { voices = window.speechSynthesis ? speechSynthesis.getVoices() : []; } catch (e) { voices = []; } };
     if (window.speechSynthesis) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
-    const FEMALE = /neerja|swara|heera|kalpana|veena|lekha|aditi|raveena|female|zira|samantha|ava|allison|susan|serena|karen|moira|tessa|fiona|google uk english female|google हिन्दी|google hindi/i;
+    // Same female voice character everywhere: natural speech uses Aoede in every language; the device fallback picks a female voice.
+    const FEMALE = /neerja|swara|heera|kalpana|veena|lekha|aditi|raveena|aarohi|tanishaa|pallavi|shruti|dhwani|sapna|sobhana|vaani|female|zira|samantha|ava|allison|susan|serena|karen|moira|tessa|fiona|google uk english female|google हिन्दी|google hindi|google বাংলা|google தமிழ்|google తెలుగు|google ગુજરાતી|google ಕನ್ನಡ|google മലയാളം|google मराठी/i;
+    const MALE = /\b(madhur|prabhat|manohar|bashkar|valluvar|mohan|niranjan|gagan|midhun|ravi|hemant|kunal|prateek|aarav|male|david|mark|guy|daniel|alex|fred|rishi)\b/i;
+    const chosen = new Map();
     const pickVoice = (lang) => {
-      const base = lang.slice(0, 2), score = (v) => (v.lang === lang ? 40 : v.lang.startsWith(base) ? 25 : v.lang.startsWith('en') ? 5 : -100) + (FEMALE.test(v.name) ? 30 : 0) + (/natural|online|neural|premium|enhanced/i.test(v.name) ? 20 : 0) + (/google/i.test(v.name) ? 6 : 0) - (/male\b|ravi|hemant|prabhat|david|mark|daniel|alex\b/i.test(v.name) && !FEMALE.test(v.name) ? 40 : 0);
-      return voices.slice().sort((a, b) => score(b) - score(a))[0] || null;
+      if (chosen.has(lang) && voices.includes(chosen.get(lang))) return chosen.get(lang); // one voice per language for the whole session
+      const base = lang.slice(0, 2), score = (v) => (v.lang === lang ? 40 : v.lang.startsWith(base) ? 25 : v.lang.startsWith('en') ? 5 : -100) + (FEMALE.test(v.name) ? 60 : 0) - (MALE.test(v.name) && !FEMALE.test(v.name) ? 90 : 0) + (/natural|online|neural|premium|enhanced/i.test(v.name) ? 20 : 0) + (/google/i.test(v.name) ? 6 : 0);
+      const v = voices.slice().sort((a, b) => score(b) - score(a))[0] || null; if (v) chosen.set(lang, v); return v;
     };
     function done() { st.speaking = false; mood(); if (st.viaVoice && st.lastAskedQuestion && !panel.hidden) setTimeout(listen, 250); }
     // Gemini returns raw 16-bit PCM; wrap it in a WAV header so the browser can play it. Chirp returns MP3.
@@ -3616,7 +3551,7 @@
     const splitVoice = (t) => { const ss = String(t).split(/(?<=[.!?।])\s+/).filter(Boolean), out = []; let cur = ''; ss.forEach((x) => { const cap = out.length ? 420 : 170, j = (cur ? cur + ' ' : '') + x; if (!cur || (out.length ? j.length <= cap : cur.length < 25 && j.length <= cap)) cur = j; else { out.push(cur); cur = x; } }); if (cur) out.push(cur); return out.slice(0, 5); };
     function deviceSpeak(text, lang, my) {
       if (!window.speechSynthesis || my !== vtok) { if (my === vtok) done(); return; }
-      speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); const v = pickVoice(lang); if (v) u.voice = v; u.lang = v ? v.lang : lang; u.rate = 1.03; u.pitch = 1.05;
+      speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); const v = pickVoice(lang); if (v) u.voice = v; u.lang = v ? v.lang : lang; u.rate = 1.02; u.pitch = 1.08;
       u.onend = () => { if (my === vtok) done(); }; u.onerror = () => { if (my === vtok) { st.speaking = false; mood(); } }; speechSynthesis.speak(u);
     }
     const playAudio = (item, my) => new Promise((resolve) => {
@@ -3806,7 +3741,7 @@
           ', creatives completed this month ' + CO.sumQty(done) + '. Open (overdue) by designer: ' + [...by].sort((a, b) => b[1][0] - a[1][0]).slice(0, 14).map(([d, o]) => d + ' ' + o[0] + (o[1] ? ' (' + o[1] + ')' : '')).join(', ');
       } catch (e) { return ''; }
     };
-    const ctx = () => { const p = dash.params(); return { page: PAGE_NAME[p.tab] || 'Overview', filters: [p.src ? CO.cls(p.src) : '', p.designer, p.brand, p.type].filter(Boolean).join(', '), lang: st.lang, snap: snap() }; };
+    const ctx = () => { const p = dash.params(); return { page: PAGE_NAME[p.tab] || 'Overview', filters: [p.src ? CO.cls(p.src) : '', p.designer, p.brand, p.type].filter(Boolean).join(', '), lang: st.lang, reply: replyName(), snap: snap() }; };
     /* Instant answers: clear, simple questions (what is overdue / due today / tomorrow, someone's open work, deliveries this
        period, "open Tasks") are answered from the data already in the browser, with no round trip to the AI. */
     const QUICK_OK = new Set(('what whats s is are the a an how many much show me list which tasks task there any kitne kitna kya hai hain ka ke ki ko mere my mera meri ' +
@@ -3834,6 +3769,7 @@
     async function ask(q, viaVoice) {
       if (st.busy) return;
       st.viaVoice = viaVoice; stopSpeaking(); sugg.replaceChildren();
+      { const d = detectLang(q); if (d) setLang(d.lang, d.style); }
       bubble('me', q); st.busy = true; mood(); shown = null;
       const wait = bubble('bot wait'); wait.append(el('span', 'dots', '')); wait.setAttribute('aria-label', 'Fasty is thinking');
       let answer = '', voice = null;

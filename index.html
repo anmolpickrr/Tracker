@@ -7,13 +7,13 @@
 <meta name="description" content="Creative Ops: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
 <meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/ https://www.googleapis.com; frame-src https://accounts.google.com/gsi/; media-src data: blob:; form-action 'none'; base-uri 'none'; object-src 'none'">
-<link rel="icon" href="assets/favicon.svg?v=20261111r" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.svg?v=20261111t" type="image/svg+xml">
 <meta name="theme-color" content="#0f0f0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=20261111r">
-<script src="assets/theme.js?v=20261111r"></script>
+<link rel="stylesheet" href="assets/style.css?v=20261111t">
+<script src="assets/theme.js?v=20261111t"></script>
 </head>
 <body>
 <div class="boot" id="boot" aria-hidden="true"><div class="boot-lock"><svg class="logo mark boot-mark" viewBox="30 140 452 212" aria-hidden="true"><defs><clipPath id="mk-c-boot"><path d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></clipPath><linearGradient id="mk-t-boot" x1="0" x2="1"><stop offset="0" class="mk-s0"/><stop offset="1" class="mk-s1"/></linearGradient><linearGradient id="mk-h-boot" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect class="sl sl1" x="-170" y="160" width="300" height="9" rx="4.5" fill="url(#mk-t-boot)"/><rect class="sl sl2" x="-230" y="244" width="360" height="7" rx="3.5" fill="url(#mk-t-boot)"/><rect class="sl sl3 lime" x="-120" y="214" width="220" height="6" rx="3" /><rect class="sl sl4" x="-260" y="350" width="330" height="8" rx="4" fill="url(#mk-t-boot)"/><rect class="lt lt1" x="20" y="176" width="190" height="24" rx="12" fill="url(#mk-t-boot)"/><rect class="lt lt2" x="-150" y="292" width="200" height="24" rx="12" fill="url(#mk-t-boot)"/><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/><g clip-path="url(#mk-c-boot)"><rect class="mk-shine" x="0" y="140" width="130" height="212" fill="url(#mk-h-boot)"/></g></svg></div></div>
@@ -390,81 +390,13 @@
 
   <!-- NOTES -->
   <section class="co-panel" id="notes" data-panel="notes" hidden>
-    <div class="nb">
-      <div class="nb-bar nb-index" aria-label="Notes">
-        <input class="co-input co-search" id="nb-q" type="search" placeholder="Search notes, people, brands…" aria-label="Search notes">
-        <div class="seg chips" data-draw="nb-chips" role="group" aria-label="Show"></div>
-        <div class="nb-filters">
-          <select class="co-select" id="nb-f-brand" aria-label="Brand"><option value="">All brands</option></select>
-          <select class="co-select" id="nb-f-cat" aria-label="Category"><option value="">All categories</option></select>
-        </div>
+    <div class="qn">
+      <div class="qn-top">
+        <div class="qn-tabs" data-draw="qn-tabs" role="tablist" aria-label="Show notes"></div>
+        <label class="qn-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="qn-q" type="search" placeholder="Search notes" aria-label="Search notes"></label>
       </div>
-      <form class="nb-quick" id="nb-quick" autocomplete="off">
-        <span class="nbq-tape" aria-hidden="true"></span>
-        <textarea id="nb-quick-text" rows="2" maxlength="4000" aria-label="Quick note" placeholder="Jot a quick note and press Enter…"></textarea>
-        <div class="nbq-bar">
-          <div class="nbq-types" role="radiogroup" aria-label="Kind of note">
-            <button type="button" role="radio" data-qt="Meeting" aria-checked="true"><i></i>Meeting</button>
-            <button type="button" role="radio" data-qt="Discussion" aria-checked="false"><i></i>Idea / discussion</button>
-            <button type="button" role="radio" data-qt="Personal" aria-checked="false"><i></i>Personal</button>
-          </div>
-          <span class="nbq-who" id="nb-quick-who">Visible to everyone</span>
-          <span class="nbq-tip">First line = title · <kbd>[]</kbd> = to-do · <kbd>Shift</kbd>+<kbd>Enter</kbd> = new line</span>
-          <button class="co-link nbq-more" type="button" data-new-note="standup" title="Start today's stand-up notes from the template">Stand-up template</button>
-          <button class="co-link nbq-more" type="button" id="nb-quick-full" title="Open the full note editor (mentions, owners, due dates, reminders)">Full editor</button>
-          <button class="co-btn primary" type="submit" id="nb-quick-add">Add sticky</button>
-        </div>
-      </form>
-      <div class="nb-empty" id="nb-empty">
-        <svg class="nb-doodle" viewBox="0 0 120 60" aria-hidden="true"><path d="M8 44c14-22 30-30 46-18s28 10 40-6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 9"/><path d="M98 12l10 8-12 4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <p><b>Your board is empty.</b> Type a note above and press Enter, or start from the stand-up template.</p>
-      </div>
-      <div class="nb-board nb-list" data-draw="nb-list"></div>
-      <div class="nb-scrim" id="nb-scrim" hidden></div>
-      <article class="paper" id="nb-paper"><span class="paper-rings" aria-hidden="true"></span>
-        <form class="paper-sheet" id="nb-form" autocomplete="off" hidden>
-          <div class="paper-top">
-            <button class="icon-btn nb-back" id="nb-back" type="button" aria-label="Back to notes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
-            <span class="paper-status" id="nb-status" role="status"></span>
-            <div class="paper-actions">
-              <button class="icon-btn" id="nb-pin" type="button" aria-label="Pin note" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></svg></button>
-              <button class="icon-btn danger" id="nb-delete" type="button" aria-label="Delete note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
-              <button class="co-btn primary" id="nb-save" type="submit">Save &amp; close</button>
-            </div>
-          </div>
-          <div class="nb-tchips" id="nb-tchips" role="radiogroup" aria-label="Kind of note"><button type="button" role="radio" data-tt="Meeting"><i></i>Meeting</button><button type="button" role="radio" data-tt="Discussion"><i></i>Idea / discussion</button><button type="button" role="radio" data-tt="Personal"><i></i>Personal</button></div>
-          <input class="paper-title" id="nb-title" placeholder="Title, e.g. Daily stand-up" maxlength="160" aria-label="Title">
-          <div class="paper-lines">
-            <textarea class="paper-body" id="nb-body" placeholder="Start writing… type @ to mention someone" aria-label="Note"></textarea>
-            <div class="mention-pop" id="nb-pop" role="listbox" hidden></div>
-          </div>
-          <div class="paper-mentions" id="nb-mentions"></div>
-          <section class="paper-sec">
-            <h3>Action items</h3>
-            <div class="ai-list" id="nb-actions"></div>
-            <button class="co-link ai-add" id="nb-add-action" type="button">+ Add an action item</button>
-          </section>
-          <details class="nb-details" id="nb-details"><summary>Details <span>date, brand, who can see it, follow-ups, reminder</span></summary>
-          <div class="paper-meta">
-            <label class="pm"><span>Date</span><input class="co-input" id="nb-date" type="date"></label>
-            <label class="pm"><span>Type</span><select class="co-select" id="nb-type"><option>Meeting</option><option>Discussion</option><option>Personal</option></select></label>
-            <label class="pm"><span>Brand</span><input class="co-input" id="nb-brand" list="nb-brands" maxlength="80" placeholder="Any brand"></label>
-            <label class="pm"><span>Category</span><input class="co-input" id="nb-cat" list="nb-cats" maxlength="60" placeholder="Stand-up, Review…"></label>
-            <label class="pm"><span>Who can see it</span><select class="co-select" id="nb-vis"><option value="private">Only me</option><option value="people">People I mention or add</option><option value="team">Everyone with access</option></select></label>
-          </div>
-          <div class="paper-share" id="nb-share">
-            <span class="ps-l">Shared with</span><span class="ps-chips" id="nb-share-chips"></span>
-            <select class="co-select" id="nb-share-add" aria-label="Add a person"><option value="">+ Add person</option></select>
-          </div>
-          <section class="paper-sec two">
-            <div><h3>Follow-ups</h3><textarea class="co-input paper-small" id="nb-follow" rows="3" maxlength="4000" placeholder="Points to check next time"></textarea></div>
-            <div><h3>Reminder</h3><input class="co-input" id="nb-remind" type="datetime-local"><p class="co-note">IST. Emailed to you (and anyone with an open action item) at this time.</p></div>
-          </section>
-          </details>
-          <footer class="paper-foot" id="nb-foot"></footer>
-        </form>
-        <datalist id="nb-brands"></datalist><datalist id="nb-cats"><option>Stand-up</option><option>Review</option><option>Planning</option><option>Client call</option><option>1:1</option><option>Brainstorm</option></datalist>
-      </article>
+      <div class="qn-new" id="qn-new"></div>
+      <div class="qn-board" data-draw="qn-board" data-masonry aria-live="polite"></div>
     </div>
   </section>
 
@@ -475,14 +407,14 @@
         <div class="co-card-head"><div><h2 class="co-h2">Live team activity</h2><p class="co-note">Who has the dashboard open right now and what they are doing, refreshed every few seconds. Only you see this. Everyone is told this is visible to admins.</p></div></div>
         <div class="pr-list" data-draw="presence"></div>
       </div>
-      <form class="co-card st-card" id="st-form" autocomplete="off">
+      <form class="co-card st-card" id="st-form" autocomplete="off" data-owner-only>
         <div class="co-card-head"><div><h2 class="co-h2">Reminders and notifications</h2><p class="co-note">Daily briefings for the whole team, in India Standard Time.</p></div></div>
         <div class="st-grid">
           <label class="co-field">Morning briefing<input class="co-input" id="st-morning" type="time" required></label>
           <label class="co-field">Evening wrap-up<input class="co-input" id="st-evening" type="time" required></label>
         </div>
         <label class="sw"><input type="checkbox" id="st-email"><span class="sw-ui"></span><span>Email the briefings to everyone with access (each person can opt out)</span></label>
-        <label class="sw"><input type="checkbox" id="st-presence"><span class="sw-ui"></span><span>Show who is online, where they are and what they do (only you see it)</span></label>
+        <label class="sw"><input type="checkbox" id="st-presence"><span class="sw-ui"></span><span>Show who is online, where they are and what they do (you and Admins see it)</span></label>
         <label class="co-field">Fasty, the assistant: AI model<select class="co-select" id="st-model"><option value="auto">Automatic (recommended): free Gemini if its key is set, else Claude Haiku 5.5</option><option value="gemini">Free: Google Gemini Flash (free tier)</option><option value="haiku">Fast and lowest cost (Claude Haiku 5.5): about ₹1,000 a month for the team</option><option value="sonnet">Balanced (Claude Sonnet 5.5): about ₹17,000 a month</option><option value="opus">Most capable (Claude Opus 5.5): about ₹34,000 a month</option></select><span class="co-note">Claude costs are estimates for 20 people asking 20 questions each working day; Gemini's free tier has no charge but daily limits. See the README.</span></label>
         <label class="co-field">Google Chat space (optional): briefings arrive as phone notifications in Google Chat
           <input class="co-input" id="st-chat" type="url" placeholder="https://chat.googleapis.com/v1/spaces/…"></label>
@@ -498,11 +430,11 @@
     </div>
     <div class="co-card">
       <div class="co-card-head">
-        <div><h2 class="co-h2">People with access</h2><p class="co-note"><b>View only</b>: sees the dashboard and downloads reports. <b>Can edit</b>: also changes tasks. <b>Manager</b>: also Data health, workload estimates and the team list. Click a name to fine-tune exactly which pages each person sees, what they can do and whether they see all tasks or only their own. Giving access, the activity log, live team activity and settings are always yours alone. Changes apply within 30 seconds, even on open dashboards.</p></div>
+        <div><h2 class="co-h2">People with access</h2><p class="co-note"><b>View only</b>: sees their own work and downloads reports. <b>Can edit</b>: also changes their tasks. <b>Admin</b>: sees everyone's work, Data health, workload, the team list, live team activity and the activity log, and can give access. Pick the <b>sections</b> each person can open when you add or approve them; click a name to change it later. Settings stay yours alone. Changes apply within 30 seconds, even on open dashboards.</p></div>
       </div>
       <form class="ax-add" id="ax-add" autocomplete="off">
         <input class="co-input" id="ax-email" type="email" placeholder="name@pickrr.com" aria-label="Work email" required maxlength="120">
-        <select class="co-select" id="ax-role" aria-label="Access level"><option value="Viewer">View only</option><option value="Editor">Can edit</option><option value="Admin">Manager</option></select>
+        <select class="co-select" id="ax-role" aria-label="Access level"><option value="Viewer">View only</option><option value="Editor">Can edit</option><option value="Admin">Admin</option></select>
         <button class="co-btn primary" type="submit">Give access</button>
         <span class="co-note" id="ax-msg" role="status"></span>
       </form>
@@ -604,7 +536,7 @@
   <div class="np-foot">
     <label class="sw"><input type="checkbox" id="np-desktop"><span class="sw-ui"></span><span>Desktop alerts (briefings, meetings, reminders) while the dashboard is open</span></label>
     <label class="sw"><input type="checkbox" id="np-email"><span class="sw-ui"></span><span>Email me the daily briefings</span></label>
-    <p class="np-privacy" id="np-privacy">The dashboard owner (Creative Head) can see when you are online, which page you are on, what you are doing there (for example a filter or the task you are editing) and your recent actions on the dashboard: pages opened, buttons clicked, boxes ticked, filters chosen, searches and updates saved. What you type in notes is never shared. It is kept for 30 minutes, then deleted.</p>
+    <p class="np-privacy" id="np-privacy">The Creative Head and Admins can see when you are online, which page you are on, what you are doing there (for example a filter or the task you are editing) and your recent actions on the dashboard: pages opened, buttons clicked, boxes ticked, filters chosen, searches and updates saved. What you type in notes is never shared. It is kept for 30 minutes, then deleted.</p>
   </div>
 </div>
 
@@ -665,8 +597,8 @@
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-<script src="assets/config.js?v=20261111r"></script>
-<script src="assets/data.js?v=20261111r"></script>
-<script src="assets/app.js?v=20261111r"></script>
+<script src="assets/config.js?v=20261111t"></script>
+<script src="assets/data.js?v=20261111t"></script>
+<script src="assets/app.js?v=20261111t"></script>
 </body>
 </html>
