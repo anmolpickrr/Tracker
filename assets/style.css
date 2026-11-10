@@ -1878,3 +1878,20 @@ button.co-kpi:hover { transform: translateY(-2px); box-shadow: 0 18px 34px -22px
   .co-kpi .co-kpi-label { font-size: 12.5px; }
   .co-kpi .co-kpi-val { font-size: 28px; }
 }
+/* Needs attention: minimise / expand */
+.na-acts { display: flex; align-items: center; gap: 8px; flex: none; }
+.na-tog { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 9px; border: 0; border-radius: 999px; background: var(--sunken); color: var(--fg); font: 600 12.5px var(--font-body); cursor: pointer; transition: background .2s, color .2s; }
+.na-tog:hover { background: var(--primary); color: var(--primary-ink); }
+.na-tog:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.na-tog svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transform: rotate(180deg); transition: transform .3s cubic-bezier(.2, .8, .2, 1); }
+.na-tog[aria-expanded="false"] svg { transform: none; }
+.co-card.na.collapsed { padding-top: 16px; padding-bottom: 16px; animation: na-in .3s cubic-bezier(.2, .8, .2, 1); }
+.co-card.na.collapsed .na-head { align-items: center; }
+.co-card.na.collapsed .co-note b { color: var(--fg); font-weight: 700; }
+@keyframes na-in { from { opacity: .4; transform: translateY(-4px); } }
+/* minimised: the card is one line across the top, and the side column flows into two columns under it */
+.ov-grid.fill.na-min { grid-template-columns: minmax(0, 1fr); }
+.ov-grid.fill.na-min > .co-card.na:first-child { height: auto; min-height: 0; grid-template-rows: auto; }
+.ov-grid.na-min .ov-side { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .ov-grid.na-min .ov-side { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .na-tog span { display: none; } .na-tog { padding: 0 9px; } }

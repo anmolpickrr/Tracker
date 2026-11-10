@@ -792,7 +792,7 @@
   // Empty results caused by the page filters say so, with one click to clear them.
   const filterNote = () => { const p = dash.params(); return [p.src ? CO.cls(p.src) : '', p.designer === '__none' ? 'Unassigned' : p.designer, p.brand, p.type].filter(Boolean).join(', '); };
   const clearBtn = () => { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-btn'; b.textContent = 'Clear filters'; b.addEventListener('click', () => dash.setParams({ src: '', designer: '', brand: '', type: '' })); return b; };
-  const NA = { f: LS.get('co.naf', 'all'), all: false };
+  const NA = { f: LS.get('co.naf', 'all'), all: false, min: LS.get('co.namin', '') === '1' };
   dash.draw('attn', (el) => {
     if (CO.notReady(el, 'box')) return;
     const t = CO.today(), tm = CO.addDays(t, 1);
@@ -807,7 +807,21 @@
     const hl = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Needs attention'; const cnt = document.createElement('span'); cnt.className = 'na-count' + (rows.length ? '' : ' ok'); cnt.textContent = rows.length; h2.append(cnt);
     const note = document.createElement('p'); note.className = 'co-note'; const fl = filterNote(); note.textContent = rows.length ? 'Oldest deadline first. Click a task to open it.' + (fl ? ' Filtered: ' + fl + '.' : '') : fl ? 'Nothing for ' + fl + '.' : 'Nothing overdue, due soon or waiting on changes.'; hl.append(h2, note);
     const go = document.createElement('button'); go.type = 'button'; go.className = 'co-link'; go.textContent = 'All overdue'; go.classList.add('na-go'); go.dataset.goTasks = 'overdue'; go.addEventListener('click', () => CO.goTasks('overdue'));
-    head.append(hl, go); el.append(head);
+    // Minimise / expand: minimised, the card is one line with the counts and the column beside it reflows under it.
+    const tog = document.createElement('button'); tog.type = 'button'; tog.className = 'na-tog'; tog.setAttribute('aria-expanded', String(!NA.min)); tog.setAttribute('aria-controls', 'na-body');
+    tog.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>'; tog.append(Object.assign(document.createElement('span'), { textContent: NA.min ? 'Expand' : 'Minimise' }));
+    tog.title = NA.min ? 'Show the list' : 'Minimise to one line';
+    tog.addEventListener('click', () => { NA.min = !NA.min; LS.set('co.namin', NA.min ? '1' : ''); el._drawn = false; dash.draw('attn'); const t2 = el.querySelector('.na-tog'); if (t2) t2.focus(); });
+    const acts = document.createElement('div'); acts.className = 'na-acts'; acts.append(go, tog);
+    head.append(hl, acts); el.append(head);
+    el.classList.toggle('collapsed', NA.min); const grid = el.closest('.ov-grid'); if (grid) grid.classList.toggle('na-min', NA.min);
+    if (NA.min) {
+      if (rows.length) {
+        const parts = [[rows.filter((r) => r.due === 'overdue').length, 'overdue'], [rows.filter((r) => r.due === 'today').length, 'due today'], [rows.filter((r) => r.open && r.eta === tm).length, 'due tomorrow'], [rows.filter((r) => r.stage === 'Changes requested').length, 'changes requested']].filter((x) => x[0]);
+        note.replaceChildren(); parts.forEach(([n2, l2], i) => { const b2 = document.createElement('b'); b2.textContent = n2; note.append(i ? ' · ' : '', b2, ' ' + l2); });
+      }
+      return;
+    }
     if (!rows.length) { const ok = document.createElement('div'); ok.className = 'na-clear'; ok.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>'; const p = document.createElement('p'); p.textContent = fl ? 'Nothing needs attention with these filters.' : 'The team is on schedule.'; ok.append(p); if (fl) ok.append(clearBtn()); el.append(ok); return; }
     // composition bar (each task counted once, by its most urgent reason)
     const comp = { late: 0, today: 0, tomorrow: 0, changes: 0 }; rows.forEach((r) => comp[cat(r)]++);
@@ -828,7 +842,7 @@
     el.append(chips);
     const fn = (F.find((f) => f[0] === NA.f) || F[0])[2];
     const list = rows.filter(fn), LIM = matchMedia('(max-width: 640px)').matches ? 8 : 40;
-    const ul = document.createElement('ul'); ul.className = 'na-list';
+    const ul = document.createElement('ul'); ul.className = 'na-list'; ul.id = 'na-body';
     (NA.all ? list : list.slice(0, LIM)).forEach((r, i) => {
       const k = cat(r), li = document.createElement('li'); li.className = 'na-row k-' + k + (animate ? ' in' : ''); li.style.setProperty('--i', Math.min(i, 12)); li.dataset.uid = r.uid; li.tabIndex = 0;
       const rail = document.createElement('i'); rail.className = 'na-rail';
