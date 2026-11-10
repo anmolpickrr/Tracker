@@ -311,8 +311,8 @@ Rows without an ID, or whose ID appears twice in a tab, are not edited from the 
 - **Same task in two tabs** (for example a task carried into a new year's sheet with the same ID): counted once, from the tab listed first.
 - **Two different tasks with the same ID** in one tab: both are counted, and both are flagged "Duplicate ID" so the ID can be fixed.
 - **Creatives** = sum of "No. of Creatives" when that column exists, else 1 per task.
-- **Open** = To be planned + WIP + Changes requested (plus any status the dashboard doesn't recognise). **Overdue** = open with a Design ETA before today.
-- **Delivered** = design status DONE/Delivered, dated by **Delivered On** if the sheet has it, else the Design ETA (else the request date), and never later than today.
+- **Open** = To be planned + WIP + Changes requested (plus any status the dashboard doesn't recognise). **Overdue** = open with a Design ETA before today. Under review, Shared, No update, Awaiting brief and Hold are never overdue.
+- **Completed** = design status DONE (Delivered, approved) or REJECTED, dated by **Delivered On** if the sheet has it, else the Design ETA (else the request date), and never later than today. Shared and No update are shared work, not completed.
 - **Mistyped years** (e.g. a February 2026 request typed as 2025, or "0206") are corrected using the tab's normal date range, the neighbouring rows and the other date on the row. Every correction is listed in Sheet health; no date is changed silently.
 - Brand and creative-type spellings that differ only in case or a plural "s" are merged ("Gif"/"GIF", "Listings"/"Listing").
 - A task shared by two designers counts once in team totals and once for each designer in per-person views.
@@ -353,20 +353,28 @@ What each comparison is against:
 
 **Design status → dashboard status**
 
-| In the sheet | Shown as | Open work (workload, overdue) | Notes |
-| --- | --- | --- | --- |
-| TBP, blank | To be planned | yes | |
-| WIP | WIP | yes | |
-| Changes | Changes requested | yes | |
-| Shared, Pending approval, Review | Pending approval | no | Waiting for the client. Never overdue, not in workload; shown as "Pending approval · Nd" since the ETA. |
-| DONE, Delivered | Delivered | no | |
-| Rejected | Delivered | no | Counted as completed ("rejected by client"). The redesign is a new task (new row). |
-| No update | Delivered | no | Shared with no response: counted as shared and completed ("no client update"). |
-| HOLD, Paused | Hold | no | Never overdue. |
-| Deprioritized, Cancelled | Deprioritised | no | Never overdue. |
-| blank/TBP with content WIP | Incomplete brief | no | The content writer's work in progress ("content WIP"); counts in the writer's load, not the designer's. |
-| blank/TBP with content Incomplete brief, Pending or TBD | Incomplete brief | no | |
-| anything else | shown as typed, flagged in Sheet health | yes | |
+Design Status is the primary field. Content Status only decides whether a task whose design has not started is ready to be picked up. Every task is counted in exactly one of these:
+
+| Design status (content status) | Shown as | Counts as |
+| --- | --- | --- |
+| TBP or blank (content DONE or blank) | To be planned | **Open** design work: workload, overdue once the Design ETA has passed |
+| WIP | WIP | **Open** |
+| CHANGES | Changes requested | **Open** (shared, revisions asked) |
+| UNDER REVIEW | Under review | Team finished it; the Creative Head hasn't reviewed it yet. Not workload, never overdue |
+| SHARED | Shared | **Shared** work: with the client or another team for approval. Never overdue |
+| NO UPDATE | No update | **Shared** work: no reply despite follow-ups. Never overdue, not an approved delivery |
+| DONE | Delivered | **Completed**, approved |
+| REJECTED | Rejected | **Completed** for bandwidth and productivity (the time was spent), **not** an approved delivery; a redo is a new task |
+| TBP or blank, content PENDING / INCOMPLETE BRIEF / TBP / WIP / SHARED / CHANGES | Awaiting brief (says which: pending discussion, incomplete brief, ready for scripting, brief in progress, brief with client, brief changes requested) | The brief isn't approved, so not design workload and never overdue. The Content Owner's work |
+| HOLD, or design not started and content HOLD | Hold | Parked, never overdue |
+| DEPRIORITIZED | Deprioritised | No longer required |
+| anything else | shown as typed, flagged in Data health | Open |
+
+**Units:** status counts (open, overdue, shared, under review, awaiting brief) are **tasks**; completed output (this month, reports, per designer per day) is **creatives** (the *No. of Creatives* quantity, 1 per task if blank). The Overview's *Completed this month* shows how many were approved and how many rejected.
+
+**Who a task belongs to:** only the people named in Designer/Editor (External) or Creator (Internal). A task with nobody named is **Unassigned (not allotted)** and is never counted for any person. A task shared by two people counts once in team totals and appears in both people's own views. The Team table ends with an *Unassigned* row, a *Not shown here* row (people hidden or not on the team list) and an *All tasks (each counted once)* row that matches the Overview.
+
+**Creative_ID:** SRAP = External (Paid) sheet, SRA = Internal (Marketing) sheet. Missing IDs, IDs in the wrong sheet and repeated IDs are listed in Data health.
 
 **Designers** come from *Designer/Editor* (Paid) and *Creator* (Marketing). Several names in one cell ("Rajnish Shubham Rana", "Yashika Agrawal, Sagun") are split into each person, and a task shared by two people counts for both.
 

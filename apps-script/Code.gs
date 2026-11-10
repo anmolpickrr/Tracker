@@ -331,11 +331,14 @@ function setMember_(body) {
 const STATUS_WORDS = {
   'To be planned': ['TBP', 'To be planned', 'Not started'],
   'WIP': ['WIP', 'In Progress', 'Work in progress'],
-  'Pending approval': ['Under Review', 'Shared', 'Review', 'In Review'],
-  'Changes requested': ['Changes', 'Changes Requested', 'Revision'],
+  'Under review': ['UNDER REVIEW', 'Under Review', 'In Review', 'Review'],
+  'Shared': ['SHARED', 'Shared'],
+  'Changes requested': ['CHANGES', 'Changes', 'Changes Requested', 'Revision'],
   'Delivered': ['DONE', 'Delivered', 'Completed'],
+  'Rejected': ['REJECTED', 'Rejected'],
+  'No update': ['NO UPDATE', 'No Update'],
   'Hold': ['HOLD', 'On Hold'],
-  'Deprioritised': ['DEPRIORITIZED', 'Rejected', 'Cancelled']
+  'Deprioritised': ['DEPRIORITIZED', 'Deprioritized', 'Cancelled']
 };
 const QTY_HEADER = /^(no\.?\s*of\s*creatives?|number of creatives?|qty|quantity|creatives?\s*count|count of creatives?)$/;
 
@@ -392,7 +395,7 @@ function updateTask_(body) {
   const written = {};
   if (f.status != null) {
     track(c.status, function (cell) { cell.setValue(statusVal); written.status = statusVal; });
-    if (f.status === 'Delivered' && c.delivered >= 0 && !clean_(sheet.getRange(row, c.delivered + 1).getDisplayValue())) {
+    if ((f.status === 'Delivered' || f.status === 'Rejected') && c.delivered >= 0 && !clean_(sheet.getRange(row, c.delivered + 1).getDisplayValue())) {
       track(c.delivered, function (d) { d.setValue(today_()); written.deliveredOn = true; });
     }
   }
@@ -1037,7 +1040,7 @@ function sendDigests_(kind, onlyTo) {
   const team = {
     overdue: open.filter(function (r) { return r.eta && r.eta < today; }), today: open.filter(function (r) { return r.eta === today; }),
     tomorrow: open.filter(function (r) { return r.eta === tomorrow; }), unassigned: open.filter(function (r) { return !r.list.length; }),
-    review: t.tasks.filter(function (r) { return r.stage === 'Pending approval'; }), deliveredToday: t.tasks.filter(function (r) { return r.stage === 'Delivered' && r.ddate === today; })
+    review: t.tasks.filter(function (r) { return r.shared; }), deliveredToday: t.tasks.filter(function (r) { return r.done && r.ddate === today; })
   };
   const notes = allNotes_().filter(function (n) { return !n.deleted; });
   users_().list.filter(function (u) { return u.status === 'Approved' && u.reminders !== false && (!onlyTo || u.email === onlyTo); }).forEach(function (u) {
@@ -1144,8 +1147,8 @@ function snapshot_(day) {
     const t = tasksNow_().tasks, open = t.filter(function (r) { return r.open; }), m = day.slice(0, 7);
     const sum = function (rs) { return rs.reduce(function (a, r) { return a + (r.qty || 1); }, 0); };
     const row = ["'" + day, open.length, open.filter(function (r) { return r.eta && r.eta < day; }).length, open.filter(function (r) { return r.eta === day; }).length,
-      t.filter(function (r) { return r.stage === 'Pending approval'; }).length, open.filter(function (r) { return !r.designers; }).length, t.filter(function (r) { return r.stage === 'Incomplete brief'; }).length,
-      sum(t.filter(function (r) { return r.stage === 'Delivered' && r.month === m; }))];
+      t.filter(function (r) { return r.shared; }).length, open.filter(function (r) { return !r.designers; }).length, t.filter(function (r) { return r.awaiting; }).length,
+      sum(t.filter(function (r) { return r.done && r.month === m; }))];
     const sh = histSheet_(), last = sh.getLastRow();
     const days = last > 1 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(function (x) { return x[0]; }) : [];
     const at = days.indexOf(day);
@@ -1361,30 +1364,46 @@ function testRead() {
 
   /* ---------- Status ---------- */
   const title = (s) => s.toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase());
+  /* Status definitions from the Creative Head (Nov 2026). Design Status is the primary field; Content Status only decides
+     whether a task that design has not started is ready to be picked up. Every task gets exactly one stage:
+       TBP (or blank) + content DONE (or blank) = To be planned  ready for a designer/editor          OPEN design work
+       WIP                                          = WIP                                               OPEN design work
+       CHANGES                                      = Changes requested  shared, revisions asked       OPEN design work
+       UNDER REVIEW                                 = Under review  team finished, Creative Head reviewing (not workload, never overdue)
+       SHARED                                       = Shared  with the client, waiting for approval    SHARED work (never overdue)
+       NO UPDATE                                    = No update  shared, no reply after follow-ups     SHARED work (never overdue)
+       DONE                                         = Delivered  delivered and approved                COMPLETED work
+       REJECTED                                     = Rejected  delivered, rejected by client          COMPLETED work (bandwidth),
+                                                                                                        not an approved delivery
+       TBP (or blank) + content PENDING / INCOMPLETE BRIEF / TBP / WIP / SHARED / CHANGES
+                                                    = Awaiting brief  the brief is not approved yet (sub-status says why)
+       HOLD, or not started + content HOLD          = Hold
+       DEPRIORITIZED                                = Deprioritised  no longer required */
+  const BRIEF = { 'PENDING': 'Brief pending discussion', 'TBD': 'Brief pending discussion', 'INCOMPLETE BRIEF': 'Incomplete brief', 'INCOMPLETE': 'Incomplete brief',
+    'TBP': 'Brief ready for scripting', 'WIP': 'Brief in progress', 'SHARED': 'Brief with client', 'CHANGES': 'Brief changes requested' };
   function stageOf(ds0, cs0) {
     const ds = clean(ds0).toUpperCase(), cs = clean(cs0).toUpperCase();
-    /* Status rules agreed with the Creative Head (Nov 2026):
-       DONE = delivered. REJECTED = delivered, then rejected by the client: counts as completed work (the time was spent);
-       the redo is a new task. NO UPDATE = shared with the client long ago, no reply despite follow-ups: counts as completed.
-       SHARED = Pending approval (with the client): never overdue, not in workload. HOLD = Hold, DEPRIORITIZED = Deprioritised:
-       never overdue, not in workload. Content INCOMPLETE BRIEF / PENDING / TBD (or WIP while design hasn't started) = Incomplete brief. */
-    if (['DONE', 'DELIVERED', 'COMPLETED', 'COMPLETE'].includes(ds)) return ['Delivered', false];
-    if (ds === 'REJECTED') return ['Delivered', false, 'Rejected by client'];
-    if (ds === 'NO UPDATE') return ['Delivered', false, 'No client update'];
+    if (['DONE', 'DELIVERED', 'COMPLETED', 'COMPLETE', 'APPROVED'].includes(ds)) return ['Delivered', false];
+    if (ds === 'REJECTED') return ['Rejected', false];
+    if (ds === 'NO UPDATE') return ['No update', false];
+    if (['UNDER REVIEW', 'IN REVIEW', 'REVIEW', 'INTERNAL REVIEW'].includes(ds)) return ['Under review', false];
+    if (['SHARED', 'SENT', 'SENT FOR APPROVAL', 'PENDING APPROVAL'].includes(ds)) return ['Shared', false];
     if (['WIP', 'IN PROGRESS', 'WORK IN PROGRESS', 'ONGOING', 'IN-PROGRESS'].includes(ds)) return ['WIP', true];
-    if (['SHARED', 'UNDER REVIEW', 'IN REVIEW', 'REVIEW', 'SENT FOR REVIEW'].includes(ds)) return ['Pending approval', false];
     if (['CHANGES', 'CHANGES REQUESTED', 'REVISION', 'REWORK', 'FEEDBACK'].includes(ds)) return ['Changes requested', true];
     if (['HOLD', 'ON HOLD', 'PAUSED'].includes(ds)) return ['Hold', false];
     if (['DEPRIORITIZED', 'DEPRIORITISED', 'CANCELLED', 'CANCELED', 'DROPPED', 'NOT NEEDED'].includes(ds)) return ['Deprioritised', false];
     if (ds === '' || ['TBP', 'TO BE PLANNED', 'NOT STARTED', 'PLANNED', 'TODO', 'TO DO'].includes(ds)) {
       if (cs === 'HOLD') return ['Hold', false];
-      if (cs === 'WIP') return ['Incomplete brief', false, 'Content in progress'];
-      if (['INCOMPLETE BRIEF', 'PENDING', 'TBD', 'TBP'].includes(cs)) return ['Incomplete brief', false];
+      if (BRIEF[cs]) return ['Awaiting brief', false, BRIEF[cs]];
       return ['To be planned', true];
     }
     return [title(clean(ds0)), true];
   }
-  const KNOWN = ['Delivered', 'WIP', 'Pending approval', 'Changes requested', 'Hold', 'Deprioritised', 'To be planned', 'Incomplete brief'];
+  /* What each stage counts towards (one place, used by every page, report, briefing and the assistant). */
+  const GROUPS = { 'To be planned': 'open', 'WIP': 'open', 'Changes requested': 'open', 'Under review': 'review', 'Shared': 'shared', 'No update': 'shared',
+    'Delivered': 'done', 'Rejected': 'done', 'Awaiting brief': 'brief', 'Hold': 'hold', 'Deprioritised': 'dropped' };
+  function groupOf(stage) { const g = GROUPS[stage] || 'open'; return { group: g, open: g === 'open', done: g === 'done', shared: g === 'shared', review: g === 'review', brief: g === 'brief' }; }
+  const KNOWN = Object.keys(GROUPS);
 
   const TYPES = { 'video (in-house)': 'In-House Video', 'in-house video': 'In-House Video', 'a+': 'A+ Content', 'a++': 'A+ Content', 'static ad': 'Static', 'static ads': 'Static', 'carousel ': 'Carousel', 'carousel ads': 'Carousel', 'gif ads': 'GIF', 'ai ugc video': 'AI Video', 'in-house edit': 'Video Edit', 'reels': 'Reel' };
   const typeOf = (s) => { const c = clean(s); if (!c) return 'Unspecified'; return TYPES[c.toLowerCase()] || c; };
@@ -1466,7 +1485,8 @@ function testRead() {
     }
 
     // Designer cells: an email becomes a name ("neha@shiprocket.com" → "Neha").
-    const fromEmail = (v) => clean(v).replace(/([A-Za-z0-9._-]+)@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m, u) => u.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+    // Emails become names (neha@… → Neha), and names typed together without a space ("Shubham RanaHimanshu Saxena") are separated.
+    const fromEmail = (v) => clean(v).replace(/([A-Za-z0-9._-]+)@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m, u) => u.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())).replace(/([a-z])([A-Z][a-z])/g, '$1 $2');
     const designersOf = designerSplitter(both.map(([r]) => fromEmail(r.designer)));
 
     // One spelling per brand and per creative type (case, spacing and plurals merged; the most used spelling wins).
@@ -1527,21 +1547,28 @@ function testRead() {
       if (!req && clean(r.req_text) && !flags.includes('Request date unreadable')) flags.push('Request date unreadable');
       if (!eta && clean(r.eta_text) && !flags.includes('ETA unreadable')) flags.push('ETA unreadable');
       if (req && eta && days(req, eta) < 0) flags.push('ETA before request date');
-      const [stage, open, sub] = stageOf(r.design_status, r.content_status);
+      const [stage, open0, sub] = stageOf(r.design_status, r.content_status);
+      const G = groupOf(stage), open = KNOWN.includes(stage) ? G.open : open0;
       if (!KNOWN.includes(stage)) flags.push('Unrecognised status');
       const des = designersOf(fromEmail(r.designer));
+      const dsU = clean(r.design_status).toUpperCase(), csU = clean(r.content_status).toUpperCase(), idU = clean(r.id).toUpperCase();
       if (open && !eta) flags.push('Open, no ETA');
-      if ((open || stage === 'Pending approval') && !des.length) flags.push('No designer assigned');
-      if (stage === 'Delivered' && !des.length) flags.push('Delivered, no designer');
-      if (stage === 'Delivered' && !/^https?:/i.test(clean(r.creative_link))) flags.push('Delivered, no creative link');
+      if ((open || G.review || G.shared) && !des.length) flags.push('No designer assigned');
+      if (G.done && !des.length) flags.push('Completed, no designer');
+      if (G.done && !/^https?:/i.test(clean(r.creative_link))) flags.push('Completed, no creative link');
+      if (!dsU && !csU) flags.push('Design and content status blank');
+      if ((G.done || G.shared || G.review) && ['PENDING', 'INCOMPLETE BRIEF', 'TBD'].includes(csU)) flags.push('Design finished but brief not approved');
       if (!clean(r.brand)) flags.push('No brand');
+      if (!idU) flags.push('No Creative_ID');
+      else if (source === 'Paid' ? !/^SRAP\d/.test(idU) : !/^SRA\d/.test(idU)) flags.push(source === 'Paid' ? 'ID should start with SRAP (External sheet)' : 'ID should start with SRA (Internal sheet)');
       if (clean(r.id) && idCount.get((r.src || '') + '|' + clean(r.id)) > 1) flags.push('Duplicate ID');
       let uid = (r.src || source) + ':' + (clean(r.id) || 'row' + (r.row || i + 2));
       while (seen.has(uid)) uid += '·';
       seen.add(uid);
       // Delivery date: the Delivered On column if the sheet has one, else the ETA (or request date).
       // A delivered task can't have been delivered in the future, so a later ETA counts as today.
-      let ddate = stage === 'Delivered' ? (r.delivered_on || eta || req || null) : null;
+      // Completed work (DONE, REJECTED) is dated by Delivered On, else the Design ETA (the actual delivery date once done), else the request date.
+      let ddate = G.done ? (r.delivered_on || eta || req || null) : null;
       if (ddate && ddate > today) ddate = today;
       const pri = clean(r.priority).toUpperCase();
       const t0 = typeOf(r.type);
@@ -1550,8 +1577,9 @@ function testRead() {
         brand: clean(r.brand) ? brandName.get(brandKey(clean(r.brand))) : 'No brand',
         topic: clean(r.topic), type: typeName.get(typeKey(t0)) || t0, channel: clean(r.channel), qty: r.qty || 1,
         priority: /^P\d$/.test(pri) ? pri : '', owner: clean(r.owner),
-        designers: des.join(' + '), stage, open, sub: sub || '', design_status: clean(r.design_status), req, eta,
-        ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: stage === 'Delivered' ? (r.delivered_on ? 'delivered' : eta ? 'eta' : 'request') : '',
+        designers: des.join(' + '), stage, open, group: G.group, done: G.done, shared: G.shared, review: G.review, awaiting: G.brief,
+        sub: sub || '', design_status: clean(r.design_status), content_status: clean(r.content_status), req, eta,
+        ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: G.done ? (r.delivered_on ? 'delivered' : eta ? 'eta' : 'request') : '',
         live_status: clean(r.live_status).replace(/^Luanch/i, 'Launch'),
         brief: clean(r.brief), link: clean(r.creative_link), file: clean(r.open_file),
         flags: flags.join('; ')
@@ -1568,7 +1596,7 @@ function testRead() {
   }
   const OPEN_STAGES = ['To be planned', 'WIP', 'Changes requested'];
 
-  const api = { kindOf, parseDate, parseSource, parseTeam, stageOf, buildTasks, designerSplitter, columnsOf, OPEN_STAGES };
+  const api = { kindOf, parseDate, parseSource, parseTeam, stageOf, groupOf, GROUPS, buildTasks, designerSplitter, columnsOf, OPEN_STAGES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.CODATA = api;
 })(typeof window !== 'undefined' ? window : globalThis);
 /* ==== END data.js ==== */
@@ -1625,9 +1653,9 @@ const ASSIST_SYSTEM = [
   'Actions: you can open sections, apply filters, open a task and, for Editors and Admins, change a task\'s status, ETA, designer or priority. Before any change, say exactly what you will change and ask "Shall I go ahead?". Only call update_task after the person clearly says yes in their latest message. The dashboard also shows a confirm button; if they cancel, accept it. Navigation and filters need no confirmation.',
   '',
   'Dashboard guide (use this to explain features and processes):',
-  '- Status meanings (agreed by the Creative Head): WIP = being worked on. Pending approval = shared with the client/marketer, waiting for approval (never overdue, not workload). Hold = paused, not needed now. Deprioritised = no longer required. Incomplete brief = the client/marketer has not given the full brief yet (content WIP counts only for the content writer). Rejected by client and No client update both count as delivered/completed work; a redo of a rejected creative is a new task. None of Pending approval, Hold, Deprioritised or Incomplete brief is ever overdue.',
+  '- Status meanings (Creative Head, Nov 2026). Design Status is the primary field. TBP = ready to be picked up (To be planned). WIP = in progress. CHANGES = shared and revisions requested (Changes requested). These three are OPEN work: workload, and overdue when the Design ETA has passed. UNDER REVIEW = the team finished it, the Creative Head has not reviewed it yet (Under review; not workload, never overdue). SHARED = with the client or another team for approval (shown as Shared). NO UPDATE = shared, no reply despite follow-ups; counted as SHARED work. DONE = delivered and approved (Delivered). REJECTED = delivered, then rejected by the client; counts as COMPLETED work for bandwidth but is NOT an approved delivery; a redo is a new task. Completed work = DONE + REJECTED. HOLD = on hold. DEPRIORITIZED = no longer required. When design has not started (TBP or blank), Content Status decides readiness: DONE (brief approved) = ready to pick up; PENDING (discussion), INCOMPLETE BRIEF, TBP (ready for final scripting), WIP (brief in progress), SHARED (brief with the client) and CHANGES (brief changes) = Awaiting brief, not design workload and never overdue; content HOLD = Hold. Content Owner prepares the brief. Creative_ID: SRAP = External (Paid) sheet, SRA = Internal (Marketing) sheet. A task with no designer is Unassigned and is never counted for any person.',
   '- Data comes live from two Google Sheets: the Paid (client) sheet, shown everywhere as External, and the Marketing team sheet, shown as Internal. Edits in the sheets appear within about 30 seconds.',
-  '- Statuses: To be planned, WIP, Changes requested, Pending approval, Incomplete brief (content not ready, design not started), Hold, Delivered, Deprioritised. Open = to be planned + in progress + changes requested. Overdue = open with a Design ETA before today. Creatives = the "No. of Creatives" quantity (1 per task if blank). Delivered work is dated by Delivered On, else the Design ETA.',
+  '- Statuses on the dashboard: To be planned, WIP, Changes requested, Under review, Shared, No update, Awaiting brief, Hold, Delivered, Rejected, Deprioritised. Open = to be planned + WIP + changes requested. Overdue = open with a Design ETA before today. Creatives = the "No. of Creatives" quantity (1 per task if blank). Completed work (Delivered + Rejected) is dated by Delivered On, else the Design ETA.',
   '- Overview: headline numbers (open, overdue, due today, in progress, under review, delivered this month with change vs the same days of last month), Needs attention list, Meetings (their Google Calendar), Unassigned queue, Pipeline, Delivery trend and Top brands (each graph has Day, Week, Month, Quarter, Year and Custom buttons), Workload by designer, Coming up.',
   '- Stand-up: one card per designer with overdue, due today and open work; sort options; good for the daily stand-up.',
   '- Tasks: the full searchable list; click a task to edit status, ETA, designer, priority and quantity (Editors and Admins). Changes are written to the sheet and logged.',
@@ -1643,7 +1671,7 @@ const ASSIST_TOOLS = [
     text: { type: 'string', description: 'Free text matched against ID, brand, creative title, type and designer.' },
     designer: { type: 'string', description: 'Designer name or part of it (fuzzy). Use "unassigned" for tasks without a designer.' },
     brand: { type: 'string' }, type: { type: 'string', description: 'Creative type, e.g. Static, Video, AI Video, GIF.' },
-    status: { type: 'string', enum: ['open', 'to be planned', 'wip', 'changes requested', 'pending approval', 'incomplete brief', 'hold', 'delivered', 'deprioritised', 'any'] },
+    status: { type: 'string', enum: ['open', 'to be planned', 'wip', 'changes requested', 'under review', 'shared', 'no update', 'awaiting brief', 'hold', 'completed', 'delivered', 'rejected', 'deprioritised', 'any'] },
     due: { type: 'string', enum: ['overdue', 'today', 'tomorrow', 'this week', 'next 7 days', 'no eta', 'any'] },
     classification: { type: 'string', enum: ['internal', 'external', 'any'] },
     delivered_from: { type: 'string', description: 'YYYY-MM-DD, for delivered tasks.' }, delivered_to: { type: 'string', description: 'YYYY-MM-DD' },
@@ -1654,7 +1682,7 @@ const ASSIST_TOOLS = [
   { name: 'my_notes', description: 'Search the notes this person can see, and list open action items (theirs by default).', input_schema: { type: 'object', properties: { text: { type: 'string' }, open_actions_only: { type: 'boolean' } } } },
   { name: 'navigate', description: 'Open a dashboard section and optionally set the filters (designer, brand, creative type, Internal/External), or the Reports period. Use when the person asks to see, show, open or go to something.', input_schema: { type: 'object', properties: { section: { type: 'string', enum: ['overview', 'standup', 'tasks', 'notes', 'team', 'reports', 'health', 'access'] }, designer: { type: 'string' }, brand: { type: 'string' }, type: { type: 'string' }, classification: { type: 'string', enum: ['internal', 'external', 'any'] }, clear_filters: { type: 'boolean' }, report_period: { type: 'string', enum: ['this-month', 'last-month', 'this-quarter', 'last-quarter', 'ytd', 'last-12', 'all'] } }, required: ['section'] } },
   { name: 'open_task', description: 'Open one task\'s detail window on screen.', input_schema: { type: 'object', properties: { id: { type: 'string', description: 'Task ID such as SRAP372.' } }, required: ['id'] } },
-  { name: 'update_task', description: 'Change a task in the sheet. Only after the person explicitly confirmed this exact change. Editors and Admins only; the screen asks them to confirm too.', input_schema: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['To be planned', 'WIP', 'Changes requested', 'Pending approval', 'Hold', 'Delivered', 'Deprioritised'] }, eta: { type: 'string', description: 'YYYY-MM-DD' }, designer: { type: 'string' }, priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] } }, required: ['id'] } }
+  { name: 'update_task', description: 'Change a task in the sheet. Only after the person explicitly confirmed this exact change. Editors and Admins only; the screen asks them to confirm too.', input_schema: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['To be planned', 'WIP', 'Under review', 'Shared', 'Changes requested', 'Delivered', 'Rejected', 'No update', 'Hold', 'Deprioritised'] }, eta: { type: 'string', description: 'YYYY-MM-DD' }, designer: { type: 'string' }, priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] } }, required: ['id'] } }
 ];
 ASSIST_TOOLS[ASSIST_TOOLS.length - 1].cache_control = { type: 'ephemeral' };
 // Only text, tool calls, tool results and the model's own thinking blocks are relayed; anything else is dropped.
@@ -2090,7 +2118,7 @@ function deliveryDates_() {
         const id = clean_(v[c.id]); if (!id) return;
         seen[id] = (seen[id] || 0) + 1;
         const key = name + ' | ' + id + (seen[id] > 1 ? ' #' + seen[id] : ''), was = prev[key];
-        const delivered = CODATA.stageOf(clean_(v[c.status]), '')[0] === 'Delivered', empty = !clean_(v[c.delivered]);
+        const delivered = CODATA.groupOf(CODATA.stageOf(clean_(v[c.status]), '')[0]).done, empty = !clean_(v[c.delivered]);
         if (delivered) {
           next[key] = 'delivered';
           if (first) { const d = fromLog[sheet.getName() + ' | ' + id]; if (empty && d) { writes.push([i + 2, d, id]); backfilled++; } }
@@ -2116,7 +2144,7 @@ function deliveredFromLog_() {
   const n = Math.min(sh.getLastRow() - 1, 20000), vals = sh.getRange(sh.getLastRow() - n + 1, 1, n, AUDIT_HEAD.length).getValues();
   vals.forEach(function (v) {
     const when = v[0] instanceof Date ? v[0] : new Date(v[0]), tab = String(v[5]), id = clean_(v[6]), after = clean_(v[10]);
-    if (!id || isNaN(when) || !after || CODATA.stageOf(after, '')[0] !== 'Delivered' || /\d/.test(after)) return;
+    if (!id || isNaN(when) || !after || !CODATA.groupOf(CODATA.stageOf(after, '')[0]).done || /\d/.test(after)) return;
     const k = tab + ' | ' + id, day = new Date(Utilities.formatDate(when, IST, 'yyyy/MM/dd'));
     if (!out[k] || out[k] < day) out[k] = day;
   });

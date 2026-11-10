@@ -251,7 +251,8 @@
     const istTime = (d) => new Date(d).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' });
     const istDateTime = (d, withYear) => new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: withYear ? 'numeric' : undefined, hour: 'numeric', minute: '2-digit' });
     const sumQty = (rs) => rs.reduce((a, r) => a + (r.qty || 1), 0);
-    const CLOSED = new Set(['Delivered', 'Deprioritised']);
+    // Closed = completed (DONE, REJECTED) or no longer needed; everything else is still in play.
+    const CLOSED = new Set(['Delivered', 'Rejected', 'Deprioritised']);
     const VIDEO = /video|gif|reel/i;
 
     let teamMemo = { data: undefined, out: null };
@@ -313,17 +314,20 @@
         case 'wip': return r.stage === 'WIP';
         case 'changes': return r.stage === 'Changes requested';
         case 'overdue': case 'today': case 'week': case 'noeta': return r.due === s;
-        case 'review': return r.stage === 'Pending approval';
-        case 'awaiting': return r.stage === 'Incomplete brief';
+        case 'review': return r.shared;
+        case 'underreview': return r.review;
+        case 'awaiting': return r.awaiting;
         case 'hold': return r.stage === 'Hold';
-        case 'delivered': return r.stage === 'Delivered';
-        case 'delivered-month': return r.stage === 'Delivered' && r.month === thisMonth();
-        case 'delivered-range': return r.stage === 'Delivered' && r.ddate && r.ddate >= ctx.from && r.ddate <= ctx.to;
+        case 'delivered': return r.done;
+        case 'approved': return r.stage === 'Delivered';
+        case 'rejected': return r.stage === 'Rejected';
+        case 'delivered-month': return r.done && r.month === thisMonth();
+        case 'delivered-range': return r.done && r.ddate && r.ddate >= ctx.from && r.ddate <= ctx.to;
         case 'dropped': return r.stage === 'Deprioritised';
         default: return true;
       }
     };
-    const stageColor = (s) => ({ 'WIP': 'var(--st-wip)', 'Pending approval': 'var(--st-review)', 'To be planned': 'var(--st-plan)', 'Incomplete brief': 'var(--st-await)', 'Hold': 'var(--st-hold)', 'Changes requested': 'var(--warn)', 'Delivered': 'var(--ok)' })[s];
+    const stageColor = (s) => ({ 'WIP': 'var(--st-wip)', 'Shared': 'var(--st-review)', 'No update': 'var(--st-review)', 'Under review': 'var(--st-ureview)', 'To be planned': 'var(--st-plan)', 'Awaiting brief': 'var(--st-await)', 'Rejected': 'var(--worse-fill)', 'Hold': 'var(--st-hold)', 'Changes requested': 'var(--warn)', 'Delivered': 'var(--ok)' })[s];
     // plain: the row already shows how late it is (a "when" badge), so the chip shows only the status.
     const chip = (r, plain) => {
       const el = document.createElement('span');
@@ -332,10 +336,14 @@
       else if (r.due === 'today') { cls = 's-warn'; if (!plain) txt = r.stage + ' · today'; }
       else if (r.stage === 'Changes requested') cls = 's-warn';
       else if (r.stage === 'Delivered') cls = 's-ok';
+      else if (r.stage === 'Rejected') cls = 's-warn';
+      else if (r.stage === 'No update') cls = 's-st st-pending-approval';
+      else if (r.stage === 'Under review') cls = 's-st st-under-review';
+      else if (r.awaiting) cls = 's-st st-incomplete-brief';
       else if (stageColor(r.stage)) cls = 's-st st-' + r.stage.toLowerCase().replace(/[^a-z]+/g, '-');
       // Extra detail agreed with the Creative Head: why something counts as delivered, and how long a client has had it.
-      if (!plain && r.sub && r.due !== 'overdue') { txt += ' · ' + (r.sub === 'Rejected by client' ? 'rejected' : r.sub === 'No client update' ? 'no client update' : 'content WIP'); if (r.sub === 'Rejected by client') cls = 's-warn'; }
-      if (!plain && r.stage === 'Pending approval' && r.eta && r.eta < today()) { const d = diffDays(r.eta, today()); txt += ' · ' + d + 'd'; el.title = 'With the client since about ' + fmtDate(r.eta) + ' (design ETA)'; }
+      if (r.awaiting && r.sub) txt = r.sub; // Awaiting brief: say what the brief is waiting for
+      if (!plain && r.shared && r.eta && r.eta < today()) { const d = diffDays(r.eta, today()); txt += ' · ' + d + 'd'; el.title = 'With the client since about ' + fmtDate(r.eta) + ' (design ETA)'; }
       el.className = 'chip ' + cls; el.textContent = txt;
       return el;
     };
@@ -620,7 +628,7 @@
     standup: ['Daily stand-up', 'One card per active designer: what is late, due today, in progress and up next.'],
     tasks: ['Tasks', 'Every task from both sheets. Click a row to open or edit it.'],
     team: ['Team', 'Workload, output and who is on the team.'],
-    reports: ['Delivery reports', 'Creatives delivered by month, brand, designer and creative type.'],
+    reports: ['Delivery reports', 'Completed work (delivered + rejected) by month, brand, designer and creative type.'],
     health: ['Data health', 'Rows that make tracking less reliable, and the connection to the sheets.'],
     access: ['Access & activity', 'Who can use the dashboard, and every change they made.']
   };
@@ -689,7 +697,7 @@
     const rs = CO.rows(), m = CO.thisMonth();
     const n = key === 'open' ? rs.filter((r) => r.open).length
       : key === 'wip' ? rs.filter((r) => r.stage === 'WIP').length
-      : key === 'delivered' ? CO.sumQty(rs.filter((r) => r.stage === 'Delivered' && r.month === m))
+      : key === 'delivered' ? CO.sumQty(rs.filter((r) => r.done && r.month === m))
       : rs.filter((r) => r.due === key).length;
     el.textContent = CO.num(n);
   };
@@ -728,8 +736,8 @@
     wip: (rs) => rs.filter((r) => r.stage === 'WIP'),
     overdue: (rs) => rs.filter((r) => r.due === 'overdue'),
     today: (rs) => rs.filter((r) => r.due === 'today'),
-    review: (rs) => rs.filter((r) => r.stage === 'Pending approval'),
-    delivered: (rs) => rs.filter((r) => r.stage === 'Delivered' && r.month === CO.thisMonth())
+    review: (rs) => rs.filter((r) => r.shared),
+    delivered: (rs) => rs.filter((r) => r.done && r.month === CO.thisMonth())
   };
   /* Numbers count up to their new value when they change. */
   const countTo = (el, n) => {
@@ -763,10 +771,13 @@
     else if (k === 'review') { const t0 = CO.today(), ds = list.map((r) => r.eta && r.eta < t0 ? CO.diffDays(r.eta, t0) : 0).sort((a, b) => a - b); el.textContent = ds.length ? 'Typical wait ' + ds[Math.floor((ds.length - 1) / 2)] + 'd · ' + ds.filter((d) => d > 14).length + ' over 14 days' : 'Nothing with clients'; cmp(list.length, 'review', 'none'); }
     else if (k === 'delivered') {
       const m = CO.thisMonth(), pm = CO.prevMonth(m), pto = CO.sameWorkdaysEnd(m + '-01', CO.today(), pm + '-01', CO.monthEnd(pm));
-      const prevSame = CO.sumQty(rs.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= pm + '-01' && r.ddate <= pto));
+      const prevSame = CO.sumQty(rs.filter((r) => r.done && r.ddate && r.ddate >= pm + '-01' && r.ddate <= pto));
       const wd = CO.workdays(m + '-01', CO.today());
       el.append(CO.delta(CO.sumQty(list), prevSame, 'up'), ' vs the first ' + wd + ' working days of ' + CO.fmtMonth(pm).split(' ')[0]);
       el.title = 'Working days are Monday to Friday. ' + wd + ' have passed this month; ' + CO.fmtMonth(pm, true) + ' is counted from the 1st to ' + CO.fmtDate(pto) + ', its ' + wd + 'th working day.';
+      // Completed = approved (DONE) + rejected; say how many of each.
+      const rej = CO.sumQty(list.filter((r) => r.stage === 'Rejected'));
+      const sp = document.createElement('span'); sp.className = 'kpi-split'; sp.textContent = CO.num(CO.sumQty(list) - rej) + ' approved · ' + CO.num(rej) + ' rejected'; el.append(sp);
     }
   });
   const whenChip = (r) => { const s = document.createElement('span'); const d = r.eta ? CO.diffDays(CO.today(), r.eta) : null; s.className = 'when' + (d == null ? '' : d < 0 ? ' bad' : d <= 1 ? ' warn' : ''); s.textContent = d == null ? 'No ETA' : d < 0 ? (-d) + 'd late' : d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : CO.fmtDate(r.eta); s.title = r.eta ? 'Design ETA ' + CO.fmtDate(r.eta, true) : 'No Design ETA'; return s; };
@@ -942,7 +953,7 @@
   dash.draw('pipeline', (el) => {
     if (CO.notReady(el, 'box')) return;
     const rs = CO.rows().filter((r) => !CO.CLOSED.has(r.stage));
-    const base = [['To be planned', 'tbp'], ['WIP', 'wip'], ['Changes requested', 'changes'], ['Pending approval', 'review'], ['Incomplete brief', 'awaiting'], ['Hold', 'hold']];
+    const base = [['To be planned', 'tbp'], ['WIP', 'wip'], ['Changes requested', 'changes'], ['Under review', 'underreview'], ['Shared', 'review'], ['No update', 'review'], ['Awaiting brief', 'awaiting'], ['Hold', 'hold']];
     const known = new Set(base.map((b) => b[0]));
     const other = [...new Set(rs.map((r) => r.stage).filter((s) => !known.has(s)))];
     const st = base.concat(other.map((s) => [s, 'active'])).map(([s, go]) => ({ s, go, c: CO.stageColor(s) || 'var(--chart-muted)', n: rs.filter((r) => r.stage === s).length })).filter((d) => d.n || known.has(d.s));
@@ -963,7 +974,7 @@
   dash.draw('kpi-spark', (el) => {
     el.replaceChildren(); if (CO.status() !== 'ok') return;
     const m = CO.thisMonth(), ms = [-5, -4, -3, -2, -1, 0].map((k) => CO.addMonths(m, k));
-    const rs = CO.rows().filter((r) => r.stage === 'Delivered' && r.month);
+    const rs = CO.rows().filter((r) => r.done && r.month);
     const v = ms.map((k) => CO.sumQty(rs.filter((r) => r.month === k)));
     const W = 72, H = 26, max = d3.max(v) || 1;
     const x = (i) => 2 + i * (W - 4) / (v.length - 1), y = (n) => H - 3 - n / max * (H - 6);
@@ -1021,11 +1032,11 @@
       return { g, keys: out, from: out[0], to: CO.today() };
     };
     // Sum delivered creatives per bucket; the current bucket is "so far".
-    const sum = (rows, keys, g, from, to) => { const m = new Map(keys.map((k) => [k, 0])); rows.forEach((r) => { if (r.stage === 'Delivered' && r.ddate && r.ddate >= from && r.ddate <= to) { const k = key(r.ddate, g); if (m.has(k)) m.set(k, m.get(k) + (r.qty || 1)); } }); return m; };
+    const sum = (rows, keys, g, from, to) => { const m = new Map(keys.map((k) => [k, 0])); rows.forEach((r) => { if (r.done && r.ddate && r.ddate >= from && r.ddate <= to) { const k = key(r.ddate, g); if (m.has(k)) m.set(k, m.get(k) + (r.qty || 1)); } }); return m; };
     // The window to compare a bucket with: the bucket before it, cut to the same number of elapsed days when the bucket is still running.
     // Running buckets are matched on working days elapsed (Mon–Fri), so a month 7 working days in is compared with the first 7 working days of the month before.
     const prevWindow = (k, g) => { const pk = prev(k, g), today = CO.today(); const running = end(k, g) >= today; return { from: pk, to: running ? (g === 'day' ? end(pk, g) : CO.sameWorkdaysEnd(k, today, pk, end(pk, g))) : end(pk, g), partial: running }; };
-    const between = (rows, f, t) => CO.sumQty(rows.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= f && r.ddate <= t));
+    const between = (rows, f, t) => CO.sumQty(rows.filter((r) => r.done && r.ddate && r.ddate >= f && r.ddate <= t));
     // Control: segmented buttons + custom dates. onChange redraws the graph.
     const control = (host, name, def, onChange, opts) => {
       const s = get(name, def); host.replaceChildren(); host.className = 'gr-ctl';
@@ -1053,7 +1064,7 @@
   };
   dash.draw('trend-note', (el) => {
     const s = TB.get('trend', 'week'), g = TB.grainOf(s);
-    el.textContent = s.g === 'custom' ? 'Creatives delivered per ' + TB.G[g].noun + ', ' + CO.fmtDate(s.from) + ' to ' + CO.fmtDate(s.to) + '. Hover for details.' : 'Creatives delivered per ' + TB.G[g].noun + ', last ' + TB.G[g].n + ' ' + TB.G[g].noun + 's. Hover for details.';
+    el.textContent = s.g === 'custom' ? 'Creatives completed per ' + TB.G[g].noun + ', ' + CO.fmtDate(s.from) + ' to ' + CO.fmtDate(s.to) + '. Hover for details.' : 'Creatives completed per ' + TB.G[g].noun + ', last ' + TB.G[g].n + ' ' + TB.G[g].noun + 's. Hover for details.';
   });
   dash.draw('trend-stat', (el) => {
     el.replaceChildren(); const T = CO.status() === 'ok' && trendSeries(); if (!T) return;
@@ -1073,7 +1084,7 @@
     const done = lastRunning ? ser.slice(0, -1) : ser, avg = d3.mean(done, (d) => d.n) || 0;
     const y = d3.scaleLinear([0, Math.max(4, d3.max(ser, (d) => d.n), avg) * 1.1], [H - mB, mT]).nice();
     const ticks = y.ticks(4);
-    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered per ' + TB.G[g].noun + ': ' + ser.map((d) => TB.label(d.w, g) + ' ' + d.n).join(', '));
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives completed per ' + TB.G[g].noun + ': ' + ser.map((d) => TB.label(d.w, g) + ' ' + d.n).join(', '));
     const meas = svg.append('text').attr('class', 'tick').text(CO.num(d3.max(ticks))); const mL = meas.node().getComputedTextLength() + 12; meas.remove();
     const x = d3.scalePoint(ser.map((d) => d.w), [mL + 8, W - 14]);
     const defs = svg.append('defs'); const gr = defs.append('linearGradient').attr('id', 'trend-fill').attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', 1);
@@ -1128,7 +1139,7 @@
   dash.draw('tb-title', (el) => { el.textContent = brandWindow().title; });
   dash.draw('top-brands', (el) => {
     if (CO.notReady(el, 'box')) return;
-    const w = brandWindow(), del = CO.rows().filter((r) => r.stage === 'Delivered' && r.ddate);
+    const w = brandWindow(), del = CO.rows().filter((r) => r.done && r.ddate);
     const rs = del.filter((r) => r.ddate >= w.from && r.ddate <= w.to), prev = del.filter((r) => r.ddate >= w.pfrom && r.ddate <= w.pto);
     const top = d3.rollups(rs, (v) => CO.sumQty(v), (r) => r.brand).sort((a, b) => b[1] - a[1]).slice(0, 6);
     el.replaceChildren();
@@ -1161,18 +1172,18 @@
     const all = CO.rows() || [], t = CO.today();
     let next = CO.addDays(t, 1); while (!CO.isWorkday(next)) next = CO.addDays(next, 1);
     const lastTo = new Map(); DY.moves.slice().reverse().forEach((m) => lastTo.set(m.id, m));
-    const deliveredLog = new Set(DY.moves.filter((m) => m.to === 'Delivered').map((m) => m.id));
+    const deliveredLog = new Set(DY.moves.filter((m) => m.to === 'Delivered' || m.to === 'Rejected').map((m) => m.id));
     const startedLog = new Set(DY.moves.filter((m) => m.to === 'WIP').map((m) => m.id));
     const pick = all.filter((r) => (r.stage === 'To be planned' || r.stage === 'Changes requested') && r.eta && r.eta >= t && r.eta <= next);
     const wip = all.filter((r) => r.stage === 'WIP');
-    const done = all.filter((r) => r.stage === 'Delivered' && ((r.id && deliveredLog.has(r.id)) || r.ddate === t));
+    const done = all.filter((r) => r.done && ((r.id && deliveredLog.has(r.id)) || r.ddate === t));
     const carried = all.filter((r) => r.due === 'overdue');
     return { pick, wip, done, carried, startedLog, deliveredLog };
   };
   /* Today widget (sidebar on desktop, top of the Overview on phones): a progress ring for the day, four tiles
      (pick up, in progress, delivered, carried forward) and the tasks behind the chosen tile. */
   const TW = { sel: LS.get('co.twsel', ''), open: LS.get('co.twopen', '0') === '1', pop: false };
-  const TW_KINDS = [['pick', 'Pick up', 'To be planned or changes requested, due today or the next working day'], ['wip', 'In progress', 'WIP'], ['done', 'Delivered', 'Delivered today (status changed to DONE today, or ETA today)'], ['carried', 'Carried over', 'Open and past its ETA: the same tasks as the Overdue number']];
+  const TW_KINDS = [['pick', 'Pick up', 'To be planned or changes requested, due today or the next working day'], ['wip', 'In progress', 'WIP'], ['done', 'Completed', 'Completed today: status changed to DONE or REJECTED today (or Delivered On / ETA today)'], ['carried', 'Carried over', 'Open and past its ETA: the same tasks as the Overdue number']];
   const countUp = (node, to, from) => {
     if (from == null || from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { node.textContent = CO.num(to); return; }
     const t0 = performance.now(), d = 450; const step = (t) => { const k = Math.min(1, (t - t0) / d), e = 1 - Math.pow(1 - k, 3); node.textContent = CO.num(Math.round(from + (to - from) * e)); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step);
@@ -1248,7 +1259,7 @@
   /* ================= Shared task row (My work, Brands) ================= */
   const workRow = (r, opts) => {
     const o = opts || {}, t = CO.today(), d = r.eta ? CO.diffDays(t, r.eta) : null;
-    const k = o.kind || (r.due === 'overdue' ? 'late' : r.due === 'today' ? 'today' : r.stage === 'Pending approval' ? 'changes' : 'tomorrow');
+    const k = o.kind || (r.due === 'overdue' ? 'late' : r.due === 'today' ? 'today' : r.shared ? 'changes' : 'tomorrow');
     const li = document.createElement('li'); li.className = 'na-row k-' + k; li.dataset.uid = r.uid; li.tabIndex = 0;
     const rail = document.createElement('i'); rail.className = 'na-rail';
     const main = document.createElement('div'); main.className = 'na-main';
@@ -1289,8 +1300,8 @@
     const t = CO.today(), wk = mondayOf(t);
     const open = all.filter((r) => r.open), focus = open.filter((r) => r.due === 'overdue' || r.due === 'today').sort((a, b) => (a.eta || '').localeCompare(b.eta || ''));
     const next = open.filter((r) => r.due !== 'overdue' && r.due !== 'today').sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || (a.priority || 'P9').localeCompare(b.priority || 'P9'));
-    const waiting = all.filter((r) => r.stage === 'Pending approval').sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999'));
-    const done = all.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= wk && r.ddate <= t).sort((a, b) => b.ddate.localeCompare(a.ddate));
+    const waiting = all.filter((r) => r.shared).sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999'));
+    const done = all.filter((r) => r.done && r.ddate && r.ddate >= wk && r.ddate <= t).sort((a, b) => b.ddate.localeCompare(a.ddate));
     // header: who, role, load; admins pick the person
     const id = document.createElement('div'); id.className = 'mw-id'; const av = CO.av(who); av.classList.add('lg');
     const nm = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = who === mine ? 'Your work, ' + who.split(' ')[0] : who; const rl = document.createElement('p'); rl.className = 'co-note';
@@ -1305,7 +1316,7 @@
     // tiles
     const tiles = document.createElement('div'); tiles.className = 'mw-tiles';
     [['late', 'Overdue', open.filter((r) => r.due === 'overdue')], ['today', 'Due today', open.filter((r) => r.due === 'today')], ['wip', 'In progress', open.filter((r) => r.stage === 'WIP')], ['done', 'Delivered this week', done]].forEach(([k, l, list]) => {
-      const b = document.createElement('div'); b.className = 'mw-tile k-' + k + (list.length ? '' : ' zero'); const n = document.createElement('b'); n.textContent = CO.num(CO.sumQty(list)); const sp = document.createElement('span'); sp.textContent = l; const sm = document.createElement('small'); sm.textContent = list.length + (list.length === 1 ? ' task' : ' tasks'); b.append(n, sp, sm); tiles.append(b);
+      const b = document.createElement('div'); b.className = 'mw-tile k-' + k + (list.length ? '' : ' zero'); const n = document.createElement('b'); n.textContent = CO.num(list.length); const sp = document.createElement('span'); sp.textContent = l; const sm = document.createElement('small'); const cq = CO.sumQty(list); sm.textContent = (list.length === 1 ? '1 task' : list.length + ' tasks') + (cq !== list.length ? ' · ' + cq + ' creatives' : ''); b.append(n, sp, sm); tiles.append(b);
     });
     head.append(tiles); el.append(head);
     const fl = filterNote2();
@@ -1319,7 +1330,7 @@
     const grid = document.createElement('div'); grid.className = 'mw-grid';
     const left = document.createElement('div'); left.className = 'mw-col'; const right = document.createElement('div'); right.className = 'mw-col';
     // Content writers: briefs whose content they are still writing (the design has not started).
-    const first = who.toLowerCase().split(' ')[0], writing = CO.rows().filter((r) => r.sub === 'Content in progress' && r.owner && r.owner.toLowerCase().split(/[ ,]/)[0] === first);
+    const first = who.toLowerCase().split(' ')[0], writing = CO.rows().filter((r) => r.awaiting && ['Brief in progress', 'Brief ready for scripting', 'Brief changes requested'].includes(r.sub) && r.owner && r.owner.toLowerCase().split(/[ ,]/)[0] === first);
     if (writing.length) left.append(section('Content to write', 'Briefs where your content is in progress; design starts after it.', writing, { kind: 'changes' }, ''));
     left.append(section('Focus now', 'Overdue and due today, oldest deadline first.', focus, {}, 'Nothing overdue or due today.'),
       section('Up next', 'Open work by ETA; work with no ETA comes last.', next, { kind: 'tomorrow' }, 'Nothing else open.', 12));
@@ -1340,9 +1351,9 @@
     rows.forEach((r) => {
       const b = map.get(r.brand) || { brand: r.brand, src: new Set(), open: 0, late: 0, wait: 0, oldest: null, thisM: 0, lastSame: 0, last: '' };
       b.src.add(r.source);
-      if (r.open) { b.open += r.qty || 1; if (r.due === 'overdue') b.late += r.qty || 1; }
-      if (r.stage === 'Pending approval') { b.wait++; const wd = r.eta && r.eta < t ? CO.diffDays(r.eta, t) : 0; if (b.oldest == null || wd > b.oldest) b.oldest = wd; }
-      if (r.stage === 'Delivered' && r.ddate) { if (r.ddate >= m0 && r.ddate <= t) b.thisM += r.qty || 1; if (r.ddate >= pm0 && r.ddate <= lastSameEnd) b.lastSame += r.qty || 1; if (r.ddate > b.last) b.last = r.ddate; }
+      if (r.open) { b.open++; if (r.due === 'overdue') b.late++; }
+      if (r.shared) { b.wait++; const wd = r.eta && r.eta < t ? CO.diffDays(r.eta, t) : 0; if (b.oldest == null || wd > b.oldest) b.oldest = wd; }
+      if (r.done && r.ddate) { if (r.ddate >= m0 && r.ddate <= t) b.thisM += r.qty || 1; if (r.ddate >= pm0 && r.ddate <= lastSameEnd) b.lastSame += r.qty || 1; if (r.ddate > b.last) b.last = r.ddate; }
       map.set(r.brand, b);
     });
     let list = [...map.values()].filter((b) => b.open || b.wait || b.thisM || b.lastSame);
@@ -1359,7 +1370,7 @@
     if (!list.length) { const fl = filterNote2(); el.append(emptyLine(q ? 'No brand matches "' + BR2.q + '".' : fl ? 'No brands for ' + fl + '.' : 'No brand activity yet.')); if (fl) el.append(clearBtn2()); if (keepFocus) search.focus(); return; }
     const wrap = document.createElement('div'); wrap.className = 'co-tablewrap';
     const tb = document.createElement('table'); tb.className = 'co-table br-table';
-    const cols = [['brand', 'Brand', ''], ['src', 'Int / Ext', 'co-hide-md'], ['open', 'Open', 'n'], ['late', 'Late', 'n'], ['wait', 'With client', 'n'], ['thisM', 'Delivered this month', 'n'], ['vs', 'vs same days last month', 'n co-hide-md'], ['last', 'Last delivery', 'co-hide-md']];
+    const cols = [['brand', 'Brand', ''], ['src', 'Int / Ext', 'co-hide-md'], ['open', 'Open', 'n'], ['late', 'Late', 'n'], ['wait', 'With client', 'n'], ['thisM', 'Completed this month', 'n'], ['vs', 'vs same days last month', 'n co-hide-md'], ['last', 'Last delivery', 'co-hide-md']];
     const thead = tb.createTHead().insertRow();
     cols.forEach(([k, label, cls]) => {
       const th = document.createElement('th'); th.className = cls; th.scope = 'col';
@@ -1390,7 +1401,7 @@
   dash.draw('waiting', (el) => {
     if (CO.notReady(el, 'box')) return;
     el.replaceChildren();
-    const t = CO.today(), rows = CO.rows().filter((r) => r.stage === 'Pending approval');
+    const t = CO.today(), rows = CO.rows().filter((r) => r.shared);
     const days = (r) => r.eta && r.eta < t ? CO.diffDays(r.eta, t) : 0;
     const band = WAIT_BANDS.find((b) => b[0] === WC.band), shown = band ? rows.filter((r) => band[2](days(r))) : rows;
     const by = new Map(); shown.forEach((r) => { const l = by.get(r.brand) || []; l.push(r); by.set(r.brand, l); });
@@ -1438,7 +1449,7 @@
     if (CO.notReady(el, 'box')) return;
     el.replaceChildren();
     const pr = CO.period(), to = pr.to > CO.today() ? CO.today() : pr.to;
-    const del = CO.rows().filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= pr.from && r.ddate <= to);
+    const del = CO.rows().filter((r) => r.done && r.ddate && r.ddate >= pr.from && r.ddate <= to);
     const dated = del.filter((r) => r.date_basis === 'delivered');
     const withEta = dated.filter((r) => r.eta), onTime = withEta.filter((r) => r.ddate <= r.eta);
     const withReq = dated.filter((r) => r.req && r.req <= r.ddate), tat = withReq.map((r) => Math.max(0, CO.workdays(r.req, r.ddate) - 1)).sort((a, b) => a - b);
@@ -1494,7 +1505,7 @@
       const people = new Map();
       CO.team().byKey.forEach((m) => { if (m.status === 'Active') people.set(m.name, []); });
       rs.forEach((r) => {
-        const recentDone = r.stage === 'Delivered' && r.ddate && r.ddate >= wkAgo && r.ddate <= t;
+        const recentDone = r.done && r.ddate && r.ddate >= wkAgo && r.ddate <= t;
         if (CO.CLOSED.has(r.stage) && !recentDone) return;
         if (!r.list.length) { if (r.open) { if (!people.has('Unassigned')) people.set('Unassigned', []); people.get('Unassigned').push(r); } return; }
         // Inactive people appear only while they still hold open work, so it can be reassigned.
@@ -1510,7 +1521,7 @@
           wip: open.filter((r) => r.stage === 'WIP' && notLateOrToday(r)).sort(byEta),
           changes: open.filter((r) => r.stage === 'Changes requested' && notLateOrToday(r)).sort(byEta),
           next: open.filter((r) => r.stage !== 'WIP' && r.stage !== 'Changes requested' && notLateOrToday(r)).sort(byEta),
-          review: list.filter((r) => r.stage === 'Pending approval'), done: list.filter((r) => r.stage === 'Delivered') };
+          review: list.filter((r) => r.shared), done: list.filter((r) => r.done) };
       });
       const sort = p.susort || 'urgent';
       cards.sort((a, b) => (a.name === 'Unassigned') - (b.name === 'Unassigned') || (sort === 'name' ? a.name.localeCompare(b.name)
@@ -1568,7 +1579,7 @@
     });
     dash.draw('task-count', (el) => { if (CO.notReady(el, 'text')) return; el.textContent = CO.num(filtered().length); });
     // One-click status views with live counts; the full list stays in the status menu.
-    const CHIPS = [['active', 'Not delivered'], ['open', 'Open'], ['overdue', 'Overdue'], ['week', 'Due this week'], ['noeta', 'No ETA'], ['review', 'Pending approval'], ['delivered-month', 'Delivered this month'], ['all', 'All']];
+    const CHIPS = [['active', 'Not completed'], ['open', 'Open'], ['overdue', 'Overdue'], ['week', 'Due this week'], ['noeta', 'No ETA'], ['underreview', 'Under review'], ['review', 'Shared'], ['awaiting', 'Awaiting brief'], ['delivered-month', 'Completed this month'], ['all', 'All']];
     dash.draw('t-chips', (el) => {
       if (CO.status() !== 'ok') { el.replaceChildren(); return; }
       const rs = CO.rows(), ctx = CO.period(), cur = dash.params().stage || 'active';
@@ -1624,7 +1635,7 @@
       const mine = rs.filter((r) => r.open && r.list.includes(name));
       let hours = mine.reduce((a, r) => a + hoursFor(r, name), 0);
       const first = name.toLowerCase().split(' ')[0];
-      const content = rs.filter((r) => r.sub === 'Content in progress' && r.owner && r.owner.toLowerCase().split(/[ ,]/)[0] === first);
+      const content = rs.filter((r) => r.awaiting && ['Brief in progress', 'Brief ready for scripting', 'Brief changes requested'].includes(r.sub) && r.owner && r.owner.toLowerCase().split(/[ ,]/)[0] === first);
       hours += content.reduce((a, r) => a + 1 * (r.qty || 1) * (intern(name) ? 1.3 : 1), 0);
       return { hours, days: hours / CAP, tasks: mine.length + content.length, content: content.length };
     };
@@ -1650,18 +1661,18 @@
       if (CO.notReady(tb, 'table')) return;
       tb.replaceChildren();
       const rs = CO.rows(), m = CO.thisMonth(), pm = CO.prevMonth(m);
-      const top = CO.topTypes(rs.filter((r) => r.stage === 'Delivered'), 5), cmap = CO.typeColors(top);
+      const top = CO.topTypes(rs.filter((r) => r.done), 5), cmap = CO.typeColors(top);
       const by = new Map();
       CO.team().byKey.forEach((mm) => by.set(mm.name, []));
       rs.forEach((r) => r.list.forEach((d) => { if (!by.has(d)) by.set(d, []); by.get(d).push(r); }));
       const p = dash.params();
       const data = [...by].filter(([name]) => shown(name) && (!p.designer || p.designer === name)).map(([name, list]) => {
-        const del = list.filter((r) => r.stage === 'Delivered');
+        const del = list.filter((r) => r.done);
         const ms = new Set(del.map((r) => r.month).filter(Boolean));
         const open = list.filter((r) => r.open);
         return {
-          name, open: CO.sumQty(open), wip: open.filter((r) => r.stage === 'WIP').length, overdue: list.filter((r) => r.due === 'overdue').length,
-          week: list.filter((r) => r.due === 'today' || r.due === 'week').length, review: list.filter((r) => r.stage === 'Pending approval').length,
+          name, open: open.length, wip: open.filter((r) => r.stage === 'WIP').length, overdue: list.filter((r) => r.due === 'overdue').length,
+          week: list.filter((r) => r.due === 'today' || r.due === 'week').length, review: list.filter((r) => r.shared).length,
           thisM: CO.sumQty(del.filter((r) => r.month === m)), lastM: CO.sumQty(del.filter((r) => r.month === pm)),
           lastSame: CO.sumQty(del.filter((r) => r.ddate && r.ddate >= pm + '-01' && r.ddate <= CO.sameWorkdaysEnd(m + '-01', CO.today(), pm + '-01', CO.monthEnd(pm)))),
           perDay: CO.workdays(m + '-01', CO.today()) ? CO.sumQty(del.filter((r) => r.month === m)) / CO.workdays(m + '-01', CO.today()) : 0,
@@ -1688,6 +1699,25 @@
         mix.title = top.map((t) => t + ': ' + CO.sumQty(d.del.filter((r) => CO.typeOf(r, top) === t))).filter((x) => !/: 0$/.test(x)).join(' · ');
         CO.td(tr, mix, 'co-hide-xl');
       });
+      // Reconciliation: tasks with no designer are counted only here, and the last row counts every task once
+      // (a task shared by two people appears in both of their rows above, but once in the total).
+      if (!p.designer) {
+        const sameEnd = CO.sameWorkdaysEnd(m + '-01', CO.today(), pm + '-01', CO.monthEnd(pm));
+        const foot = (label, list, cls, title) => {
+          const del = list.filter((r) => r.done), open = list.filter((r) => r.open);
+          const tr = tb.insertRow(); tr.className = 'team-foot ' + cls; tr.title = title;
+          const nb = document.createElement('b'); nb.textContent = label; CO.td(tr, nb, 'team-foot-l'); CO.td(tr, '', ''); CO.td(tr, '', 'co-hide-xl'); CO.td(tr, '', 'n adm-only');
+          CO.td(tr, String(open.length), 'n'); CO.td(tr, String(open.filter((r) => r.stage === 'WIP').length), 'n co-hide-lg');
+          CO.td(tr, String(list.filter((r) => r.due === 'overdue').length), 'n'); CO.td(tr, String(list.filter((r) => r.due === 'today' || r.due === 'week').length), 'n co-hide-lg');
+          CO.td(tr, String(list.filter((r) => r.shared).length), 'n');
+          const tm = document.createElement('span'); tm.className = 'n-with-dl'; const tmb = document.createElement('b'); tmb.textContent = CO.num(CO.sumQty(del.filter((r) => r.month === m))); tm.append(tmb, CO.delta(CO.sumQty(del.filter((r) => r.month === m)), CO.sumQty(del.filter((r) => r.ddate && r.ddate >= pm + '-01' && r.ddate <= sameEnd)), 'up')); CO.td(tr, tm, 'n');
+          CO.td(tr, CO.num(CO.sumQty(del.filter((r) => r.month === pm))), 'n'); CO.td(tr, '', 'n'); CO.td(tr, '', 'co-hide-lg'); CO.td(tr, '', 'co-hide-xl');
+        };
+        foot('Unassigned (not allotted)', rs.filter((r) => !r.list.length), 'unassigned', 'Tasks with no designer/editor in the sheet. They are never counted for a person.');
+        const others = rs.filter((r) => r.list.length && !r.list.some((n) => shown(n)));
+        if (others.length) foot('Not shown here', others, 'others', 'Tasks assigned only to people not listed above (inactive people when hidden, the Creative Head, or names not on the team list).');
+        foot('All tasks (each counted once)', rs, 'total', 'Every task once, whoever it is assigned to. Rows above can add up to more because a task shared by two people is counted for both.');
+      }
     });
     dash.draw('team-wd', (el) => {
       const m = CO.thisMonth(), t = CO.today(), pm = CO.prevMonth(m), so = CO.workdays(m + '-01', t), all = CO.workdays(m + '-01', CO.monthEnd(m));
@@ -1695,13 +1725,13 @@
     });
     dash.draw('team-legend', (el) => {
       if (CO.notReady(el, 'list')) return;
-      const top = CO.topTypes(CO.rows().filter((r) => r.stage === 'Delivered'), 5), cmap = CO.typeColors(top);
+      const top = CO.topTypes(CO.rows().filter((r) => r.done), 5), cmap = CO.typeColors(top);
       el.replaceChildren(...top.map((t) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = cmap.get(t); s.append(i, t); return s; }));
     });
     dash.draw('heat', (table) => {
       if (CO.notReady(table, 'table')) return;
       table.replaceChildren();
-      const del = CO.rows().filter((r) => r.stage === 'Delivered' && r.month);
+      const del = CO.rows().filter((r) => r.done && r.month);
       const room = table.parentElement.clientWidth, months = room < 700 ? 6 : room < 1050 ? 9 : 12; // as many recent months as fit
       const ms = [...new Set(del.map((r) => r.month))].sort().filter((m) => m <= CO.thisMonth()).slice(-months);
       const cell = new Map(); del.forEach((r) => r.list.forEach((d) => { const k = d + '|' + r.month; cell.set(k, (cell.get(k) || 0) + (r.qty || 1)); }));
@@ -1729,8 +1759,8 @@
 
   /* ================= Reports ================= */
   (() => {
-    const inRange = (rs, f, t) => rs.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= f && r.ddate <= t);
-    const delivered = () => CO.rows().filter((r) => r.stage === 'Delivered' && r.ddate);
+    const inRange = (rs, f, t) => rs.filter((r) => r.done && r.ddate && r.ddate >= f && r.ddate <= t);
+    const delivered = () => CO.rows().filter((r) => r.done && r.ddate);
     // Working days in the period up to today (Mon–Fri); for all time, from the first delivery.
     const wdIn = (f, t, rs) => { const a = f === '2000-01-01' ? (rs.map((r) => r.ddate).sort()[0] || CO.today()) : f; const b = t > CO.today() ? CO.today() : t; return CO.workdays(a, b); };
     const stats = (f, t) => {
@@ -1768,7 +1798,7 @@
       const top = CO.topTypes(delivered(), 5), cmap = CO.typeColors(top);
       el.replaceChildren(...top.map((t) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = cmap.get(t); s.append(i, t); return s; }));
     });
-    dash.draw('r-chart-note', (el) => { const s = TB.get('rchart', 'month'), g = TB.grainOf(s); el.textContent = 'Creatives delivered per ' + TB.G[g].noun + '. The report period is highlighted; click a bar to report on it.'; });
+    dash.draw('r-chart-note', (el) => { const s = TB.get('rchart', 'month'), g = TB.grainOf(s); el.textContent = 'Creatives completed per ' + TB.G[g].noun + '. The report period is highlighted; click a bar to report on it.'; });
     dash.draw('r-chart', (el) => {
       if (CO.notReady(el, 'box')) return;
       const del = delivered();
@@ -1789,7 +1819,7 @@
         o.tone = o.prev == null ? null : CO.tone(o.total - o.prev, o.prev, 'up');
       });
       const W = Math.max(300, el.clientWidth), H = 260, mB = 24, mT = 18;
-      const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered per ' + TB.G[g].noun + ': ' + series.map((d) => TB.label(d.m, g) + ' ' + d.total).join(', '));
+      const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives completed per ' + TB.G[g].noun + ': ' + series.map((d) => TB.label(d.m, g) + ' ' + d.total).join(', '));
       const yt = d3.scaleLinear([0, d3.max(series, (d) => d.total) || 1], [H - mB, mT]).nice();
       const ticks = yt.ticks(4);
       const meas = svg.append('text').attr('class', 'tick').text(CO.num(d3.max(ticks)));
@@ -1890,14 +1920,14 @@
       const pr = CO.period(), rs = inRange(CO.rows(), pr.from, pr.to), out = [];
       const add = (dim, keyFn) => { const m = new Map(); rs.forEach((r) => keyFn(r).forEach((k) => { const key = k + '\u0000' + r.type; m.set(key, (m.get(key) || 0) + (r.qty || 1)); })); [...m].sort().forEach(([key, n]) => { const [k, t] = key.split('\u0000'); out.push([CO.label(pr.from, pr.to), dim, k, t, n]); }); };
       add('Brand', (r) => [r.brand]); add('Designer', (r) => r.list.length ? r.list : ['Unassigned']); add('Internal / External', (r) => [CO.cls(r)]);
-      CO.csv('creative-report-' + (pr.all ? 'all-time' : pr.from + '-to-' + pr.to) + '.csv', ['Period', 'Breakdown', 'Name', 'Creative type', 'Creatives delivered'], out);
+      CO.csv('creative-report-' + (pr.all ? 'all-time' : pr.from + '-to-' + pr.to) + '.csv', ['Period', 'Breakdown', 'Name', 'Creative type', 'Creatives completed'], out);
     });
   })();
 
   /* ================= Sheet health ================= */
   (() => {
     let pick = '';
-    const ORDER = ['Duplicate ID', 'Incomplete row, not counted', 'Open, no ETA', 'No designer assigned', 'Unrecognised status', 'Delivered, no designer', 'Delivered, no creative link', 'ETA before request date', 'Request date year looks mistyped', 'ETA year looks mistyped', 'Request date unreadable', 'ETA unreadable', 'No brand'];
+    const ORDER = ['Duplicate ID', 'No Creative_ID', 'ID should start with SRAP (External sheet)', 'ID should start with SRA (Internal sheet)', 'Incomplete row, not counted', 'Design and content status blank', 'Unrecognised status', 'Open, no ETA', 'No designer assigned', 'Completed, no designer', 'Completed, no creative link', 'Design finished but brief not approved', 'ETA before request date', 'Request date year looks mistyped', 'ETA year looks mistyped', 'Request date unreadable', 'ETA unreadable', 'No brand'];
     // Rows too incomplete to be a task are listed here so nothing drops out unseen.
     const ignoredRows = () => (S.ignored || []).filter((x) => !dash.params().src || x.source === dash.params().src).map((x) => ({ uid: 'ignored:' + x.src + ':' + x.row, id: x.id, source: x.source, src: x.src, row: x.row, brand: '—', topic: 'Row ' + x.row + ' of ' + ((S.sources[x.src] && S.sources[x.src].tab) || x.src) + (x.owner ? ' · ' + x.owner : '') + (x.status ? ' · ' + x.status : ''), designers: '', list: [], stage: 'Not counted', req: x.req, eta: x.eta, flags: 'Incomplete row, not counted', open: false }));
     const flagged = () => CO.rows().filter((r) => r.flags).concat(dash.params().designer || dash.params().brand || dash.params().type ? [] : ignoredRows());
@@ -1946,8 +1976,10 @@
       $('ed-topic').textContent = CO.topicText(r);
       const st = $('ed-status');
       [...st.querySelectorAll('option[data-extra]')].forEach((o) => o.remove());
-      if (![...st.options].some((o) => o.value === r.stage)) { const o = new Option(r.stage + ' (as in the sheet)', r.stage); o.dataset.extra = '1'; o.disabled = true; st.append(o); }
-      st.value = r.stage;
+      // The dropdown edits Design Status only, so a task awaiting its brief shows its design status (TBP or blank).
+      const dStage = r.awaiting ? 'To be planned' : r.stage;
+      if (![...st.options].some((o) => o.value === dStage)) { const o = new Option(dStage + ' (as in the sheet)', dStage); o.dataset.extra = '1'; o.disabled = true; st.append(o); }
+      st.value = dStage;
       $('ed-eta').value = r.eta || '';
       $('ed-designer').value = before.designer;
       const names = new Set(); (S.team || []).forEach((m) => { if (m.status !== 'Inactive') names.add(m.name); }); S.tasks.forEach((t) => t.designers && t.designers.split(' + ').forEach((d) => names.add(CO.canon(d))));
@@ -1956,7 +1988,7 @@
       const cols = (S.cols && S.cols[r.src]) || {};
       $('ed-qty-wrap').hidden = !cols.qty; $('ed-qty').value = before.qty;
       $('ed-priority').disabled = cols.priority === false;
-      $('ed-info').textContent = r.stage === 'Incomplete brief' ? 'Waiting on the brief: design has not started because the content status is not done yet.' : (r.stage === 'Delivered' && !cols.delivered ? '' : '');
+      $('ed-info').textContent = r.awaiting ? 'Awaiting brief (' + (r.sub || 'content not approved') + '): design has not started because the brief (content status ' + (r.content_status || 'blank') + ') is not approved yet.' : (r.done && !cols.delivered ? '' : '');
       const links = CO.links(r); $('ed-links').replaceChildren(links);
       $('ed-msg').textContent = r.id ? '' : 'This row has no ID in the sheet, so it can only be edited there.';
       $('ed-save').disabled = !r.id; $('ed-save').textContent = 'Save to sheet';
@@ -1973,7 +2005,9 @@
       const el = e.target.closest('[data-uid]'); if (el) openEditor(el.dataset.uid);
     };
     document.querySelector('.co').addEventListener('click', openFrom);
-    document.addEventListener('co-open-editor', (e) => openEditor(e.detail));
+    // Read-only hook for the reconciliation checks (the same rows this page already shows; nothing new is exposed).
+  window.CO_rows = () => (CO.rows() || []).map((r) => Object.assign({}, r));
+  document.addEventListener('co-open-editor', (e) => openEditor(e.detail));
     document.querySelector('.co').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-uid][tabindex]')) openEditor(e.target.dataset.uid); });
     $('ed-cancel').addEventListener('click', () => dlgE.close());
     dlgE.addEventListener('close', () => { EDITING.uid = ''; EDITING.label = ''; });
@@ -2007,7 +2041,7 @@
         if ('designer' in fields) t.designers = fields.designer ? fields.designer.split(/\s*,\s*/).join(' + ') : '';
         if ('priority' in fields) t.priority = fields.priority;
         if (fields.qty) t.qty = Number(fields.qty);
-        if (t.stage === 'Delivered') { t.ddate = res.written && res.written.deliveredOn ? CO.today() : (t.eta || t.req); t.month = t.ddate ? t.ddate.slice(0, 7) : ''; } else { t.ddate = null; t.month = ''; }
+        Object.assign(t, CODATA.groupOf(t.stage)); if (t.done) { t.ddate = res.written && res.written.deliveredOn ? CO.today() : (t.eta || t.req); t.month = t.ddate ? t.ddate.slice(0, 7) : ''; } else { t.ddate = null; t.month = ''; }
         if (res.row) t.row = res.row;
         S.tasks = S.tasks.map((x) => (x.uid === r.uid ? t : x));
         renderAll();
@@ -2286,7 +2320,7 @@
     const open = all.filter((r) => r.open);
     const b = {
       kind, me, overdue: open.filter((r) => r.due === 'overdue'), today: open.filter((r) => r.due === 'today'), tomorrow: open.filter((r) => r.eta === tm),
-      unassigned: open.filter((r) => !r.list.length), review: all.filter((r) => r.stage === 'Pending approval'), delivered: all.filter((r) => r.stage === 'Delivered' && r.ddate === t)
+      unassigned: open.filter((r) => !r.list.length), review: all.filter((r) => r.shared), delivered: all.filter((r) => r.done && r.ddate === t)
     };
     b.mine = me ? open.filter((r) => r.list.includes(me)) : [];
     b.actions = NB.myActions().filter((a) => !a.done);
@@ -3386,7 +3420,7 @@
         if (a.type) rs = rs.filter((r) => norm(r.type).includes(norm(a.type)));
         rs = rs.filter((r) => clsOk(r, a.classification));
         const s = (a.status || (a.due && a.due !== 'any' ? 'open' : a.delivered_from ? 'delivered' : 'active')).toLowerCase();
-        if (s === 'open') rs = rs.filter((r) => r.open); else if (s === 'active') rs = rs.filter((r) => r.stage !== 'Delivered' && r.stage !== 'Deprioritised'); else if (s !== 'any') rs = rs.filter((r) => r.stage.toLowerCase() === s);
+        if (s === 'open') rs = rs.filter((r) => r.open); else if (s === 'active') rs = rs.filter((r) => !CO.CLOSED.has(r.stage)); else if (s === 'delivered' || s === 'completed') rs = rs.filter((r) => r.done); else if (s === 'shared' || s === 'pending approval') rs = rs.filter((r) => r.shared); else if (s === 'awaiting brief') rs = rs.filter((r) => r.awaiting); else if (s !== 'any') rs = rs.filter((r) => r.stage.toLowerCase() === s);
         const we = CO.addDays(weekStartOf(t), 6);
         const D = { overdue: (r) => r.due === 'overdue', today: (r) => r.open && r.eta === t, tomorrow: (r) => r.open && r.eta === tm, 'this week': (r) => r.open && r.eta && r.eta >= t && r.eta <= we, 'next 7 days': (r) => r.open && r.eta && r.eta >= t && r.eta <= CO.addDays(t, 7), 'no eta': (r) => r.open && !r.eta };
         if (a.due && D[a.due]) rs = rs.filter(D[a.due]);
@@ -3402,22 +3436,22 @@
         if (a.brand) { const b = findBrand(a.brand); if (!b || b.none) return { error: 'No brand called "' + a.brand + '".' }; if (b.ambiguous) return { ambiguous: b.ambiguous }; rs = rs.filter((r) => r.brand === b.name); lab.push(b.name); }
         rs = rs.filter((r) => clsOk(r, a.classification));
         const t = CO.today(), open = rs.filter((r) => r.open), m = CO.thisMonth(), pm = CO.prevMonth(m), pto = CO.sameWorkdaysEnd(m + '-01', t, pm + '-01', CO.monthEnd(pm));
-        const del = rs.filter((r) => r.stage === 'Delivered' && r.ddate);
+        const del = rs.filter((r) => r.done && r.ddate);
         return { for: lab.join(', ') || 'everyone', open_tasks: open.length, open_creatives: CO.sumQty(open), overdue: open.filter((r) => r.due === 'overdue').length, due_today: open.filter((r) => r.eta === t).length, due_tomorrow: open.filter((r) => r.eta === CO.addDays(t, 1)).length, no_eta: open.filter((r) => !r.eta).length,
-          in_progress: rs.filter((r) => r.stage === 'WIP').length, to_be_planned: rs.filter((r) => r.stage === 'To be planned').length, changes_requested: rs.filter((r) => r.stage === 'Changes requested').length, under_review: rs.filter((r) => r.stage === 'Pending approval').length, awaiting_brief: rs.filter((r) => r.stage === 'Incomplete brief').length, on_hold: rs.filter((r) => r.stage === 'Hold').length,
+          in_progress: rs.filter((r) => r.stage === 'WIP').length, to_be_planned: rs.filter((r) => r.stage === 'To be planned').length, changes_requested: rs.filter((r) => r.stage === 'Changes requested').length, under_review_by_creative_head: rs.filter((r) => r.review).length, shared_with_client: rs.filter((r) => r.shared).length, of_which_no_update: rs.filter((r) => r.stage === 'No update').length, awaiting_brief: rs.filter((r) => r.awaiting).length, on_hold: rs.filter((r) => r.stage === 'Hold').length,
           unassigned_open: open.filter((r) => !r.list.length).length, delivered_this_month_creatives: CO.sumQty(del.filter((r) => r.month === m)), delivered_same_working_days_last_month: CO.sumQty(del.filter((r) => r.ddate >= pm + '-01' && r.ddate <= pto)), working_days_so_far_this_month: CO.workdays(m + '-01', t), working_days_in_month: CO.workdays(m + '-01', CO.monthEnd(m)), oldest_overdue_days: open.filter((r) => r.due === 'overdue').reduce((x, r) => Math.max(x, CO.diffDays(r.eta, t)), 0) };
       },
       team_progress(a) {
         const P = period(a.period, a.from, a.to), rs = allRows(), t = CO.today();
         const names = new Set((S.team || []).filter((m) => m.status !== 'Inactive').map((m) => m.name)); rs.forEach((r) => { if (r.open) r.list.forEach((n) => names.add(n)); });
-        const rows = [...names].map((n) => { const mine = rs.filter((r) => r.list.includes(n)), op = mine.filter((r) => r.open), dl = mine.filter((r) => r.stage === 'Delivered' && r.ddate);
-          return { designer: n, open: op.length, overdue: op.filter((r) => r.due === 'overdue').length, due_today: op.filter((r) => r.eta === t).length, under_review: mine.filter((r) => r.stage === 'Pending approval').length, delivered: CO.sumQty(dl.filter((r) => r.ddate >= P.from && r.ddate <= P.to)), delivered_previous_period: CO.sumQty(dl.filter((r) => r.ddate >= P.pfrom && r.ddate <= P.pto)) }; })
+        const rows = [...names].map((n) => { const mine = rs.filter((r) => r.list.includes(n)), op = mine.filter((r) => r.open), dl = mine.filter((r) => r.done && r.ddate);
+          return { designer: n, open: op.length, overdue: op.filter((r) => r.due === 'overdue').length, due_today: op.filter((r) => r.eta === t).length, under_review_by_creative_head: mine.filter((r) => r.review).length, shared_with_client: mine.filter((r) => r.shared).length, delivered: CO.sumQty(dl.filter((r) => r.ddate >= P.from && r.ddate <= P.to)), delivered_previous_period: CO.sumQty(dl.filter((r) => r.ddate >= P.pfrom && r.ddate <= P.pto)) }; })
           .sort((x, y) => y.open - x.open);
         const un = rs.filter((r) => r.open && !r.list.length).length;
         return { period: P.label + ' (' + P.from + ' to ' + P.to + ')', previous_period: P.pfrom + ' to ' + P.pto, designers: rows, unassigned_open_tasks: un };
       },
       delivery_report(a) {
-        const P = period(a.period, a.from, a.to); let rs = allRows().filter((r) => r.stage === 'Delivered' && r.ddate);
+        const P = period(a.period, a.from, a.to); let rs = allRows().filter((r) => r.done && r.ddate);
         if (a.designer) { const p = findPerson(a.designer); if (!p || p.none) return { error: 'No designer called "' + a.designer + '".' }; if (p.ambiguous) return { ambiguous: p.ambiguous }; rs = rs.filter((r) => r.list.includes(p.name)); }
         if (a.brand) { const b = findBrand(a.brand); if (!b || b.none) return { error: 'No brand called "' + a.brand + '".' }; if (b.ambiguous) return { ambiguous: b.ambiguous }; rs = rs.filter((r) => r.brand === b.name); }
         rs = rs.filter((r) => clsOk(r, a.classification));
@@ -3589,9 +3623,9 @@
         const all = CO.rows(true) || [], fails = [];
         const stageSum = all.reduce((n, r) => n + (r.stage ? 1 : 0), 0); if (stageSum !== all.length) fails.push('every task has a status');
         if (all.some((r) => r.open !== CODATA.OPEN_STAGES.includes(r.stage))) fails.push('open work matches the open statuses');
-        if (all.some((r) => r.stage === 'Delivered' && (!r.ddate || r.ddate > t || r.month !== r.ddate.slice(0, 7)))) fails.push('delivery dates are set and not in the future');
+        if (all.some((r) => r.done && (!r.ddate || r.ddate > t || r.month !== r.ddate.slice(0, 7)))) fails.push('delivery dates are set and not in the future');
         const od1 = all.filter((r) => r.due === 'overdue').length, od2 = all.filter((r) => r.open && r.eta && r.eta < t).length; if (od1 !== od2) fails.push('overdue count (' + od1 + ' vs ' + od2 + ')');
-        const m = CO.thisMonth(), d1 = CO.sumQty(all.filter((r) => r.stage === 'Delivered' && r.month === m)), b = TB.sum(all, [m + '-01'], 'month', m + '-01', t).get(m + '-01');
+        const m = CO.thisMonth(), d1 = CO.sumQty(all.filter((r) => r.done && r.month === m)), b = TB.sum(all, [m + '-01'], 'month', m + '-01', t).get(m + '-01');
         if (d1 !== b) fails.push('delivered this month (' + d1 + ' vs ' + b + ')');
         const wd = CO.workdays(m + '-01', CO.monthEnd(m)); if (wd < 20 || wd > 23) fails.push('working days in the month (' + wd + ')');
         const withDes = all.filter((r) => r.open && r.list.length).length, perDes = [...new Set(all.flatMap((r) => r.list))].reduce((n, d) => n + all.filter((r) => r.open && r.list.includes(d)).length, 0);

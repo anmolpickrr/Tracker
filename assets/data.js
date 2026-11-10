@@ -88,30 +88,46 @@
 
   /* ---------- Status ---------- */
   const title = (s) => s.toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase());
+  /* Status definitions from the Creative Head (Nov 2026). Design Status is the primary field; Content Status only decides
+     whether a task that design has not started is ready to be picked up. Every task gets exactly one stage:
+       TBP (or blank) + content DONE (or blank) = To be planned  ready for a designer/editor          OPEN design work
+       WIP                                          = WIP                                               OPEN design work
+       CHANGES                                      = Changes requested  shared, revisions asked       OPEN design work
+       UNDER REVIEW                                 = Under review  team finished, Creative Head reviewing (not workload, never overdue)
+       SHARED                                       = Shared  with the client, waiting for approval    SHARED work (never overdue)
+       NO UPDATE                                    = No update  shared, no reply after follow-ups     SHARED work (never overdue)
+       DONE                                         = Delivered  delivered and approved                COMPLETED work
+       REJECTED                                     = Rejected  delivered, rejected by client          COMPLETED work (bandwidth),
+                                                                                                        not an approved delivery
+       TBP (or blank) + content PENDING / INCOMPLETE BRIEF / TBP / WIP / SHARED / CHANGES
+                                                    = Awaiting brief  the brief is not approved yet (sub-status says why)
+       HOLD, or not started + content HOLD          = Hold
+       DEPRIORITIZED                                = Deprioritised  no longer required */
+  const BRIEF = { 'PENDING': 'Brief pending discussion', 'TBD': 'Brief pending discussion', 'INCOMPLETE BRIEF': 'Incomplete brief', 'INCOMPLETE': 'Incomplete brief',
+    'TBP': 'Brief ready for scripting', 'WIP': 'Brief in progress', 'SHARED': 'Brief with client', 'CHANGES': 'Brief changes requested' };
   function stageOf(ds0, cs0) {
     const ds = clean(ds0).toUpperCase(), cs = clean(cs0).toUpperCase();
-    /* Status rules agreed with the Creative Head (Nov 2026):
-       DONE = delivered. REJECTED = delivered, then rejected by the client: counts as completed work (the time was spent);
-       the redo is a new task. NO UPDATE = shared with the client long ago, no reply despite follow-ups: counts as completed.
-       SHARED = Pending approval (with the client): never overdue, not in workload. HOLD = Hold, DEPRIORITIZED = Deprioritised:
-       never overdue, not in workload. Content INCOMPLETE BRIEF / PENDING / TBD (or WIP while design hasn't started) = Incomplete brief. */
-    if (['DONE', 'DELIVERED', 'COMPLETED', 'COMPLETE'].includes(ds)) return ['Delivered', false];
-    if (ds === 'REJECTED') return ['Delivered', false, 'Rejected by client'];
-    if (ds === 'NO UPDATE') return ['Delivered', false, 'No client update'];
+    if (['DONE', 'DELIVERED', 'COMPLETED', 'COMPLETE', 'APPROVED'].includes(ds)) return ['Delivered', false];
+    if (ds === 'REJECTED') return ['Rejected', false];
+    if (ds === 'NO UPDATE') return ['No update', false];
+    if (['UNDER REVIEW', 'IN REVIEW', 'REVIEW', 'INTERNAL REVIEW'].includes(ds)) return ['Under review', false];
+    if (['SHARED', 'SENT', 'SENT FOR APPROVAL', 'PENDING APPROVAL'].includes(ds)) return ['Shared', false];
     if (['WIP', 'IN PROGRESS', 'WORK IN PROGRESS', 'ONGOING', 'IN-PROGRESS'].includes(ds)) return ['WIP', true];
-    if (['SHARED', 'UNDER REVIEW', 'IN REVIEW', 'REVIEW', 'SENT FOR REVIEW'].includes(ds)) return ['Pending approval', false];
     if (['CHANGES', 'CHANGES REQUESTED', 'REVISION', 'REWORK', 'FEEDBACK'].includes(ds)) return ['Changes requested', true];
     if (['HOLD', 'ON HOLD', 'PAUSED'].includes(ds)) return ['Hold', false];
     if (['DEPRIORITIZED', 'DEPRIORITISED', 'CANCELLED', 'CANCELED', 'DROPPED', 'NOT NEEDED'].includes(ds)) return ['Deprioritised', false];
     if (ds === '' || ['TBP', 'TO BE PLANNED', 'NOT STARTED', 'PLANNED', 'TODO', 'TO DO'].includes(ds)) {
       if (cs === 'HOLD') return ['Hold', false];
-      if (cs === 'WIP') return ['Incomplete brief', false, 'Content in progress'];
-      if (['INCOMPLETE BRIEF', 'PENDING', 'TBD', 'TBP'].includes(cs)) return ['Incomplete brief', false];
+      if (BRIEF[cs]) return ['Awaiting brief', false, BRIEF[cs]];
       return ['To be planned', true];
     }
     return [title(clean(ds0)), true];
   }
-  const KNOWN = ['Delivered', 'WIP', 'Pending approval', 'Changes requested', 'Hold', 'Deprioritised', 'To be planned', 'Incomplete brief'];
+  /* What each stage counts towards (one place, used by every page, report, briefing and the assistant). */
+  const GROUPS = { 'To be planned': 'open', 'WIP': 'open', 'Changes requested': 'open', 'Under review': 'review', 'Shared': 'shared', 'No update': 'shared',
+    'Delivered': 'done', 'Rejected': 'done', 'Awaiting brief': 'brief', 'Hold': 'hold', 'Deprioritised': 'dropped' };
+  function groupOf(stage) { const g = GROUPS[stage] || 'open'; return { group: g, open: g === 'open', done: g === 'done', shared: g === 'shared', review: g === 'review', brief: g === 'brief' }; }
+  const KNOWN = Object.keys(GROUPS);
 
   const TYPES = { 'video (in-house)': 'In-House Video', 'in-house video': 'In-House Video', 'a+': 'A+ Content', 'a++': 'A+ Content', 'static ad': 'Static', 'static ads': 'Static', 'carousel ': 'Carousel', 'carousel ads': 'Carousel', 'gif ads': 'GIF', 'ai ugc video': 'AI Video', 'in-house edit': 'Video Edit', 'reels': 'Reel' };
   const typeOf = (s) => { const c = clean(s); if (!c) return 'Unspecified'; return TYPES[c.toLowerCase()] || c; };
@@ -193,7 +209,8 @@
     }
 
     // Designer cells: an email becomes a name ("neha@shiprocket.com" → "Neha").
-    const fromEmail = (v) => clean(v).replace(/([A-Za-z0-9._-]+)@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m, u) => u.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+    // Emails become names (neha@… → Neha), and names typed together without a space ("Shubham RanaHimanshu Saxena") are separated.
+    const fromEmail = (v) => clean(v).replace(/([A-Za-z0-9._-]+)@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m, u) => u.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())).replace(/([a-z])([A-Z][a-z])/g, '$1 $2');
     const designersOf = designerSplitter(both.map(([r]) => fromEmail(r.designer)));
 
     // One spelling per brand and per creative type (case, spacing and plurals merged; the most used spelling wins).
@@ -254,21 +271,28 @@
       if (!req && clean(r.req_text) && !flags.includes('Request date unreadable')) flags.push('Request date unreadable');
       if (!eta && clean(r.eta_text) && !flags.includes('ETA unreadable')) flags.push('ETA unreadable');
       if (req && eta && days(req, eta) < 0) flags.push('ETA before request date');
-      const [stage, open, sub] = stageOf(r.design_status, r.content_status);
+      const [stage, open0, sub] = stageOf(r.design_status, r.content_status);
+      const G = groupOf(stage), open = KNOWN.includes(stage) ? G.open : open0;
       if (!KNOWN.includes(stage)) flags.push('Unrecognised status');
       const des = designersOf(fromEmail(r.designer));
+      const dsU = clean(r.design_status).toUpperCase(), csU = clean(r.content_status).toUpperCase(), idU = clean(r.id).toUpperCase();
       if (open && !eta) flags.push('Open, no ETA');
-      if ((open || stage === 'Pending approval') && !des.length) flags.push('No designer assigned');
-      if (stage === 'Delivered' && !des.length) flags.push('Delivered, no designer');
-      if (stage === 'Delivered' && !/^https?:/i.test(clean(r.creative_link))) flags.push('Delivered, no creative link');
+      if ((open || G.review || G.shared) && !des.length) flags.push('No designer assigned');
+      if (G.done && !des.length) flags.push('Completed, no designer');
+      if (G.done && !/^https?:/i.test(clean(r.creative_link))) flags.push('Completed, no creative link');
+      if (!dsU && !csU) flags.push('Design and content status blank');
+      if ((G.done || G.shared || G.review) && ['PENDING', 'INCOMPLETE BRIEF', 'TBD'].includes(csU)) flags.push('Design finished but brief not approved');
       if (!clean(r.brand)) flags.push('No brand');
+      if (!idU) flags.push('No Creative_ID');
+      else if (source === 'Paid' ? !/^SRAP\d/.test(idU) : !/^SRA\d/.test(idU)) flags.push(source === 'Paid' ? 'ID should start with SRAP (External sheet)' : 'ID should start with SRA (Internal sheet)');
       if (clean(r.id) && idCount.get((r.src || '') + '|' + clean(r.id)) > 1) flags.push('Duplicate ID');
       let uid = (r.src || source) + ':' + (clean(r.id) || 'row' + (r.row || i + 2));
       while (seen.has(uid)) uid += '·';
       seen.add(uid);
       // Delivery date: the Delivered On column if the sheet has one, else the ETA (or request date).
       // A delivered task can't have been delivered in the future, so a later ETA counts as today.
-      let ddate = stage === 'Delivered' ? (r.delivered_on || eta || req || null) : null;
+      // Completed work (DONE, REJECTED) is dated by Delivered On, else the Design ETA (the actual delivery date once done), else the request date.
+      let ddate = G.done ? (r.delivered_on || eta || req || null) : null;
       if (ddate && ddate > today) ddate = today;
       const pri = clean(r.priority).toUpperCase();
       const t0 = typeOf(r.type);
@@ -277,8 +301,9 @@
         brand: clean(r.brand) ? brandName.get(brandKey(clean(r.brand))) : 'No brand',
         topic: clean(r.topic), type: typeName.get(typeKey(t0)) || t0, channel: clean(r.channel), qty: r.qty || 1,
         priority: /^P\d$/.test(pri) ? pri : '', owner: clean(r.owner),
-        designers: des.join(' + '), stage, open, sub: sub || '', design_status: clean(r.design_status), req, eta,
-        ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: stage === 'Delivered' ? (r.delivered_on ? 'delivered' : eta ? 'eta' : 'request') : '',
+        designers: des.join(' + '), stage, open, group: G.group, done: G.done, shared: G.shared, review: G.review, awaiting: G.brief,
+        sub: sub || '', design_status: clean(r.design_status), content_status: clean(r.content_status), req, eta,
+        ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: G.done ? (r.delivered_on ? 'delivered' : eta ? 'eta' : 'request') : '',
         live_status: clean(r.live_status).replace(/^Luanch/i, 'Launch'),
         brief: clean(r.brief), link: clean(r.creative_link), file: clean(r.open_file),
         flags: flags.join('; ')
@@ -295,6 +320,6 @@
   }
   const OPEN_STAGES = ['To be planned', 'WIP', 'Changes requested'];
 
-  const api = { kindOf, parseDate, parseSource, parseTeam, stageOf, buildTasks, designerSplitter, columnsOf, OPEN_STAGES };
+  const api = { kindOf, parseDate, parseSource, parseTeam, stageOf, groupOf, GROUPS, buildTasks, designerSplitter, columnsOf, OPEN_STAGES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.CODATA = api;
 })(typeof window !== 'undefined' ? window : globalThis);

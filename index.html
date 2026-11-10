@@ -7,13 +7,13 @@
 <meta name="description" content="Creative Ops: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
 <meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/ https://www.googleapis.com; frame-src https://accounts.google.com/gsi/; media-src data: blob:; form-action 'none'; base-uri 'none'; object-src 'none'">
-<link rel="icon" href="assets/favicon.svg?v=20261111e" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.svg?v=20261111g" type="image/svg+xml">
 <meta name="theme-color" content="#0f0f0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=20261111e">
-<script src="assets/theme.js?v=20261111e"></script>
+<link rel="stylesheet" href="assets/style.css?v=20261111g">
+<script src="assets/theme.js?v=20261111g"></script>
 </head>
 <body>
 <div class="boot" id="boot" aria-hidden="true"><div class="boot-lock"><svg class="logo mark boot-mark" viewBox="30 140 452 212" aria-hidden="true"><defs><clipPath id="mk-c-boot"><path d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></clipPath><linearGradient id="mk-t-boot" x1="0" x2="1"><stop offset="0" class="mk-s0"/><stop offset="1" class="mk-s1"/></linearGradient><linearGradient id="mk-h-boot" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect class="sl sl1" x="-170" y="160" width="300" height="9" rx="4.5" fill="url(#mk-t-boot)"/><rect class="sl sl2" x="-230" y="244" width="360" height="7" rx="3.5" fill="url(#mk-t-boot)"/><rect class="sl sl3 lime" x="-120" y="214" width="220" height="6" rx="3" /><rect class="sl sl4" x="-260" y="350" width="330" height="8" rx="4" fill="url(#mk-t-boot)"/><rect class="lt lt1" x="20" y="176" width="190" height="24" rx="12" fill="url(#mk-t-boot)"/><rect class="lt lt2" x="-150" y="292" width="200" height="24" rx="12" fill="url(#mk-t-boot)"/><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/><g clip-path="url(#mk-c-boot)"><rect class="mk-shine" x="0" y="140" width="130" height="212" fill="url(#mk-h-boot)"/></g></svg></div></div>
@@ -105,8 +105,8 @@
       <button class="co-kpi is-bad" data-go="overdue" type="button"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5l3 2M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM4 4L2 6M20 4l2 2"/></svg></span><span class="co-kpi-label">Overdue</span><span class="kpi-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></span></span><span class="co-kpi-val" data-draw="kpi" data-kpi="overdue">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="overdue">—</span></button>
       <button class="co-kpi is-warn" data-go="today" type="button"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v16H4zM4 10h16M9 3v4M15 3v4"/></svg></span><span class="co-kpi-label">Due today</span><span class="kpi-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></span></span><span class="co-kpi-val" data-draw="kpi" data-kpi="today">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="today">—</span></button>
       <button class="co-kpi" data-go="wip" type="button"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16zM14 6l3 3"/></svg></span><span class="co-kpi-label">WIP</span><span class="kpi-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></span></span><span class="co-kpi-val" data-draw="kpi" data-kpi="wip">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="wip">—</span></button>
-      <button class="co-kpi" data-go="review" type="button"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg></span><span class="co-kpi-label">Pending approval</span><span class="kpi-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></span></span><span class="co-kpi-val" data-draw="kpi" data-kpi="review">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="review">—</span></button>
-      <button class="co-kpi hero" data-go="delivered-month" type="button"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9M21 4L11 14l-3-3"/></svg></span><span class="co-kpi-label">Delivered this month</span><span class="kpi-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></span></span><span class="co-kpi-row"><span class="co-kpi-val" data-draw="kpi" data-kpi="delivered">—</span><span class="co-spark" data-draw="kpi-spark" aria-hidden="true"></span></span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="delivered">—</span></button>
+      <button class="co-kpi" data-go="review" type="button"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg></span><span class="co-kpi-label">Shared with client</span><span class="kpi-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></span></span><span class="co-kpi-val" data-draw="kpi" data-kpi="review">—</span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="review">—</span></button>
+      <button class="co-kpi hero" data-go="delivered-month" type="button"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9M21 4L11 14l-3-3"/></svg></span><span class="co-kpi-label">Completed this month</span><span class="kpi-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M8 7h9v9"/></svg></span></span><span class="co-kpi-row"><span class="co-kpi-val" data-draw="kpi" data-kpi="delivered">—</span><span class="co-spark" data-draw="kpi-spark" aria-hidden="true"></span></span><span class="co-kpi-sub" data-draw="kpi-sub" data-kpi="delivered">—</span></button>
     </div>
 
     <div class="ov-grid fill">
@@ -125,7 +125,7 @@
     <div class="ov-grid">
       <div class="co-card">
         <div class="co-card-head">
-          <div><h2 class="co-h2">Delivery trend</h2><p class="co-note" data-draw="trend-note">Creatives delivered per week, last 12 weeks. Hover for details.</p></div>
+          <div><h2 class="co-h2">Delivery trend</h2><p class="co-note" data-draw="trend-note">Creatives completed per week, last 12 weeks. Hover for details.</p></div>
           <span class="trend-stat" data-draw="trend-stat"></span>
         </div>
         <div data-gr="trend" data-gr-default="week" data-gr-draw="trend trend-stat trend-note"></div>
@@ -133,7 +133,7 @@
       </div>
       <div class="co-card">
         <div class="co-card-head">
-          <div><h2 class="co-h2" data-draw="tb-title">Top brands this month</h2><p class="co-note">Creatives delivered. Click a brand to filter everything by it.</p></div>
+          <div><h2 class="co-h2" data-draw="tb-title">Top brands this month</h2><p class="co-note">Creatives completed (delivered + rejected). Click a brand to filter everything by it.</p></div>
         </div>
         <div data-gr="brands" data-gr-default="month" data-gr-draw="top-brands tb-title"></div>
         <div data-draw="top-brands"></div>
@@ -192,12 +192,15 @@
           <option value="today">Due today</option>
           <option value="week">Due in next 7 days</option>
           <option value="noeta">Open, no ETA</option>
-          <option value="review">Pending approval</option>
-          <option value="awaiting">Incomplete brief</option>
+          <option value="underreview">Under review</option>
+          <option value="review">Shared (incl. no update)</option>
+          <option value="awaiting">Awaiting brief</option>
           <option value="hold">Hold</option>
-          <option value="delivered">Delivered</option>
-          <option value="delivered-month">Delivered this month</option>
-          <option value="delivered-range">Delivered in report period</option>
+          <option value="delivered">Completed (delivered + rejected)</option>
+          <option value="approved">Delivered (approved)</option>
+          <option value="rejected">Rejected</option>
+          <option value="delivered-month">Completed this month</option>
+          <option value="delivered-range">Completed in report period</option>
           <option value="dropped">Deprioritised or rejected</option>
           <option value="all">All statuses</option>
         </select>
@@ -251,7 +254,7 @@
       </div>
       <div class="co-tablewrap">
         <table class="co-table">
-          <thead><tr><th>Designer</th><th>Status</th><th class="co-hide-xl">Role</th><th class="n adm-only" title="Estimated open work by creative type and role, in working days of 7 hours. Admins only.">Est. load</th><th class="n">Open</th><th class="n co-hide-lg">WIP</th><th class="n">Overdue</th><th class="n co-hide-lg">Due 7d</th><th class="n">Pending</th><th class="n">This month</th><th class="n">Last month</th><th class="n" title="Creatives delivered this month ÷ working days so far (Mon–Fri)">Per work day</th><th class="co-hide-lg">Main brands</th><th class="co-hide-xl">Type mix (delivered)</th></tr></thead>
+          <thead><tr><th>Designer</th><th>Status</th><th class="co-hide-xl">Role</th><th class="n adm-only" title="Estimated open work by creative type and role, in working days of 7 hours. Admins only.">Est. load</th><th class="n">Open</th><th class="n co-hide-lg">WIP</th><th class="n">Overdue</th><th class="n co-hide-lg">Due 7d</th><th class="n">Pending</th><th class="n">This month</th><th class="n">Last month</th><th class="n" title="Creatives completed this month ÷ working days so far (Mon–Fri)">Per work day</th><th class="co-hide-lg">Main brands</th><th class="co-hide-xl">Type mix (delivered)</th></tr></thead>
           <tbody data-draw="team"></tbody>
         </table>
       </div>
@@ -268,7 +271,7 @@
     </div>
     <div class="co-card">
       <div class="co-card-head">
-        <div><h2 class="co-h2">Creatives delivered per designer per month</h2><p class="co-note">By delivery month. Darker means more. Click a cell to open that month in Reports.</p></div>
+        <div><h2 class="co-h2">Creatives completed per designer per month</h2><p class="co-note">By delivery month. Darker means more. Click a cell to open that month in Reports.</p></div>
       </div>
       <div class="co-tablewrap">
         <table class="co-table co-heat" data-draw="heat"></table>
@@ -298,7 +301,7 @@
       <p class="co-note"><b data-draw="r-period">—</b> The filters above apply to every number here.</p>
     </div>
     <div class="co-kpis">
-      <div class="co-kpi hero"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9M21 4L11 14l-3-3"/></svg></span><span class="co-kpi-label">Creatives delivered</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="total">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="total">—</span></div>
+      <div class="co-kpi hero"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9M21 4L11 14l-3-3"/></svg></span><span class="co-kpi-label">Creatives completed</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="total">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="total">—</span></div>
       <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></span><span class="co-kpi-label">Tasks closed</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="tasks">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="tasks">—</span></div>
       <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12M6 9h12M13.5 20L7 13h2.5a4.5 4.5 0 0 0 0-9"/></svg></span><span class="co-kpi-label">External (client)</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="paid">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="paid">—</span></div>
       <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11v3l13 5V6zM16 8.5a4 4 0 0 1 0 7"/></svg></span><span class="co-kpi-label">Internal (marketing)</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="mkt">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="mkt">—</span></div>
@@ -308,7 +311,7 @@
     <section class="co-card ot-card" data-draw="r-ontime" aria-label="On time and turnaround"></section>
     <div class="co-card">
       <div class="co-card-head">
-        <div><h2 class="co-h2">Creatives delivered</h2><p class="co-note" data-draw="r-chart-note">The report period is highlighted. Click a bar to report on it.</p></div>
+        <div><h2 class="co-h2">Creatives completed</h2><p class="co-note" data-draw="r-chart-note">The report period is highlighted. Click a bar to report on it.</p></div>
         <div class="seg small" role="group" aria-label="Chart breakdown"><button type="button" data-rchart="total">Total</button><button type="button" data-rchart="type">By type</button></div>
       </div>
       <div data-gr="rchart" data-gr-default="month" data-gr-draw="r-chart r-chart-note"></div>
@@ -317,16 +320,16 @@
     </div>
     <div class="co-grid">
       <div class="co-card">
-        <div class="co-card-head"><div><h2 class="co-h2">By brand</h2><p class="co-note">Creatives delivered in the period, by type.</p></div></div>
+        <div class="co-card-head"><div><h2 class="co-h2">By brand</h2><p class="co-note">Creatives completed in the period, by type.</p></div></div>
         <div class="co-tablewrap short"><table class="co-table" data-draw="r-brand"></table></div>
       </div>
       <div class="co-card">
-        <div class="co-card-head"><div><h2 class="co-h2">By designer</h2><p class="co-note">Creatives delivered in the period, by type.</p></div></div>
+        <div class="co-card-head"><div><h2 class="co-h2">By designer</h2><p class="co-note">Creatives completed in the period, by type.</p></div></div>
         <div class="co-tablewrap short"><table class="co-table" data-draw="r-designer"></table></div>
       </div>
     </div>
     <div class="co-card">
-      <div class="co-card-head"><div><h2 class="co-h2">By creative type</h2><p class="co-note">Creatives delivered in the period, against the previous period.</p></div></div>
+      <div class="co-card-head"><div><h2 class="co-h2">By creative type</h2><p class="co-note">Creatives completed in the period, against the previous period.</p></div></div>
       <div class="co-tablewrap short"><table class="co-table" data-draw="r-type"></table></div>
     </div>
     <details class="co-defs">
@@ -336,7 +339,7 @@
         <dt>Creatives</dt><dd>Each row counts as one creative. Add a column named "No. of Creatives" to either sheet and the dashboard counts that number instead.</dd>
         <dt>Delivered</dt><dd>Design status DONE or Delivered.</dd>
         <dt>Working days</dt><dd>Monday to Friday. Saturdays and Sundays are not counted, so a month has 20 to 23 working days, usually 21 or 22. Public holidays are not taken out.</dd>
-        <dt>Per designer, per working day</dt><dd>Creatives delivered ÷ the people who delivered at least one in the period ÷ the working days in the period (up to today). Multiply by about 21.7 for a typical month.</dd>
+        <dt>Per designer, per working day</dt><dd>Creatives completed ÷ the people who delivered at least one in the period ÷ the working days in the period (up to today). Multiply by about 21.7 for a typical month.</dd>
         <dt>Comparisons</dt><dd>A period that is still running is compared with the same number of working days of the period before: 7 working days into November is compared with the first 7 working days of October.</dd>
         <dt>Internal and External</dt><dd>Everything from the Paid (client) sheet is External; everything from the Marketing team sheet is Internal. The sheets keep their own names.</dd>
         <dt>History</dt><dd>Internal (marketing) work before 2026 comes from the "2025" tab of the Marketing sheet.</dd>
@@ -363,16 +366,22 @@
     <details class="co-defs">
       <summary>How design statuses are read</summary>
       <dl>
-        <dt>To be planned (TBP)</dt><dd>Design status TBP or blank, with the brief ready. Counts as open work.</dd>
-        <dt>WIP</dt><dd>Design status WIP or WIP. Counts as open work.</dd>
-        <dt>Changes requested</dt><dd>Design status Changes. Counts as open work.</dd>
-        <dt>Pending approval</dt><dd>Design status Pending approval, Review or Shared: with the requester or client.</dd>
-        <dt>Delivered</dt><dd>Design status DONE or Delivered.</dd>
-        <dt>Incomplete brief</dt><dd>Design not started and content status is Incomplete brief, Pending, WIP, TBD or TBP.</dd>
-        <dt>Hold</dt><dd>Design status HOLD, Hold or No update, or content on HOLD.</dd>
-        <dt>Deprioritised</dt><dd>Design status Deprioritized, Rejected or Cancelled.</dd>
+        <dt>To be planned</dt><dd>Design status TBP (or blank) and the brief approved (content DONE or blank): ready to be picked up. Open work.</dd>
+        <dt>WIP</dt><dd>Design status WIP: in progress. Open work.</dd>
+        <dt>Changes requested</dt><dd>Design status CHANGES: shared, revisions requested. Open work.</dd>
+        <dt>Under review</dt><dd>Design status UNDER REVIEW: the team finished it; the Creative Head has not reviewed it yet. Not workload, never overdue.</dd>
+        <dt>Shared</dt><dd>Design status SHARED: with the client or another team for approval. Shared work, never overdue.</dd>
+        <dt>No update</dt><dd>Design status NO UPDATE: shared, no reply despite follow-ups. Counted as shared work, never overdue.</dd>
+        <dt>Delivered</dt><dd>Design status DONE: delivered and approved. Completed work.</dd>
+        <dt>Rejected</dt><dd>Design status REJECTED: delivered, rejected by the client. Completed work for bandwidth, not an approved delivery; a redo is a new task.</dd>
+        <dt>Awaiting brief</dt><dd>Design not started (TBP or blank) and the brief not approved: content PENDING (discussion), INCOMPLETE BRIEF, TBP (ready for final scripting), WIP (brief in progress), SHARED (brief with client) or CHANGES. Not design workload, never overdue; the Content Owner's work.</dd>
+        <dt>Hold</dt><dd>Design status HOLD, or design not started and content HOLD.</dd>
+        <dt>Deprioritised</dt><dd>Design status DEPRIORITIZED: no longer required.</dd>
         <dt>Any other status</dt><dd>Shown as typed in the sheet, counted as open work, and listed here under "Unrecognised status".</dd>
-        <dt>Overdue</dt><dd>Open work whose Design ETA is before today.</dd>
+        <dt>Overdue</dt><dd>Open work (To be planned, WIP, Changes requested) whose Design ETA is before today.</dd>
+        <dt>Completed</dt><dd>Delivered + Rejected, dated by Delivered On, else the Design ETA. Shared and No update are not completed.</dd>
+        <dt>Creative_ID</dt><dd>SRAP = External (Paid) sheet, SRA = Internal (Marketing) sheet. IDs that do not match their sheet, are missing or repeated are listed above.</dd>
+        <dt>Unassigned</dt><dd>Tasks with no designer/editor. Counted only under Unassigned, never for a person.</dd>
         <dt>Designers</dt><dd>Read from "Designer/Editor" (External, the Paid client sheet) and "Creator" (Internal, the Marketing sheet). Names typed together in one cell are split into each person.</dd>
       </dl>
     </details>
@@ -622,13 +631,16 @@
     <div class="co-ed-grid">
       <label class="co-field">Design status
         <select class="co-select" id="ed-status">
-          <option value="To be planned">To be planned (TBP)</option>
-          <option value="WIP">WIP</option>
-          <option value="Pending approval">Pending approval</option>
-          <option value="Changes requested">Changes requested</option>
-          <option value="Delivered">Delivered (DONE)</option>
-          <option value="Hold">Hold</option>
-          <option value="Deprioritised">Deprioritised (deprioritized)</option>
+          <option value="To be planned">TBP: ready to be picked up</option>
+          <option value="WIP">WIP: in progress</option>
+          <option value="Under review">UNDER REVIEW: done, awaiting the Creative Head's review</option>
+          <option value="Shared">SHARED: with the client for approval</option>
+          <option value="Changes requested">CHANGES: client asked for revisions</option>
+          <option value="Delivered">DONE: delivered and approved</option>
+          <option value="Rejected">REJECTED: delivered, rejected by the client</option>
+          <option value="No update">NO UPDATE: shared, no reply after follow-ups</option>
+          <option value="Hold">HOLD: on hold</option>
+          <option value="Deprioritised">DEPRIORITIZED: no longer required</option>
         </select>
       </label>
       <label class="co-field">Design ETA<input class="co-input" id="ed-eta" type="date" min="2020-01-01" max="2099-12-31"></label>
@@ -651,8 +663,8 @@
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-<script src="assets/config.js?v=20261111e"></script>
-<script src="assets/data.js?v=20261111e"></script>
-<script src="assets/app.js?v=20261111e"></script>
+<script src="assets/config.js?v=20261111g"></script>
+<script src="assets/data.js?v=20261111g"></script>
+<script src="assets/app.js?v=20261111g"></script>
 </body>
 </html>
