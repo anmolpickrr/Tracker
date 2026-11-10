@@ -2509,6 +2509,67 @@
     try { const b = await callApi({ action: 'history' }); if (b.ok) { HS.days = b.days || []; dash.draw('kpi-sub'); } } catch (e) { /* older web app: no comparisons */ }
   }
 
+  /* ================= Dropdown menus =================
+     Every dropdown (select.co-select and Fasty's language) opens the same menu: aligned to the control's left edge, at
+     least as wide as it, a tick on the current choice, a search box for long lists, full keyboard support. The native
+     select stays the source of truth (same layout, same change events). Phones keep the native picker. */
+  (() => {
+    if (!matchMedia('(pointer: fine)').matches) return;
+    const SEL = 'select.co-select, select.ash-lang';
+    let cur = null;
+    const menu = document.createElement('div'); menu.className = 'cs-menu'; menu.hidden = true; menu.setAttribute('role', 'listbox'); document.body.append(menu);
+    const close = (refocus) => { if (!cur) return; const s = cur.sel; menu.hidden = true; s.setAttribute('aria-expanded', 'false'); s.classList.remove('cs-open'); cur = null; if (refocus) s.focus(); };
+    const place = () => {
+      if (!cur) return; const r = cur.sel.getBoundingClientRect(), vh = innerHeight, vw = document.documentElement.clientWidth;
+      menu.style.minWidth = Math.max(r.width, 180) + 'px'; menu.style.maxWidth = Math.max(r.width, Math.min(360, vw - 24)) + 'px';
+      const h = Math.min(menu.scrollHeight, 340), below = vh - r.bottom - 12, up = below < Math.min(h, 220) && r.top > below;
+      menu.style.maxHeight = Math.max(160, (up ? r.top : below) - 8) + 'px';
+      menu.style.top = (up ? Math.max(8, r.top - Math.min(h, r.top - 16) - 6) : r.bottom + 6) + 'px';
+      const left = Math.min(r.left, vw - menu.offsetWidth - 12); menu.style.left = Math.max(12, left) + 'px';
+    };
+    function build(q) {
+      const s = cur.sel, items = [], ql = String(q || '').toLowerCase().trim();
+      menu.querySelectorAll('.cs-opt, .cs-group, .cs-none').forEach((x) => x.remove());
+      [...s.children].forEach((ch) => {
+        const opts = ch.tagName === 'OPTGROUP' ? [...ch.children] : [ch];
+        if (ch.tagName === 'OPTGROUP') { const g = document.createElement('div'); g.className = 'cs-group'; g.textContent = ch.label; menu.append(g); }
+        opts.forEach((o) => {
+          if (o.hidden || (ql && !o.textContent.toLowerCase().includes(ql))) return;
+          const b = document.createElement('div'); b.className = 'cs-opt' + (o.selected ? ' on' : '') + (o.disabled ? ' off' : ''); b.setAttribute('role', 'option'); b.setAttribute('aria-selected', String(o.selected)); b.textContent = o.textContent; b.dataset.v = o.value;
+          b.addEventListener('mousedown', (e) => e.preventDefault()); b.addEventListener('click', () => { if (!o.disabled) choose(o.value); });
+          menu.append(b); items.push(b);
+        });
+      });
+      if (!items.length) { const n = document.createElement('div'); n.className = 'cs-none'; n.textContent = 'Nothing matches'; menu.append(n); }
+      cur.items = items; cur.hi = Math.max(0, items.findIndex((x) => x.classList.contains('on'))); paint();
+    }
+    const paint = () => { cur.items.forEach((x, i) => x.classList.toggle('hi', i === cur.hi)); const h = cur.items[cur.hi]; if (h) h.scrollIntoView({ block: 'nearest' }); };
+    function choose(v) { const s = cur.sel; if (s.value !== v) { s.value = v; s.dispatchEvent(new Event('input', { bubbles: true })); s.dispatchEvent(new Event('change', { bubbles: true })); } close(true); }
+    function open(s) {
+      if (cur && cur.sel === s) { close(true); return; } close(); if (s.disabled) return;
+      cur = { sel: s, items: [], hi: 0 }; menu.replaceChildren(); menu.classList.toggle('cs-ash', s.matches('.ash-lang'));
+      if (s.options.length > 10) { const f = document.createElement('input'); f.className = 'cs-find'; f.type = 'search'; f.placeholder = 'Search'; f.setAttribute('aria-label', 'Search options'); f.addEventListener('input', () => { build(f.value); place(); }); f.addEventListener('keydown', key); menu.append(f); setTimeout(() => f.focus(), 0); }
+      build(''); menu.hidden = false; s.setAttribute('aria-expanded', 'true'); s.classList.add('cs-open'); place();
+    }
+    function key(e) {
+      if (!cur) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!cur.items.length) return; cur.hi = (cur.hi + (e.key === 'ArrowDown' ? 1 : -1) + cur.items.length) % cur.items.length; paint(); }
+      else if (e.key === 'Enter') { e.preventDefault(); const h = cur.items[cur.hi]; if (h && !h.classList.contains('off')) choose(h.dataset.v); }
+      else if (e.key === 'Escape' || e.key === 'Tab') { if (e.key === 'Escape') e.preventDefault(); close(e.key === 'Escape'); }
+    }
+    document.addEventListener('mousedown', (e) => {
+      const s = e.target.closest && e.target.closest(SEL);
+      if (s && e.button === 0) { e.preventDefault(); s.focus(); open(s); return; }
+      if (cur && !menu.contains(e.target)) close();
+    }, true);
+    document.addEventListener('keydown', (e) => {
+      const s = e.target.closest && e.target.closest(SEL);
+      if (s && !cur && (e.key === 'Enter' || e.key === ' ' || (e.altKey && e.key === 'ArrowDown'))) { e.preventDefault(); open(s); return; }
+      if (cur && (e.target === cur.sel || menu.contains(e.target))) key(e);
+    }, true);
+    addEventListener('resize', () => close()); addEventListener('scroll', (e) => { if (cur && !menu.contains(e.target)) place(); }, true);
+  })();
+
   /* ================= Motion helpers ================= */
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
   /* Smooth layout (FLIP): note where every card is, make the change, then glide each card from its old place and size to
@@ -2523,7 +2584,7 @@
     const cs = getComputedStyle(c), cols = cs.gridTemplateColumns.split(' ').filter(Boolean).length;
     if (cols < 2) { c.classList.remove('mas-on'); all.forEach((k) => k.classList.remove('mas-wide')); return; }
     c.classList.add('mas-on');
-    const gap = parseFloat(cs.columnGap) || 16, STRETCH = 160;
+    const gap = parseFloat(cs.columnGap) || 16, STRETCH = 56; // small bottom differences only: no tall empty space inside a card
     const kids = all.filter((k) => getComputedStyle(k).display !== 'none');
     // .mas-flex cards (Pipeline) may run full width or sit in a column: whichever leaves less empty space.
     const items = kids.map((k) => ({ k, flex: k.classList.contains('mas-flex'), h: Math.ceil(k.scrollHeight + 2) }));
