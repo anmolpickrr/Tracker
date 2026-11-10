@@ -197,14 +197,18 @@
     const list = Array.isArray(sources) ? sources : Object.keys(sources).map((k) => ({ kind: kindOf(k), rows: sources[k] || [] }));
     const seenIds = { paid: new Set(), mkt: new Set() };
     const both = [], ignored = [];
+    // A Delivered On date shared by 60 or more rows of one tab was written in bulk (not real delivery days): ignore it,
+    // date those tasks by their Design ETA as before, and flag them in Data health.
+    for (const s of list) { const n = new Map(); (s.rows || []).forEach((r) => { if (r.delivered_on) n.set(r.delivered_on, (n.get(r.delivered_on) || 0) + 1); }); s.bulkDates = new Set([...n].filter(([, c]) => c >= 60).map(([d]) => d)); }
     for (const s of list) {
       if (s.kind !== 'paid' && s.kind !== 'mkt') continue;
       const ids = new Set();
-      for (const r of s.rows || []) {
+      for (let r of s.rows || []) {
         const id = clean(r.id);
         if (id && seenIds[s.kind].has(id)) continue; // the same task in an older tab: the newer copy wins
         if (id) ids.add(id);
         const source = s.kind === 'paid' ? 'Paid' : 'Marketing';
+        if (r.delivered_on && s.bulkDates.has(r.delivered_on)) { r = Object.assign({}, r, { delivered_on: null, bulk_delivered: true }); }
         if (clean(r.brand) || clean(r.type) || clean(r.topic)) both.push([r, source]);
         else ignored.push({ src: r.src || '', row: r.row || null, id, source, owner: clean(r.owner), status: clean(r.design_status) || clean(r.content_status), eta: r.eta, req: r.req_date });
       }
@@ -285,6 +289,7 @@
       if (G.done && !/^https?:/i.test(clean(r.creative_link))) flags.push('Completed, no creative link');
       if (!dsU && !csU) flags.push('Design and content status blank');
       if ((G.done || G.shared || G.review) && ['PENDING', 'INCOMPLETE BRIEF', 'TBD'].includes(csU)) flags.push('Design finished but brief not approved');
+      if (r.bulk_delivered) flags.push('Delivered On written in bulk (ignored)');
       if (!clean(r.brand)) flags.push('No brand');
       if (!idU) flags.push('No Creative_ID');
       else if (source === 'Paid' ? !/^SRAP\d/.test(idU) : !/^SRA\d/.test(idU)) flags.push(source === 'Paid' ? 'ID should start with SRAP (External sheet)' : 'ID should start with SRA (Internal sheet)');

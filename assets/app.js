@@ -1307,14 +1307,16 @@
   /* ================= My work =================
      One person's day: overdue and due today first, then what is next, what is with the client and what they delivered
      this week. Team members land here; admins can view any team member. */
-  const MW = { who: LS.get('co.mwho', '') };
+  const MW = { who: LS.get('co.mwho2', '') };
   dash.draw('mine', (el) => {
     if (A.mode !== 'auth' || !A.user) { el.replaceChildren(); return; }
     if (CO.notReady(el, 'box')) return;
     el.replaceChildren();
     const admin = perm('load'), mine = myDesigner();
     const people = (S.team || []).filter((m) => m.status !== 'Inactive' && !EF.hidden(m.name)).map((m) => m.name).sort((a, b) => a.localeCompare(b));
-    let who = admin ? (MW.who && people.includes(MW.who) ? MW.who : mine && people.includes(mine) ? mine : people[0]) : mine;
+    // My work is always the signed-in person's own work first; "View as" (owner and managers) is a deliberate switch.
+    if (mine && !people.includes(mine)) people.unshift(mine);
+    let who = admin && MW.who && people.includes(MW.who) ? MW.who : mine || (admin ? people[0] : null);
     const head = document.createElement('section'); head.className = 'co-card mw-head';
     if (!who) {
       const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Your name (' + (A.user.name || A.user.email) + ') is not on the team list, so there is no personal view yet. Ask the admin to add it, or to add this spelling under "Also written as" in the team sheet.';
@@ -1334,7 +1336,8 @@
     if (admin) {
       const sel = document.createElement('select'); sel.className = 'co-select'; sel.setAttribute('aria-label', 'View as');
       people.forEach((n) => { const o = document.createElement('option'); o.value = n; o.textContent = n === mine ? n + ' (you)' : n; sel.append(o); }); sel.value = who;
-      sel.addEventListener('change', () => { MW.who = sel.value; LS.set('co.mwho', sel.value); dash.draw('mine'); });
+      if (who !== mine && mine) { const back = document.createElement('button'); back.type = 'button'; back.className = 'co-link mw-back'; back.textContent = 'Back to my work'; back.addEventListener('click', () => { MW.who = ''; LS.set('co.mwho2', ''); dash.draw('mine'); }); head.append(back); }
+      sel.addEventListener('change', () => { MW.who = sel.value === mine ? '' : sel.value; LS.set('co.mwho2', MW.who); dash.draw('mine'); });
       const lab = document.createElement('label'); lab.className = 'mw-as'; lab.append('View as ', sel); head.append(lab);
     }
     // tiles
@@ -1358,6 +1361,7 @@
     if (writing.length) left.append(section('Content to write', 'Briefs where your content is in progress; design starts after it.', writing, { kind: 'changes' }, ''));
     left.append(section('Focus now', 'Overdue and due today, oldest deadline first.', focus, {}, 'Nothing overdue or due today.'),
       section('Up next', 'Open work by ETA; work with no ETA comes last.', next, { kind: 'tomorrow' }, 'Nothing else open.', 12));
+    if (who === mine && isOwner()) { const rev = CO.rows().filter((r) => r.review).sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999')); right.append(section('Waiting for your review', 'Your team finished these (UNDER REVIEW). Move each to DONE or SHARED after reviewing.', rev, { kind: 'today' }, 'Nothing waiting for your review.')); }
     right.append(section('With the client', 'Shared and waiting for approval. Not counted as late.', waiting, { waiting: true, kind: 'changes' }, 'Nothing waiting on a client.', 10),
       section('Delivered this week', 'Since Monday ' + CO.fmtDate(wk) + '.', done, { done: true, kind: 'done' }, 'Nothing delivered yet this week.'));
     grid.append(left, right); el.append(grid);
@@ -1951,7 +1955,7 @@
   /* ================= Sheet health ================= */
   (() => {
     let pick = '';
-    const ORDER = ['Duplicate ID', 'No Creative_ID', 'ID should start with SRAP (External sheet)', 'ID should start with SRA (Internal sheet)', 'Incomplete row, not counted', 'Design and content status blank', 'Unrecognised status', 'Open, no ETA', 'No designer assigned', 'Completed, no designer', 'Completed, no creative link', 'Design finished but brief not approved', 'ETA before request date', 'Request date year looks mistyped', 'ETA year looks mistyped', 'Request date unreadable', 'ETA unreadable', 'No brand'];
+    const ORDER = ['Duplicate ID', 'No Creative_ID', 'ID should start with SRAP (External sheet)', 'ID should start with SRA (Internal sheet)', 'Incomplete row, not counted', 'Design and content status blank', 'Unrecognised status', 'Open, no ETA', 'No designer assigned', 'Completed, no designer', 'Completed, no creative link', 'Design finished but brief not approved', 'Delivered On written in bulk (ignored)', 'ETA before request date', 'Request date year looks mistyped', 'ETA year looks mistyped', 'Request date unreadable', 'ETA unreadable', 'No brand'];
     // Rows too incomplete to be a task are listed here so nothing drops out unseen.
     const ignoredRows = () => (S.ignored || []).filter((x) => !dash.params().src || x.source === dash.params().src).map((x) => ({ uid: 'ignored:' + x.src + ':' + x.row, id: x.id, source: x.source, src: x.src, row: x.row, brand: '—', topic: 'Row ' + x.row + ' of ' + ((S.sources[x.src] && S.sources[x.src].tab) || x.src) + (x.owner ? ' · ' + x.owner : '') + (x.status ? ' · ' + x.status : ''), designers: '', list: [], stage: 'Not counted', req: x.req, eta: x.eta, flags: 'Incomplete row, not counted', open: false }));
     const flagged = () => CO.rows().filter((r) => r.flags).concat(dash.params().designer || dash.params().brand || dash.params().type ? [] : ignoredRows());

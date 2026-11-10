@@ -111,7 +111,7 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 ## My work (team members)
 
-Everyone on the team list lands on **My work** when they sign in (admins land on the Overview and can open My work for anyone with **View as**). It shows four tiles (overdue, due today, in progress, delivered this week) and four lists: **Focus now** (overdue and due today), **Up next** (open work by ETA), **With the client** (shared and waiting for approval, with days waiting) and **Delivered this week**. Content writers also see **Content to write**: briefs whose content they own and are still writing. The person is matched by their Google name against the team list; if a name is spelt differently, add it under *Also written as* in the team sheet. On phones My work replaces Stand-up in the bottom bar for team members.
+Everyone lands on **My work** showing their own work (the owner lands on the Overview). My work always opens on your own tasks, including the 183 assigned to the Creative Head in the sheets, plus *Waiting for your review* (UNDER REVIEW) for the Creative Head; *View as* switches to someone else and *Back to my work* returns. It shows four tiles (overdue, due today, in progress, delivered this week) and four lists: **Focus now** (overdue and due today), **Up next** (open work by ETA), **With the client** (shared and waiting for approval, with days waiting) and **Delivered this week**. Content writers also see **Content to write**: briefs whose content they own and are still writing. The person is matched by their Google name against the team list; if a name is spelt differently, add it under *Also written as* in the team sheet. On phones My work replaces Stand-up in the bottom bar for team members.
 
 ## Brands and Waiting on client
 
@@ -121,14 +121,15 @@ Everyone on the team list lands on **My work** when they sign in (admins land on
 
 ## Delivered On, on-time rate and turnaround
 
-The sheets didn't record when a creative was actually delivered, so the web app now keeps a **Delivered On** column in each task tab:
+The sheets didn't record when a creative was actually delivered, so the web app keeps a **Delivered On** column in each task tab:
 
-- It adds the column once (logged in the activity log) and checks every 10 minutes. A task whose status has just become DONE, REJECTED or NO UPDATE gets that day's date; a task reopened and delivered again gets the new date. A date typed by hand is kept.
-- On the first run it fills dates only from the activity log (status changes to DONE it recorded). Older deliveries stay blank and are dated by their Design ETA as before. No date is guessed.
-- Which tasks were already delivered is remembered in a hidden *Delivery dates* tab of the access workbook.
-- To start it straight away instead of waiting up to 10 minutes, run `setupDeliveredOn` in Apps Script.
+- It adds the column once (logged) and checks every 10 minutes. A task whose status has just become DONE or REJECTED gets that day's date; a task reopened and delivered again gets the new date. A date typed by hand is kept.
+- The first complete check only notes which tasks are already delivered; it writes no dates. "First check done" is recorded only after that note is saved, so an interrupted check can never date old tasks.
+- If more than 25 tasks become delivered in one check (a pasted status column, a restored sheet), nothing is dated and it is logged as *Delivered On skipped*.
+- The dashboard ignores any Delivered On date shared by 60 or more rows of a tab (a bulk write) and dates those tasks by their Design ETA; Data health lists them.
+- **10 Nov 2026 incident, fixed:** an interrupted first check made the next one date every delivered task 10-Nov-2026, so "completed this month" and "delivered this week" were far too high. A one-time repair (logged as *Delivered On repaired*) clears those bulk dates, keeping only dates the activity log confirms, and the check starts afresh. `repairDeliveredOn` can be run from Apps Script again if ever needed.
 
-**Reports → On time and turnaround** uses only real Delivered On dates: the share delivered on or before the Design ETA, and the typical (median) working days from request to delivery. Each appears once at least 10 dated deliveries fall in the chosen period; until then it says how many there are so far.
+**Reports → On time and turnaround** uses only real Delivered On dates and appears once 10 dated deliveries fall in the period.
 
 ## Today (Overview)
 

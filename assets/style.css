@@ -2047,3 +2047,76 @@ body:not([data-export="1"]) #t-csv, body:not([data-export="1"]) #r-csv, body:not
 .mw-head .av.lg { border-radius: 10px; }
 .co-table td.team-foot-l { max-width: 9.5rem; }
 @media (min-width: 1851px) { [data-panel="team"] .co-table th, [data-panel="team"] .co-table td { padding-left: 7px; padding-right: 7px; } }
+
+/* =====================================================================================================
+   SOFT (Nov 2026 redesign, from the Creative Head's references): large soft-rounded cards (22px) with gentle depth,
+   pill controls, airy spacing, one gradient hero per screen, light number weights, calm motion. Overrides PRECISION.
+   ===================================================================================================== */
+:root, :root[data-theme="light"] {
+  --bg: #ebebee; --panel: #fbfbfc; --panel-2: #f3f3f5; --sunken: #efeff2; --line: #e3e3e8; --line-2: #ececf0;
+  --box: #f2f2f5; --box-line: #e8e8ed;
+  --card-shadow: 0 1px 1px rgba(20, 20, 40, .03), 0 12px 32px -18px rgba(40, 40, 80, .22);
+  --card-shadow-hover: 0 2px 4px rgba(20, 20, 40, .04), 0 22px 44px -20px rgba(40, 40, 80, .32);
+  --radius: 22px; --radius-md: 16px; --radius-sm: 12px;
+}
+:root[data-theme="dark"] {
+  --bg: #0f0f13; --panel: #18181d; --panel-2: #1f1f25; --sunken: #23232a; --line: #2a2a32; --line-2: #22222a;
+  --box: #1f1f26; --box-line: #2b2b34;
+  --card-shadow: 0 0 0 1px rgba(255, 255, 255, .045), 0 18px 40px -24px rgba(0, 0, 0, .9);
+  --card-shadow-hover: 0 0 0 1px rgba(255, 255, 255, .08), 0 24px 48px -24px rgba(0, 0, 0, .95);
+}
+:root[data-theme="dark"] body { background: radial-gradient(60rem 40rem at 85% -10%, rgba(104, 91, 199, .16), transparent 60%), radial-gradient(50rem 30rem at -10% 110%, rgba(221, 255, 0, .05), transparent 60%), var(--bg); background-attachment: fixed; }
+/* cards */
+.co-card, .su, .co-kpi, .sys, .tw, .la-card, .mw-head { border-radius: 22px !important; border: 1px solid var(--line-2) !important; box-shadow: var(--card-shadow) !important; background: var(--panel) !important; transition: box-shadow .3s ease, transform .3s cubic-bezier(.2, .8, .2, 1), border-color .3s; }
+:root[data-theme="dark"] .co-card, :root[data-theme="dark"] .su, :root[data-theme="dark"] .co-kpi, :root[data-theme="dark"] .tw, :root[data-theme="dark"] .la-card, :root[data-theme="dark"] .mw-head { background: linear-gradient(180deg, #1c1c22, #17171c) !important; border-color: transparent !important; }
+.co-card:hover, .su:hover { box-shadow: var(--card-shadow-hover) !important; }
+button.co-kpi:hover { transform: translateY(-3px); box-shadow: var(--card-shadow-hover) !important; }
+.brief-card { border-radius: 22px; }
+.side { border-radius: 26px; }
+/* controls: pills */
+.co-btn, .co-link, .co-select, .co-input, .co-f, .sync-pill, .ws-chip, .na-tog, .tw-foot, .na-more, .na-chip, .seg, .chip, .tw-tog { border-radius: 999px !important; }
+.seg button { border-radius: 999px !important; }
+.icon-btn, .min-tog { border-radius: 50% !important; }
+.co-tab { border-radius: 14px !important; }
+.btabs { border-radius: 999px !important; } .btabs .bt { border-radius: 999px !important; }
+.clock { border-radius: 999px; } .clk-screen { border-radius: 999px; }
+.icon-btn, .co-select, .co-f, .ws-chip, .sync-pill { border: 1px solid var(--line-2) !important; background: var(--panel) !important; box-shadow: 0 6px 16px -12px rgba(40, 40, 80, .35) !important; }
+.na-count { border-radius: 999px; }
+/* inner containers: soft tiles */
+.tw-tile, .mw-tile, .ot-tile, .wc-group, .la-row, .wd, .pm-box, .sys-list li, .mw-empty, .tw-body.pop, .cal-next, .uq-list .row { border-radius: 16px !important; }
+.na-row, .tw-item { border-radius: 14px; }
+.co-table thead th { background: transparent; }
+/* KPI tiles: no side bars; numbers lighter and larger like the references */
+.co-kpi::before { display: none !important; }
+.co-kpi-val { font-weight: 500 !important; letter-spacing: -.035em; }
+.co-kpi .kpi-ico, .co-kpi .kpi-go { border-radius: 50% !important; }
+.co-kpi.is-bad .co-kpi-val { color: var(--org-ink); }
+/* the one hero: a soft lime gradient with a light sheen */
+.co-kpi.hero { background: radial-gradient(120% 140% at 0% 0%, #f4ffb0 0%, #ddff00 45%, #b9f04a 100%) !important; border-color: transparent !important; color: #1e1e1e; overflow: hidden; }
+.co-kpi.hero::after { content: ""; position: absolute; right: -30%; top: -40%; width: 80%; height: 120%; background: radial-gradient(closest-side, rgba(255, 255, 255, .55), transparent); pointer-events: none; }
+:root[data-theme="dark"] .co-kpi.hero { background: radial-gradient(120% 140% at 0% 0%, #e9ff6a 0%, #c8f000 50%, #5fd38a 120%) !important; }
+/* Overdue gets a quiet warm glow instead of a coloured slab */
+.co-kpi.is-bad { background: radial-gradient(90% 90% at 100% 0%, rgba(255, 90, 38, .10), transparent 60%), var(--panel) !important; }
+:root[data-theme="dark"] .co-kpi.is-bad { background: radial-gradient(90% 90% at 100% 0%, rgba(255, 90, 38, .16), transparent 60%), linear-gradient(180deg, #1c1c22, #17171c) !important; }
+/* Today ring and live activity accents */
+.tw-tile[aria-selected="true"] { border-color: var(--primary) !important; box-shadow: 0 0 0 3px var(--primary-soft); background: var(--panel) !important; }
+/* page and card motion */
+.co-panel.enter .co-card, .co-panel.enter .co-kpi, .co-panel.enter .su { animation: soft-in .5s cubic-bezier(.2, .8, .2, 1) both; }
+.co-panel.enter .co-kpi:nth-child(2) { animation-delay: .03s; } .co-panel.enter .co-kpi:nth-child(3) { animation-delay: .06s; } .co-panel.enter .co-kpi:nth-child(4) { animation-delay: .09s; } .co-panel.enter .co-kpi:nth-child(5) { animation-delay: .12s; } .co-panel.enter .co-kpi:nth-child(6) { animation-delay: .15s; }
+@keyframes soft-in { from { opacity: 0; transform: translateY(8px) scale(.995); } }
+.na-row, .tw-item, .la-row, .wc-group summary { transition: background .2s, transform .2s cubic-bezier(.2, .8, .2, 1); }
+.na-row:hover { transform: translateX(3px); }
+@media (prefers-reduced-motion: reduce) { .co-panel.enter .co-card, .co-panel.enter .co-kpi, .co-panel.enter .su { animation: none !important; } button.co-kpi:hover, .na-row:hover { transform: none; } }
+
+/* ============ Night clock: a soft crescent moon ============ */
+.clk-moon { width: 20px !important; height: 20px !important; left: -8px; top: -12px; border-radius: 50%; box-shadow: none !important;
+  background: radial-gradient(circle at 34% 30%, #fffdf2 0%, #fbf1c9 45%, #e9d58f 100%) !important;
+  -webkit-mask: radial-gradient(circle at 72% 30%, transparent 0 42%, #000 44%); mask: radial-gradient(circle at 72% 30%, transparent 0 42%, #000 44%);
+  filter: drop-shadow(0 0 4px rgba(255, 240, 190, .85)) drop-shadow(0 0 10px rgba(255, 230, 160, .35)) !important; }
+:root[data-theme="dark"] .clk-moon { animation: moon-sway 7s ease-in-out infinite !important; }
+@keyframes moon-sway { 0%, 100% { transform: rotate(-8deg) translateY(0); } 50% { transform: rotate(4deg) translateY(-2px); } }
+.clk-star { background: #fffbe6 !important; filter: drop-shadow(0 0 3px rgba(255, 250, 220, .9)); }
+@media (max-width: 720px) { .clk-moon { width: 16px !important; height: 16px !important; left: -6px; top: -9px; } }
+.co-kpi.hero { --fg: #1e1e1e; --fg-2: #2b2b2b; --muted: #3f4a00; color: #1e1e1e !important; }
+.co-kpi.hero .co-kpi-label, .co-kpi.hero .co-kpi-val, .co-kpi.hero .co-kpi-sub, .co-kpi.hero .kpi-split { color: #1e1e1e !important; }
+:root[data-theme="dark"] .na-chip[aria-selected="true"] b { background: rgba(0, 0, 0, .12); color: #1e1e1e; }

@@ -1525,14 +1525,18 @@ function testRead() {
     const list = Array.isArray(sources) ? sources : Object.keys(sources).map((k) => ({ kind: kindOf(k), rows: sources[k] || [] }));
     const seenIds = { paid: new Set(), mkt: new Set() };
     const both = [], ignored = [];
+    // A Delivered On date shared by 60 or more rows of one tab was written in bulk (not real delivery days): ignore it,
+    // date those tasks by their Design ETA as before, and flag them in Data health.
+    for (const s of list) { const n = new Map(); (s.rows || []).forEach((r) => { if (r.delivered_on) n.set(r.delivered_on, (n.get(r.delivered_on) || 0) + 1); }); s.bulkDates = new Set([...n].filter(([, c]) => c >= 60).map(([d]) => d)); }
     for (const s of list) {
       if (s.kind !== 'paid' && s.kind !== 'mkt') continue;
       const ids = new Set();
-      for (const r of s.rows || []) {
+      for (let r of s.rows || []) {
         const id = clean(r.id);
         if (id && seenIds[s.kind].has(id)) continue; // the same task in an older tab: the newer copy wins
         if (id) ids.add(id);
         const source = s.kind === 'paid' ? 'Paid' : 'Marketing';
+        if (r.delivered_on && s.bulkDates.has(r.delivered_on)) { r = Object.assign({}, r, { delivered_on: null, bulk_delivered: true }); }
         if (clean(r.brand) || clean(r.type) || clean(r.topic)) both.push([r, source]);
         else ignored.push({ src: r.src || '', row: r.row || null, id, source, owner: clean(r.owner), status: clean(r.design_status) || clean(r.content_status), eta: r.eta, req: r.req_date });
       }
@@ -1613,6 +1617,7 @@ function testRead() {
       if (G.done && !/^https?:/i.test(clean(r.creative_link))) flags.push('Completed, no creative link');
       if (!dsU && !csU) flags.push('Design and content status blank');
       if ((G.done || G.shared || G.review) && ['PENDING', 'INCOMPLETE BRIEF', 'TBD'].includes(csU)) flags.push('Design finished but brief not approved');
+      if (r.bulk_delivered) flags.push('Delivered On written in bulk (ignored)');
       if (!clean(r.brand)) flags.push('No brand');
       if (!idU) flags.push('No Creative_ID');
       else if (source === 'Paid' ? !/^SRAP\d/.test(idU) : !/^SRA\d/.test(idU)) flags.push(source === 'Paid' ? 'ID should start with SRAP (External sheet)' : 'ID should start with SRA (Internal sheet)');
@@ -1982,6 +1987,7 @@ function maintenance_() {
     p.setProperty('ROTATED_2026_11_10', new Date().toISOString());
     try { audit_([{ who: Session.getEffectiveUser().getEmail(), role: 'Script owner', action: 'Signed everyone out', details: 'Secrets replaced automatically after they were shared in a screenshot', via: 'Apps Script' }]); } catch (e) { /* log optional */ }
   }
+  if (!p.getProperty('DELIV_REPAIR_2026_11_10')) { try { const r = repairDeliveredOn_(); if (r.ok) p.setProperty('DELIV_REPAIR_2026_11_10', new Date().toISOString()); console.log('delivered on repair: ' + JSON.stringify(r)); } catch (e) { console.log('delivered on repair: ' + e); } }
   if (p.getProperty('GEMINI_API_KEY')) {
     let tune = {}; try { tune = JSON.parse(p.getProperty('GEMINI_TUNE') || '{}'); } catch (e) { tune = {}; }
     if (!tune.model || !tune.at || Date.now() - tune.at > 7 * 864e5) tuneGemini_(false);
@@ -2141,72 +2147,128 @@ function daily_() {
  *     stay blank and the dashboard keeps dating them by their Design ETA. No date is ever guessed.
  * A date someone types in the column by hand is never overwritten (unless the task is reopened and delivered again). */
 const DELIV_TAB = 'Delivery dates';
+const DELIV_BULK = 25; // more "new" deliveries than this in one 10-minute check is a bulk change, never dated
+/* Reads one task tab: header, the Delivered On column (added once if missing) and each task's key and status. */
+function delivTab_(name, add, logged) {
+  const kind = kindOf_(name); if (kind === 'team') return null;
+  let sheet; try { sheet = openTab_(CONFIG.sources[name]); } catch (e) { return null; }
+  const lastRow = sheet.getLastRow(), lastCol = Math.max(1, sheet.getLastColumn()); if (lastRow < 2) return null;
+  const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  const c = taskColumns_(kind, head.map(function (h) { return clean_(h).toLowerCase(); }));
+  if (c.status < 0) return null;
+  if (c.delivered < 0) {
+    if (!add) return null;
+    if (sheet.getMaxColumns() <= lastCol) sheet.insertColumnAfter(lastCol);
+    sheet.getRange(1, lastCol + 1).setValue('Delivered On');
+    c.delivered = lastCol;
+    logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Column added', sheet: sheet.getParent().getName(), tab: sheet.getName(), field: 'Delivered On', after: 'Column ' + (lastCol + 1), details: 'Filled automatically with the date a task becomes delivered, for on-time rate and turnaround', via: 'Dashboard' });
+  }
+  const width = Math.max(c.id, c.status, c.delivered) + 1;
+  const vals = sheet.getRange(2, 1, lastRow - 1, width).getDisplayValues();
+  const seen = {}, rows = [];
+  vals.forEach(function (v, i) {
+    const id = clean_(v[c.id]); if (!id) return;
+    seen[id] = (seen[id] || 0) + 1;
+    rows.push({ row: i + 2, id: id, key: name + ' | ' + id + (seen[id] > 1 ? ' #' + seen[id] : ''), done: CODATA.groupOf(CODATA.stageOf(clean_(v[c.status]), '')[0]).done, value: clean_(v[c.delivered]) });
+  });
+  return { name: name, sheet: sheet, col: c.delivered + 1, rows: rows };
+}
+function delivState_(book) {
+  let st = book.getSheetByName(DELIV_TAB);
+  if (!st) { st = book.insertSheet(DELIV_TAB); try { st.hideSheet(); } catch (e) { /* ignore */ } }
+  return st;
+}
+function delivSave_(st, next) {
+  const keys = Object.keys(next);
+  st.clearContents();
+  st.getRange(1, 1, 1, 2).setValues([['Task (source | ID)', 'State']]);
+  if (keys.length) st.getRange(2, 1, keys.length, 2).setValues(keys.map(function (k) { return [k, next[k]]; }));
+}
+/* Every 10 minutes (remindersTick). The first complete run only notes which tasks are already delivered (nothing is
+ * written to the task sheets). After that, a task whose status has just become DONE or REJECTED gets that day's date.
+ * "First run done" is recorded only after the state is saved, so an interrupted run can never date old tasks as new.
+ * More than DELIV_BULK new deliveries in one check (a pasted status column, a restored sheet) is treated as a bulk
+ * change: nothing is dated, it is logged, and the state moves on. A date typed by hand is never overwritten. */
 function deliveryDates_() {
   if (!hasAccessBook_()) return { ok: false };
   const lock = LockService.getScriptLock(); if (!lock.tryLock(20000)) return { ok: false, error: 'busy' };
   try {
-    const book = accessBook_();
-    let st = book.getSheetByName(DELIV_TAB), first = false;
-    if (!st) { st = book.insertSheet(DELIV_TAB); st.getRange(1, 1, 1, 2).setValues([['Task (source | ID)', 'State']]); try { st.hideSheet(); } catch (e) { /* ignore */ } first = true; }
-    const prev = {};
-    if (st.getLastRow() > 1) st.getRange(2, 1, st.getLastRow() - 1, 2).getValues().forEach(function (r) { if (r[0]) prev[String(r[0])] = String(r[1]); });
-    const fromLog = first ? deliveredFromLog_() : {};
-    const now = today_(), next = {}, logged = [];
-    let stamped = 0, backfilled = 0;
-    Object.keys(CONFIG.sources).forEach(function (name) {
-      const kind = kindOf_(name); if (kind === 'team') return;
-      let sheet; try { sheet = openTab_(CONFIG.sources[name]); } catch (e) { return; }
-      const lastRow = sheet.getLastRow(), lastCol = Math.max(1, sheet.getLastColumn()); if (lastRow < 2) return;
-      const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
-      const c = taskColumns_(kind, head.map(function (h) { return clean_(h).toLowerCase(); }));
-      if (c.status < 0) return;
-      if (c.delivered < 0) {
-        if (sheet.getMaxColumns() <= lastCol) sheet.insertColumnAfter(lastCol);
-        sheet.getRange(1, lastCol + 1).setValue('Delivered On');
-        c.delivered = lastCol;
-        logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Column added', sheet: sheet.getParent().getName(), tab: sheet.getName(), field: 'Delivered On', after: 'Column ' + (lastCol + 1), details: 'Filled automatically with the date a task becomes delivered, for on-time rate and turnaround', via: 'Dashboard' });
-      }
-      const width = Math.max(c.id, c.status, c.delivered) + 1;
-      const vals = sheet.getRange(2, 1, lastRow - 1, width).getDisplayValues();
-      const seen = {}, writes = [];
-      vals.forEach(function (v, i) {
-        const id = clean_(v[c.id]); if (!id) return;
-        seen[id] = (seen[id] || 0) + 1;
-        const key = name + ' | ' + id + (seen[id] > 1 ? ' #' + seen[id] : ''), was = prev[key];
-        const delivered = CODATA.groupOf(CODATA.stageOf(clean_(v[c.status]), '')[0]).done, empty = !clean_(v[c.delivered]);
-        if (delivered) {
-          next[key] = 'delivered';
-          if (first) { const d = fromLog[sheet.getName() + ' | ' + id]; if (empty && d) { writes.push([i + 2, d, id]); backfilled++; } }
-          else if (was !== 'delivered' && (empty || was === 'reopened')) { writes.push([i + 2, now, id]); stamped++; }
-        } else if (was === 'delivered' || was === 'reopened') next[key] = 'reopened';
+    const props = PropertiesService.getScriptProperties(), book = accessBook_(), st = delivState_(book);
+    const init = !!props.getProperty('DELIV_INIT'), logged = [], prev = {}, next = {};
+    if (init && st.getLastRow() > 1) st.getRange(2, 1, st.getLastRow() - 1, 2).getValues().forEach(function (r) { if (r[0]) prev[String(r[0])] = String(r[1]); });
+    const tabs = Object.keys(CONFIG.sources).map(function (n) { return delivTab_(n, true, logged); }).filter(Boolean);
+    const fresh = [];
+    tabs.forEach(function (t) {
+      t.rows.forEach(function (r) {
+        const was = prev[r.key];
+        if (r.done) { next[r.key] = 'delivered'; if (init && was !== 'delivered' && (!r.value || was === 'reopened')) fresh.push({ t: t, r: r }); }
+        else if (was === 'delivered' || was === 'reopened') next[r.key] = 'reopened';
       });
-      writes.forEach(function (w) { sheet.getRange(w[0], c.delivered + 1).setNumberFormat('dd-mmm-yyyy').setValue(w[1]); });
-      if (writes.length && !first) logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On filled', sheet: sheet.getParent().getName(), tab: sheet.getName(), field: 'Delivered On', after: Utilities.formatDate(now, IST, 'd MMM yyyy'), details: writes.length + ' task(s): ' + writes.map(function (w) { return w[2]; }).slice(0, 40).join(', '), via: 'Dashboard' });
     });
-    const keys = Object.keys(next);
-    if (st.getLastRow() > 1) st.getRange(2, 1, st.getLastRow() - 1, 2).clearContent();
-    if (keys.length) st.getRange(2, 1, keys.length, 2).setValues(keys.map(function (k) { return [k, next[k]]; }));
-    if (first) logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On started', details: keys.length + ' delivered tasks noted; ' + backfilled + ' dated from the activity log. From now on each delivery is dated when its status becomes DONE.', via: 'Dashboard' });
+    let stamped = 0;
+    if (init && fresh.length > DELIV_BULK) {
+      logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On skipped', details: fresh.length + ' tasks became delivered in one check (a bulk change), so none were dated. Type their Delivered On dates by hand if needed.', via: 'Dashboard' });
+    } else if (init) {
+      const now = today_();
+      fresh.forEach(function (x) { x.t.sheet.getRange(x.r.row, x.t.col).setNumberFormat('dd-mmm-yyyy').setValue(now); stamped++; });
+      const byTab = {}; fresh.forEach(function (x) { (byTab[x.t.name] = byTab[x.t.name] || []).push(x); });
+      Object.keys(byTab).forEach(function (n) { const l = byTab[n], sh = l[0].t.sheet; logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On filled', sheet: sh.getParent().getName(), tab: sh.getName(), field: 'Delivered On', after: Utilities.formatDate(now, IST, 'd MMM yyyy'), details: l.length + ' task(s): ' + l.map(function (x) { return x.r.id; }).slice(0, 40).join(', '), via: 'Dashboard' }); });
+    }
+    delivSave_(st, next);
+    if (!init) { props.setProperty('DELIV_INIT', new Date().toISOString()); logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On started', details: Object.keys(next).length + ' delivered tasks noted; no dates written. From now on each delivery is dated when its status becomes DONE or REJECTED.', via: 'Dashboard' }); }
     if (logged.length) audit_(logged);
-    if (stamped || backfilled || logged.length) { bumpVersion_(); clearCache_(); }
-    return { ok: true, first: first, stamped: stamped, backfilled: backfilled, tracked: keys.length };
+    if (stamped || logged.length) { bumpVersion_(); clearCache_(); }
+    return { ok: true, first: !init, stamped: stamped, skipped: init && fresh.length > DELIV_BULK ? fresh.length : 0, tracked: Object.keys(next).length };
   } finally { lock.releaseLock(); }
 }
-// Latest date a task's status changed to a delivered status, from the activity log: { 'tab | ID': Date }.
-function deliveredFromLog_() {
-  const out = {}; if (!hasAccessBook_()) return out;
-  const sh = accessBook_().getSheetByName('Audit'); if (!sh || sh.getLastRow() < 2) return out;
-  const n = Math.min(sh.getLastRow() - 1, 20000), vals = sh.getRange(sh.getLastRow() - n + 1, 1, n, AUDIT_HEAD.length).getValues();
-  vals.forEach(function (v) {
-    const when = v[0] instanceof Date ? v[0] : new Date(v[0]), tab = String(v[5]), id = clean_(v[6]), after = clean_(v[10]);
-    if (!id || isNaN(when) || !after || !CODATA.groupOf(CODATA.stageOf(after, '')[0]).done || /\d/.test(after)) return;
-    const k = tab + ' | ' + id, day = new Date(Utilities.formatDate(when, IST, 'yyyy/MM/dd'));
-    if (!out[k] || out[k] < day) out[k] = day;
-  });
-  return out;
+/* One-time repair (10 Nov 2026): an interrupted first run let the next run date every delivered task with that day.
+ * Clears Delivered On on any date that appears on DELIV_BULK or more rows of a tab, except where the activity log shows
+ * that task's status changed to DONE/REJECTED on that date, or someone typed the date in. Then starts the state afresh. */
+function repairDeliveredOn_() {
+  if (!hasAccessBook_()) return { ok: false };
+  const lock = LockService.getScriptLock(); if (!lock.tryLock(30000)) return { ok: false, error: 'busy' };
+  try {
+    const evidence = {}; // 'tab | ID | yyyy-MM-dd' → true
+    const sh = accessBook_().getSheetByName('Audit');
+    if (sh && sh.getLastRow() > 1) {
+      const n = Math.min(sh.getLastRow() - 1, 30000);
+      sh.getRange(sh.getLastRow() - n + 1, 1, n, AUDIT_HEAD.length).getValues().forEach(function (v) {
+        const when = v[0] instanceof Date ? v[0] : new Date(v[0]); if (isNaN(when)) return;
+        const day = Utilities.formatDate(when, IST, 'yyyy-MM-dd'), tab = String(v[5]), id = clean_(v[6]), field = clean_(v[8]), after = clean_(v[10]), who = String(v[1]);
+        if (!id) return;
+        const human = !/^Script$/.test(String(v[2]));
+        if ((after && !/\d/.test(after) && CODATA.groupOf(CODATA.stageOf(after, '')[0]).done) || (human && /deliver/i.test(field))) evidence[tab + ' | ' + id + ' | ' + day] = true;
+      });
+    }
+    const report = [], logged = [];
+    Object.keys(CONFIG.sources).forEach(function (name) {
+      const t = delivTab_(name, false, logged); if (!t) return;
+      const range = t.sheet.getRange(2, t.col, t.sheet.getLastRow() - 1, 1), cells = range.getValues(), shown = range.getDisplayValues();
+      const dayOf = function (v, d) { if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, IST, 'yyyy-MM-dd'); const p = CODATA.parseDate(d); return p || ''; };
+      const count = {}; cells.forEach(function (c, i) { const d = dayOf(c[0], shown[i][0]); if (d) count[d] = (count[d] || 0) + 1; });
+      const bulk = Object.keys(count).filter(function (d) { return count[d] >= DELIV_BULK; });
+      if (!bulk.length) return;
+      const idByRow = {}; t.rows.forEach(function (r) { idByRow[r.row] = r.id; });
+      let cleared = 0, kept = 0;
+      const out = cells.map(function (c, i) {
+        const d = dayOf(c[0], shown[i][0]); if (bulk.indexOf(d) < 0) return [c[0]];
+        const id = idByRow[i + 2];
+        if (id && evidence[t.sheet.getName() + ' | ' + id + ' | ' + d]) { kept++; return [c[0]]; }
+        cleared++; return [''];
+      });
+      if (cleared) range.setValues(out);
+      report.push(t.sheet.getName() + ': ' + cleared + ' cleared, ' + kept + ' kept (dates ' + bulk.join(', ') + ')');
+    });
+    PropertiesService.getScriptProperties().deleteProperty('DELIV_INIT'); // the next check notes the current state afresh
+    if (report.length) audit_([{ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On repaired', details: 'Bulk-written dates removed. ' + report.join('; '), via: 'Dashboard' }]);
+    bumpVersion_(); clearCache_();
+    return { ok: true, report: report };
+  } finally { lock.releaseLock(); }
 }
 /** Run from the editor to set up the Delivered On column now instead of waiting for the next 10-minute check. */
 function setupDeliveredOn() { Logger.log(JSON.stringify(deliveryDates_())); }
+/** Run from the editor to clear bulk-written Delivered On dates again (normally done once, automatically). */
+function repairDeliveredOn() { Logger.log(JSON.stringify(repairDeliveredOn_())); }
 
 /* Only the person's own tasks (permission "scope: own"): rows whose designer/editor or content owner names them. */
 function permText_(p) {
