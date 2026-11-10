@@ -760,7 +760,7 @@
     else if (k === 'wip') { el.textContent = rs.filter((r) => r.stage === 'To be planned').length + ' to be planned (TBP)'; }
     else if (k === 'overdue') { if (!list.length) el.textContent = 'Nothing late'; else { const worst = Math.max(...list.map((r) => CO.diffDays(r.eta, CO.today()))); el.textContent = 'Oldest ' + worst + (worst === 1 ? ' day' : ' days') + ' late'; } cmp(list.length, 'overdue', 'down'); }
     else if (k === 'today') { el.textContent = rs.filter((r) => r.due === 'week').length + ' more in the next 7 days'; }
-    else if (k === 'review') { el.textContent = rs.filter((r) => r.stage === 'Incomplete brief').length + ' with an incomplete brief'; cmp(list.length, 'review', 'none'); }
+    else if (k === 'review') { const t0 = CO.today(), ds = list.map((r) => r.eta && r.eta < t0 ? CO.diffDays(r.eta, t0) : 0).sort((a, b) => a - b); el.textContent = ds.length ? 'Typical wait ' + ds[Math.floor((ds.length - 1) / 2)] + 'd · ' + ds.filter((d) => d > 14).length + ' over 14 days' : 'Nothing with clients'; cmp(list.length, 'review', 'none'); }
     else if (k === 'delivered') {
       const m = CO.thisMonth(), pm = CO.prevMonth(m), pto = CO.sameWorkdaysEnd(m + '-01', CO.today(), pm + '-01', CO.monthEnd(pm));
       const prevSame = CO.sumQty(rs.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= pm + '-01' && r.ddate <= pto));
@@ -806,7 +806,7 @@
     const head = document.createElement('div'); head.className = 'na-head';
     const hl = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Needs attention'; const cnt = document.createElement('span'); cnt.className = 'na-count' + (rows.length ? '' : ' ok'); cnt.textContent = rows.length; h2.append(cnt);
     const note = document.createElement('p'); note.className = 'co-note'; const fl = filterNote(); note.textContent = rows.length ? 'Oldest deadline first. Click a task to open it.' + (fl ? ' Filtered: ' + fl + '.' : '') : fl ? 'Nothing for ' + fl + '.' : 'Nothing overdue, due soon or waiting on changes.'; hl.append(h2, note);
-    const go = document.createElement('button'); go.type = 'button'; go.className = 'co-link'; go.textContent = 'All overdue'; go.dataset.goTasks = 'overdue'; go.addEventListener('click', () => CO.goTasks('overdue'));
+    const go = document.createElement('button'); go.type = 'button'; go.className = 'co-link'; go.textContent = 'All overdue'; go.classList.add('na-go'); go.dataset.goTasks = 'overdue'; go.addEventListener('click', () => CO.goTasks('overdue'));
     head.append(hl, go); el.append(head);
     if (!rows.length) { const ok = document.createElement('div'); ok.className = 'na-clear'; ok.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>'; const p = document.createElement('p'); p.textContent = fl ? 'Nothing needs attention with these filters.' : 'The team is on schedule.'; ok.append(p); if (fl) ok.append(clearBtn()); el.append(ok); return; }
     // composition bar (each task counted once, by its most urgent reason)
@@ -824,6 +824,7 @@
       b.addEventListener('click', () => { NA.f = k; NA.all = false; LS.set('co.naf', k); dash.draw('attn'); });
       chips.append(b);
     });
+    const goM = document.createElement('button'); goM.type = 'button'; goM.className = 'na-chip na-go-m'; goM.textContent = 'All overdue ↗'; goM.addEventListener('click', () => CO.goTasks('overdue')); chips.append(goM);
     el.append(chips);
     const fn = (F.find((f) => f[0] === NA.f) || F[0])[2];
     const list = rows.filter(fn), LIM = matchMedia('(max-width: 640px)').matches ? 8 : 40;
@@ -1076,8 +1077,10 @@
     if (lastRunning) {
       // The running bucket is a faint continuation with a hollow dot, so an early-week dip never looks like a crash.
       const last = ser[ser.length - 1];
-      svg.append('line').attr('x1', x(prevW.w)).attr('y1', y(prevW.n)).attr('x2', x(last.w)).attr('y2', y(last.n)).style('stroke', 'var(--bar)').attr('stroke-width', 2).style('opacity', 0.3).attr('stroke-linecap', 'round');
-      svg.append('circle').attr('r', 4.5).attr('cx', x(last.w)).attr('cy', y(last.n)).style('fill', 'var(--panel)').style('stroke', 'var(--bar)').attr('stroke-width', 2).style('opacity', 0.7);
+      // Not joined to the line: a part-week (or month) is not comparable with full ones, so it stands alone, labelled.
+      svg.append('circle').attr('r', 4.5).attr('cx', x(last.w)).attr('cy', y(last.n)).style('fill', 'var(--panel)').style('stroke', 'var(--bar)').attr('stroke-width', 2).style('opacity', 0.8);
+      const wd = Math.max(1, CO.workdays(last.w, CO.today()));
+      svg.append('text').attr('class', 'ref-l').attr('x', x(last.w) - 8).attr('y', y(last.n) - 10).attr('text-anchor', 'end').text(CO.num(last.n) + ' so far (' + wd + ' working day' + (wd === 1 ? '' : 's') + ')');
     }
     const endDot = svg.append('circle').attr('class', 'dot').attr('r', 5).attr('cx', x(prevW.w)).attr('cy', y(prevW.n));
     if (freshSig(el, g + JSON.stringify(ser))) {
@@ -1155,7 +1158,7 @@
   /* Today widget (sidebar on desktop, top of the Overview on phones): a progress ring for the day, four tiles
      (pick up, in progress, delivered, carried forward) and the tasks behind the chosen tile. */
   const TW = { sel: LS.get('co.twsel', ''), open: LS.get('co.twopen', '0') === '1', pop: false };
-  const TW_KINDS = [['pick', 'Pick up', 'To be planned or changes requested, due today or the next working day'], ['wip', 'In progress', 'WIP'], ['done', 'Delivered', 'Delivered today (status changed to DONE today, or ETA today)'], ['carried', 'Carried over', 'Open and past its ETA']];
+  const TW_KINDS = [['pick', 'Pick up', 'To be planned or changes requested, due today or the next working day'], ['wip', 'In progress', 'WIP'], ['done', 'Delivered', 'Delivered today (status changed to DONE today, or ETA today)'], ['carried', 'Carried over', 'Open and past its ETA: the same tasks as the Overdue number']];
   const countUp = (node, to, from) => {
     if (from == null || from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { node.textContent = CO.num(to); return; }
     const t0 = performance.now(), d = 450; const step = (t) => { const k = Math.min(1, (t - t0) / d), e = 1 - Math.pow(1 - k, 3); node.textContent = CO.num(Math.round(from + (to - from) * e)); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step);
@@ -1188,7 +1191,7 @@
     const tiles = document.createElement('div'); tiles.className = 'tw-tiles'; tiles.setAttribute('role', 'tablist'); tiles.setAttribute('aria-label', 'Today');
     TW_KINDS.forEach(([k, l, tip]) => {
       const t = document.createElement('button'); t.type = 'button'; t.className = 'tw-tile k-' + k + (n(k) ? '' : ' zero'); t.setAttribute('role', 'tab'); t.setAttribute('aria-selected', String(TW.sel === k)); t.title = tip;
-      const num = document.createElement('b'); const lab = document.createElement('span'); lab.textContent = l; t.append(num, lab);
+      const num = document.createElement('b'); const lab = document.createElement('span'); lab.textContent = l; t.append(num, lab); if (k === 'carried') { const sm2 = document.createElement('small'); sm2.className = 'tw-sub'; sm2.textContent = 'overdue'; t.append(sm2); }
       countUp(num, n(k), prev[k]);
       t.addEventListener('click', (e) => { e.stopPropagation(); if (TW.sel === k && isOpen) setOpen(false); else { TW.sel = k; setOpen(true); } LS.set('co.twsel', TW.sel); dash.draw('tw'); });
       tiles.append(t);
@@ -3526,6 +3529,8 @@
       return say('I can tell you what is overdue, due today or open for anyone, what was delivered this month, and open any section. For full conversations, the admin can connect Claude.', 'Main overdue, aaj due ya open tasks, is mahine ki delivery, aur koi bhi section khol sakti hoon. Poori baatcheet ke liye admin Claude connect kar sakte hain.');
     }
     function setStatus(s) { if (!s) return; st.ai = !!s.ai; st.tts = !!s.tts; st.provider = s.provider; if (!panel.hidden) paintHead(); }
+    // On phones Fasty slides away while the page scrolls down (it would cover content) and comes back on scrolling up or stopping.
+    { let lastY = scrollY, idle = 0; addEventListener('scroll', () => { if (innerWidth > 960 || !panel.hidden) return; const y = scrollY; if (y > lastY + 6) { fab.classList.add('away'); hint.hidden = true; } else if (y < lastY - 6) fab.classList.remove('away'); lastY = y; clearTimeout(idle); idle = setTimeout(() => fab.classList.remove('away'), 900); }, { passive: true }); }
     fab.hidden = true;
     const show = (on) => { fab.hidden = !on; if (!on) { close(); hint.hidden = true; clearTimeout(tip.timer); } else { clearTimeout(tip.timer); tip.timer = setTimeout(tipCycle, 2500); } };
     return { open, close, ask, setStatus, show, get state() { return st; }, _tools: TOOLS, _local: local };

@@ -1859,3 +1859,22 @@ button.co-kpi:hover { transform: translateY(-2px); box-shadow: 0 18px 34px -22px
 .wc-group summary { flex-wrap: wrap; min-width: 0; }
 .wc-group summary b { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .wc-group { padding: 4px 8px; } .wc-group .na-list { margin: 0 -2px 6px; } }
+/* review fixes (2) */
+:root, :root[data-theme="light"] { --st-await: #a08c62; }
+:root[data-theme="dark"] { --st-await: #c2ae84; }
+.chip.st-incomplete-brief { background: color-mix(in srgb, var(--st-await) 22%, var(--panel)); color: var(--fg-2); }
+.tw-tile .tw-sub { font-size: 10.5px; color: var(--org-ink); font-weight: 600; }
+.na-go-m { display: none; }
+.ash-fab { transition: transform .3s cubic-bezier(.2, .8, .2, 1), opacity .3s; }
+.ash-fab.away { transform: translateY(140%); opacity: 0; pointer-events: none; }
+@media (max-width: 640px) {
+  .na-head .na-go { display: none; }
+  .na-go-m { display: inline-flex; }
+  /* compact number tiles: number and label only, two per row */
+  .co-kpis { gap: 8px; }
+  .co-kpi { padding: 12px 14px; border-radius: 18px; min-height: 0; }
+  .co-kpi .kpi-ico, .co-kpi .kpi-go, .co-kpi .co-kpi-sub, .co-kpi .co-spark { display: none; }
+  .co-kpi .kpi-head { margin-bottom: 2px; grid-template-columns: 1fr; }
+  .co-kpi .co-kpi-label { font-size: 12.5px; }
+  .co-kpi .co-kpi-val { font-size: 28px; }
+}
