@@ -779,14 +779,68 @@
       else CO.td(tr, r[c], 'co-nowrap');
     }
   };
-  dash.draw('attention', (tb) => {
-    if (CO.notReady(tb, 'table')) return;
-    tb.replaceChildren();
-    const tm = CO.addDays(CO.today(), 1);
-    const list = CO.rows().filter((r) => r.due === 'overdue' || r.due === 'today' || (r.open && r.eta === tm) || r.stage === 'Changes requested')
+  /* Needs attention: a composition bar and filter chips (all, overdue, due today, tomorrow, changes requested),
+     then one compact row per task with a severity rail, the designer and how late or soon it is. */
+  const NA = { f: LS.get('co.naf', 'all'), all: false };
+  dash.draw('attn', (el) => {
+    if (CO.notReady(el, 'box')) return;
+    const t = CO.today(), tm = CO.addDays(t, 1);
+    const cat = (r) => r.due === 'overdue' ? 'late' : r.due === 'today' ? 'today' : (r.open && r.eta === tm) ? 'tomorrow' : 'changes';
+    const rows = CO.rows().filter((r) => r.due === 'overdue' || r.due === 'today' || (r.open && r.eta === tm) || r.stage === 'Changes requested')
       .sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || (a.priority || 'P9').localeCompare(b.priority || 'P9'));
-    if (!list.length) return CO.emptyRow(tb, 5, 'Nothing overdue or due today. The team is on schedule.');
-    list.forEach((r) => cells(tb.insertRow(), r, ['when', 'task', 'who', 'stage', 'links']));
+    const F = [['all', 'All', () => true], ['late', 'Overdue', (r) => r.due === 'overdue'], ['today', 'Today', (r) => r.due === 'today'], ['tomorrow', 'Tomorrow', (r) => r.open && r.eta === tm], ['changes', 'Changes', (r) => r.stage === 'Changes requested']];
+    if (!F.some((f) => f[0] === NA.f)) NA.f = 'all';
+    const prevF = el._f; el._f = NA.f; const animate = prevF !== NA.f || !el._drawn; el._drawn = true;
+    el.replaceChildren();
+    const head = document.createElement('div'); head.className = 'na-head';
+    const hl = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Needs attention'; const cnt = document.createElement('span'); cnt.className = 'na-count' + (rows.length ? '' : ' ok'); cnt.textContent = rows.length; h2.append(cnt);
+    const note = document.createElement('p'); note.className = 'co-note'; note.textContent = rows.length ? 'Oldest deadline first. Click a task to open it.' : 'Nothing overdue, due soon or waiting on changes.'; hl.append(h2, note);
+    const go = document.createElement('button'); go.type = 'button'; go.className = 'co-link'; go.textContent = 'All overdue'; go.dataset.goTasks = 'overdue'; go.addEventListener('click', () => CO.goTasks('overdue'));
+    head.append(hl, go); el.append(head);
+    if (!rows.length) { const ok = document.createElement('div'); ok.className = 'na-clear'; ok.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>'; const p = document.createElement('p'); p.textContent = 'The team is on schedule.'; ok.append(p); el.append(ok); return; }
+    // composition bar (each task counted once, by its most urgent reason)
+    const comp = { late: 0, today: 0, tomorrow: 0, changes: 0 }; rows.forEach((r) => comp[cat(r)]++);
+    const bar = document.createElement('div'); bar.className = 'na-bar'; bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', Object.entries(comp).filter((x) => x[1]).map(([k, v]) => v + ' ' + k).join(', '));
+    Object.entries(comp).forEach(([k, v]) => { if (!v) return; const seg = document.createElement('i'); seg.className = 'k-' + k; seg.style.flexGrow = '0'; seg.title = v + ' ' + ({ late: 'overdue', today: 'due today', tomorrow: 'due tomorrow', changes: 'changes requested' })[k]; bar.append(seg); requestAnimationFrame(() => requestAnimationFrame(() => { seg.style.flexGrow = String(v); })); });
+    if (!animate) bar.querySelectorAll('i').forEach((i) => { i.style.transition = 'none'; });
+    el.append(bar);
+    // filter chips
+    const chips = document.createElement('div'); chips.className = 'na-chips'; chips.setAttribute('role', 'tablist'); chips.setAttribute('aria-label', 'Filter');
+    F.forEach(([k, l, fn]) => {
+      const c = rows.filter(fn).length; if (k !== 'all' && !c) return;
+      const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'tab'); b.className = 'na-chip k-' + k; b.setAttribute('aria-selected', String(NA.f === k));
+      const i = document.createElement('i'); const n = document.createElement('b'); n.textContent = c; b.append(i, l, n);
+      b.addEventListener('click', () => { NA.f = k; NA.all = false; LS.set('co.naf', k); dash.draw('attn'); });
+      chips.append(b);
+    });
+    el.append(chips);
+    const fn = (F.find((f) => f[0] === NA.f) || F[0])[2];
+    const list = rows.filter(fn), LIM = 12;
+    const ul = document.createElement('ul'); ul.className = 'na-list';
+    (NA.all ? list : list.slice(0, LIM)).forEach((r, i) => {
+      const k = cat(r), li = document.createElement('li'); li.className = 'na-row k-' + k + (animate ? ' in' : ''); li.style.setProperty('--i', Math.min(i, 12)); li.dataset.uid = r.uid; li.tabIndex = 0;
+      const rail = document.createElement('i'); rail.className = 'na-rail';
+      const main = document.createElement('div'); main.className = 'na-main';
+      const t1 = document.createElement('span'); t1.className = 'na-t'; const bb = document.createElement('b'); bb.textContent = r.brand; t1.append(bb, ' ' + CO.topicText(r)); t1.title = r.brand + ' · ' + CO.topicText(r);
+      const m = document.createElement('span'); m.className = 'na-m';
+      const id = document.createElement('span'); id.className = 'co-id'; id.textContent = r.id || 'no ID';
+      const st = document.createElement('span'); st.className = 'na-st' + (r.stage === 'Changes requested' ? ' ch' : ''); st.textContent = r.stage;
+      m.append(id, r.type + (r.qty > 1 ? ' ×' + r.qty : ''), CO.srcTag(r), st);
+      if (/^P[01]$/.test(r.priority || '')) { const p = document.createElement('span'); p.className = 'pri'; p.textContent = r.priority; m.append(p); }
+      main.append(t1, m);
+      const who = document.createElement('span'); who.className = 'na-who'; const nm = r.list.length ? r.list : ['Unassigned'];
+      nm.slice(0, 2).forEach((x) => who.append(CO.av(x))); who.title = r.list.join(', ') || 'Unassigned';
+      const wn = document.createElement('span'); wn.className = 'na-wn'; wn.textContent = r.list.length ? r.list[0].split(' ')[0] + (r.list.length > 1 ? ' +' + (r.list.length - 1) : '') : 'Unassigned'; who.append(wn);
+      const d = r.eta ? CO.diffDays(t, r.eta) : null;
+      const when = document.createElement('span'); when.className = 'na-when k-' + k; when.textContent = d == null ? 'No ETA' : d < 0 ? (-d) + 'd late' : d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : CO.fmtDate(r.eta); when.title = r.eta ? 'Design ETA ' + CO.fmtDate(r.eta, true) : 'No Design ETA';
+      const lk = CO.links(r); lk.classList.add('na-links'); if (lk.textContent === '—') lk.hidden = true;
+      li.append(rail, main, lk, who, when); ul.append(li);
+    });
+    el.append(ul);
+    if (list.length > LIM) {
+      const more = document.createElement('button'); more.type = 'button'; more.className = 'na-more'; more.textContent = NA.all ? 'Show fewer' : 'Show all ' + list.length;
+      more.addEventListener('click', () => { NA.all = !NA.all; dash.draw('attn'); }); const li = document.createElement('li'); li.className = 'na-more-li'; li.append(more); ul.append(li);
+    }
   });
   dash.draw('upcoming', (tb) => {
     if (CO.notReady(tb, 'table')) return;
@@ -1072,9 +1126,9 @@
   async function loadDaily(force) {
     if (A.mode !== 'auth' || !A.user || (!force && Date.now() - DY.at < 60 * 1000)) return;
     DY.at = Date.now();
-    try { const b = await callApi({ action: 'daily' }); if (b.ok) { DY.moves = b.moves || []; dash.draw('daily'); dash.draw('daily-sum'); } } catch (e) { /* older web app: ETA-based only */ }
+    try { const b = await callApi({ action: 'daily' }); if (b.ok) { DY.moves = b.moves || []; dash.draw('tw'); } } catch (e) { /* older web app: ETA-based only */ }
   }
-  setInterval(() => { if (P.tab === 'today' && document.visibilityState === 'visible') loadDaily(); }, 60 * 1000);
+  setInterval(() => { if (document.visibilityState === 'visible') loadDaily(); }, 60 * 1000);
   const dailyBuckets = () => {
     const all = CO.rows() || [], t = CO.today();
     let next = CO.addDays(t, 1); while (!CO.isWorkday(next)) next = CO.addDays(next, 1);
@@ -1087,55 +1141,81 @@
     const carried = all.filter((r) => r.due === 'overdue');
     return { pick, wip, done, carried, startedLog, deliveredLog };
   };
-  dash.draw('daily-title', (el) => { el.textContent = 'Today · ' + new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'short' }); });
-  dash.draw('daily-sum', (el) => {
-    el.replaceChildren(); if (CO.status() !== 'ok') return;
-    const b = dailyBuckets();
-    [['pick', 'Pick up today', b.pick], ['wip', 'In progress', b.wip], ['done', 'Delivered today', b.done], ['carried', 'Carried forward', b.carried]].forEach(([k, l, list]) => {
-      const x = document.createElement('div'); x.className = 'dl-stat k-' + k; const n = document.createElement('b'); n.textContent = CO.num(CO.sumQty(list)); const s2 = document.createElement('span'); s2.textContent = l; const s3 = document.createElement('small'); s3.textContent = list.length + (list.length === 1 ? ' task' : ' tasks'); x.append(n, s2, s3); el.append(x);
-    });
-  });
-  const dTask = (r, kind, b) => {
-    const li = document.createElement('li'); li.className = 'dl-task k-' + kind; li.dataset.uid = r.uid; li.tabIndex = 0;
-    const t1 = document.createElement('span'); t1.className = 'dl-t'; const bb = document.createElement('b'); bb.textContent = r.brand; t1.append(bb, ' ' + CO.topicText(r).slice(0, 70));
-    const t2 = document.createElement('span'); t2.className = 'dl-m'; t2.textContent = [r.id, r.type, kind === 'carried' ? CO.diffDays(r.eta, CO.today()) + 'd late' : kind === 'done' ? (b.deliveredLog.has(r.id) ? 'marked done today' : 'ETA today') : r.eta ? 'ETA ' + CO.fmtDate(r.eta) : 'No ETA'].filter(Boolean).join(' · ');
-    li.append(t1, t2); return li;
+  /* Today widget (sidebar on desktop, top of the Overview on phones): a progress ring for the day, four tiles
+     (pick up, in progress, delivered, carried forward) and the tasks behind the chosen tile. */
+  const TW = { sel: LS.get('co.twsel', ''), open: LS.get('co.twopen', '1') !== '0', pop: false };
+  const TW_KINDS = [['pick', 'Pick up', 'To be planned or changes requested, due today or the next working day'], ['wip', 'In progress', 'WIP'], ['done', 'Delivered', 'Delivered today (status changed to DONE today, or ETA today)'], ['carried', 'Carried over', 'Open and past its ETA']];
+  const countUp = (node, to, from) => {
+    if (from == null || from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { node.textContent = CO.num(to); return; }
+    const t0 = performance.now(), d = 450; const step = (t) => { const k = Math.min(1, (t - t0) / d), e = 1 - Math.pow(1 - k, 3); node.textContent = CO.num(Math.round(from + (to - from) * e)); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step);
   };
-  dash.draw('daily', (el) => {
-    if (CO.notReady(el, 'list')) return;
-    el.replaceChildren(); loadDaily();
-    const b = dailyBuckets(), kinds = [['pick', 'Pick up', b.pick], ['wip', 'In progress', b.wip], ['done', 'Delivered', b.done], ['carried', 'Carried forward', b.carried]];
-    document.querySelectorAll('[data-dv]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.dv === DY.view)));
-    if (DY.view === 'status') {
-      const grid = document.createElement('div'); grid.className = 'dl-cols';
-      kinds.forEach(([k, l, list]) => { const col = document.createElement('div'); col.className = 'dl-col k-' + k; const h = document.createElement('h3'); h.textContent = l + ' · ' + list.length; const ul = document.createElement('ul'); list.slice(0, 12).forEach((r) => ul.append(dTask(r, k, b))); if (list.length > 12) { const m = document.createElement('li'); m.className = 'dl-more'; m.textContent = '+' + (list.length - 12) + ' more'; ul.append(m); } if (!list.length) { const m = document.createElement('li'); m.className = 'dl-more'; m.textContent = 'Nothing here'; ul.append(m); } col.append(h, ul); grid.append(col); });
-      el.append(grid); return;
-    }
-    // By person: one row per team member (roles from the team list), most to do first.
-    const people = new Map();
-    const add = (name, k, r) => { if (EF.hidden(name)) return; if (!people.has(name)) people.set(name, { pick: [], wip: [], done: [], carried: [] }); people.get(name)[k].push(r); };
-    kinds.forEach(([k, , list]) => list.forEach((r) => { if (!r.list.length) add('Unassigned', k, r); else r.list.forEach((n) => add(n, k, r)); }));
-    (S.team || []).forEach((m) => { if (m.status !== 'Inactive' && !EF.hidden(m.name) && !people.has(m.name)) people.set(m.name, { pick: [], wip: [], done: [], carried: [] }); });
-    const rows = [...people].sort((x, y) => (x[0] === 'Unassigned') - (y[0] === 'Unassigned') || (y[1].pick.length + y[1].wip.length + y[1].carried.length) - (x[1].pick.length + x[1].wip.length + x[1].carried.length) || x[0].localeCompare(y[0]));
-    const list = document.createElement('div'); list.className = 'dl-people';
-    rows.forEach(([name, d]) => {
-      const row = document.createElement('div'); row.className = 'dl-person' + (DY.open.has(name) ? ' open' : '');
-      const head = document.createElement('button'); head.type = 'button'; head.className = 'dl-head'; head.setAttribute('aria-expanded', String(DY.open.has(name)));
-      const who = document.createElement('span'); who.className = 'dl-who'; const nm = document.createElement('b'); nm.textContent = name; const rl = document.createElement('small'); rl.textContent = name === 'Unassigned' ? 'no designer yet' : EF.role(name) || 'Role not set'; const tx = document.createElement('span'); tx.append(nm, rl); who.append(CO.av(name), tx);
-      const pills = document.createElement('span'); pills.className = 'dl-pills';
-      kinds.forEach(([k, l]) => { const p2 = document.createElement('span'); p2.className = 'dl-pill k-' + k + (d[k].length ? '' : ' zero'); p2.title = l; p2.textContent = d[k].length; pills.append(p2); });
-      head.append(who, pills);
-      if (can('Admin') && name !== 'Unassigned') { const L = EF.load(name); const ld = document.createElement('span'); ld.className = 'ef-load ' + (L.days > 5 ? 'hi' : L.days > 2.5 ? 'mid' : 'lo'); ld.textContent = L.hours ? (L.days < 1 ? Math.round(L.hours) + ' h' : L.days.toFixed(1) + ' d') : 'free'; ld.title = 'Estimated open work: ' + Math.round(L.hours) + ' h ≈ ' + L.days.toFixed(1) + ' working days (by creative type and role)'; head.append(ld); }
-      head.addEventListener('click', () => { if (DY.open.has(name)) DY.open.delete(name); else DY.open.add(name); dash.draw('daily'); });
-      row.append(head);
-      if (DY.open.has(name)) { const ul = document.createElement('ul'); ul.className = 'dl-tasks'; kinds.forEach(([k]) => d[k].forEach((r) => ul.append(dTask(r, k, b)))); if (!ul.childElementCount) { const m = document.createElement('li'); m.className = 'dl-more'; m.textContent = 'Nothing scheduled today.'; ul.append(m); } row.append(ul); }
-      list.append(row);
+  dash.draw('tw', (el) => {
+    if (A.mode === 'auth' && !A.user) { el.replaceChildren(); return; }
+    if (CO.status() !== 'ok') { if (!el.childElementCount) { el.classList.add('tw-loading'); el.innerHTML = '<span class="tw-sk"></span><span class="tw-sk"></span><span class="tw-sk"></span>'; } return; }
+    el.classList.remove('tw-loading'); loadDaily();
+    const b = dailyBuckets(), lists = { pick: b.pick, wip: b.wip, done: b.done, carried: b.carried };
+    const n = (k) => lists[k].length;
+    if (!TW.sel || !lists[TW.sel]) TW.sel = ['pick', 'wip', 'carried', 'done'].find((k) => n(k)) || 'pick';
+    const planned = n('pick') + n('wip') + n('done'), pct = planned ? n('done') / planned : 0;
+    const prev = el._prev || {}; const animList = el._sel !== TW.sel || !el.childElementCount; el._sel = TW.sel;
+    el.replaceChildren();
+    // head: ring + title + collapse
+    const head = document.createElement('div'); head.className = 'tw-head';
+    const ring = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); ring.setAttribute('viewBox', '0 0 36 36'); ring.classList.add('tw-ring'); ring.setAttribute('aria-hidden', 'true');
+    ring.innerHTML = '<circle cx="18" cy="18" r="15" class="tw-ring-bg"/><circle cx="18" cy="18" r="15" class="tw-ring-fg" pathLength="100" stroke-dasharray="100" stroke-dashoffset="' + (100 - (prev.pct != null ? prev.pct : 0) * 100) + '"/>';
+    const fg = ring.querySelector('.tw-ring-fg'); requestAnimationFrame(() => requestAnimationFrame(() => fg.setAttribute('stroke-dashoffset', String(100 - pct * 100))));
+    const rWrap = document.createElement('span'); rWrap.className = 'tw-ring-w'; const rN = document.createElement('b'); rN.textContent = Math.round(pct * 100) + '%'; rWrap.append(ring, rN);
+    rWrap.title = n('done') + ' of ' + planned + ' delivered today (pick up + in progress + delivered)';
+    const tt = document.createElement('div'); tt.className = 'tw-tt'; const h = document.createElement('b'); h.textContent = 'Today'; const sm = document.createElement('small'); sm.textContent = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'short' }); tt.append(h, sm);
+    // In the sidebar the task list is a flyout beside it (TW.pop, not remembered); on phones it opens inline (TW.open).
+    const side = el.classList.contains('tw-s'), isOpen = side ? TW.pop : TW.open;
+    const tog = document.createElement('button'); tog.type = 'button'; tog.className = 'tw-tog'; tog.setAttribute('aria-expanded', String(isOpen)); tog.setAttribute('aria-label', isOpen ? 'Hide tasks' : 'Show tasks'); tog.innerHTML = side ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+    const setOpen = (v) => { if (side) TW.pop = v; else { TW.open = v; LS.set('co.twopen', v ? '1' : '0'); } };
+    tog.addEventListener('click', (e) => { e.stopPropagation(); setOpen(!isOpen); dash.draw('tw'); });
+    head.append(rWrap, tt, tog);
+    // tiles
+    const tiles = document.createElement('div'); tiles.className = 'tw-tiles'; tiles.setAttribute('role', 'tablist'); tiles.setAttribute('aria-label', 'Today');
+    TW_KINDS.forEach(([k, l, tip]) => {
+      const t = document.createElement('button'); t.type = 'button'; t.className = 'tw-tile k-' + k + (n(k) ? '' : ' zero'); t.setAttribute('role', 'tab'); t.setAttribute('aria-selected', String(TW.sel === k)); t.title = tip;
+      const num = document.createElement('b'); const lab = document.createElement('span'); lab.textContent = l; t.append(num, lab);
+      countUp(num, n(k), prev[k]);
+      t.addEventListener('click', (e) => { e.stopPropagation(); if (TW.sel === k && isOpen) setOpen(false); else { TW.sel = k; setOpen(true); } LS.set('co.twsel', TW.sel); dash.draw('tw'); });
+      tiles.append(t);
     });
-    const legend = document.createElement('div'); legend.className = 'dl-legend'; kinds.forEach(([k, l]) => { const x = document.createElement('span'); x.className = 'k-' + k; const i = document.createElement('i'); x.append(i, l); legend.append(x); });
-    el.append(legend, list);
+    // list for the chosen tile
+    const body = document.createElement('div'); body.className = 'tw-body' + (isOpen ? ' open' : '') + (side ? ' pop' : '');
+    if (side && isOpen) {
+      const k = TW_KINDS.find((x) => x[0] === TW.sel); const ph = document.createElement('div'); ph.className = 'tw-pop-h';
+      const pt = document.createElement('b'); pt.textContent = k[1] + ' · ' + n(TW.sel); const ps = document.createElement('small'); ps.textContent = k[2];
+      const px = document.createElement('button'); px.type = 'button'; px.className = 'tw-tog'; px.setAttribute('aria-label', 'Close'); px.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; px.addEventListener('click', (e) => { e.stopPropagation(); TW.pop = false; dash.draw('tw'); });
+      const pw = document.createElement('div'); pw.append(pt, ps); ph.append(pw, px); body.append(ph);
+      if (!el._popWas) body.classList.add('enter');
+      requestAnimationFrame(() => { const r = el.getBoundingClientRect(); body.style.left = (r.right + 12) + 'px'; body.style.bottom = Math.max(12, innerHeight - r.bottom) + 'px'; });
+    }
+    el._popWas = side && isOpen;
+    const inner = document.createElement('div'); inner.className = 'tw-inner';
+    const list = lists[TW.sel].slice().sort((x, y) => (x.list[0] || '~').localeCompare(y.list[0] || '~') || (x.eta || '').localeCompare(y.eta || ''));
+    const ul = document.createElement('ul'); ul.className = 'tw-list'; ul.setAttribute('role', 'tabpanel');
+    list.slice(0, 40).forEach((r, i) => {
+      const li = document.createElement('li'); li.className = 'tw-item k-' + TW.sel + (animList ? ' in' : ''); li.style.setProperty('--i', Math.min(i, 10)); li.tabIndex = 0; li.dataset.twUid = r.uid;
+      const who = r.list[0] || 'Unassigned'; const av = CO.av(who); av.title = r.list.join(', ') || 'Unassigned';
+      const tx = document.createElement('span'); tx.className = 'tw-it';
+      const t1 = document.createElement('span'); t1.className = 'tw-it1'; const bb = document.createElement('b'); bb.textContent = r.brand; t1.append(bb, ' ' + CO.topicText(r));
+      const t2 = document.createElement('small'); t2.textContent = [who === 'Unassigned' ? 'Unassigned' : who.split(' ')[0], r.type, TW.sel === 'carried' ? CO.diffDays(r.eta, CO.today()) + 'd late' : TW.sel === 'done' ? (b.deliveredLog.has(r.id) ? 'done today' : 'ETA today') : r.eta ? (r.eta === CO.today() ? 'due today' : 'ETA ' + CO.fmtDate(r.eta)) : 'no ETA'].join(' · ');
+      tx.append(t1, t2); li.append(av, tx); li.title = r.brand + ' · ' + CO.topicText(r) + (r.id ? ' (' + r.id + ')' : ''); ul.append(li);
+    });
+    if (list.length > 40) { const m = document.createElement('li'); m.className = 'tw-more'; m.textContent = '+' + (list.length - 40) + ' more in Tasks'; ul.append(m); }
+    if (!list.length) { const m = document.createElement('li'); m.className = 'tw-empty'; m.textContent = TW.sel === 'done' ? 'Nothing delivered yet today.' : TW.sel === 'carried' ? 'Nothing carried over. Nice.' : 'Nothing here right now.'; ul.append(m); }
+    const foot = document.createElement('button'); foot.type = 'button'; foot.className = 'tw-foot'; foot.textContent = 'Open stand-up'; foot.addEventListener('click', () => dash.setParams({ tab: 'standup' }));
+    inner.append(ul, foot); body.append(inner);
+    el.append(head, tiles, body);
+    el._prev = { pick: n('pick'), wip: n('wip'), done: n('done'), carried: n('carried'), pct };
   });
-  document.querySelectorAll('[data-dv]').forEach((x) => x.addEventListener('click', () => { DY.view = x.dataset.dv; LS.set('co.dailyview', DY.view); dash.draw('daily'); }));
-  document.querySelector('.daily').addEventListener('click', (e) => { const li = e.target.closest('.dl-task[data-uid]'); if (li) document.dispatchEvent(new CustomEvent('co-open-task', { detail: li.dataset.uid })); });
+  // Close the sidebar flyout on Escape or a click outside it.
+  document.addEventListener('pointerdown', (e) => { if (TW.pop && !e.target.closest('.tw-s') && !e.target.closest('dialog')) { TW.pop = false; dash.draw('tw'); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && TW.pop) { TW.pop = false; dash.draw('tw'); } });
+  document.addEventListener('click', (e) => { const li = e.target.closest('[data-tw-uid]'); if (li && TW.pop) { TW.pop = false; dash.draw('tw'); } if (li) document.dispatchEvent(new CustomEvent('co-open-editor', { detail: li.dataset.twUid })); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-tw-uid]')) document.dispatchEvent(new CustomEvent('co-open-editor', { detail: e.target.dataset.twUid })); });
 
   /* ================= Stand-up ================= */
   const SU = { cards: null };
@@ -1652,6 +1732,7 @@
       const el = e.target.closest('[data-uid]'); if (el) openEditor(el.dataset.uid);
     };
     document.querySelector('.co').addEventListener('click', openFrom);
+    document.addEventListener('co-open-editor', (e) => openEditor(e.detail));
     document.querySelector('.co').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-uid][tabindex]')) openEditor(e.target.dataset.uid); });
     $('ed-cancel').addEventListener('click', () => dlgE.close());
     dlgE.addEventListener('close', () => { EDITING.uid = ''; EDITING.label = ''; });

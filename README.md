@@ -10,7 +10,7 @@ Navigation is a sidebar on desktop and a bottom tab bar on phones (More opens th
 
 | Page | For |
 | --- | --- |
-| **Overview** | Open, overdue, due-today, in-progress, under-review and delivered-this-month counts (each opens the matching task list). **Needs attention**: overdue, due soon and changes requested. **Unassigned**: work nobody has picked up, oldest and overdue first. **Pipeline** by design status, **workload** per designer, and what is **coming up** in the next 14 days. |
+| **Overview** | Open, overdue, due-today, in-progress, under-review and delivered-this-month counts (each opens the matching task list). **Needs attention**: overdue, due today or tomorrow and changes requested, with a bar showing the mix, filter chips and one row per task (hover for Brief and Creative links). **Unassigned**: work nobody has picked up, oldest and overdue first. **Pipeline** by design status, **workload** per designer, and what is **coming up** in the next 14 days. |
 | **Stand-up** | One card per active team member for the daily meeting: overdue, due today, in progress, changes requested and up next, with a summary strip on top. |
 | **Tasks** | Every task from both sheets. One-click status chips with counts (Not delivered, Open, Overdue, Due this week, No ETA, Pending approval, Delivered this month, All), search, sorting, CSV. Click a task to open or edit it. On phones each task is a card. |
 | **Team** | Scorecard per person (open, overdue, due in 7 days, in review, delivered this month and last, monthly average, main brands, type mix), a designer-by-month delivery grid, and Active / Inactive switches (admins). |
@@ -19,7 +19,7 @@ Navigation is a sidebar on desktop and a bottom tab bar on phones (More opens th
 | **Notes** | A team notebook: meeting minutes, discussions and personal notes with @mentions, action items (assignee and due date), follow-ups and reminders. See [Notes](#notes). |
 | **Access** (admins) | Access requests, people and their access level, and the activity log of every change. |
 
-FASTRR look: the brand palette (Pantone Sun Glare #DDFF00, Exuberant Orange #FF5A26, Blue Violet 2725 C #685BC7, Cloud Dancer #F0EEE9, Darkest Hour #1E1E1E) in a Day (light) and Night (dark) theme that follow sunrise and sunset (see [Live clock, Day and Night](#live-clock-day-and-night)). The two-strip logo icon is always FASTRR blue (#6037D7) and the sidebar shows only the animated icon. The loading screen shows the original FASTRR logo with "Creative Ops" in small italic beneath it. Outfit for headings and numbers. Green and red appear only on change chips (better or worse). Category colours in charts are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table. Secondary table columns appear only on screens wide enough for them; everything is still in the task dialog and the CSV exports.
+FASTRR look: **FASTRR blue (#6037D7) is the primary colour** for buttons, the current page, selected tabs and toggles; the brand palette (Pantone Sun Glare #DDFF00, Exuberant Orange #FF5A26, Blue Violet 2725 C #685BC7, Cloud Dancer #F0EEE9, Darkest Hour #1E1E1E) in a Day (light) and Night (dark) theme that follow sunrise and sunset (see [Live clock, Day and Night](#live-clock-day-and-night)). The two-strip logo icon is always FASTRR blue (#6037D7) and the sidebar shows only the animated icon. The loading screen shows the original FASTRR logo with "Creative Ops" in small italic beneath it. Outfit for headings and numbers. Green and red appear only on change chips (better or worse). Category colours in charts are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table. Secondary table columns appear only on screens wide enough for them; everything is still in the task dialog and the CSV exports.
 
 **Internal and External:** everything from the *Paid (client)* sheet is shown as **External** and everything from the *Marketing team* sheet as **Internal**, in filters, tags, tables, reports and CSV files. This is a display label only: the sheets keep their names, so the import is unchanged. The Reports card for External work shows the ₹ symbol.
 
@@ -109,9 +109,9 @@ Browsers cannot show a dashboard alert when no dashboard tab is open (that would
 
 The bell lists, for the signed-in person: their overdue tasks and tasks due today or tomorrow; for admins, team overdue and unassigned totals; new requirements since yesterday; status, sheet and team changes made by others in the last 48 hours; note mentions and action items; meetings starting within 15 minutes; and the two daily briefings. Every item opens the task, note or page it is about. Emails are not read: the dashboard has no access to anyone's inbox.
 
-## Today (Overview)
+## Today (sidebar)
 
-The **Today** card at the top of the Overview lists, per person (or by status): what to **pick up** (to be planned or changes requested, due today or the next working day), what is **in progress** (WIP), what was **delivered today** and what is **carried forward** (open and past its ETA). Delivered today comes from the activity log: any design status changed to DONE today, in the sheet or on the dashboard; a delivered task with today's ETA also counts. Click a person to see their tasks, and a task to open it.
+The **Today** card in the sidebar (at the top of the Overview on phones) shows the day's progress ring (delivered ÷ pick up + in progress + delivered) and four tiles: **Pick up** (to be planned or changes requested, due today or the next working day), **In progress** (WIP), **Delivered** today and **Carried over** (open and past its ETA). Click a tile to see its tasks in a panel beside the sidebar (inline on phones); click a task to open it, or **Open stand-up** for the per-person view. Delivered today comes from the activity log: any design status changed to DONE today, in the sheet or on the dashboard; a delivered task with today's ETA also counts.
 
 ## Meetings (Google Calendar)
 
@@ -133,7 +133,7 @@ The theme follows the sun: **Day** (light) from sunrise and **Night** (dark) aft
 
 ## Fasty, the voice assistant
 
-The small violet face at the bottom right (or **Alt+A**) opens **Fasty**, a voice and chat helper that knows the whole dashboard. Ask in Hindi, English, Hinglish or mixed sentences, by voice (tap the lime microphone) or by typing:
+The small blue buddy (round eyes, a smile and a lime-tipped antenna) at the bottom right (or **Alt+A**) opens **Fasty**, a voice and chat helper that knows the whole dashboard. Ask in Hindi, English, Hinglish or mixed sentences, by voice (tap the lime microphone) or by typing:
 
 Small tips pop up next to Fasty one at a time (each for about 2.5 seconds, with a pause between) with ideas of what to ask and live counts such as tasks overdue. They pause while Fasty is open or the pointer is on a tip; the × hides them for the rest of the day.
 
