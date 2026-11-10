@@ -1770,3 +1770,7 @@ button.co-kpi:hover { transform: translateY(-2px); box-shadow: 0 18px 34px -22px
 #f-reset { background: var(--primary-soft); color: var(--primary-text); font-weight: 600; }
 #f-reset:hover { background: var(--primary); color: #fff; }
 @media (max-width: 640px) { .ov-grid.fill > .co-card.na .na-list { max-height: none; overflow: visible; } }
+/* data display: every chart mark at least 3:1 against its card (WCAG 1.4.11) */
+:root, :root[data-theme="light"] { --bar-on: #6037d7; --bar-soft: #8f84e8; --chart-later: #8f8b83; --st-review: #8f84e8; --st-await: #e06a3a; --st-hold: #8f8b83; --st-plan: #5f5c55; }
+:root[data-theme="dark"] { --bar-on: #ddff00; --bar-soft: #7a6fdb; --chart-later: #77746c; --st-review: #7a6fdb; --st-hold: #77746c; }
+:root[data-theme="light"] .tb-list button:first-child .tr i { background: var(--primary); }

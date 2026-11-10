@@ -892,12 +892,12 @@
     el.replaceChildren();
     if (!data.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'No open work assigned in this view.'; el.append(p); return; }
     const W = Math.max(280, el.clientWidth), rowH = 30, H = data.length * rowH + 24;
-    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Open creatives per designer');
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Open creatives per designer: ' + data.map((d) => d.name + ' ' + d.total + (d.overdue ? ' (' + d.overdue + ' overdue)' : '')).join(', '));
     const meas = svg.append('text').attr('class', 'lbl').text(data.reduce((a, d) => d.name.length > a.length ? d.name : a, ''));
     const L = Math.min(W * 0.45, meas.node().getComputedTextLength() + 14); meas.remove();
     const x = d3.scaleLinear([0, d3.max(data, (d) => d.total)], [L, W - 34]);
     const y = d3.scaleBand(data.map((d) => d.name), [0, H - 24]).padding(0.42);
-    const keys = [['overdue', 'var(--worse-fill)', 'Overdue'], ['week', 'var(--primary)', 'Due in 7 days'], ['later', 'var(--chart-muted)', 'Later or no ETA']];
+    const keys = [['overdue', 'var(--worse-fill)', 'Overdue'], ['week', 'var(--primary)', 'Due in 7 days'], ['later', 'var(--chart-later)', 'Later or no ETA']];
     const ticks = x.ticks(Math.max(2, Math.floor((W - L) / 70))).filter(Number.isInteger);
     svg.append('g').selectAll('line').data(ticks).join('line').attr('class', 'grid').attr('x1', x).attr('x2', x).attr('y1', 0).attr('y2', H - 24);
     svg.append('g').selectAll('text').data(ticks).join('text').attr('class', 'tick').attr('x', x).attr('y', H - 8).attr('text-anchor', 'middle').text((d) => d);
@@ -1524,7 +1524,7 @@
       if ((dash.params().rchart || 'total') === 'total') {
         const sw = (good, k, label) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = CO.toneFill({ good, k }, 'var(--panel)'); s.append(i, label); return s; };
         const n = document.createElement('span'); const ni = document.createElement('i'); ni.style.background = 'var(--bar)'; n.append(ni, 'no earlier month');
-        const sel = document.createElement('span'); const si = document.createElement('i'); si.style.background = 'var(--primary)'; sel.append(si, 'report period');
+        const sel = document.createElement('span'); const si = document.createElement('i'); si.style.background = 'var(--bar-on)'; sel.append(si, 'report period');
         const oth = document.createElement('span'); const oi = document.createElement('i'); oi.style.background = 'var(--bar-soft)'; oth.append(oi, 'other ' + TB.G[TB.get('rchart', 'month').g].noun + 's · hover a bar for the change');
         el.replaceChildren(sel, oth); void sw; void n;
         return;
@@ -1553,7 +1553,7 @@
         o.tone = o.prev == null ? null : CO.tone(o.total - o.prev, o.prev, 'up');
       });
       const W = Math.max(300, el.clientWidth), H = 260, mB = 24, mT = 18;
-      const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered per ' + TB.G[g].noun);
+      const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Creatives delivered per ' + TB.G[g].noun + ': ' + series.map((d) => TB.label(d.m, g) + ' ' + d.total).join(', '));
       const yt = d3.scaleLinear([0, d3.max(series, (d) => d.total) || 1], [H - mB, mT]).nice();
       const ticks = yt.ticks(4);
       const meas = svg.append('text').attr('class', 'tick').text(CO.num(d3.max(ticks)));
@@ -1562,7 +1562,7 @@
       svg.append('g').selectAll('line').data(ticks).join('line').attr('class', 'grid').attr('x1', mL).attr('x2', W - 4).attr('y1', yt).attr('y2', yt);
       svg.append('g').selectAll('text').data(ticks).join('text').attr('class', 'tick').attr('x', mL - 6).attr('y', yt).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => CO.num(d));
       const every = Math.ceil(ms.length / Math.max(1, Math.floor((W - mL) / 52)));
-      svg.append('g').selectAll('text').data(ms).join('text').attr('class', (m) => 'tick' + (inSel(m) && !pr.all ? ' on' : '')).attr('x', (m) => x(m) + x.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', 'middle')
+      svg.append('g').selectAll('text').data(ms).join('text').attr('class', (m) => 'tick' + (inSel(m) && !pr.all ? ' on' : '')).attr('x', (m, i) => i === ms.length - 1 && x(m) + x.bandwidth() / 2 + 26 > W ? W - 2 : x(m) + x.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', (m, i) => i === ms.length - 1 && x(m) + x.bandwidth() / 2 + 26 > W ? 'end' : 'middle')
         .text((m, i) => ((ms.length - 1 - i) % every === 0) ? TB.label(m, g) : '');
       if (!byType) {
         // Total: pill bars coloured by the change from the bucket before (green up, red down, deeper = bigger change).
@@ -1575,7 +1575,7 @@
         const g2 = svg.append('g').selectAll('g').data(series).join('g');
         const bar = (sel) => sel.attr('x', (d) => x(d.m) + po).attr('width', pw).attr('y', (d) => Math.min(yt(d.total), base - pw)).attr('height', (d) => d.total ? Math.max(pw, base - yt(d.total)) : 0).attr('rx', pw / 2).attr('data-m', (d) => d.m);
         // Plain bars: the report period in FASTRR blue, other months lavender; the change vs the month before is in the tooltip and tables.
-        bar(g2.append('rect').attr('class', 'mk tone-bar')).style('fill', (d) => on(d) && !pr.all ? 'var(--primary)' : 'var(--bar-soft)').style('opacity', (d) => d.running ? 0.85 : 1);
+        bar(g2.append('rect').attr('class', 'mk tone-bar')).style('fill', (d) => on(d) && !pr.all ? 'var(--bar-on)' : 'var(--bar-soft)').style('opacity', (d) => d.running ? 0.85 : 1);
         if (pw >= 10) svg.append('g').selectAll('circle').data(series.filter((d) => d.total)).join('circle').attr('class', 'mk').attr('data-m', (d) => d.m).attr('cx', (d) => x(d.m) + x.bandwidth() / 2).attr('cy', (d) => Math.min(yt(d.total), base - pw) + pw / 2).attr('r', Math.min(5, pw / 4))
           .style('fill', 'var(--panel)').style('opacity', (d) => on(d) ? 0.95 : 0.6);
       } else {
