@@ -2848,12 +2848,42 @@
     /* ---- UI ---- */
     const fab = el('button', 'ash-fab'); fab.type = 'button'; fab.setAttribute('aria-label', 'Ask Fasty, your dashboard assistant (Alt+A)'); fab.title = 'Ask Fasty (Alt+A)';
     fab.append(el('span', 'fy-glow'), orb(), el('span', 'ash-halo'), el('i', 'fy-spark s1'), el('i', 'fy-spark s2'), el('i', 'fy-spark s3'));
-    // "Need help?" pill above the orb, like the Fasty on creative.fastrr.com; dismissed for good with its ×.
-    const hint = el('div', 'fy-hint'); const hintT = el('button', 'fy-hint-t', 'Need help? Ask Fasty'); hintT.type = 'button';
-    const hintX = el('button', 'fy-hint-x'); hintX.type = 'button'; hintX.setAttribute('aria-label', 'Dismiss'); hintX.innerHTML = ICON.x;
+    // Small speech-bubble tips next to Fasty: one pops up every ~2.5 s and stays ~2.5 s. Paused while the assistant is
+    // open, while the pointer is on a tip or the tab is in the background. The × hides tips for the rest of the day.
+    const hint = el('div', 'fy-hint'); hint.setAttribute('role', 'status'); const hintT = el('button', 'fy-hint-t'); hintT.type = 'button';
+    const hintX = el('button', 'fy-hint-x'); hintX.type = 'button'; hintX.setAttribute('aria-label', 'Hide tips for today'); hintX.title = 'Hide tips for today'; hintX.innerHTML = ICON.x;
     hint.append(hintT, hintX); hint.hidden = true;
+    const TIPS = [
+      'Need help? Ask me anything', 'Try: “What’s overdue today?”', 'Hindi mein bhi pooch sakte ho', 'Press Alt+A to talk to me',
+      'Try: “What is Sagun working on?”', 'Tap the mic and just speak', 'Try: “Delivered this month?”', 'I can open any section for you',
+      'Try: “Kaun free hai?”', 'Ask me for today’s summary'
+    ];
+    const liveTip = () => {
+      try {
+        const all = CO.status() === 'ok' ? CO.rows(true) || [] : [];
+        const late = all.filter((r) => r.due === 'overdue').length, today = all.filter((r) => r.due === 'today').length;
+        const pool = []; if (late) pool.push(late + (late === 1 ? ' task is' : ' tasks are') + ' overdue. Ask me which');
+        if (today) pool.push(today + (today === 1 ? ' task is' : ' tasks are') + ' due today'); return pool;
+      } catch (e) { return []; }
+    };
+    const tip = { i: 0, timer: 0, hover: false };
+    const tipsOff = () => LS.get('co.fyhint', '') === CO.today();
+    const tipCycle = () => {
+      clearTimeout(tip.timer);
+      if (fab.hidden || tipsOff()) { hint.hidden = true; return; }
+      const idle = !panel.hidden || tip.hover || document.visibilityState !== 'visible';
+      if (hint.hidden && !idle) {
+        const pool = TIPS.concat(liveTip()); const text = pool[tip.i++ % pool.length];
+        hintT.textContent = text; hint.hidden = false; hint.classList.remove('out');
+        tip.timer = setTimeout(() => { if (tip.hover) return tipCycle(); hint.classList.add('out'); tip.timer = setTimeout(() => { hint.hidden = true; hint.classList.remove('out'); tip.timer = setTimeout(tipCycle, 2300); }, 260); }, 2500);
+        return;
+      }
+      tip.timer = setTimeout(tipCycle, hint.hidden ? 2500 : 600);
+    };
+    hint.addEventListener('pointerenter', () => { tip.hover = true; });
+    hint.addEventListener('pointerleave', () => { tip.hover = false; tipCycle(); });
     hintT.addEventListener('click', () => { hint.hidden = true; open(); });
-    hintX.addEventListener('click', () => { hint.hidden = true; LS.set('co.fyhint', '1'); });
+    hintX.addEventListener('click', () => { hint.hidden = true; clearTimeout(tip.timer); LS.set('co.fyhint', CO.today()); });
     const panel = el('section', 'ash'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Fasty, dashboard assistant'); panel.hidden = true;
     const head = el('header', 'ash-head'); const hOrb = orb('sm');
     const hT = el('div', 'ash-title'); hT.append(el('b', '', 'Fasty'), el('small', '', 'Your dashboard helper'));
@@ -3157,7 +3187,7 @@
     }
     function setStatus(s) { if (!s) return; st.ai = !!s.ai; st.tts = !!s.tts; st.provider = s.provider; if (!panel.hidden) paintHead(); }
     fab.hidden = true;
-    const show = (on) => { fab.hidden = !on; if (!on) close(); if (on && LS.get('co.fyhint', '') !== '1') setTimeout(() => { if (panel.hidden) hint.hidden = false; }, 2500); };
+    const show = (on) => { fab.hidden = !on; if (!on) { close(); hint.hidden = true; clearTimeout(tip.timer); } else { clearTimeout(tip.timer); tip.timer = setTimeout(tipCycle, 2500); } };
     return { open, close, ask, setStatus, show, get state() { return st; }, _tools: TOOLS, _local: local };
   })();
 

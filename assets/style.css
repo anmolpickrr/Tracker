@@ -1344,3 +1344,38 @@ body:not([data-admin="1"]) .adm-only { display: none !important; }
 .theme-fade, .theme-fade * { transition: background-color .6s ease, color .6s ease, border-color .6s ease, fill .6s ease !important; }
 @media (prefers-reduced-motion: reduce) { .clk-sun, .clk-sun b, .clk-moon, .clk-star { animation: none !important; } }
 @media (max-width: 720px) { .clk-sun, .clk-moon { left: -6px; top: -9px; width: 16px; height: 16px; } }
+
+/* ============ Fasty, smaller and softer ============
+   A 44px pastel-violet pebble with round eyes, rosy cheeks and a small smile; a gentle glow instead of the spinning ring.
+   Tips are small speech bubbles to its left that pop in and out. */
+.ash-fab { width: 48px; height: 48px; right: 20px; bottom: 20px; }
+.ash-fab .orb, .orb { box-shadow: inset -4px -5px 10px rgba(40, 26, 120, .35), inset 4px 5px 10px rgba(255, 255, 255, .35), 0 0 0 2px var(--panel), 0 10px 20px -10px rgba(96, 55, 215, .7); }
+.ash-fab .orb { --o: 44px; background: radial-gradient(circle at 36% 28%, #e4dcff 0%, #b5a4ff 26%, #8a72f0 55%, #6a52d8 85%, #5a42c4 100%); animation: fy-bob 4s ease-in-out infinite; }
+@keyframes fy-bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
+.ash-fab .orb-eye, .ash-head .orb-eye { width: calc(var(--o) * .13); height: calc(var(--o) * .16); border-radius: 50%; background: #2b1a6e; box-shadow: inset 1px 1px 0 1px rgba(255, 255, 255, .0); position: relative; }
+.ash-fab .orb-eye::after, .ash-head .orb-eye::after { content: ""; position: absolute; left: 22%; top: 16%; width: 36%; height: 32%; border-radius: 50%; background: #fff; }
+.ash-fab .orb-face, .ash-head .orb-face { column-gap: calc(var(--o) * .17); row-gap: calc(var(--o) * .03); }
+.ash-fab .orb-mouth::before, .ash-head .orb-mouth::before { width: calc(var(--o) * .16); height: calc(var(--o) * .08); border-width: 1.6px; border-color: #2b1a6e; }
+.ash-fab .orb-mouth i, .ash-head .orb-mouth i { background: #2b1a6e; }
+.ash-fab .orb::before, .ash-fab .orb::after, .ash-head .orb::before, .ash-head .orb::after { content: ""; position: absolute; top: 56%; width: calc(var(--o) * .17); height: calc(var(--o) * .1); border-radius: 50%; background: rgba(255, 120, 150, .55); filter: blur(1.5px); }
+.ash-fab .orb::before, .ash-head .orb::before { left: 14%; } .ash-fab .orb::after, .ash-head .orb::after { right: 14%; }
+.ash-fab .orb-core { background: radial-gradient(circle at 80% 88%, rgba(221, 255, 0, .45) 0, transparent 34%); }
+.ash-fab .orb-shine { left: 20%; top: 10%; width: 34%; height: 20%; opacity: .8; }
+.fy-glow { inset: -6px; filter: blur(12px); opacity: .22; background: radial-gradient(circle, #b5a4ff, rgba(221, 255, 0, .5) 60%, transparent 72%); animation: fy-pulse 3.6s ease-in-out infinite; }
+.ash-fab:hover .fy-glow { opacity: .4; }
+.ash-fab:hover .orb { transform: scale(1.08) rotate(-4deg); }
+.fy-spark.s3 { display: none; }
+/* tip bubble: left of Fasty, tail pointing at it */
+.fy-hint { right: 78px; bottom: 26px; max-width: min(300px, calc(100vw - 96px)); padding: 6px 4px 6px 12px; gap: 4px; border-radius: 16px 16px 4px 16px; background: var(--panel); border: 1px solid color-mix(in srgb, #8a72f0 35%, var(--line)); box-shadow: 0 8px 22px -12px rgba(60, 40, 160, .55); transform-origin: 100% 100%; animation: fy-pop .32s cubic-bezier(.2, .9, .3, 1.35) both; }
+.fy-hint.out { animation: fy-unpop .26s ease-in both; }
+@keyframes fy-pop { from { opacity: 0; transform: translateX(8px) scale(.7); } }
+@keyframes fy-unpop { to { opacity: 0; transform: translateX(6px) scale(.85); } }
+.fy-hint-t { font: 500 12.5px/1.3 var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; min-width: 0; }
+.fy-hint-x { width: 18px; height: 18px; background: transparent; opacity: .55; flex: none; }
+.fy-hint-x:hover { opacity: 1; background: var(--sunken); }
+@media (max-width: 960px) {
+  .ash-fab { right: 14px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); width: 46px; height: 46px; }
+  .ash-fab .orb { --o: 42px; }
+  .fy-hint { right: 68px; bottom: calc(102px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) { .ash-fab .orb, .fy-hint, .fy-hint.out { animation: none !important; } }

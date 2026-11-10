@@ -19,7 +19,7 @@ Navigation is a sidebar on desktop and a bottom tab bar on phones (More opens th
 | **Notes** | A team notebook: meeting minutes, discussions and personal notes with @mentions, action items (assignee and due date), follow-ups and reminders. See [Notes](#notes). |
 | **Access** (admins) | Access requests, people and their access level, and the activity log of every change. |
 
-FASTRR look: the brand palette (Pantone Sun Glare #DDFF00, Exuberant Orange #FF5A26, Blue Violet 2725 C #685BC7, Cloud Dancer #F0EEE9, Darkest Hour #1E1E1E) in a dark theme by default and a light theme (sun/moon button; remembered per browser). The two-strip logo icon is always FASTRR blue (#6037D7) and the sidebar shows only the animated icon. The loading screen shows the original FASTRR logo with "Creative Ops" in small italic beneath it. Outfit for headings and numbers. Green and red appear only on change chips (better or worse). Category colours in charts are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table. Secondary table columns appear only on screens wide enough for them; everything is still in the task dialog and the CSV exports.
+FASTRR look: the brand palette (Pantone Sun Glare #DDFF00, Exuberant Orange #FF5A26, Blue Violet 2725 C #685BC7, Cloud Dancer #F0EEE9, Darkest Hour #1E1E1E) in a Day (light) and Night (dark) theme that follow sunrise and sunset (see [Live clock, Day and Night](#live-clock-day-and-night)). The two-strip logo icon is always FASTRR blue (#6037D7) and the sidebar shows only the animated icon. The loading screen shows the original FASTRR logo with "Creative Ops" in small italic beneath it. Outfit for headings and numbers. Green and red appear only on change chips (better or worse). Category colours in charts are a validated colour-blind-safe set, and every chart value is also available as a label, tooltip or table. Secondary table columns appear only on screens wide enough for them; everything is still in the task dialog and the CSV exports.
 
 **Internal and External:** everything from the *Paid (client)* sheet is shown as **External** and everything from the *Marketing team* sheet as **Internal**, in filters, tags, tables, reports and CSV files. This is a display label only: the sheets keep their names, so the import is unchanged. The Reports card for External work shows the ₹ symbol.
 
@@ -109,23 +109,33 @@ Browsers cannot show a dashboard alert when no dashboard tab is open (that would
 
 The bell lists, for the signed-in person: their overdue tasks and tasks due today or tomorrow; for admins, team overdue and unassigned totals; new requirements since yesterday; status, sheet and team changes made by others in the last 48 hours; note mentions and action items; meetings starting within 15 minutes; and the two daily briefings. Every item opens the task, note or page it is about. Emails are not read: the dashboard has no access to anyone's inbox.
 
+## Today (Overview)
+
+The **Today** card at the top of the Overview lists, per person (or by status): what to **pick up** (to be planned or changes requested, due today or the next working day), what is **in progress** (WIP), what was **delivered today** and what is **carried forward** (open and past its ETA). Delivered today comes from the activity log: any design status changed to DONE today, in the sheet or on the dashboard; a delivered task with today's ETA also counts. Click a person to see their tasks, and a task to open it.
+
 ## Meetings (Google Calendar)
 
 The Overview's Meetings card shows the next meeting with a countdown, who is in it, a Join Google Meet button and a Take notes button (which starts a meeting note with the title and attendees filled in), plus the rest of today and the next two days. Each person connects their own calendar once, read-only; the access lasts for the browser session and is never sent to the web app or stored in the sheets.
 
 **Automatic for everyone:** the web app reads the signed-in person's own calendar, so team members see their meetings with no setup, as long as calendars share event details inside the company (Google Admin console → Apps → Google Workspace → Calendar → Sharing settings → Internal sharing options: *Share all information*). Run `testMeetings` in Apps Script to see who is covered. Anyone whose calendar isn't shared sees a **Connect Google Calendar** button instead (needs the Google Calendar API enabled in the "Creative Ops Tracker" Google Cloud project).
 
+Every meeting shows its name, date, time, duration and a Join link. If the calendar only shares free/busy times with the web app, meetings appear as "Busy (details hidden)" with a **Show names & Meet links** button: one click connects the person's own calendar (read-only, this browser session) and the full details replace the busy blocks. Changing the sharing setting above fixes it for everyone.
+
 ## Who's online (admins)
 
 Admins see, under **Access**, who has the dashboard open, which page they are on, the task they are editing (if any) and when they were last active; the header shows the faces of people online now. Nothing else is collected: no keystrokes, no screen contents, no location. Everyone sees a notice about this in the bell menu, and an admin can switch it off under Reminders and notifications. "Last active" is saved in the Users tab at most every 10 minutes.
 
-## Live clock
+## Live clock, Day and Night
 
-The coral clock in the header always shows India Standard Time, whatever the computer's own time zone. Click it to switch between 12-hour and 24-hour; the choice is remembered on that device.
+The clock in the header always shows India Standard Time, whatever the computer's own time zone. Click it to switch between 12-hour and 24-hour; the choice is remembered on that device.
+
+The theme follows the sun: **Day** (light) from sunrise and **Night** (dark) after sunset, using north-India sunrise and sunset times for the month. By day the clock is orange with a small sun rising over its edge; at night it turns violet with a moon and twinkling stars. The switch is a soft circular reveal. The sun/moon button picks the other theme until the next sunrise or sunset, then it goes back to automatic. Animations stop for anyone who has reduced motion turned on.
 
 ## Fasty, the voice assistant
 
-The violet orb at the bottom right (or **Alt+A**) opens **Fasty**, a voice and chat helper that knows the whole dashboard. Ask in Hindi, English, Hinglish or mixed sentences, by voice (tap the lime microphone) or by typing:
+The small violet face at the bottom right (or **Alt+A**) opens **Fasty**, a voice and chat helper that knows the whole dashboard. Ask in Hindi, English, Hinglish or mixed sentences, by voice (tap the lime microphone) or by typing:
+
+Small tips pop up next to Fasty one at a time (each for about 2.5 seconds, with a pause between) with ideas of what to ask and live counts such as tasks overdue. They pause while Fasty is open or the pointer is on a tip; the × hides them for the rest of the day.
 
 - "Yashika ke kitne tasks overdue hain?", "What is due tomorrow for Huggler?", "SRAP372 ka status kya hai?"
 - "Is mahine kitne creatives deliver hue, internal vs external?", "Who delivered most last month?", "Team ka progress batao"
@@ -309,6 +319,9 @@ What each comparison is against:
 
 ## Managing the team
 
+- **Roles** live in the *Role* column of the team sheet: Designer, Editor, Designer/Editor, Content Writer, KAM (Design), with "(Intern)" where it applies. They show on the Team page and in Today. A role containing "not shown" (the Creative Head) keeps the person out of team views.
+- **Estimated load (admins only):** open work in hours, by creative type (Static 1.5 h, Carousel/GIF ~2–3 h, Video 4 h, AI video 5 h, in-house shoot/video 6 h, …), half for changes requested, ×1.3 for interns, and 1 h for each content-in-progress task a content writer owns. Divided by 7 working hours a day it gives days of work: green under 2.5 days, amber to 5, red above. It is a planning guide, not a performance score, and only admins see it (Team page and Today).
+
 - Admins switch people between **Active** and **Inactive** on the **Team** tab, or edit the Status column of the *Creative Team List (Dashboard)* sheet directly. Inactive people leave the stand-up and workload views; their past work stays in reports.
 - Anyone new who appears as a designer in the task sheets shows up automatically, marked **New**. Click **Add to team** to put them on the list.
 - **Also written as** in the team sheet holds other spellings (for example "Yashika" for "Yashika Agrawal").
@@ -317,17 +330,20 @@ What each comparison is against:
 
 **Design status → dashboard status**
 
-| In the sheet | Shown as | Counts as open work |
-| --- | --- | --- |
-| TBP, blank | To be planned | yes |
-| WIP, WIP | WIP | yes |
-| Changes | Changes requested | yes |
-| Pending approval, Review, Shared | Pending approval | no |
-| DONE, Delivered | Delivered | no |
-| HOLD, Hold, No update | Hold | no |
-| Deprioritized, Rejected, Cancelled | Deprioritised | no |
-| blank/TBP with content Incomplete brief, Pending, WIP or TBD | Incomplete brief | no |
-| anything else | shown as typed, flagged in Sheet health | yes |
+| In the sheet | Shown as | Open work (workload, overdue) | Notes |
+| --- | --- | --- | --- |
+| TBP, blank | To be planned | yes | |
+| WIP | WIP | yes | |
+| Changes | Changes requested | yes | |
+| Shared, Pending approval, Review | Pending approval | no | Waiting for the client. Never overdue, not in workload; shown as "Pending approval · Nd" since the ETA. |
+| DONE, Delivered | Delivered | no | |
+| Rejected | Delivered | no | Counted as completed ("rejected by client"). The redesign is a new task (new row). |
+| No update | Delivered | no | Shared with no response: counted as shared and completed ("no client update"). |
+| HOLD, Paused | Hold | no | Never overdue. |
+| Deprioritized, Cancelled | Deprioritised | no | Never overdue. |
+| blank/TBP with content WIP | Incomplete brief | no | The content writer's work in progress ("content WIP"); counts in the writer's load, not the designer's. |
+| blank/TBP with content Incomplete brief, Pending or TBD | Incomplete brief | no | |
+| anything else | shown as typed, flagged in Sheet health | yes | |
 
 **Designers** come from *Designer/Editor* (Paid) and *Creator* (Marketing). Several names in one cell ("Rajnish Shubham Rana", "Yashika Agrawal, Sagun") are split into each person, and a task shared by two people counts for both.
 
