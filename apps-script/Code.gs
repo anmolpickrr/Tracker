@@ -241,7 +241,7 @@ function doPost(e) {
     if (body.action === 'feed') return json_(feed_(user));
     if (body.action === 'meetings') return json_(meetings_(user));
     if (body.action === 'daily') return json_(daily_());
-    if (body.action === 'assist') return json_(assist_(user, body));
+    if (body.action === 'assist') { const r = assist_(user, body); if (r.ok && r.stop_reason !== 'tool_use' && body.voice) attachVoice_(user, r, body.voice); return json_(r); }
     if (body.action === 'speak') return json_(speak_(user, body));
     if (body.action === 'history') return json_({ ok: true, days: history_() });
     if (body.action === 'settings') { const st = settings_(); return json_({ ok: true, settings: Object.assign({}, st, { chat: st.chat ? 'set' : '' }) }); }
@@ -1707,27 +1707,88 @@ function assist_(user, body) {
   if (out.stop_reason === 'refusal') return { ok: true, stop_reason: 'refusal', content: [] };
   return { ok: true, stop_reason: out.stop_reason, content: out.content || [] };
 }
-// Natural female voice through Google Cloud Text-to-Speech (Chirp 3 HD), when GOOGLE_TTS_KEY is set.
-function speak_(user, body) {
+/* ---- Voice ----
+ * Speech is made in parts so it can start at once: the first sentence is synthesised inside the same request as the
+ * answer (attachVoice_), so the text and the voice arrive together, and the rest is fetched by the browser while the
+ * first part plays. Several parts are synthesised in parallel (UrlFetchApp.fetchAll). Voices: Google Cloud Chirp 3 HD
+ * when GOOGLE_TTS_KEY is set (fastest), else Gemini text-to-speech with the free GEMINI_API_KEY. */
+function voiceLang_(text, pref) { return pref === 'hi-IN' || /[ऀ-ॿ]/.test(text) ? 'hi-IN' : 'en-IN'; }
+function spokenOf_(text) {
+  const parts = String(text || '').split(/\s*<<say>>\s*/);
+  return String(parts[1] || parts[0] || '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[*_#`>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 900);
+}
+// First part: just the first sentence (joined with the next only if under 25 characters) so it is quick to make; then parts of up to ~420.
+function voiceChunks_(text) {
+  const sentences = String(text).split(/(?<=[.!?।])\s+/).filter(Boolean), out = []; let cur = '';
+  sentences.forEach(function (x) {
+    const cap = out.length ? 420 : 170, joined = (cur ? cur + ' ' : '') + x;
+    if (!cur || (out.length ? joined.length <= cap : cur.length < 25 && joined.length <= cap)) cur = joined; else { out.push(cur); cur = x; }
+  });
+  if (cur) out.push(cur);
+  return out.slice(0, 5);
+}
+function ttsReady_() {
+  const p = PropertiesService.getScriptProperties();
+  return !!(p.getProperty('GOOGLE_TTS_KEY') || (p.getProperty('GEMINI_API_KEY') && !CacheService.getScriptCache().get('tts-off')));
+}
+function ttsKey_(lang, text) { return 'tts2:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, lang + text)); }
+// Synthesises several texts at once; returns [{ a, m } | null] in the same order.
+function ttsMany_(texts, lang) {
   const props = PropertiesService.getScriptProperties(), key = props.getProperty('GOOGLE_TTS_KEY'), gk = props.getProperty('GEMINI_API_KEY');
-  if (!key && !gk) return { ok: false, error: 'not_configured' };
-  if (!assistLimit_(user.email, 'tts', 80)) return { ok: false, error: 'limit' };
-  const text = String(body.text || '').slice(0, 700); if (!text) return { ok: false };
-  const lang = body.lang === 'hi-IN' || /[\u0900-\u097F]/.test(text) ? 'hi-IN' : 'en-IN';
-  const cache = CacheService.getScriptCache(), ck = 'tts2:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, lang + text));
-  const hit = cache.get(ck); if (hit) { const h = JSON.parse(hit); return { ok: true, audio: h.a, mime: h.m }; }
-  let out = null;
-  // 1. Google Cloud Chirp 3 HD (natural, Indian English and Hindi voices), when GOOGLE_TTS_KEY is set.
+  const cache = CacheService.getScriptCache(), out = texts.map(function () { return null; }), todo = [];
+  texts.forEach(function (t, i) { const hit = cache.get(ttsKey_(lang, t)); if (hit) { try { out[i] = JSON.parse(hit); return; } catch (e) { /* re-make */ } } todo.push(i); });
+  if (!todo.length) return out;
+  let reqs, model = '';
   if (key) {
-    const res = UrlFetchApp.fetch('https://texttospeech.googleapis.com/v1/text:synthesize?key=' + encodeURIComponent(key), { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      payload: JSON.stringify({ input: { text: text }, voice: { languageCode: lang, name: lang + '-Chirp3-HD-Aoede' }, audioConfig: { audioEncoding: 'MP3', speakingRate: 1.0 } }) });
-    if (res.getResponseCode() === 200) out = { a: JSON.parse(res.getContentText()).audioContent || '', m: 'audio/mp3' };
-  }
-  // 2. Gemini text-to-speech with the same free GEMINI_API_KEY: a warm, natural female voice that speaks Hindi and Indian English.
-  if (!out && gk && !cache.get('tts-off')) out = geminiSpeak_(gk, text, lang);
-  if (!out || !out.a) { if (gk && !key) cache.put('tts-off', '1', 900); return { ok: false, error: 'tts unavailable' }; }
-  if (out.a.length < 95000) cache.put(ck, JSON.stringify(out), 21600);
-  return { ok: true, audio: out.a, mime: out.m };
+    reqs = todo.map(function (i) { return { url: 'https://texttospeech.googleapis.com/v1/text:synthesize?key=' + encodeURIComponent(key), method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({ input: { text: texts[i] }, voice: { languageCode: lang, name: lang + '-Chirp3-HD-Aoede' }, audioConfig: { audioEncoding: 'MP3', speakingRate: 1.0 } }) }; });
+  } else if (gk && !cache.get('tts-off')) {
+    model = props.getProperty('GEMINI_TTS_MODEL') || props.getProperty('GEMINI_TTS_OK') || 'gemini-2.5-flash-preview-tts';
+    reqs = todo.map(function (i) { return { url: 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': gk },
+      payload: JSON.stringify(geminiTtsBody_(texts[i], lang)) }; });
+  } else return out;
+  let res = []; try { res = UrlFetchApp.fetchAll(reqs); } catch (e) { res = []; }
+  let limited = 0;
+  todo.forEach(function (i, j) {
+    const r = res[j]; let got = null;
+    if (r && r.getResponseCode() === 200) {
+      try {
+        const body = JSON.parse(r.getContentText());
+        if (key) got = body.audioContent ? { a: body.audioContent, m: 'audio/mp3' } : null;
+        else { const part = ((((body.candidates || [])[0] || {}).content || {}).parts || []).filter(function (x) { return x.inlineData; })[0]; if (part) got = { a: part.inlineData.data, m: part.inlineData.mimeType || 'audio/L16;rate=24000' }; }
+      } catch (e) { got = null; }
+    } else if (r && r.getResponseCode() === 429) limited++;
+    else if (!key && gk) got = geminiSpeak_(gk, texts[i], lang); // model not available: try the others one by one
+    if (got && got.a) { out[i] = got; if (got.a.length < 95000) cache.put(ttsKey_(lang, texts[i]), JSON.stringify(got), 21600); }
+  });
+  if (limited && !key && limited === todo.length && out.every(function (x) { return !x; })) cache.put('tts-off', '1', 900);
+  return out;
+}
+// Adds the spoken parts of a final answer and the audio of the first part to the assist reply.
+function attachVoice_(user, r, pref) {
+  const text = (r.content || []).filter(function (c) { return c.type === 'text'; }).map(function (c) { return c.text; }).join(' ');
+  const spoken = spokenOf_(text); if (!spoken) return;
+  const lang = voiceLang_(spoken, pref && pref.lang), chunks = voiceChunks_(spoken);
+  r.voice = { lang: lang, chunks: chunks, a0: null, off: !ttsReady_() };
+  if (r.voice.off || !assistLimit_(user.email, 'tts', 80)) return;
+  const a0 = ttsMany_([chunks[0]], lang)[0];
+  if (a0) r.voice.a0 = { audio: a0.a, mime: a0.m }; else r.voice.off = !ttsReady_();
+}
+function speak_(user, body) {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('GOOGLE_TTS_KEY') && !props.getProperty('GEMINI_API_KEY')) return { ok: false, error: 'not_configured' };
+  const many = Array.isArray(body.texts), texts = (many ? body.texts : [body.text]).map(function (t) { return String(t || '').slice(0, 700); }).filter(Boolean).slice(0, 5);
+  if (!texts.length) return { ok: false };
+  for (let i = 0; i < texts.length; i++) if (!assistLimit_(user.email, 'tts', 80)) return { ok: false, error: 'limit' };
+  const lang = voiceLang_(texts.join(' '), body.lang);
+  const res = ttsMany_(texts, lang);
+  if (many) return { ok: true, items: res.map(function (x) { return x ? { audio: x.a, mime: x.m } : null; }) };
+  if (!res[0]) return { ok: false, error: 'tts unavailable' };
+  return { ok: true, audio: res[0].a, mime: res[0].m };
+}
+function geminiTtsBody_(text, lang) {
+  const style = lang === 'hi-IN' ? 'Read this aloud in natural, conversational Hindi as a warm, friendly young Indian woman talking to a colleague; pronounce English words the Indian way: ' : 'Read this aloud in a warm, friendly Indian English accent, natural and conversational, like a helpful colleague: ';
+  return { contents: [{ role: 'user', parts: [{ text: style + text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } } } };
 }
 function geminiSpeak_(gk, text, lang) {
   const props = PropertiesService.getScriptProperties();
@@ -1772,7 +1833,7 @@ function gemini_(messages, who) {
     systemInstruction: { parts: [{ text: ASSIST_SYSTEM + '\n\n' + who }] },
     contents: contents,
     tools: [{ functionDeclarations: ASSIST_TOOLS.map(function (t) { return { name: t.name, description: t.description, parameters: geminiSchema_(t.input_schema) }; }) }],
-    generationConfig: Object.assign({ temperature: 0.3, maxOutputTokens: 2048 }, tune.model === model && tune.thinking ? { thinkingConfig: tune.thinking } : {})
+    generationConfig: Object.assign({ temperature: 0.3, maxOutputTokens: 900 }, tune.model === model && tune.thinking ? { thinkingConfig: tune.thinking } : {})
   };
   let res;
   try { res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key }, payload: JSON.stringify(req) }); }

@@ -3008,7 +3008,8 @@
       const part = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
       bubble('bot', part + (A.user && A.user.name ? ', ' + A.user.name.split(' ')[0] : '') + '! I am Fasty. Ask me about tasks, deadlines, the team or reports, or tell me where to go. Hindi, English, Hinglish, sab chalega.');
     };
-    function open() { hint.hidden = true; panel.hidden = false; fab.classList.add('on'); paintHead(); greet(); drawSugg(); mood(); setTimeout(() => input.focus(), 60); }
+    let warmAt = 0; const warm = () => { if (A.mode === 'auth' && Date.now() - warmAt > 90 * 1000) { warmAt = Date.now(); callApi({ action: 'me' }).catch(() => {}); } };
+    function open() { warm(); hint.hidden = true; panel.hidden = false; fab.classList.add('on'); paintHead(); greet(); drawSugg(); mood(); setTimeout(() => input.focus(), 60); }
     function close() { panel.hidden = true; fab.classList.remove('on'); stopListening(); stopSpeaking(); }
     fab.addEventListener('click', () => (panel.hidden ? open() : close()));
     closeB.addEventListener('click', close);
@@ -3022,7 +3023,7 @@
     micB.addEventListener('click', () => (st.listening ? stopListening() : listen()));
 
     /* ---- listening ---- */
-    function listen() {
+    function listen() { warm();
       if (!SR || st.busy) return;
       stopSpeaking();
       const rec = new SR(); st.rec = rec; rec.lang = st.lang; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
@@ -3054,17 +3055,46 @@
       h.setUint32(24, rate, true); h.setUint32(28, rate * 2, true); h.setUint16(32, 2, true); h.setUint16(34, 16, true); w(36, 'data'); h.setUint32(40, pcm.length, true);
       return URL.createObjectURL(new Blob([h.buffer, pcm], { type: 'audio/wav' }));
     };
-    async function speak(text) {
-      if (!st.voiceOn || !text) return;
-      const t = plain(text).slice(0, 700), lang = langOf(t); st.speaking = true; mood();
-      if (st.tts) {
-        try { const r = await callApi({ action: 'speak', text: t, lang }); if (r.ok && r.audio) { stopSpeaking(true); const a = new Audio(audioUrl(r.audio, r.mime)); st.audio = a; st.speaking = true; mood(); a.onended = done; a.onerror = done; await a.play(); return; } } catch (e) { /* fall back to the device voice */ }
-      }
-      if (!window.speechSynthesis) { st.speaking = false; mood(); return; }
-      speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); const v = pickVoice(lang); if (v) u.voice = v; u.lang = v ? v.lang : lang; u.rate = 1.03; u.pitch = 1.05;
-      u.onend = done; u.onerror = () => { st.speaking = false; mood(); }; speechSynthesis.speak(u);
+    /* Voice in parts: the first part plays the moment the answer appears (its audio comes with the answer), the rest is
+       fetched in parallel while it plays, so there is no gap. If natural speech is unavailable the device voice starts at once. */
+    let vtok = 0;
+    const splitVoice = (t) => { const ss = String(t).split(/(?<=[.!?।])\s+/).filter(Boolean), out = []; let cur = ''; ss.forEach((x) => { const cap = out.length ? 420 : 170, j = (cur ? cur + ' ' : '') + x; if (!cur || (out.length ? j.length <= cap : cur.length < 25 && j.length <= cap)) cur = j; else { out.push(cur); cur = x; } }); if (cur) out.push(cur); return out.slice(0, 5); };
+    function deviceSpeak(text, lang, my) {
+      if (!window.speechSynthesis || my !== vtok) { if (my === vtok) done(); return; }
+      speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); const v = pickVoice(lang); if (v) u.voice = v; u.lang = v ? v.lang : lang; u.rate = 1.03; u.pitch = 1.05;
+      u.onend = () => { if (my === vtok) done(); }; u.onerror = () => { if (my === vtok) { st.speaking = false; mood(); } }; speechSynthesis.speak(u);
     }
-    function stopSpeaking(keep) { if (st.audio) { st.audio.pause(); st.audio = null; } try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } if (!keep) { st.speaking = false; mood(); } }
+    const playAudio = (item, my) => new Promise((resolve) => {
+      if (my !== vtok) return resolve(false);
+      const a = new Audio(audioUrl(item.audio, item.mime)); st.audio = a; a.preload = 'auto';
+      a.onended = () => resolve(true); a.onerror = () => resolve(false);
+      a.play().catch(() => resolve(false));
+    });
+    async function voicePlay(v) {
+      stopSpeaking(true); const my = ++vtok;
+      const chunks = (v.chunks || []).filter(Boolean), lang = v.lang || langOf(chunks.join(' '));
+      if (!chunks.length) { st.speaking = false; mood(); return; }
+      st.speaking = true; mood();
+      if (v.off || !st.tts || A.mode !== 'auth') return deviceSpeak(chunks.join(' '), lang, my);
+      const fetchVoice = (list) => callApi({ action: 'speak', texts: list, lang }).then((r) => (r.ok && r.items ? r.items : r.ok && r.audio ? [{ audio: r.audio, mime: r.mime }] : [])).catch(() => []);
+      const first = v.a0 !== undefined ? Promise.resolve([v.a0]) : fetchVoice([chunks[0]]);
+      const rest = chunks.length > 1 ? fetchVoice(chunks.slice(1)) : Promise.resolve([]);
+      for (let i = 0; i < chunks.length; i++) {
+        const item = i === 0 ? (await first)[0] : (await rest)[i - 1];
+        if (my !== vtok) return;
+        if (!item || !item.audio) return deviceSpeak(chunks.slice(i).join(' '), lang, my);
+        const ok = await playAudio(item, my);
+        if (my !== vtok) return;
+        if (!ok) return deviceSpeak(chunks.slice(i).join(' '), lang, my);
+      }
+      st.audio = null; done();
+    }
+    function speak(text, voice) {
+      if (!st.voiceOn || !text) return;
+      if (voice && voice.chunks && voice.chunks.length) return voicePlay(voice);
+      const t = plain(text).slice(0, 900); return voicePlay({ chunks: splitVoice(t), lang: langOf(t) });
+    }
+    function stopSpeaking(keep) { vtok++; if (st.audio) { st.audio.pause(); st.audio = null; } try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { /* ignore */ } if (!keep) { st.speaking = false; mood(); } }
 
     /* ---- data helpers (all on the live data this person can see) ---- */
     const norm = (x) => String(x || '').toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
@@ -3211,31 +3241,34 @@
     /* ---- the conversation ---- */
     const ctx = () => { const p = dash.params(); return { page: PAGE_NAME[p.tab] || 'Overview', filters: [p.src ? CO.cls(p.src) : '', p.designer, p.brand, p.type].filter(Boolean).join(', '), lang: st.lang }; };
     // Keep the conversation short enough to send, cutting only at a question the person asked (never between a tool call and its result).
-    const trim = () => { while (st.msgs.length > 30) { st.msgs.shift(); while (st.msgs.length && !(st.msgs[0].role === 'user' && st.msgs[0].content.some((c) => c.type === 'text'))) st.msgs.shift(); } };
+    // Older tool results are cut short before sending (the model already answered from them): smaller requests, faster replies.
+    const slim = () => { let lastQ = -1; st.msgs.forEach((m, i) => { if (m.role === 'user' && m.content.some((c) => c.type === 'text')) lastQ = i; });
+      return st.msgs.map((m, i) => i >= lastQ || m.role !== 'user' ? m : { role: m.role, content: m.content.map((c) => c.type === 'tool_result' && c.content.length > 400 ? Object.assign({}, c, { content: c.content.slice(0, 400) + '…' }) : c) }); };
+    const trim = () => { while (st.msgs.length > 24) { st.msgs.shift(); while (st.msgs.length && !(st.msgs[0].role === 'user' && st.msgs[0].content.some((c) => c.type === 'text'))) st.msgs.shift(); } };
     async function ask(q, viaVoice) {
       if (st.busy) return;
       st.viaVoice = viaVoice; stopSpeaking(); sugg.replaceChildren();
       bubble('me', q); st.busy = true; mood(); shown = null;
       const wait = bubble('bot wait'); wait.append(el('span', 'dots', '')); wait.setAttribute('aria-label', 'Fasty is thinking');
-      let answer = '';
+      let answer = '', voice = null;
       try {
         if (st.ai === false || A.mode !== 'auth') answer = local(q);
         else {
           st.msgs.push({ role: 'user', content: [{ type: 'text', text: q }] }); trim();
           for (let hop = 0; hop < 7; hop++) {
             // Never wait forever: after 30 seconds answer in basic mode and say why.
-            const res = await Promise.race([callApi({ action: 'assist', messages: st.msgs, context: ctx() }), new Promise((r) => setTimeout(() => r({ ok: false, error: 'busy', slow: true }), 30000))]);
+            const res = await Promise.race([callApi({ action: 'assist', messages: slim(), context: ctx(), voice: st.voiceOn && st.tts ? { lang: st.lang } : null }), new Promise((r) => setTimeout(() => r({ ok: false, error: 'busy', slow: true }), 30000))]);
             if (!res.ok && res.error === 'busy') { st.msgs.pop(); answer = local(q) + (res.slow ? ' (Quick answer: the AI service did not reply in 30 seconds, so I used basic mode.)' : ' (Quick answer: the AI service is busy right now, so I used basic mode.)'); break; }
             if (!res.ok) { if (res.error === 'not_configured') { st.ai = false; paintHead(); st.msgs.pop(); answer = local(q); } else answer = res.error || 'Something went wrong. Try again.'; break; }
             if (res.stop_reason === 'refusal') { st.msgs.pop(); answer = 'I can not help with that one. Ask me about tasks, the team or reports.'; break; }
             st.msgs.push({ role: 'assistant', content: res.content });
-            const text = res.content.filter((c) => c.type === 'text').map((c) => c.text).join(' ').trim();
+            const text = res.content.filter((c) => c.type === 'text').map((c) => c.text).join(' ').trim(); voice = res.voice || null;
             const calls = res.content.filter((c) => c.type === 'tool_use');
             if (res.stop_reason !== 'tool_use' || !calls.length) { answer = text || 'Done.'; break; }
             const results = [];
             for (const c of calls) {
               let out; try { out = TOOLS[c.name] ? await TOOLS[c.name](c.input || {}) : { error: 'Unknown tool ' + c.name }; } catch (e) { out = { error: String(e.message || e) }; }
-              results.push({ type: 'tool_result', tool_use_id: c.id, content: JSON.stringify(out).slice(0, 12000), is_error: !!(out && out.error && out.error !== 'not_allowed') });
+              results.push({ type: 'tool_result', tool_use_id: c.id, content: JSON.stringify(out).slice(0, 8000), is_error: !!(out && out.error && out.error !== 'not_allowed') });
             }
             st.msgs.push({ role: 'user', content: results });
             if (hop === 6) answer = 'That took too many steps. Could you ask in a simpler way?';
@@ -3246,7 +3279,7 @@
       // The AI adds "<<say>>" + a Devanagari version for Hindi/Hinglish replies: show the first part, speak the second (correct pronunciation).
       const [shownText, spoken] = String(answer).split(/\s*<<say>>\s*/);
       const b = bubble('bot', shownText.trim()); showTasks(b, shown); st.lastAskedQuestion = /\?\s*$|\?\s*["”]?$/.test(shownText.trim());
-      mood(); speak((spoken || shownText).trim());
+      mood(); speak((spoken || shownText).trim(), voice);
     }
 
     /* ---- basic mode (no Claude key): understands the common questions in English and Hinglish ---- */
