@@ -1752,3 +1752,21 @@ button.co-kpi:hover { transform: translateY(-2px); box-shadow: 0 18px 34px -22px
 .tw-tile.zero b { color: var(--muted); }
 .na-chip[aria-selected="true"] b { background: rgba(0, 0, 0, .22); }
 .tw-empty .co-btn, .na-clear .co-btn { margin-top: 8px; }
+/* review fixes */
+.chip.s-st { font-weight: 500; }
+.chip.st-pending-approval { background: var(--lav); color: var(--lav-ink); }
+.chip.st-wip { background: var(--primary-soft); color: var(--primary-text); }
+.chip.st-to-be-planned, .chip.st-hold { background: var(--sunken); color: var(--fg-2); }
+.chip.st-hold::before { background: var(--muted); }
+.chip.st-incomplete-brief { background: var(--org-p); color: var(--org-ink); }
+:root { --bar-soft: #c3b8f6; }
+:root[data-theme="dark"] { --bar-soft: #4a4290; }
+.brief-card.compact { padding: 10px 12px 10px 14px; }
+.brief-card.compact .bc-ico { width: 32px; height: 32px; border-radius: 10px; }
+.brief-card.compact .bc-ico svg { width: 16px; height: 16px; }
+.brief-card.compact .bc-t { font-size: 14px; }
+.brief-card.compact .bc-s { display: none; }
+.main { padding-bottom: 90px; }
+#f-reset { background: var(--primary-soft); color: var(--primary-text); font-weight: 600; }
+#f-reset:hover { background: var(--primary); color: #fff; }
+@media (max-width: 640px) { .ov-grid.fill > .co-card.na .na-list { max-height: none; overflow: visible; } }

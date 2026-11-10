@@ -315,7 +315,7 @@ Every comparison shows the change as a coloured chip: **green when the number mo
 
 What each comparison is against:
 - **Delivered this month, Top brands, Team "This month":** the same days of last month (1 to 9 November against 1 to 9 October), so a month in progress is never compared with a full month.
-- **Monthly report bars and "vs prev." columns:** each complete month against the month before; the current month against the same days of the previous month. Bars for months outside the chosen range are faded and striped.
+- **Monthly report chart and "vs prev." columns:** each complete month against the month before; the current month against the same days of the previous month. The chart shows plain bars, the report period in FASTRR blue and other months in lavender; hover a bar for its change, which the tables also show.
 - **Delivery trend:** the last complete week against the week before. The current week is drawn faintly and never counted as a drop.
 - **Open, Overdue, Pending approval:** against the daily snapshot closest to 7 days ago. These are counts at a moment in time, so the web app saves one snapshot a day after 09:00 IST in the History tab; the comparison appears once a week of snapshots exists and only while no filters are applied.
 

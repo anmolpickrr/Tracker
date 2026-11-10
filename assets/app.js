@@ -332,7 +332,7 @@
       else if (r.due === 'today') { cls = 's-warn'; if (!plain) txt = r.stage + ' · today'; }
       else if (r.stage === 'Changes requested') cls = 's-warn';
       else if (r.stage === 'Delivered') cls = 's-ok';
-      else if (stageColor(r.stage)) { cls = ''; el.style.color = stageColor(r.stage); }
+      else if (stageColor(r.stage)) cls = 's-st st-' + r.stage.toLowerCase().replace(/[^a-z]+/g, '-');
       // Extra detail agreed with the Creative Head: why something counts as delivered, and how long a client has had it.
       if (!plain && r.sub && r.due !== 'overdue') { txt += ' · ' + (r.sub === 'Rejected by client' ? 'rejected' : r.sub === 'No client update' ? 'no client update' : 'content WIP'); if (r.sub === 'Rejected by client') cls = 's-warn'; }
       if (!plain && r.stage === 'Pending approval' && r.eta && r.eta < today()) { const d = diffDays(r.eta, today()); txt += ' · ' + d + 'd'; el.title = 'With the client since about ' + fmtDate(r.eta) + ' (design ETA)'; }
@@ -806,7 +806,7 @@
     const bar = document.createElement('div'); bar.className = 'na-bar'; bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', Object.entries(comp).filter((x) => x[1]).map(([k, v]) => v + ' ' + k).join(', '));
     Object.entries(comp).forEach(([k, v]) => { if (!v) return; const seg = document.createElement('i'); seg.className = 'k-' + k; seg.style.flexGrow = '0'; seg.title = v + ' ' + ({ late: 'overdue', today: 'due today', tomorrow: 'due tomorrow', changes: 'changes requested' })[k]; bar.append(seg); requestAnimationFrame(() => requestAnimationFrame(() => { seg.style.flexGrow = String(v); })); });
     if (!animate) bar.querySelectorAll('i').forEach((i) => { i.style.transition = 'none'; });
-    el.append(bar);
+    if (Object.values(comp).filter(Boolean).length > 1) el.append(bar);
     // filter chips
     const chips = document.createElement('div'); chips.className = 'na-chips'; chips.setAttribute('role', 'tablist'); chips.setAttribute('aria-label', 'Filter');
     F.forEach(([k, l, fn]) => {
@@ -818,7 +818,7 @@
     });
     el.append(chips);
     const fn = (F.find((f) => f[0] === NA.f) || F[0])[2];
-    const list = rows.filter(fn), LIM = 40;
+    const list = rows.filter(fn), LIM = matchMedia('(max-width: 640px)').matches ? 8 : 40;
     const ul = document.createElement('ul'); ul.className = 'na-list';
     (NA.all ? list : list.slice(0, LIM)).forEach((r, i) => {
       const k = cat(r), li = document.createElement('li'); li.className = 'na-row k-' + k + (animate ? ' in' : ''); li.style.setProperty('--i', Math.min(i, 12)); li.dataset.uid = r.uid; li.tabIndex = 0;
@@ -1524,7 +1524,9 @@
       if ((dash.params().rchart || 'total') === 'total') {
         const sw = (good, k, label) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = CO.toneFill({ good, k }, 'var(--panel)'); s.append(i, label); return s; };
         const n = document.createElement('span'); const ni = document.createElement('i'); ni.style.background = 'var(--bar)'; n.append(ni, 'no earlier month');
-        el.replaceChildren(sw(true, 0.25, 'a little more'), sw(true, 1, 'much more than the month before'), sw(false, 0.25, 'a little fewer'), sw(false, 1, 'much fewer'), n);
+        const sel = document.createElement('span'); const si = document.createElement('i'); si.style.background = 'var(--primary)'; sel.append(si, 'report period');
+        const oth = document.createElement('span'); const oi = document.createElement('i'); oi.style.background = 'var(--bar-soft)'; oth.append(oi, 'other ' + TB.G[TB.get('rchart', 'month').g].noun + 's · hover a bar for the change');
+        el.replaceChildren(sel, oth); void sw; void n;
         return;
       }
       const top = CO.topTypes(delivered(), 5), cmap = CO.typeColors(top);
@@ -1572,8 +1574,8 @@
         const on = (d) => pr.all || inSel(d.m);
         const g2 = svg.append('g').selectAll('g').data(series).join('g');
         const bar = (sel) => sel.attr('x', (d) => x(d.m) + po).attr('width', pw).attr('y', (d) => Math.min(yt(d.total), base - pw)).attr('height', (d) => d.total ? Math.max(pw, base - yt(d.total)) : 0).attr('rx', pw / 2).attr('data-m', (d) => d.m);
-        bar(g2.append('rect').attr('class', 'mk tone-bar')).style('fill', (d) => CO.toneFill(d.tone, 'var(--panel)')).style('opacity', (d) => on(d) ? 1 : 0.42);
-        bar(g2.filter((d) => !on(d)).append('rect').attr('class', 'mk')).style('fill', 'url(#' + pid + ')');
+        // Plain bars: the report period in FASTRR blue, other months lavender; the change vs the month before is in the tooltip and tables.
+        bar(g2.append('rect').attr('class', 'mk tone-bar')).style('fill', (d) => on(d) && !pr.all ? 'var(--primary)' : 'var(--bar-soft)').style('opacity', (d) => d.running ? 0.85 : 1);
         if (pw >= 10) svg.append('g').selectAll('circle').data(series.filter((d) => d.total)).join('circle').attr('class', 'mk').attr('data-m', (d) => d.m).attr('cx', (d) => x(d.m) + x.bandwidth() / 2).attr('cy', (d) => Math.min(yt(d.total), base - pw) + pw / 2).attr('r', Math.min(5, pw / 4))
           .style('fill', 'var(--panel)').style('opacity', (d) => on(d) ? 0.95 : 0.6);
       } else {
@@ -2091,6 +2093,8 @@
     const k = briefKind(), key = k && k + '-' + CO.today();
     el.replaceChildren();
     if (!k || A.mode !== 'auth' || !A.user || CO.status() !== 'ok' || LS.get('co.briefDismissed', '') === key) return;
+    // After 2 pm the unopened morning briefing shrinks to one line, so the afternoon starts with the work.
+    el.classList.toggle('compact', k === 'morning' && istMins() >= 14 * 60);
     const b = briefing(k); if (!b) return;
     const ico = document.createElement('span'); ico.className = 'bc-ico'; ico.append(svgIcon(k === 'morning' ? ICONS.sun : ICONS.moon));
     const tx = document.createElement('div'); const t = document.createElement('div'); t.className = 'bc-t'; t.textContent = k === 'morning' ? 'Your morning briefing is ready' : 'Your evening wrap-up is ready';
