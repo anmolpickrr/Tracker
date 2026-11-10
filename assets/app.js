@@ -2433,11 +2433,74 @@
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
   /* Smooth layout (FLIP): note where every card is, make the change, then glide each card from its old place and size to
      the new one, so minimising or expanding anything never makes the page jump, overlap or leave a gap. */
+  /* Masonry: a stack of cards shown in two or more columns (the Overview side column when Needs attention is minimised,
+     or on tablets) packs each card under the shortest column instead of leaving row gaps. CSS grid with 1px rows: each card
+     spans its own height. One column = normal flow. */
+  const MAS = { list: [], ro: null, queued: false, mos: [] };
+  function masLayout(c) {
+    const all = [...c.children];
+    all.forEach((k) => { k.style.gridColumn = ''; k.style.gridRowStart = ''; k.style.gridRowEnd = ''; k.style.minHeight = ''; k.classList.remove('mas-wide'); });
+    const cs = getComputedStyle(c), cols = cs.gridTemplateColumns.split(' ').filter(Boolean).length;
+    if (cols < 2) { c.classList.remove('mas-on'); all.forEach((k) => k.classList.remove('mas-wide')); return; }
+    c.classList.add('mas-on');
+    const gap = parseFloat(cs.columnGap) || 16, STRETCH = 160;
+    const kids = all.filter((k) => getComputedStyle(k).display !== 'none');
+    // .mas-flex cards (Pipeline) may run full width or sit in a column: whichever leaves less empty space.
+    const items = kids.map((k) => ({ k, flex: k.classList.contains('mas-flex'), h: Math.ceil(k.scrollHeight + 2) }));
+    const planSeg = (seg) => {
+      const n = seg.length, hs = seg.map((x) => x.h + gap), fixed = Math.min(cols, n), restN = n - fixed;
+      const score = (asg) => { const ch = new Array(cols).fill(0); asg.forEach((col, i) => { ch[col] += hs[i]; }); return Math.max(...ch) * 1000 + asg.reduce((s2, col, i) => s2 + col * (n - i), 0) / 1e3; };
+      let best = null;
+      if (Math.pow(cols, restN) <= 6561) {
+        const asg = seg.map((_, i) => (i < fixed ? i : 0));
+        const rec = (i) => { if (i === n) { const sc = score(asg); if (!best || sc < best.sc) best = { sc, asg: asg.slice() }; return; } for (let col = 0; col < cols; col++) { asg[i] = col; rec(i + 1); } };
+        rec(fixed);
+      } else { const ch = new Array(cols).fill(0), asg = []; hs.forEach((h, i) => { const col = i < fixed ? i : ch.indexOf(Math.min(...ch)); asg.push(col); ch[col] += h; }); best = { asg }; }
+      const off = new Array(cols).fill(0), last = new Array(cols).fill(-1), pos = [];
+      seg.forEach((x, i) => { const col = best.asg[i]; pos.push({ x, col, top: off[col], span: hs[i], grow: 0 }); off[col] += hs[i]; last[col] = i; });
+      const maxH = n ? Math.max(...off) : 0; let voidPx = 0;
+      last.forEach((i, col) => { const d = maxH - off[col]; if (i < 0) { voidPx += maxH; return; } if (d > 0 && d <= STRETCH) pos[i].grow = d; else voidPx += d; });
+      return { pos, height: maxH, voidPx };
+    };
+    const plan = (fullFlex) => {
+      let base = 0, voidPx = 0, seg = []; const out = [];
+      const flush = () => { if (!seg.length) return; const r = planSeg(seg); r.pos.forEach((q) => out.push(Object.assign(q, { top: q.top + base }))); base += r.height; voidPx += r.voidPx; seg = []; };
+      items.forEach((x) => { if (x.flex && fullFlex) { flush(); out.push({ x, col: -1, top: base, span: x.h + gap, grow: 0 }); base += x.h + gap; } else seg.push(x); });
+      flush(); return { out, voidPx, height: base };
+    };
+    const hasFlex = items.some((x) => x.flex);
+    let best = plan(false);
+    if (hasFlex) {
+      // Measure the full-width height of the flex card first (its content reflows to two columns).
+      items.forEach((x) => { if (x.flex) { x.k.classList.add('mas-wide'); x.hw = Math.ceil(x.k.scrollHeight + 2); x.k.classList.remove('mas-wide'); } });
+      const hN = items.map((x) => x.h); items.forEach((x) => { if (x.flex) x.h = x.hw; });
+      const wide = plan(true); items.forEach((x, i) => { x.h = hN[i]; });
+      if (wide.voidPx + wide.height * 0.02 < best.voidPx + best.height * 0.02) { best = wide; items.forEach((x) => { if (x.flex) x.h = x.hw; }); }
+    }
+    best.out.forEach((q) => {
+      const k = q.x.k; k.classList.toggle('mas-wide', q.col < 0);
+      k.style.gridColumn = q.col < 0 ? '1 / -1' : String(q.col + 1);
+      k.style.gridRowStart = String(q.top + 1);
+      k.style.gridRowEnd = 'span ' + Math.max(1, q.span + q.grow);
+      if (q.grow) k.style.minHeight = (k.getBoundingClientRect().height + q.grow) + 'px';
+    });
+  }
+  const masAll = () => { MAS.queued = false; MAS.list.forEach((c) => { if (c.isConnected && c.offsetParent) masLayout(c); }); MAS.mos.forEach((o) => o.takeRecords()); };
+  const masQueue = () => { if (MAS.queued) return; MAS.queued = true; requestAnimationFrame(masAll); };
+  function masonry(c) {
+    if (!c || MAS.list.includes(c)) return; MAS.list.push(c);
+    if (!MAS.ro) MAS.ro = new ResizeObserver(masQueue);
+    MAS.ro.observe(c); [...c.children].forEach((k) => MAS.ro.observe(k));
+    const mo = new MutationObserver(() => { [...c.children].forEach((k) => MAS.ro.observe(k)); masQueue(); });
+    mo.observe(c, { childList: true }); mo.observe(c, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden'] }); MAS.mos.push(mo);
+    masQueue();
+  }
+  setTimeout(() => document.querySelectorAll('[data-masonry]').forEach(masonry), 0);
   function flip(mutate) {
     const root = document.querySelector('.co-panel:not([hidden])') || document.body;
     const items = REDUCED ? [] : [...root.querySelectorAll('.co-card, .su, .co-kpi, .sys, .brief-card')].filter((e) => e.offsetParent);
     const before = new Map(items.map((e) => [e, e.getBoundingClientRect()]));
-    mutate();
+    mutate(); masAll();
     items.forEach((e) => {
       if (!e.isConnected || !e.offsetParent) return;
       const a = before.get(e), b = e.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top, dh = a.height - b.height;
@@ -3190,8 +3253,8 @@
     // Today and the next two days by default; later meetings (up to two weeks) behind "Show more".
     const limit = CO.addDays(CO.today(), 2), dayOf = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const near = evs.slice(1).filter((e) => dayOf(e.start) <= limit), later = evs.slice(1).filter((e) => dayOf(e.start) > limit);
-    const rest = CAL.more ? near.concat(later) : near;
-    const moreBtn = () => { if (!later.length) return; const b = document.createElement('button'); b.type = 'button'; b.className = 'co-link cal-more-btn'; b.textContent = CAL.more ? 'Show fewer' : 'Show ' + later.length + ' more meeting' + (later.length === 1 ? '' : 's') + ' (next 2 weeks)'; b.setAttribute('aria-expanded', String(!!CAL.more)); b.addEventListener('click', () => { flip(() => { CAL.more = !CAL.more; dash.draw('cal'); }); }); el.append(b); };
+    const SHOW = 4, every = near.concat(later), rest = CAL.more ? every : near.slice(0, SHOW), hiddenN = every.length - rest.length;
+    const moreBtn = () => { if (!hiddenN && !CAL.more) return; const b = document.createElement('button'); b.type = 'button'; b.className = 'co-link cal-more-btn'; b.textContent = CAL.more ? 'Show fewer' : 'Show ' + hiddenN + ' more meeting' + (hiddenN === 1 ? '' : 's') + (later.length ? ' (next 2 weeks)' : ''); b.setAttribute('aria-expanded', String(!!CAL.more)); b.addEventListener('click', () => { flip(() => { CAL.more = !CAL.more; dash.draw('cal'); }); }); el.append(b); };
     if (rest.length) {
       const ul = document.createElement('ul'); ul.className = 'cal-list';
       let lastDay = day(next.start);
@@ -3207,7 +3270,7 @@
       });
       el.append(ul);
     }
-    moreBtn();
+    if (CAL.more || hiddenN) moreBtn();
   });
 
   /* ================= Sign-in ================= */
@@ -3386,7 +3449,7 @@
     ];
     const liveTip = () => {
       try {
-        const all = CO.status() === 'ok' ? CO.rows(true) || [] : [];
+        const all = CO.status() === 'ok' ? CO.rows() || [] : [];
         const late = all.filter((r) => r.due === 'overdue').length, today = all.filter((r) => r.due === 'today').length;
         const pool = []; if (late) pool.push(late + (late === 1 ? ' task is' : ' tasks are') + ' overdue. Ask me which');
         if (today) pool.push(today + (today === 1 ? ' task is' : ' tasks are') + ' due today'); return pool;

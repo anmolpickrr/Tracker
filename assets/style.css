@@ -2120,3 +2120,81 @@ button.co-kpi:hover { transform: translateY(-3px); box-shadow: var(--card-shadow
 .co-kpi.hero { --fg: #1e1e1e; --fg-2: #2b2b2b; --muted: #3f4a00; color: #1e1e1e !important; }
 .co-kpi.hero .co-kpi-label, .co-kpi.hero .co-kpi-val, .co-kpi.hero .co-kpi-sub, .co-kpi.hero .kpi-split { color: #1e1e1e !important; }
 :root[data-theme="dark"] .na-chip[aria-selected="true"] b { background: rgba(0, 0, 0, .12); color: #1e1e1e; }
+
+/* =====================================================================================================
+   POLISH (Nov 2026): no empty gaps, compact Meetings, readable buttons everywhere.
+   ===================================================================================================== */
+/* Masonry stacks (set by app.js when a card stack shows in 2+ columns): each card spans its own height. */
+.mas-on { grid-auto-rows: 1px; row-gap: 0 !important; grid-auto-flow: row dense; align-items: start; }
+.mas-on > * { align-self: start; margin: 0; }
+.ov-grid.na-min .ov-side { align-items: start; }
+/* Charts size to their data: one designer is one bar, not a 12rem box. */
+.co-chart[data-draw="workload"] { min-height: 0; }
+.co-chart[data-draw="workload"]:empty { min-height: 6rem; }
+/* Chart labels that sit over a line get a halo in the card colour. */
+.co-chart .ref-l { paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
+
+/* Meetings: one compact "now/next" block, then a tight list. */
+.cal-card { gap: 10px; }
+.cal-next { gap: 4px !important; padding: 14px 16px !important; }
+.cal-next .cal-title { font-size: 17px; line-height: 1.25; }
+.cal-next .cal-time { font-size: 12.5px; }
+.cal-next .cal-acts { margin-top: 6px; gap: 8px; }
+.cal-next .cal-acts .co-btn { padding: 7px 14px; font-size: 12.5px; }
+.cal-next .cal-ppl { margin-top: 2px; }
+.cal-list { gap: 0; }
+.cal-list li { grid-template-columns: 4.2rem minmax(0, 1fr) auto; gap: 10px; padding: 7px 8px; border-radius: 10px; }
+.cal-list li + li:not(.cal-day) { border-top: 1px solid var(--line-2); }
+.cal-list li:hover + li { border-top-color: transparent; }
+.cal-list li.cal-day { padding: 10px 8px 4px; font-size: 11.5px; letter-spacing: .01em; }
+.cal-li-t { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cal-li-n b { font-size: 13px; font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-li-n small { font-size: 11.5px; color: var(--muted); }
+.cal-join { background: var(--primary) !important; color: #fff !important; padding: 4px 12px !important; transition: filter .15s, transform .15s; }
+.cal-join:hover { filter: brightness(1.12); }
+.cal-join:active { transform: scale(.96); }
+.cal-more-btn { justify-self: stretch; width: 100%; padding: 9px 12px !important; border-radius: 12px !important; border: 1px dashed var(--line) !important; background: transparent !important; color: var(--fg-2) !important; text-decoration: none !important; font-weight: 600; font-size: 12.5px; }
+.cal-more-btn:hover { background: var(--sunken) !important; color: var(--fg) !important; }
+
+/* Notes composer sits on a light sticky in both themes: its secondary buttons are dark-on-light pills. */
+.nb-quick .nbq-more { background: rgba(255, 255, 255, .62) !important; color: #1e1e1e !important; border: 1px solid rgba(30, 30, 30, .14) !important; border-radius: 999px !important; padding: 7px 14px !important; opacity: 1 !important; text-decoration: none !important; font-size: 12.5px; font-weight: 600; box-shadow: none !important; }
+.nb-quick .nbq-more:hover { background: #fff !important; border-color: rgba(30, 30, 30, .3) !important; }
+.nb-quick .co-btn.primary { background: #1e1e1e !important; color: #ddff00 !important; }
+.nb-quick .nbq-types button:not([aria-checked="true"]) { color: #1e1e1e !important; }
+.nb-quick .nbq-who, .nb-quick .nbq-tip { color: rgba(30, 30, 30, .7) !important; }
+
+/* Motion: one easing everywhere; hover lift only on things you can click. */
+.co-card { transition: box-shadow .25s cubic-bezier(.2, .8, .2, 1), transform .25s cubic-bezier(.2, .8, .2, 1), background-color .25s; }
+@media (prefers-reduced-motion: reduce) { .co-card, .cal-join { transition: none !important; } }
+/* When the side stack shows two columns, Pipeline runs the full width with its statuses in two columns (no gap under the shorter column). */
+.mas-wide .pipe { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 40px; }
+.mas-wide .pipe > :not(button) { grid-column: 1 / -1; }
+/* Contrast fixes (WCAG AA): heat-map hot cells, small status labels and avatars. */
+.co-heat td.h.hot { color: #fff !important; }
+:root:not([data-theme="dark"]) .co-heat td.h.hot { color: #1e1e1e !important; }
+:root:not([data-theme="dark"]) .su-item .m.bad { color: #b3360c; }
+:root:not([data-theme="dark"]) .la-state { color: #5f5c55; }
+:root:not([data-theme="dark"]) .s-active .la-state { color: #17723f; }
+:root:not([data-theme="dark"]) .ax-avatar { color: #4b3bb8; }
+/* Change chips: the wash shows how big a change is; the text keeps one readable ink per direction (AA in both themes). */
+:root:not([data-theme="dark"]) .dl.good { color: #3a5800 !important; }
+:root:not([data-theme="dark"]) .dl.worse { color: #a3240c !important; }
+:root[data-theme="dark"] .dl.worse { color: #ff9478 !important; }
+:root[data-theme="dark"] .co-heat td.h.hot { text-shadow: 0 1px 1px rgba(0, 0, 0, .35); }
+:root .co-kpi.hero .dl.good { color: #2b3a05 !important; }
+:root .co-kpi.hero .dl.worse { color: #9b2414 !important; }
+/* Pipeline labels never clip ("Changes requested"). */
+.pipe button { grid-template-columns: 10.5rem minmax(0, 1fr) 2.6rem; }
+/* Phones: a card header keeps its title and the minimise button on the first line; other actions sit on a second line, left-aligned. */
+@media (max-width: 640px) {
+  .co-card-head:has(> .min-tog) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px 12px; }
+  .co-card-head:has(> .min-tog) > :first-child { grid-column: 1; grid-row: 1; }
+  .co-card-head > .min-tog { grid-column: 2; grid-row: 1; margin: 0; }
+  .co-card-head:has(> .min-tog) > :not(:first-child):not(.min-tog) { grid-column: 1 / -1; justify-self: start; text-align: left; }
+  .pipe button { grid-template-columns: 9.6rem minmax(0, 1fr) 2.2rem; gap: 10px; font-size: 12.5px; }
+}
+@media (max-width: 640px) {
+  .co-card-head:has(> .min-tog) > :not(:first-child):not(.min-tog), .co-card-head:has(> .min-tog) > :not(:first-child):not(.min-tog) * { text-align: left; justify-content: flex-start; align-items: flex-start; }
+  .gr-seg button { padding-inline: 10px !important; font-size: 12.5px; }
+}
+@media (max-width: 640px) { .trend-stat { justify-items: start; } }
