@@ -117,7 +117,7 @@ Everyone on the team list lands on **My work** when they sign in (admins land on
 
 **Brands** lists every brand with open work, work with a client or deliveries this month or last: open, late, with the client (and the oldest wait), delivered this month against the same working days last month, and the last delivery. Search, sort any column (click or Enter on the header) and click a brand for its tasks.
 
-**Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
+**Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) opens with how long approvals take: the typical (median) and longest wait, then bars for up to 7 days, 8–14, 15–30 and over 30 days (orange = over 14 days), each with its count and share. Click a bar (or press Enter on it) to list only those tasks; click again for all. Below that it groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
 
 ## Delivered On, on-time rate and turnaround
 

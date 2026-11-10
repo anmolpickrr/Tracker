@@ -1368,12 +1368,15 @@
   });
 
   /* Waiting on client: everything shared and waiting for approval, by brand, longest wait first. */
+  const WC = { band: '' };
+  const WAIT_BANDS = [['b7', 'Up to 7 days', (d) => d <= 7], ['b14', '8–14 days', (d) => d > 7 && d <= 14], ['b30', '15–30 days', (d) => d > 14 && d <= 30], ['b99', 'Over 30 days', (d) => d > 30]];
   dash.draw('waiting', (el) => {
     if (CO.notReady(el, 'box')) return;
     el.replaceChildren();
     const t = CO.today(), rows = CO.rows().filter((r) => r.stage === 'Pending approval');
     const days = (r) => r.eta && r.eta < t ? CO.diffDays(r.eta, t) : 0;
-    const by = new Map(); rows.forEach((r) => { const l = by.get(r.brand) || []; l.push(r); by.set(r.brand, l); });
+    const band = WAIT_BANDS.find((b) => b[0] === WC.band), shown = band ? rows.filter((r) => band[2](days(r))) : rows;
+    const by = new Map(); shown.forEach((r) => { const l = by.get(r.brand) || []; l.push(r); by.set(r.brand, l); });
     const groups = [...by].map(([brand, list]) => ({ brand, list: list.sort((a, b) => days(b) - days(a)), oldest: Math.max(...list.map(days)) })).sort((a, b) => b.oldest - a.oldest || b.list.length - a.list.length);
     const over = rows.filter((r) => days(r) > 14).length;
     const hd = document.createElement('div'); hd.className = 'na-head';
@@ -1383,6 +1386,25 @@
     dl.addEventListener('click', () => CO.csv('waiting-on-client-' + t + '.csv', ['Brand', 'ID', 'Creative', 'Type', 'Creatives', 'Designer', 'Shared (design ETA)', 'Days waiting', 'Internal / External'], groups.flatMap((g) => g.list.map((r) => [r.brand, r.id, CO.topicText(r), r.type, r.qty || 1, r.list.join(', '), r.eta || '', days(r), CO.cls(r.source)]))));
     hd.append(l, dl); el.append(hd);
     if (!rows.length) { const fl = filterNote2(); if (fl) { el.append(emptyLine('Nothing for ' + fl + '.'), clearBtn2()); } return; }
+    // How long approvals take: the median and the longest wait, then how many tasks fall in each band (click to filter).
+    const ds = rows.map(days).sort((a, b) => a - b), med = ds[Math.floor((ds.length - 1) / 2)], max = ds[ds.length - 1];
+    const dist = document.createElement('div'); dist.className = 'wd';
+    const sum = document.createElement('p'); sum.className = 'wd-sum'; const mb = document.createElement('b'); mb.textContent = med + (med === 1 ? ' day' : ' days'); const xb = document.createElement('b'); xb.textContent = max + (max === 1 ? ' day' : ' days');
+    if (rows.length === 1) sum.append('1 task, waiting ', xb); else sum.append('Typical wait ', mb, ' (median of ' + rows.length + ' tasks) · longest ', xb);
+    const counts = WAIT_BANDS.map(([k, l, fn]) => ({ k, l, n: rows.filter((r) => fn(days(r))).length, late: k === 'b30' || k === 'b99' })), top = Math.max(1, ...counts.map((c) => c.n));
+    const bars = document.createElement('div'); bars.className = 'wd-bars'; bars.setAttribute('role', 'group'); bars.setAttribute('aria-label', 'Tasks by days waiting: ' + counts.map((c) => c.l + ' ' + c.n).join(', ') + '. Choose a band to list only those tasks.');
+    counts.forEach((c) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'wd-row' + (c.late ? ' late' : '') + (WC.band === c.k ? ' on' : ''); b.setAttribute('aria-pressed', String(WC.band === c.k)); b.disabled = !c.n && WC.band !== c.k;
+      const lab = document.createElement('span'); lab.className = 'wd-l'; lab.textContent = c.l;
+      const tr = document.createElement('span'); tr.className = 'wd-track'; const fill = document.createElement('i'); fill.style.width = (c.n / top * 100) + '%'; tr.append(fill);
+      const v = document.createElement('b'); v.className = 'wd-v'; v.textContent = c.n; const pc = document.createElement('small'); pc.textContent = Math.round(c.n / rows.length * 100) + '%'; v.append(pc);
+      b.append(lab, tr, v); b.title = c.n + ' tasks waiting ' + c.l.toLowerCase() + (WC.band === c.k ? ' (click again to show all)' : ' (click to list only these)');
+      b.dataset.band = c.k; b.addEventListener('click', () => { WC.band = WC.band === c.k ? '' : c.k; dash.draw('waiting'); const again = document.querySelector('.wd-row[data-band="' + c.k + '"]'); if (again) again.focus(); });
+      bars.append(b);
+    });
+    dist.append(sum, bars);
+    if (band) { const f = document.createElement('p'); f.className = 'co-note wd-f'; f.textContent = 'Showing ' + shown.length + ' waiting ' + band[1].toLowerCase() + '. '; const all = document.createElement('button'); all.type = 'button'; all.className = 'co-link'; all.textContent = 'Show all ' + rows.length; all.addEventListener('click', () => { WC.band = ''; dash.draw('waiting'); }); f.append(all); dist.append(f); }
+    el.append(dist);
     const wrap = document.createElement('div'); wrap.className = 'wc-groups';
     groups.forEach((g, gi) => {
       const d = document.createElement('details'); d.className = 'wc-group'; if (gi < 3) d.open = true;

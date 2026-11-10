@@ -1834,3 +1834,28 @@ button.co-kpi:hover { transform: translateY(-2px); box-shadow: 0 18px 34px -22px
 .ot-tile.k-done { background: var(--lime-p); } .ot-tile.k-pick { background: var(--lav); }
 .ot-tile.k-wait b { color: var(--muted); }
 @media (max-width: 640px) { .ot-tiles { grid-template-columns: 1fr; } }
+/* Waiting on client: wait-time bands (bars start at zero, labelled directly; orange = over 14 days) */
+.wd { display: grid; gap: 10px; padding: 14px 16px; border-radius: 20px; background: var(--panel-2); }
+.wd-sum { margin: 0; font-size: 13.5px; color: var(--fg-2); }
+.wd-sum b { font: 600 18px var(--font-display); color: var(--fg); }
+.wd-bars { display: grid; gap: 4px; }
+.wd-row { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) 4.6rem; align-items: center; gap: 12px; padding: 6px 8px; margin-inline: -8px; border: 0; border-radius: 12px; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; transition: background .2s; }
+.wd-row:hover:not(:disabled) { background: var(--panel); }
+.wd-row:disabled { cursor: default; opacity: .7; }
+.wd-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.wd-row.on { background: var(--primary-soft); }
+.wd-l { font-size: 13px; white-space: nowrap; }
+.wd-track { height: 12px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
+.wd-track i { display: block; height: 100%; min-width: 2px; border-radius: 999px; background: var(--bar-soft); transition: width .6s cubic-bezier(.2, .8, .2, 1); }
+.wd-row.late .wd-track i { background: var(--worse-fill); }
+.wd-v { font: 600 15px var(--font-display); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.wd-v small { margin-left: 6px; font: 500 11.5px var(--font-body); color: var(--muted); }
+.wd-f { margin: 0; }
+@media (max-width: 640px) { .wd { padding: 12px; } .wd-row { grid-template-columns: 6rem minmax(0, 1fr) auto; gap: 8px; } }
+.br-card, .wc-card, .ot-card, .mw-col > .co-card, .tw, .na { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 640px) { .na-head { flex-wrap: wrap; } }
+.wc-groups { grid-template-columns: minmax(0, 1fr); }
+.wc-group { min-width: 0; }
+.wc-group summary { flex-wrap: wrap; min-width: 0; }
+.wc-group summary b { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .wc-group { padding: 4px 8px; } .wc-group .na-list { margin: 0 -2px 6px; } }
