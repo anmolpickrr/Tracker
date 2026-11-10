@@ -403,7 +403,7 @@
     };
     const toneInk = (t) => (t ? 'color-mix(in srgb, var(' + (t.good ? '--good' : '--worse') + ') ' + Math.round(55 + t.k * 45) + '%, var(--muted))' : '');
     const toneWash = (t) => (t ? 'color-mix(in srgb, var(' + (t.good ? '--good' : '--worse') + ') ' + Math.round(9 + t.k * 21) + '%, transparent)' : '');
-    const toneFill = (t, rest) => (t ? 'color-mix(in srgb, var(' + (t.good ? '--good' : '--worse') + ') ' + Math.round(45 + t.k * 55) + '%, ' + (rest || 'var(--chart-muted)') + ')' : (rest || 'var(--chart-muted)'));
+    const toneFill = (t, rest) => (t ? 'color-mix(in srgb, var(' + (t.good ? '--good-fill' : '--worse-fill') + ') ' + Math.round(45 + t.k * 55) + '%, ' + (rest || 'var(--chart-muted)') + ')' : (rest || 'var(--chart-muted)'));
     const pctText = (d, prev) => (prev ? ' (' + (d >= 0 ? '+' : '−') + Math.round(Math.abs(d) / prev * 100) + '%)' : '');
     const delta = (cur, prev, better) => {
       const d = cur - prev, t = tone(d, prev, better || 'up'), s = document.createElement('span');
@@ -464,6 +464,7 @@
   function syncControls() {
     const p = dash.params();
     const admin = A.mode === 'auth' && can('Admin');
+    document.body.dataset.admin = admin ? '1' : '';
     const axTab = document.querySelector('.co-tab[data-tab="access"]');
     axTab.hidden = !admin;
     const badge = axTab.querySelector('.nav-badge'); badge.hidden = !AX.pending; badge.textContent = AX.pending ? AX.pending + ' waiting' : '';
@@ -815,7 +816,7 @@
     const m = new Map();
     const openRows = CO.rows().filter((r) => r.open);
     // Everyone holding open work is shown; an inactive person's work is labelled so it gets reassigned.
-    openRows.forEach((r) => { r.list.forEach((d) => { const o = m.get(d) || { key: d, name: CO.isActive(d) ? d : d + ' (inactive, reassign)', overdue: 0, week: 0, later: 0 }; const q = r.qty || 1; if (r.due === 'overdue') o.overdue += q; else if (r.due === 'today' || r.due === 'week') o.week += q; else o.later += q; m.set(d, o); }); });
+    openRows.forEach((r) => { r.list.forEach((d) => { if (EF.hidden(d)) return; const o = m.get(d) || { key: d, name: CO.isActive(d) ? d : d + ' (inactive, reassign)', overdue: 0, week: 0, later: 0 }; const q = r.qty || 1; if (r.due === 'overdue') o.overdue += q; else if (r.due === 'today' || r.due === 'week') o.week += q; else o.later += q; m.set(d, o); }); });
     const data = [...m.values()].map((d) => Object.assign(d, { total: d.overdue + d.week + d.later })).sort((a, b) => b.total - a.total);
     el.replaceChildren();
     if (!data.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'No open work assigned in this view.'; el.append(p); return; }
@@ -1052,6 +1053,76 @@
     el.append(box);
   });
 
+  /* ================= Today: to-do and deliveries (Overview) ================= */
+  const DY = { moves: [], at: 0, view: LS.get('co.dailyview', 'person'), open: new Set() };
+  async function loadDaily(force) {
+    if (A.mode !== 'auth' || !A.user || (!force && Date.now() - DY.at < 60 * 1000)) return;
+    DY.at = Date.now();
+    try { const b = await callApi({ action: 'daily' }); if (b.ok) { DY.moves = b.moves || []; dash.draw('daily'); dash.draw('daily-sum'); } } catch (e) { /* older web app: ETA-based only */ }
+  }
+  setInterval(() => { if (P.tab === 'today' && document.visibilityState === 'visible') loadDaily(); }, 60 * 1000);
+  const dailyBuckets = () => {
+    const all = CO.rows() || [], t = CO.today();
+    let next = CO.addDays(t, 1); while (!CO.isWorkday(next)) next = CO.addDays(next, 1);
+    const lastTo = new Map(); DY.moves.slice().reverse().forEach((m) => lastTo.set(m.id, m));
+    const deliveredLog = new Set(DY.moves.filter((m) => m.to === 'Delivered').map((m) => m.id));
+    const startedLog = new Set(DY.moves.filter((m) => m.to === 'WIP').map((m) => m.id));
+    const pick = all.filter((r) => (r.stage === 'To be planned' || r.stage === 'Changes requested') && r.eta && r.eta >= t && r.eta <= next);
+    const wip = all.filter((r) => r.stage === 'WIP');
+    const done = all.filter((r) => r.stage === 'Delivered' && ((r.id && deliveredLog.has(r.id)) || r.ddate === t));
+    const carried = all.filter((r) => r.due === 'overdue');
+    return { pick, wip, done, carried, startedLog, deliveredLog };
+  };
+  dash.draw('daily-title', (el) => { el.textContent = 'Today · ' + new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'short' }); });
+  dash.draw('daily-sum', (el) => {
+    el.replaceChildren(); if (CO.status() !== 'ok') return;
+    const b = dailyBuckets();
+    [['pick', 'Pick up today', b.pick], ['wip', 'In progress', b.wip], ['done', 'Delivered today', b.done], ['carried', 'Carried forward', b.carried]].forEach(([k, l, list]) => {
+      const x = document.createElement('div'); x.className = 'dl-stat k-' + k; const n = document.createElement('b'); n.textContent = CO.num(CO.sumQty(list)); const s2 = document.createElement('span'); s2.textContent = l; const s3 = document.createElement('small'); s3.textContent = list.length + (list.length === 1 ? ' task' : ' tasks'); x.append(n, s2, s3); el.append(x);
+    });
+  });
+  const dTask = (r, kind, b) => {
+    const li = document.createElement('li'); li.className = 'dl-task k-' + kind; li.dataset.uid = r.uid; li.tabIndex = 0;
+    const t1 = document.createElement('span'); t1.className = 'dl-t'; const bb = document.createElement('b'); bb.textContent = r.brand; t1.append(bb, ' ' + CO.topicText(r).slice(0, 70));
+    const t2 = document.createElement('span'); t2.className = 'dl-m'; t2.textContent = [r.id, r.type, kind === 'carried' ? CO.diffDays(r.eta, CO.today()) + 'd late' : kind === 'done' ? (b.deliveredLog.has(r.id) ? 'marked done today' : 'ETA today') : r.eta ? 'ETA ' + CO.fmtDate(r.eta) : 'No ETA'].filter(Boolean).join(' · ');
+    li.append(t1, t2); return li;
+  };
+  dash.draw('daily', (el) => {
+    if (CO.notReady(el, 'list')) return;
+    el.replaceChildren(); loadDaily();
+    const b = dailyBuckets(), kinds = [['pick', 'Pick up', b.pick], ['wip', 'In progress', b.wip], ['done', 'Delivered', b.done], ['carried', 'Carried forward', b.carried]];
+    document.querySelectorAll('[data-dv]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.dv === DY.view)));
+    if (DY.view === 'status') {
+      const grid = document.createElement('div'); grid.className = 'dl-cols';
+      kinds.forEach(([k, l, list]) => { const col = document.createElement('div'); col.className = 'dl-col k-' + k; const h = document.createElement('h3'); h.textContent = l + ' · ' + list.length; const ul = document.createElement('ul'); list.slice(0, 12).forEach((r) => ul.append(dTask(r, k, b))); if (list.length > 12) { const m = document.createElement('li'); m.className = 'dl-more'; m.textContent = '+' + (list.length - 12) + ' more'; ul.append(m); } if (!list.length) { const m = document.createElement('li'); m.className = 'dl-more'; m.textContent = 'Nothing here'; ul.append(m); } col.append(h, ul); grid.append(col); });
+      el.append(grid); return;
+    }
+    // By person: one row per team member (roles from the team list), most to do first.
+    const people = new Map();
+    const add = (name, k, r) => { if (EF.hidden(name)) return; if (!people.has(name)) people.set(name, { pick: [], wip: [], done: [], carried: [] }); people.get(name)[k].push(r); };
+    kinds.forEach(([k, , list]) => list.forEach((r) => { if (!r.list.length) add('Unassigned', k, r); else r.list.forEach((n) => add(n, k, r)); }));
+    (S.team || []).forEach((m) => { if (m.status !== 'Inactive' && !EF.hidden(m.name) && !people.has(m.name)) people.set(m.name, { pick: [], wip: [], done: [], carried: [] }); });
+    const rows = [...people].sort((x, y) => (x[0] === 'Unassigned') - (y[0] === 'Unassigned') || (y[1].pick.length + y[1].wip.length + y[1].carried.length) - (x[1].pick.length + x[1].wip.length + x[1].carried.length) || x[0].localeCompare(y[0]));
+    const list = document.createElement('div'); list.className = 'dl-people';
+    rows.forEach(([name, d]) => {
+      const row = document.createElement('div'); row.className = 'dl-person' + (DY.open.has(name) ? ' open' : '');
+      const head = document.createElement('button'); head.type = 'button'; head.className = 'dl-head'; head.setAttribute('aria-expanded', String(DY.open.has(name)));
+      const who = document.createElement('span'); who.className = 'dl-who'; const nm = document.createElement('b'); nm.textContent = name; const rl = document.createElement('small'); rl.textContent = name === 'Unassigned' ? 'no designer yet' : EF.role(name) || 'Role not set'; const tx = document.createElement('span'); tx.append(nm, rl); who.append(CO.av(name), tx);
+      const pills = document.createElement('span'); pills.className = 'dl-pills';
+      kinds.forEach(([k, l]) => { const p2 = document.createElement('span'); p2.className = 'dl-pill k-' + k + (d[k].length ? '' : ' zero'); p2.title = l; p2.textContent = d[k].length; pills.append(p2); });
+      head.append(who, pills);
+      if (can('Admin') && name !== 'Unassigned') { const L = EF.load(name); const ld = document.createElement('span'); ld.className = 'ef-load ' + (L.days > 5 ? 'hi' : L.days > 2.5 ? 'mid' : 'lo'); ld.textContent = L.hours ? (L.days < 1 ? Math.round(L.hours) + ' h' : L.days.toFixed(1) + ' d') : 'free'; ld.title = 'Estimated open work: ' + Math.round(L.hours) + ' h ≈ ' + L.days.toFixed(1) + ' working days (by creative type and role)'; head.append(ld); }
+      head.addEventListener('click', () => { if (DY.open.has(name)) DY.open.delete(name); else DY.open.add(name); dash.draw('daily'); });
+      row.append(head);
+      if (DY.open.has(name)) { const ul = document.createElement('ul'); ul.className = 'dl-tasks'; kinds.forEach(([k]) => d[k].forEach((r) => ul.append(dTask(r, k, b)))); if (!ul.childElementCount) { const m = document.createElement('li'); m.className = 'dl-more'; m.textContent = 'Nothing scheduled today.'; ul.append(m); } row.append(ul); }
+      list.append(row);
+    });
+    const legend = document.createElement('div'); legend.className = 'dl-legend'; kinds.forEach(([k, l]) => { const x = document.createElement('span'); x.className = 'k-' + k; const i = document.createElement('i'); x.append(i, l); legend.append(x); });
+    el.append(legend, list);
+  });
+  document.querySelectorAll('[data-dv]').forEach((x) => x.addEventListener('click', () => { DY.view = x.dataset.dv; LS.set('co.dailyview', DY.view); dash.draw('daily'); }));
+  document.querySelector('.daily').addEventListener('click', (e) => { const li = e.target.closest('.dl-task[data-uid]'); if (li) document.dispatchEvent(new CustomEvent('co-open-task', { detail: li.dataset.uid })); });
+
   /* ================= Stand-up ================= */
   const SU = { cards: null };
   dash.draw('su-summary', (el) => {
@@ -1094,7 +1165,7 @@
         if (CO.CLOSED.has(r.stage) && !recentDone) return;
         if (!r.list.length) { if (r.open) { if (!people.has('Unassigned')) people.set('Unassigned', []); people.get('Unassigned').push(r); } return; }
         // Inactive people appear only while they still hold open work, so it can be reassigned.
-        r.list.forEach((d) => { if (!CO.isActive(d) && !r.open) return; if (!people.has(d)) people.set(d, []); people.get(d).push(r); });
+        r.list.forEach((d) => { if (EF.hidden(d) || (!CO.isActive(d) && !r.open)) return; if (!people.has(d)) people.set(d, []); people.get(d).push(r); });
       });
       const p = dash.params();
       if (p.designer && p.designer !== '__none') [...people.keys()].forEach((k) => { if (k !== p.designer) people.delete(k); });
@@ -1194,9 +1265,42 @@
     });
   })();
 
+  /* ================= Roles and estimated workload (admin view) =================
+     Roles come from the team list's Role column. "not shown" keeps someone out of team views and workload.
+     Effort is a rough estimate per creative, by creative type (editing and video take longer than statics),
+     adjusted for interns. Capacity is 7 productive hours a working day (Mon–Fri). For internal planning only. */
+  const EF = (() => {
+    const HOURS = { 'Static': 1.5, 'Banner': 1.5, 'Frame': 1.5, 'GIF': 2, 'Carousel': 2.5, 'A+ Content': 3, 'Infographic': 2.5, 'Video': 4, 'Video Edit': 4, 'Reel': 4, 'AI Video': 5, 'Animation': 5, 'In-House Video': 6, 'Unspecified': 2 };
+    const CAP = 7;
+    const role = (name) => (CO.member(name).role || '').trim();
+    const hidden = (name) => /not shown/i.test(role(name));
+    const intern = (name) => /intern/i.test(role(name));
+    const writer = (name) => /content writer/i.test(role(name));
+    const typeHours = (t) => HOURS[t] != null ? HOURS[t] : CO.VIDEO.test(t || '') ? 4 : 2;
+    // Hours one task puts on one person: per creative, shared equally between the people on it; changes take about half.
+    const hoursFor = (r, name) => {
+      const share = Math.max(1, r.list.length), qty = r.qty || 1;
+      let h = typeHours(r.type) * qty / share;
+      if (r.stage === 'Changes requested') h *= 0.5;
+      if (intern(name)) h *= 1.3;
+      return h;
+    };
+    // Open work for a person: their open tasks; a content writer also carries "content in progress" rows they own.
+    const load = (name, rows) => {
+      const rs = rows || CO.rows(true) || [];
+      const mine = rs.filter((r) => r.open && r.list.includes(name));
+      let hours = mine.reduce((a, r) => a + hoursFor(r, name), 0);
+      const first = name.toLowerCase().split(' ')[0];
+      const content = rs.filter((r) => r.sub === 'Content in progress' && r.owner && r.owner.toLowerCase().split(/[ ,]/)[0] === first);
+      hours += content.reduce((a, r) => a + 1 * (r.qty || 1) * (intern(name) ? 1.3 : 1), 0);
+      return { hours, days: hours / CAP, tasks: mine.length + content.length, content: content.length };
+    };
+    return { HOURS, CAP, role, hidden, intern, writer, typeHours, hoursFor, load };
+  })();
+
   /* ================= Team ================= */
   (() => {
-    const shown = (n) => (dash.params().who || 'active') === 'all' || CO.isActive(n);
+    const shown = (n) => !EF.hidden(n) && ((dash.params().who || 'active') === 'all' || CO.isActive(n));
     const statusCell = (name) => {
       const m = CO.member(name);
       const wrap = document.createElement('span'); wrap.className = 'co-status';
@@ -1232,16 +1336,18 @@
           brands: d3.rollups(list, (v) => v.length, (r) => r.brand).sort((a, b) => b[1] - a[1]).slice(0, 3).map((d) => d[0]).join(', ')
         };
       }).sort((a, b) => (CO.member(a.name).status === 'Inactive') - (CO.member(b.name).status === 'Inactive') || b.open - a.open || b.thisM - a.thisM);
-      if (!data.length) return CO.emptyRow(tb, 12, 'No team members in this view.');
+      if (!data.length) return CO.emptyRow(tb, 14, 'No team members in this view.');
       const maxOpen = d3.max(data, (d) => d.open) || 1;
       data.forEach((d) => {
         const tr = tb.insertRow();
         const nb = document.createElement('button'); nb.type = 'button'; nb.className = 'co-name'; const nt = document.createElement('span'); nt.textContent = d.name; nb.append(CO.av(d.name), nt); nb.title = 'Open ' + d.name + "'s tasks"; nb.addEventListener('click', () => CO.goTasks('active', { designer: d.name }));
         CO.td(tr, nb, 'co-nowrap'); CO.td(tr, statusCell(d.name), 'co-nowrap');
+        CO.td(tr, EF.role(d.name) || '—', 'co-nowrap co-muted co-hide-md');
+        { const L = EF.load(d.name); const b2 = document.createElement('span'); b2.className = 'ef-load ' + (L.days > 5 ? 'hi' : L.days > 2.5 ? 'mid' : 'lo'); b2.textContent = L.hours ? (L.days < 1 ? Math.round(L.hours) + ' h' : L.days.toFixed(1) + ' d') : 'free'; const c = CO.td(tr, b2, 'n adm-only co-nowrap'); c.title = L.tasks + ' open tasks ≈ ' + Math.round(L.hours) + ' hours of work = ' + L.days.toFixed(1) + ' working days at ' + EF.CAP + ' h a day' + (L.content ? ' (incl. ' + L.content + ' content in progress)' : '') + '. Estimate by creative type and role.'; }
         const ob = document.createElement('span'); ob.className = 'co-inbar'; const bi = document.createElement('i'); bi.style.width = (d.open / maxOpen * 3) + 'rem'; ob.append(bi, String(d.open)); CO.td(tr, ob, 'n');
         CO.td(tr, String(d.wip), 'n co-hide-lg');
         CO.td(tr, String(d.overdue), 'n' + (d.overdue ? ' bad' : ''));
-        CO.td(tr, String(d.week), 'n co-hide-md'); CO.td(tr, String(d.review), 'n'); const tm = document.createElement('span'); tm.className = 'n-with-dl'; const tb = document.createElement('b'); tb.textContent = CO.num(d.thisM); tm.append(tb, CO.delta(d.thisM, d.lastSame, 'up')); tm.lastChild.title += ' (vs the same number of working days last month)'; CO.td(tr, tm, 'n'); CO.td(tr, CO.num(d.lastM), 'n'); const pd = CO.td(tr, d.perDay ? d.perDay.toFixed(1) : '0', 'n'); pd.title = CO.num(d.thisM) + ' creatives ÷ ' + CO.workdays(m + '-01', CO.today()) + ' working days so far this month (Mon–Fri)';
+        CO.td(tr, String(d.week), 'n co-hide-md'); CO.td(tr, String(d.review), 'n'); const tm = document.createElement('span'); tm.className = 'n-with-dl'; const tmb = document.createElement('b'); tmb.textContent = CO.num(d.thisM); tm.append(tmb, CO.delta(d.thisM, d.lastSame, 'up')); tm.lastChild.title += ' (vs the same number of working days last month)'; CO.td(tr, tm, 'n'); CO.td(tr, CO.num(d.lastM), 'n'); const pd = CO.td(tr, d.perDay ? d.perDay.toFixed(1) : '0', 'n'); pd.title = CO.num(d.thisM) + ' creatives ÷ ' + CO.workdays(m + '-01', CO.today()) + ' working days so far this month (Mon–Fri)';
         CO.td(tr, d.brands, 'co-hide-lg co-clip').title = d.brands;
         const mix = document.createElement('span'); mix.className = 'co-mix';
         const total = CO.sumQty(d.del);
@@ -1319,7 +1425,7 @@
     dash.draw('r-legend', (el) => {
       if (CO.notReady(el, 'list')) return;
       if ((dash.params().rchart || 'total') === 'total') {
-        const sw = (good, k, label) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = CO.toneFill({ good, k }, 'var(--bar)'); s.append(i, label); return s; };
+        const sw = (good, k, label) => { const s = document.createElement('span'); const i = document.createElement('i'); i.style.background = CO.toneFill({ good, k }, 'var(--panel)'); s.append(i, label); return s; };
         const n = document.createElement('span'); const ni = document.createElement('i'); ni.style.background = 'var(--bar)'; n.append(ni, 'no earlier month');
         el.replaceChildren(sw(true, 0.25, 'a little more'), sw(true, 1, 'much more than the month before'), sw(false, 0.25, 'a little fewer'), sw(false, 1, 'much fewer'), n);
         return;
@@ -1369,7 +1475,7 @@
         const on = (d) => pr.all || inSel(d.m);
         const g2 = svg.append('g').selectAll('g').data(series).join('g');
         const bar = (sel) => sel.attr('x', (d) => x(d.m) + po).attr('width', pw).attr('y', (d) => Math.min(yt(d.total), base - pw)).attr('height', (d) => d.total ? Math.max(pw, base - yt(d.total)) : 0).attr('rx', pw / 2).attr('data-m', (d) => d.m);
-        bar(g2.append('rect').attr('class', 'mk tone-bar')).style('fill', (d) => CO.toneFill(d.tone, 'var(--bar)')).style('opacity', (d) => on(d) ? 1 : 0.42);
+        bar(g2.append('rect').attr('class', 'mk tone-bar')).style('fill', (d) => CO.toneFill(d.tone, 'var(--panel)')).style('opacity', (d) => on(d) ? 1 : 0.42);
         bar(g2.filter((d) => !on(d)).append('rect').attr('class', 'mk')).style('fill', 'url(#' + pid + ')');
         if (pw >= 10) svg.append('g').selectAll('circle').data(series.filter((d) => d.total)).join('circle').attr('class', 'mk').attr('data-m', (d) => d.m).attr('cx', (d) => x(d.m) + x.bandwidth() / 2).attr('cy', (d) => Math.min(yt(d.total), base - pw) + pw / 2).attr('r', Math.min(5, pw / 4))
           .style('fill', 'var(--panel)').style('opacity', (d) => on(d) ? 0.95 : 0.6);

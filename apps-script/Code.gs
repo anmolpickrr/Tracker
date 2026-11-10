@@ -22,7 +22,7 @@
 
 /* Roles, lowest first. Viewer: sees everything. Editor: also edits tasks. Admin: also team list, access and the audit log. */
 const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -240,6 +240,7 @@ function doPost(e) {
     }
     if (body.action === 'feed') return json_(feed_(user));
     if (body.action === 'meetings') return json_(meetings_(user));
+    if (body.action === 'daily') return json_(daily_());
     if (body.action === 'assist') return json_(assist_(user, body));
     if (body.action === 'speak') return json_(speak_(user, body));
     if (body.action === 'history') return json_({ ok: true, days: history_() });
@@ -1829,6 +1830,7 @@ function tuneGemini_(log) {
  * - pick the fastest working Gemini model when there is none yet, then once a week. */
 function maintenance_() {
   const p = PropertiesService.getScriptProperties();
+  if (!p.getProperty('ROLES_2026_11_10')) { try { seedRoles_(); p.setProperty('ROLES_2026_11_10', new Date().toISOString()); } catch (e) { console.log('roles: ' + e); } }
   if (!p.getProperty('ROTATED_2026_11_10')) {
     p.setProperty('SESSION_SECRET', newSecret_());
     p.setProperty('API_KEY', Utilities.getUuid().replace(/-/g, ''));
@@ -1926,4 +1928,59 @@ function testMeetings() {
   people.forEach(function (u) { CacheService.getScriptCache().remove('mtg:' + u.email); const r = meetings_(u); if (r.ok) okN++; console.log((r.ok ? 'OK   ' : 'NO   ') + u.email + (r.ok ? ': ' + r.events.length + ' meetings in the next 3 days' : ': ' + r.error + ' (' + (r.detail || '') + ')')); });
   const off = PropertiesService.getScriptProperties().getProperty('CAL_API_OFF'); if (off) { console.log('The Google Calendar API is switched off in this script\'s Google Cloud project. Open ' + off + ', click Enable, wait 2 minutes and run testMeetings again.'); return; }
   console.log(okN + ' of ' + people.length + ' people get their meetings automatically.' + (okN < people.length ? ' For the rest: in the Google Admin console, Apps > Google Workspace > Calendar > Sharing settings > Internal sharing: "Share all information", or each person shares their calendar with this account.' : ''));
+}
+
+/* One-time: the roles the Creative Head gave on 10 Nov 2026, written into the team list's Role column (only where it is
+ * empty), and the two people not yet on the list added. "Not shown" keeps someone out of team views and workload. */
+const ROLE_SEED = [
+  ['Sagun', 'Designer/Editor'], ['Shubham', 'Editor'], ['Himanshu', 'Editor'], ['Ramesh', 'Editor'], ['Aman', 'Editor'], ['Rajnish', 'Editor'],
+  ['Gurleen', 'Editor (Intern)'], ['Gul', 'Content Writer (Intern)'], ['Jahanvi', 'Content Writer'], ['Yashika', 'Designer'], ['Abhist', 'KAM (Design)'],
+  ['Anmol Sharma', 'Creative Head (not shown)']
+];
+function seedRoles_() {
+  const sheet = openTab_(teamSource_());
+  const values = sheet.getDataRange().getValues();
+  const head = values[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  const col = function (re) { for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; };
+  const cName = col(/^name/), cStatus = col(/^status/), cAlias = col(/also|alias/);
+  let cRole = col(/^role/);
+  if (cName < 0) return;
+  if (cRole < 0) { cRole = head.length; sheet.getRange(1, cRole + 1).setValue('Role'); }
+  const changes = [];
+  ROLE_SEED.forEach(function (pair) {
+    const want = pair[0].toLowerCase(), role = pair[1];
+    let idx = -1;
+    for (let i = 1; i < values.length; i++) {
+      const nm = String(values[i][cName]).trim().toLowerCase(), first = nm.split(/\s+/)[0];
+      const al = cAlias >= 0 ? String(values[i][cAlias]).toLowerCase().split(/\s*,\s*/) : [];
+      if (nm === want || first === want || al.indexOf(want) >= 0) { idx = i; break; }
+    }
+    if (idx < 0) {
+      const row = new Array(Math.max(head.length, cRole + 1)).fill('');
+      row[cName] = pair[0]; if (cStatus >= 0) row[cStatus] = 'Active'; row[cRole] = role;
+      sheet.appendRow(row);
+      changes.push({ action: 'Team member added', record: pair[0], field: 'Role', before: '', after: role, via: 'Apps Script' });
+    } else if (!String(values[idx][cRole] || '').trim()) {
+      sheet.getRange(idx + 1, cRole + 1).setValue(role);
+      changes.push({ action: 'Team member updated', record: String(values[idx][cName]), field: 'Role', before: '', after: role, via: 'Apps Script' });
+    }
+  });
+  if (changes.length) { try { audit_(changes.map(function (c) { return Object.assign({ who: Session.getEffectiveUser().getEmail(), role: 'Script owner', sheet: sheet.getParent().getName(), tab: sheet.getName() }, c); })); } catch (e) { /* log optional */ } bumpVersion_(); }
+}
+
+/* Today's status changes (IST), from the activity log: design status edits made in the sheets and task edits made on the
+ * dashboard. The sheets have no "delivered on" column, so this is how the Daily To-Do knows what was delivered or started today. */
+function daily_() {
+  const c = CacheService.getScriptCache(), hit = c.get('daily'); if (hit) return JSON.parse(hit);
+  const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd'), moves = [];
+  const r = auditRead_({ limit: 500 });
+  (r.entries || []).forEach(function (e) {
+    if (Utilities.formatDate(new Date(e.when), IST, 'yyyy-MM-dd') !== today) return;
+    if (!/status/i.test(e.field || '') || /content|live/i.test(e.field || '') || !e.record) return;
+    const st = CODATA.stageOf(e.after || '', '')[0];
+    moves.push({ id: String(e.record), to: st, raw: String(e.after || ''), at: e.when, who: e.who });
+  });
+  const out = { ok: true, date: today, moves: moves };
+  c.put('daily', JSON.stringify(out), 60);
+  return out;
 }
