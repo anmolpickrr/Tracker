@@ -274,7 +274,7 @@ function doPost(e) {
     // Reads
     if (body.action === 'me') return json_({ ok: true, user: publicUser_(user) });
     if (body.action === 'beat') { if (settings_().presence) presenceBeat_(user, body.at); return json_({ ok: true }); }
-    if (body.action === 'presence') return json_({ ok: true, presence: settings_().presence ? presenceList_() : [], on: !!settings_().presence });
+    if (body.action === 'presence') return json_({ ok: true, now: Date.now(), presence: settings_().presence ? presenceList_() : [], on: !!settings_().presence });
     if (body.action === 'ver') {
       const set = settings_();
       const out = { ok: true, ver: liveVersion_(), role: user.role, perms: permsOf_(user), custom: !!(user.perms && Object.keys(user.perms).length), update: updateStatus_(), calOff: isOwner_(user.email) ? PropertiesService.getScriptProperties().getProperty('CAL_API_OFF') || '' : '', remind: { morning: set.morning, evening: set.evening }, presenceOn: set.presence, assist: assistStatus_() };
@@ -1153,29 +1153,42 @@ function sendNoteReminders_(now) {
 
 /* ================= Presence, activity feed, history, admin settings ================= */
 /*
- * Presence (transparent: every user is told admins can see it): while the dashboard is open it reports,
- * every 30 seconds, the page in use and the task being edited (if any). Kept 3 minutes in the cache;
- * "Last active" is written to the access list at most every 10 minutes. Nothing else is collected.
+ * Presence (transparent: every user is told the owner can see it): while the dashboard is open it reports, every 15
+ * seconds and shortly after an action, the page in use, what they are doing, and their recent dashboard actions
+ * (pages opened, clicks, ticks, filters, searches, tasks opened, updates saved; never note text). Kept 30 minutes in
+ * the cache; "Last active" is written to the access list at most every 10 minutes. Nothing else is collected.
  */
 const PAGES_OK = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health', 'access'];
+const ACT_KINDS = ['view', 'click', 'check', 'filter', 'search', 'open', 'update'];
 function presenceBeat_(u, at) {
   at = at || {};
-  const num = function (v) { const n = Number(v); return isFinite(n) ? Math.max(0, Math.min(1, Math.round(n * 1000) / 1000)) : null; };
-  const rec = { email: u.email, name: u.name || u.email, photo: photo_(u.photo), at: Date.now(), page: PAGES_OK.indexOf(at.page) >= 0 ? at.page : '', task: clean_(at.task).slice(0, 40), taskLabel: clean_(at.taskLabel).slice(0, 90), doing: clean_(at.doing).slice(0, 100), idle: !!at.idle, away: !!at.away, x: num(at.x), y: num(at.y) };
-  const cache = CacheService.getScriptCache();
+  const cache = CacheService.getScriptCache(), now = Date.now();
+  let prev = null; try { prev = JSON.parse(cache.get('pres:' + u.email) || 'null'); } catch (err) { prev = null; }
+  // Client clocks can be wrong: convert their times to the server's clock using the time they sent.
+  const cnow = Number(at.now), skew = isFinite(cnow) && cnow > 0 ? now - cnow : 0;
+  const since = Number(at.since) + skew;
+  const rec = { email: u.email, name: u.name || u.email, photo: photo_(u.photo), at: now, page: PAGES_OK.indexOf(at.page) >= 0 ? at.page : '', task: clean_(at.task).slice(0, 40), taskLabel: clean_(at.taskLabel).slice(0, 90), doing: clean_(at.doing).slice(0, 100), idle: !!at.idle, away: !!at.away,
+    since: isFinite(since) && since > now - 864e5 && since <= now ? since : (prev && now - prev.at < 180000 && prev.since ? prev.since : now) };
   cache.put('pres:' + u.email, JSON.stringify(rec), 180);
+  const acts = (Array.isArray(at.acts) ? at.acts : []).slice(-25).map(function (a) { a = a || {}; const t = Number(a.t) + skew; return { t: isFinite(t) ? Math.min(now, Math.max(now - 600000, t)) : now, k: ACT_KINDS.indexOf(a.k) >= 0 ? a.k : 'click', x: clean_(a.x).slice(0, 110), p: PAGES_OK.indexOf(a.p) >= 0 ? a.p : '' }; }).filter(function (a) { return a.x; });
+  if (acts.length) {
+    let old = []; try { old = JSON.parse(cache.get('pact:' + u.email) || '[]'); } catch (err) { old = []; }
+    const keep = old.concat(acts).filter(function (a) { return now - a.t < 30 * 60 * 1000; }).slice(-40);
+    cache.put('pact:' + u.email, JSON.stringify(keep), 1800);
+  }
   const last = Number(cache.get('pres-saved:' + u.email) || 0);
-  if (Date.now() - last > 10 * 60 * 1000) {
-    cache.put('pres-saved:' + u.email, String(Date.now()), 21600);
+  if (now - last > 10 * 60 * 1000) {
+    cache.put('pres-saved:' + u.email, String(now), 21600);
     try { updateUser_(u, { lastActive: new Date() }); } catch (err) { /* best effort */ }
   }
 }
 function presenceList_() {
   const users = users_().list.filter(function (u) { return u.status === 'Approved'; });
-  const got = CacheService.getScriptCache().getAll(users.map(function (u) { return 'pres:' + u.email; }));
+  const keys = []; users.forEach(function (u) { keys.push('pres:' + u.email, 'pact:' + u.email); });
+  const got = CacheService.getScriptCache().getAll(keys);
   return users.map(function (u) {
-    let p = null; try { p = JSON.parse(got['pres:' + u.email] || 'null'); } catch (err) { p = null; }
-    return { email: u.email, name: u.name || u.email, role: u.role, online: !!p && Date.now() - p.at < 90 * 1000, at: p ? new Date(p.at).toISOString() : (u.lastActive || u.lastSignIn || ''), photo: photo_(u.photo), doing: p ? p.doing || '' : '', idle: !!(p && p.idle), away: !!(p && p.away), x: p ? p.x : null, y: p ? p.y : null, page: p ? p.page : '', task: p ? p.task : '', taskLabel: p ? p.taskLabel : '' };
+    let p = null, acts = []; try { p = JSON.parse(got['pres:' + u.email] || 'null'); } catch (err) { p = null; } try { acts = JSON.parse(got['pact:' + u.email] || '[]'); } catch (err) { acts = []; }
+    return { email: u.email, name: u.name || u.email, role: u.role, online: !!p && Date.now() - p.at < 90 * 1000, at: p ? new Date(p.at).toISOString() : (u.lastActive || u.lastSignIn || ''), photo: photo_(u.photo), doing: p ? p.doing || '' : '', idle: !!(p && p.idle), away: !!(p && p.away), page: p ? p.page : '', task: p ? p.task : '', taskLabel: p ? p.taskLabel : '', since: p ? p.since || p.at : null, acts: acts.slice(-20).reverse() };
   });
 }
 /* Recent changes for the notification bell: task and team changes for everyone; notes and access only for admins. */
@@ -1761,7 +1774,8 @@ function assist_(user, body) {
   const ctx = body.context || {};
   const who = 'Signed-in person: ' + (user.name || user.email) + ' (' + user.email + '), role ' + user.role + (user.role === 'Viewer' ? ' (view only: cannot change tasks)' : user.role === 'Editor' ? ' (can edit tasks)' : ' (admin)') + '.\n' +
     'Now: ' + Utilities.formatDate(new Date(), 'Asia/Kolkata', "EEEE d MMMM yyyy, h:mm a") + ' IST.\n' +
-    'On screen: ' + String(ctx.page || 'overview').slice(0, 40) + (ctx.filters ? '; filters: ' + String(ctx.filters).slice(0, 200) : '') + (ctx.lang ? '; speech language setting: ' + String(ctx.lang).slice(0, 10) : '') + '.';
+    'On screen: ' + String(ctx.page || 'overview').slice(0, 40) + (ctx.filters ? '; filters: ' + String(ctx.filters).slice(0, 200) : '') + (ctx.lang ? '; speech language setting: ' + String(ctx.lang).slice(0, 10) : '') + '.' +
+    (ctx.snap ? '\nLive numbers for the current filters (answer simple count questions from these directly; call a tool only for task lists, names, dates or anything not here): ' + String(ctx.snap).slice(0, 1500) : '');
   if (prov === 'gemini') return gemini_(messages, who);
   // Gemini-only fields are dropped if the admin switched to Claude mid-conversation.
   messages.forEach(function (m) { if (Array.isArray(m.content)) m.content.forEach(function (b) { delete b.sig; }); });

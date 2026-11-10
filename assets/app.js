@@ -76,6 +76,7 @@
   async function callApi(payload, quiet) {
     const res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)) });
     const body = parse(await res.text());
+    if (body.ok && window.__liveAct) { const f = payload.fields || {}, W = { updateTask: () => 'Updated ' + (payload.id || 'a task') + ': ' + Object.keys(f).map((k) => k + ' → ' + f[k]).join(', '), noteSave: () => 'Saved a note', noteDelete: () => 'Deleted a note', noteAction: () => 'Updated an action in a note', setMember: () => 'Changed the team list' }; if (W[payload.action]) window.__liveAct('update', W[payload.action]()); }
     if (!quiet && !body.ok && ['signin_required', 'session_expired', 'no_access'].includes(body.error)) { lostAccess(body); throw new AuthLost(body.error); }
     return body;
   }
@@ -659,15 +660,16 @@
     el.append(chip);
     if (t === 'today' && firstName()) { const sep = document.createElement('span'); sep.className = 'ws-sep'; sep.textContent = '/'; const pg = document.createElement('span'); pg.className = 'ws-page'; pg.textContent = 'Overview'; el.append(sep, pg); }
   });
-  dash.draw('top-av', (el) => { el.replaceChildren(); if (A.user) { const a = CO.av(A.user.name || A.user.email); a.title = (A.user.name || A.user.email) + ' · ' + roleText(A.user); el.append(a); } });
+  dash.draw('top-av', (el) => { el.replaceChildren(); if (A.user) { const a = CO.av(A.user.name || A.user.email); a.title = (A.user.name || A.user.email) + (isOwner() ? '' : ' · ' + roleText(A.user)); el.append(a); } });
   dash.draw('page-sub', (el) => { const s = PAGES[curTab()][1]; el.textContent = typeof s === 'function' ? s() : s; });
   dash.draw('filter-count', (el) => { const p = dash.params(); const n = ['src', 'designer', 'brand', 'type'].filter((k) => p[k]).length; el.textContent = n ? String(n) : ''; });
   dash.draw('me-card', (el) => {
     el.replaceChildren(); if (!A.user) return;
     const w = document.createElement('span'); w.className = 'su-who';
     const b = document.createElement('b'); b.textContent = A.user.name || A.user.email;
-    const sm = document.createElement('small'); sm.textContent = roleText(A.user) + ' · ' + A.user.email;
-    w.append(b, sm); el.append(CO.av(A.user.name || A.user.email, 'lg'), w); el.title = A.user.email;
+    w.append(b);
+    // The owner sees just their name; everyone else also sees their role and email.
+    if (!isOwner()) { const sm = document.createElement('small'); sm.textContent = roleText(A.user) + ' · ' + A.user.email; w.append(sm); } el.append(CO.av(A.user.name || A.user.email, 'lg'), w); el.title = A.user.email;
   });
   dash.draw('today-date', (el) => { el.textContent = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); });
   dash.draw('sync-dot', (el) => { el.className = 'co-sync-dot ' + (S.status === 'ok' ? (S.staleError ? 'warn' : 'ok') : S.status === 'error' ? 'bad' : S.status === 'loading' ? 'busy' : ''); });
@@ -688,7 +690,7 @@
     const h = document.createElement('b'); h.textContent = i.short === 'Live' ? 'Live sync is on' : i.short; el.append(h);
     const dl = document.createElement('dl'); i.rows.forEach(([k, v]) => { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v; dl.append(dt, dd); }); el.append(dl);
   });
-  dash.draw('me', (el) => { el.textContent = A.user ? (A.user.name || A.user.email) + ' · ' + roleText(A.user) : ''; el.title = A.user ? A.user.email : ''; });
+  dash.draw('me', (el) => { el.textContent = A.user ? (A.user.name || A.user.email) + (isOwner() ? '' : ' · ' + roleText(A.user)) : ''; el.title = A.user ? A.user.email : ''; });
   dash.draw('banner-title', (el) => { el.textContent = S.status === 'error' ? 'The sheets could not be loaded' : 'Connect the dashboard to your sheets'; });
   dash.draw('banner-text', (el) => { el.textContent = S.status === 'error' ? S.error : 'Paste the web app URL and key from the Apps Script set-up (see the README). They are kept in this browser only.'; });
   dash.draw('foot', (el) => {
@@ -1995,6 +1997,7 @@
       const r = S.tasks.find((t) => t.uid === uid); if (!r) return;
       current = r;
       EDITING.uid = r.src + ':' + (r.id || r.row); EDITING.label = (r.id ? r.id + ' · ' : '') + r.brand + ' · ' + CO.topicText(r).slice(0, 50);
+      if (window.__liveAct) window.__liveAct('open', 'Opened task ' + EDITING.label);
       if (perm('edit')) setTimeout(checkForChanges, 50);
       const list = r.designers ? [...new Set(r.designers.split(' + ').map(CO.canon))] : [];
       before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1) };
@@ -2268,18 +2271,23 @@
   });
   dash.draw('ax-log', (tb) => {
     tb.replaceChildren();
-    if (!AX.log) { CO.emptyRow(tb, 8, AX.err || 'Loading…'); return; }
-    if (!AX.log.length) { CO.emptyRow(tb, 8, AX.q || AX.kind || AX.who ? 'Nothing matches.' : 'No activity recorded yet.'); return; }
+    if (!AX.log) { CO.emptyRow(tb, 5, AX.err || 'Loading…'); return; }
+    if (!AX.log.length) { CO.emptyRow(tb, 5, AX.q || AX.kind || AX.who ? 'Nothing matches.' : 'No activity recorded yet.'); return; }
     AX.log.forEach((e) => {
       const tr = tb.insertRow();
-      CO.td(tr, when(e.when), 'co-nowrap');
-      const w = CO.td(tr, e.who.includes('@') ? nameOf(e.who) : e.who, 'co-nowrap'); w.title = e.who + (e.role ? ' · ' + (ROLE_LABEL[e.role] || e.role) : '');
-      CO.td(tr, e.action, 'co-nowrap');
-      CO.td(tr, e.record || '—', 'co-id');
-      CO.td(tr, e.field || (e.details ? '' : '—'));
-      const bc = CO.td(tr, e.before === '' ? (e.field ? '(blank)' : '') : e.before, 'ax-val ax-before'); bc.title = e.before;
-      const acell = CO.td(tr, e.after === '' ? (e.field ? '(blank)' : e.details) : e.after, 'ax-val'); acell.title = e.after || e.details;
-      CO.td(tr, [[e.sheet, e.tab].filter(Boolean).join(' / '), e.row ? 'row ' + e.row : '', e.via].filter(Boolean).join(' · '), 'co-muted');
+      const mk = (tag, cls, txt) => { const x = document.createElement(tag); if (cls) x.className = cls; if (txt != null) x.textContent = txt; return x; };
+      CO.td(tr, when(e.when), 'ax-when');
+      const w = CO.td(tr, e.who.includes('@') ? nameOf(e.who) : e.who, 'ax-who'); w.title = e.who + (e.role ? ' · ' + (ROLE_LABEL[e.role] || e.role) : '');
+      const ac = tr.insertCell(); ac.className = 'ax-act'; ac.append(mk('b', '', e.action)); if (e.record) ac.append(mk('span', 'ax-rec', e.record));
+      const ch = tr.insertCell(); ch.className = 'ax-chg';
+      if (e.field) {
+        ch.append(mk('span', 'ax-field', e.field));
+        const line = mk('span', 'ax-line');
+        const bf = mk('span', 'ax-before', e.before === '' ? '(blank)' : e.before), af = mk('span', 'ax-after', e.after === '' ? '(blank)' : e.after);
+        line.append(bf, mk('span', 'ax-arrow', '→'), af); ch.append(line); ch.title = e.field + ': ' + (e.before || '(blank)') + ' → ' + (e.after || '(blank)');
+      } else ch.append(mk('span', 'ax-after', e.after || e.details || '—'));
+      if (e.field && e.details) ch.append(mk('span', 'ax-det', e.details));
+      CO.td(tr, [[e.sheet, e.tab].filter(Boolean).join(' / '), e.row ? 'row ' + e.row : '', e.via].filter(Boolean).join(' · '), 'ax-where');
     });
   });
   dash.draw('ax-count', (n) => {
@@ -2331,95 +2339,134 @@
   });
 
   /* ============ Live team activity ============
-     Everyone's dashboard sends a short heartbeat every 15 seconds (while the tab is open): the page, a one-line description
-     of what they are doing, whether they are idle, and where their pointer is (as a fraction of the page). The owner's
-     dashboard asks for the list every 8 seconds and shows it on the Overview and the Access page, plus small cursors with
-     each person's identity on the page the owner is looking at. Nothing is stored beyond 3 minutes (server cache). */
-  const LIVE = { x: null, y: null, lastInput: Date.now(), cursors: LS.get('co.cursors', '1') !== '0', poll: 0 };
-  addEventListener('pointermove', (e) => { LIVE.x = e.clientX / Math.max(1, innerWidth); LIVE.y = (e.clientY + scrollY) / Math.max(1, document.documentElement.scrollHeight); LIVE.lastInput = Date.now(); }, { passive: true });
-  ['keydown', 'scroll', 'pointerdown'].forEach((ev) => addEventListener(ev, () => { LIVE.lastInput = Date.now(); }, { passive: true }));
+     Everyone's dashboard reports, every 15 seconds and a few seconds after anything they do: the page, a one-line
+     description of what they are doing, whether they are idle, and their recent actions on the dashboard (pages opened,
+     buttons clicked, boxes ticked, filters chosen, searches, tasks opened and updates saved; never what they type in notes).
+     The owner's dashboard shows who is online, where, and a live feed of those actions. Kept 30 minutes in the server cache. */
+  const LIVE = { lastInput: Date.now(), acts: [], since: Date.now(), soon: 0, lastSent: 0, page: '', feed: LS.get('co.lafeed', 'all'), more: false };
+  ['keydown', 'scroll', 'pointerdown', 'pointermove'].forEach((ev) => addEventListener(ev, () => { LIVE.lastInput = Date.now(); }, { passive: true }));
+  const cleanT = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+  const labelOf = (el) => cleanT(el.getAttribute('aria-label') || (el.matches('.co-kpi') ? (el.querySelector('.co-kpi-label') || el).textContent : '') || el.textContent || el.title).replace(/[↗→↓↑]/g, '').trim().slice(0, 60);
+  function liveAct(kind, text) {
+    if (!text || A.mode !== 'auth' || !A.user) return;
+    const last = LIVE.acts[LIVE.acts.length - 1];
+    if (last && last.x === text && Date.now() - last.t < 4000) return;
+    LIVE.acts.push({ t: Date.now(), k: kind, x: String(text).slice(0, 110), p: curTab() });
+    if (LIVE.acts.length > 25) LIVE.acts.shift();
+    clearTimeout(LIVE.soon); LIVE.soon = setTimeout(sendBeat, Math.max(1200, 4000 - (Date.now() - LIVE.lastSent)));
+  }
+  window.__liveAct = liveAct;
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('button, a[href], [role="tab"], [role="radio"], [role="button"], summary, .co-kpi');
+    if (!t || t.closest('.ash, .la-card, #gate') || t.matches('input, label')) return;
+    const x = labelOf(t); if (!x || x.length < 2) return;
+    liveAct('click', 'Clicked “' + x + '”');
+  }, true);
+  document.addEventListener('change', (e) => {
+    const t = e.target; if (!t || !t.matches || t.closest('.ash, .la-card, #gate')) return;
+    const lab = cleanT((t.labels && t.labels[0] && t.labels[0].textContent) || t.getAttribute('aria-label') || t.name || '').slice(0, 50);
+    if (t.type === 'checkbox' || t.type === 'radio') liveAct('check', (t.checked ? 'Ticked ' : 'Unticked ') + '“' + (lab || 'a box') + '”');
+    else if (t.tagName === 'SELECT') { const o = t.selectedOptions && t.selectedOptions[0]; liveAct('filter', 'Chose “' + cleanT(o ? o.textContent : t.value).slice(0, 40) + '”' + (lab ? ' in ' + lab : '')); }
+    else if (t.type === 'date') liveAct('filter', 'Set ' + (lab || 'a date') + ' to ' + t.value);
+  }, true);
+  let liveQ = 0;
+  document.addEventListener('input', (e) => { const t = e.target; if (!t || t.type !== 'search' || t.closest('.ash')) return; clearTimeout(liveQ); liveQ = setTimeout(() => { if (t.value.trim()) liveAct('search', 'Searched “' + t.value.trim().slice(0, 40) + '”'); }, 1200); }, true);
+  setInterval(() => { const t = curTab(); if (A.mode === 'auth' && A.user && t !== LIVE.page) { if (LIVE.page) liveAct('view', 'Opened ' + (PAGE_NAME[t] || t)); LIVE.page = t; } }, 1000);
   const describeActivity = () => {
     const p = dash.params(), tab = curTab(), parts = [];
     if (EDITING.uid) return 'Editing ' + EDITING.label;
     const fy = document.querySelector('.ash:not([hidden])'); if (fy) return 'Asking Fasty';
     const dlg = document.querySelector('dialog[open]'); if (dlg) { const t = (dlg.querySelector('h2, .co-h2, [id$="title"]') || {}).textContent; if (tab === 'notes' || /note/i.test(dlg.id)) return 'Writing a note'; if (t) return 'Viewing ' + t.trim().slice(0, 60); }
     const f = [p.src ? CO.cls(p.src) : '', p.designer === '__none' ? 'Unassigned' : p.designer, p.brand, p.type].filter(Boolean);
-    const q = document.activeElement && document.activeElement.type === 'search' && document.activeElement.value ? 'searching "' + document.activeElement.value.slice(0, 30) + '"' : '';
     if (tab === 'tasks') parts.push('Tasks' + (p.stage && p.stage !== 'active' ? ': ' + p.stage.replace(/-/g, ' ') : ''));
     else if (tab === 'reports') parts.push('Reports: ' + (p.rpreset || 'this month').replace(/-/g, ' '));
-    else if (tab === 'mine') parts.push('My work');
     else parts.push(PAGE_NAME[tab] || 'Dashboard');
     if (f.length) parts.push('filtered by ' + f.join(', '));
-    if (q) parts.push(q);
     return 'Viewing ' + parts.join(' · ');
   };
-  const sendBeat = () => {
+  function sendBeat() {
     if (A.mode !== 'auth' || !A.user || document.visibilityState !== 'visible') return;
-    const idle = Date.now() - LIVE.lastInput > 2 * 60 * 1000;
-    callApi({ action: 'beat', at: { page: curTab(), task: EDITING.uid, taskLabel: EDITING.label, doing: describeActivity(), idle, away: false, x: LIVE.x, y: LIVE.y } }, true).catch(() => {});
-  };
+    clearTimeout(LIVE.soon); LIVE.lastSent = Date.now();
+    const idle = Date.now() - LIVE.lastInput > 2 * 60 * 1000, acts = LIVE.acts.splice(0);
+    callApi({ action: 'beat', at: { page: curTab(), task: EDITING.uid, taskLabel: EDITING.label, doing: describeActivity(), idle, away: false, since: LIVE.since, now: Date.now(), acts } }, true)
+      .then((b) => { if (!b || !b.ok) LIVE.acts.unshift(...acts.slice(-10)); }).catch(() => { LIVE.acts.unshift(...acts.slice(-10)); });
+  }
   setInterval(sendBeat, 15 * 1000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sendBeat(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { LIVE.since = LIVE.since || Date.now(); sendBeat(); } });
   async function pollPresence() {
     if (A.mode !== 'auth' || !isOwner() || document.visibilityState !== 'visible') return;
-    try { const b = await callApi({ action: 'presence' }, true); if (b.ok) { PRS.on = b.on !== false; PRS.list = b.presence || []; PRS.at = Date.now(); dash.draw('presence'); dash.draw('presence-mini'); dash.draw('live-activity'); drawCursors(); } } catch (e) { /* next time */ }
+    try { const b = await callApi({ action: 'presence' }, true); if (b.ok) { PRS.on = b.on !== false; PRS.list = b.presence || []; PRS.at = Date.now(); PRS.skew = b.now ? Date.now() - b.now : 0; dash.draw('presence'); dash.draw('presence-mini'); dash.draw('live-activity'); } } catch (e) { /* next time */ }
   }
-  setInterval(pollPresence, 8 * 1000);
-  // A colour per person, from the brand palette, so their cursor and marker are recognisable.
-  const HUES = ['#6037d7', '#ff5a26', '#2f8fa0', '#8aa000', '#c2410c', '#685bc7', '#1e1e1e', '#b8357a'];
+  // Faster while the live card is on screen (Overview or Access), slower otherwise (just the "online" pill).
+  let presTick = 0;
+  setInterval(() => { presTick++; const fast = ['today', 'access'].includes(curTab()); if (fast || presTick % 3 === 0) pollPresence(); }, 5 * 1000);
+  // A colour per person, from the brand palette, so they are recognisable at a glance.
+  const HUES = ['#6037d7', '#ff5a26', '#2f8fa0', '#7a8c00', '#c2410c', '#685bc7', '#0f9d8a', '#b8357a'];
   const hueOf = (email) => { let h = 0; for (const c of String(email)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return HUES[h % HUES.length]; };
-  const CURSOR_SVG = '<svg viewBox="0 0 16 20" aria-hidden="true"><path d="M1 1l13 10.5-6 .7 3.6 6.4-2.6 1.4-3.6-6.5L1 18z"/></svg>';
   const identity = (p, size) => {
     const w = document.createElement('span'); w.className = 'la-id' + (size ? ' ' + size : ''); w.style.setProperty('--hue', hueOf(p.email));
-    const cur = document.createElement('i'); cur.className = 'la-cur'; cur.innerHTML = CURSOR_SVG;
     const av = document.createElement('span'); av.className = 'la-av';
     if (p.photo) { const im = document.createElement('img'); im.src = p.photo; im.alt = ''; im.referrerPolicy = 'no-referrer'; im.onerror = () => { im.remove(); av.textContent = CO.initials(p.name); }; av.append(im); } else av.textContent = CO.initials(p.name);
-    w.append(cur, av); return w;
+    const dot = document.createElement('i'); dot.className = 'la-dot'; w.append(av, dot); return w;
   };
   const stateOf = (p) => !p.online ? 'offline' : p.away ? 'away' : p.idle ? 'idle' : p.taskLabel ? 'editing' : 'active';
   const STATE_L = { active: 'Active', editing: 'Editing', idle: 'Idle', away: 'Away', offline: 'Offline' };
-  const secsAgo = (iso) => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 10 ? 'now' : s < 60 ? s + 's ago' : Math.round(s / 60) + 'm ago'; };
+  const srvNow = () => Date.now() - (PRS.skew || 0);
+  const secsAgo = (t) => { const s = Math.max(0, Math.round((srvNow() - new Date(t)) / 1000)); return s < 10 ? 'just now' : s < 60 ? s + 's ago' : s < 3600 ? Math.round(s / 60) + ' min ago' : Math.round(s / 3600) + ' h ago'; };
+  const durText = (ms) => { const m = Math.max(1, Math.round(ms / 60000)); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60 ? (m % 60) + ' min' : ''); };
+  const KIND = { view: 'Page', click: 'Click', check: 'Tick', filter: 'Filter', search: 'Search', open: 'Task', update: 'Update' };
+  const el2 = (tag, cls, txt) => { const x = document.createElement(tag); if (cls) x.className = cls; if (txt != null) x.textContent = txt; return x; };
   const liveRow = (p) => {
-    const st = stateOf(p), r = document.createElement('div'); r.className = 'la-row s-' + st;
-    const tx = document.createElement('div'); tx.className = 'la-tx';
-    const top = document.createElement('div'); top.className = 'la-top'; const n = document.createElement('b'); n.textContent = p.name; const pg = document.createElement('span'); pg.className = 'la-page'; pg.textContent = p.online ? (PAGE_NAME[p.page] || 'Dashboard') : ''; top.append(n); if (p.online) top.append(pg);
-    const d = document.createElement('small'); d.className = 'la-doing'; d.textContent = p.online ? (p.doing || (p.taskLabel ? 'Editing ' + p.taskLabel : 'On ' + (PAGE_NAME[p.page] || 'the dashboard'))) : 'Last active ' + agoText(p.at);
-    tx.append(top, d);
-    const s2 = document.createElement('span'); s2.className = 'la-state'; s2.textContent = STATE_L[st]; if (p.online) s2.title = 'Updated ' + secsAgo(p.at);
-    r.append(identity(p), tx, s2); return r;
+    const st = stateOf(p), r = el2('div', 'la-row s-' + st);
+    const tx = el2('div', 'la-tx');
+    const top = el2('div', 'la-top'); top.append(el2('b', '', p.name)); if (p.online) top.append(el2('span', 'la-page', PAGE_NAME[p.page] || 'Dashboard'));
+    tx.append(top, el2('small', 'la-doing', p.online ? (p.doing || (p.taskLabel ? 'Editing ' + p.taskLabel : 'On ' + (PAGE_NAME[p.page] || 'the dashboard'))) : 'Last active ' + agoText(p.at)));
+    const lastA = (p.acts || [])[0];
+    if (p.online && lastA) tx.append(el2('small', 'la-last', lastA.x + ' · ' + secsAgo(lastA.t)));
+    const side = el2('div', 'la-side'); side.append(el2('span', 'la-state', STATE_L[st]));
+    if (p.online && p.since) side.append(el2('small', 'la-for', 'online ' + durText(srvNow() - p.since)));
+    r.append(identity(p), tx, side); return r;
   };
   dash.draw('live-activity', (el) => {
     const show = A.mode === 'auth' && isOwner() && PRS.on;
     el.classList.toggle('la-off', !show); if (!show) { el.replaceChildren(); return; }
     const others = PRS.list.filter((p) => !A.user || p.email !== A.user.email);
-    const on = others.filter((p) => p.online).sort((a, b) => (stateOf(a) === 'idle') - (stateOf(b) === 'idle') || a.name.localeCompare(b.name));
+    const rank = { editing: 0, active: 1, idle: 2, away: 3, offline: 4 };
+    const on = others.filter((p) => p.online).sort((a, b) => rank[stateOf(a)] - rank[stateOf(b)] || a.name.localeCompare(b.name));
+    const off = others.filter((p) => !p.online).sort((a, b) => String(b.at).localeCompare(String(a.at)));
     el.replaceChildren();
-    const hd = document.createElement('div'); hd.className = 'na-head';
-    const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; const dot = document.createElement('i'); dot.className = 'la-pulse'; h2.append(dot, 'Live team activity'); const c = document.createElement('span'); c.className = 'na-count' + (on.length ? '' : ' ok'); c.textContent = on.length; h2.append(c);
-    const nt = document.createElement('p'); nt.className = 'co-note'; nt.textContent = on.length ? 'Who is on the dashboard and what they are doing. Only you see this.' : 'Nobody else is on the dashboard right now.'; l.append(h2, nt);
-    const tg = document.createElement('label'); tg.className = 'sw la-sw'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = LIVE.cursors; cb.addEventListener('change', () => { LIVE.cursors = cb.checked; LS.set('co.cursors', cb.checked ? '1' : '0'); drawCursors(); }); tg.append(cb, Object.assign(document.createElement('span'), { className: 'sw-ui' }), Object.assign(document.createElement('span'), { textContent: 'Cursors' })); tg.title = 'Show where people are pointing on the page you are viewing';
-    hd.append(l, tg); el.append(hd); collapser(el, 'live', 'Live team activity');
-    const list = document.createElement('div'); list.className = 'la-list'; on.forEach((p) => list.append(liveRow(p)));
-    const recent = others.filter((p) => !p.online && p.at && Date.now() - new Date(p.at) < 24 * 3600e3).slice(0, 3);
-    if (recent.length) { const sep = document.createElement('p'); sep.className = 'la-sep'; sep.textContent = 'Earlier today'; list.append(sep); recent.forEach((p) => list.append(liveRow(p))); }
-    el.append(list);
-  });
-  // Cursors of people on the same page as the owner, positioned where they are pointing (smoothly moved between updates).
-  const curLayer = document.createElement('div'); curLayer.className = 'la-layer'; curLayer.setAttribute('aria-hidden', 'true'); document.body.append(curLayer);
-  function drawCursors() {
-    const tab = curTab(), want = (A.mode === 'auth' && isOwner() && LIVE.cursors && PRS.on) ? PRS.list.filter((p) => p.online && !p.away && p.page === tab && p.x != null && p.y != null && (!A.user || p.email !== A.user.email)) : [];
-    const keep = new Set(want.map((p) => p.email));
-    [...curLayer.children].forEach((c) => { if (!keep.has(c.dataset.email)) { c.classList.add('out'); setTimeout(() => c.remove(), 300); } });
-    want.forEach((p) => {
-      let c = curLayer.querySelector('[data-email="' + CSS.escape(p.email) + '"]');
-      if (!c) { c = document.createElement('div'); c.className = 'la-ghost'; c.dataset.email = p.email; c.style.setProperty('--hue', hueOf(p.email)); c.innerHTML = CURSOR_SVG; const tag = document.createElement('span'); tag.className = 'la-tag'; c.append(tag); curLayer.append(c); }
-      c.querySelector('.la-tag').textContent = p.name.split(' ')[0] + (p.idle ? ' · idle' : '');
-      c.title = p.name + ': ' + (p.doing || '');
-      c.style.transform = 'translate(' + Math.round(p.x * innerWidth) + 'px,' + Math.round(p.y * document.documentElement.scrollHeight) + 'px)';
-      c.classList.toggle('idle', !!p.idle);
+    const hd = el2('div', 'na-head');
+    const l = el2('div'); const h2 = el2('h2', 'co-h2'); h2.append(el2('i', 'la-pulse'), 'Live team activity'); h2.append(el2('span', 'na-count' + (on.length ? '' : ' ok'), on.length + ' online'));
+    l.append(h2, el2('p', 'co-note', on.length ? 'Who is on the dashboard, where, and what they are doing. Only you see this.' : 'Nobody else is on the dashboard right now. Their actions show here as soon as they open it.'));
+    hd.append(l); el.append(hd); collapser(el, 'live', 'Live team activity');
+    const body = el2('div', 'la-body');
+    if (on.length) { const list = el2('div', 'la-list'); on.forEach((p) => list.append(liveRow(p))); body.append(list); }
+    if (off.length) {
+      const d = el2('details', 'la-offline'); const sm = el2('summary'); const avs = el2('span', 'la-avs'); off.slice(0, 6).forEach((p) => avs.append(identity(Object.assign({}, p, { online: false }), 'sm')));
+      sm.append(avs, el2('span', '', off.length + ' offline' + (off[0].at ? ' · last seen ' + off[0].name.split(' ')[0] + ' ' + agoText(off[0].at) : ''))); d.append(sm);
+      const ol = el2('div', 'la-list'); off.forEach((p) => ol.append(liveRow(p))); d.append(ol); body.append(d);
+    }
+    // Activity feed: every recent action across the team, newest first.
+    const all = [];
+    others.forEach((p) => (p.acts || []).forEach((a) => all.push(Object.assign({ who: p }, a))));
+    all.sort((a, b) => b.t - a.t);
+    const feedHd = el2('div', 'la-feed-hd'); feedHd.append(el2('h3', '', 'Activity'));
+    const seg = el2('div', 'la-seg'); [['all', 'Everything'], ['update', 'Updates only']].forEach(([k, t]) => { const bt = el2('button', k === LIVE.feed ? 'on' : '', t); bt.type = 'button'; bt.setAttribute('aria-pressed', String(k === LIVE.feed)); bt.addEventListener('click', () => { LIVE.feed = k; LS.set('co.lafeed', k); flip(() => dash.draw('live-activity')); }); seg.append(bt); });
+    feedHd.append(seg); body.append(feedHd);
+    const rows = all.filter((a) => LIVE.feed === 'all' || a.k === 'update' || a.k === 'check');
+    const lim = LIVE.more ? 40 : 8, ul = el2('ul', 'la-feed');
+    if (!rows.length) ul.append(el2('li', 'la-empty', LIVE.feed === 'all' ? 'Actions appear here as people use the dashboard.' : 'No updates in the last 30 minutes.'));
+    rows.slice(0, lim).forEach((a) => {
+      const li = el2('li', 'k-' + a.k); li.style.setProperty('--hue', hueOf(a.who.email));
+      const tm = el2('span', 'la-t', secsAgo(a.t)); tm.title = new Date(a.t).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const tx = el2('span', 'la-ft'); tx.append(el2('b', '', a.who.name.split(' ')[0]), ' ' + a.x.charAt(0).toLowerCase() + a.x.slice(1));
+      const meta = el2('span', 'la-fm'); meta.append(el2('span', 'la-kind', KIND[a.k] || 'Action'), el2('span', '', PAGE_NAME[a.p] || ''));
+      li.append(el2('i', 'la-fdot'), tm, tx, meta); ul.append(li);
     });
-  }
-  addEventListener('resize', drawCursors);
+    body.append(ul);
+    if (rows.length > 8) { const mb = el2('button', 'co-link cal-more-btn'); mb.textContent = LIVE.more ? 'Show fewer' : 'Show ' + (Math.min(40, rows.length) - 8) + ' more'; mb.type = 'button'; mb.addEventListener('click', () => flip(() => { LIVE.more = !LIVE.more; dash.draw('live-activity'); })); body.append(mb); }
+    el.append(body);
+  });
 
   /* Daily snapshots kept by the web app (open, overdue… per day, IST), for exact before/after comparisons. */
   const HS = { days: [], at: 0 };
@@ -3747,7 +3794,38 @@
     };
 
     /* ---- the conversation ---- */
-    const ctx = () => { const p = dash.params(); return { page: PAGE_NAME[p.tab] || 'Overview', filters: [p.src ? CO.cls(p.src) : '', p.designer, p.brand, p.type].filter(Boolean).join(', '), lang: st.lang }; };
+    // Headline numbers go with every question, so simple counts need no extra round trip for a tool call.
+    const snap = () => {
+      try {
+        const rs = CO.rows(); if (!rs) return '';
+        const t = CO.today(), m = t.slice(0, 7), open = rs.filter((r) => r.open), by = new Map();
+        open.forEach((r) => r.list.forEach((d) => { const o = by.get(d) || [0, 0]; o[0]++; if (r.due === 'overdue') o[1]++; by.set(d, o); }));
+        const done = rs.filter((r) => r.done && r.month === m);
+        return 'open ' + open.length + ', overdue ' + rs.filter((r) => r.due === 'overdue').length + ', due today ' + open.filter((r) => r.eta === t).length + ', due tomorrow ' + open.filter((r) => r.eta === CO.addDays(t, 1)).length +
+          ', WIP ' + rs.filter((r) => r.stage === 'WIP').length + ', under review ' + rs.filter((r) => r.review).length + ', shared with client ' + rs.filter((r) => r.shared).length + ', unassigned open ' + open.filter((r) => !r.list.length).length +
+          ', creatives completed this month ' + CO.sumQty(done) + '. Open (overdue) by designer: ' + [...by].sort((a, b) => b[1][0] - a[1][0]).slice(0, 14).map(([d, o]) => d + ' ' + o[0] + (o[1] ? ' (' + o[1] + ')' : '')).join(', ');
+      } catch (e) { return ''; }
+    };
+    const ctx = () => { const p = dash.params(); return { page: PAGE_NAME[p.tab] || 'Overview', filters: [p.src ? CO.cls(p.src) : '', p.designer, p.brand, p.type].filter(Boolean).join(', '), lang: st.lang, snap: snap() }; };
+    /* Instant answers: clear, simple questions (what is overdue / due today / tomorrow, someone's open work, deliveries this
+       period, "open Tasks") are answered from the data already in the browser, with no round trip to the AI. */
+    const QUICK_OK = new Set(('what whats s is are the a an how many much show me list which tasks task there any kitne kitna kya hai hain ka ke ki ko mere my mera meri ' +
+      'open overdue late due today tomorrow aaj kal delivered deliver deliveries this month week last mahine hafte pichle pending working on kaam go to take ' +
+      'kholo dikhao chalo jao le page section tab overview home standup stand up notes note team reports report health access brands please pls batao bata do for of has have abhi now creatives right').split(' '));
+    const quick = (q) => {
+      const k = norm(q), toks = k.split(/\s+/).filter(Boolean);
+      if (!toks.length || toks.length > 9) return null;
+      const person = people().find((pp) => k.includes(norm(pp)) || norm(pp).split(' ').some((w) => w.length > 2 && new RegExp('\\b' + w + '\\b').test(k)));
+      const pTok = new Set(person ? norm(person).split(' ') : []);
+      // Only when every word is understood: anything more specific (a brand, a period, "why", "external"...) goes to the AI.
+      if (!toks.every((t) => QUICK_OK.has(t) || pTok.has(t) || [...pTok].some((w) => w.startsWith(t) && t.length > 2))) return null;
+      const nav = /\b(open|show|go|take|kholo|dikhao|chalo|jao)\b/.test(k) && /\b(overview|home|stand ?up|tasks?|notes?|team|reports?|health|access|brands?)\b/.test(k);
+      const dueQ = /\b(overdue|late|due today|due tomorrow|aaj|kal)\b/.test(k);
+      const delQ = /\bdeliver/.test(k);
+      const personQ = person && /\b(open|pending|working|kaam|tasks?)\b/.test(k);
+      if (!(nav || dueQ || delQ || personQ)) return null;
+      return local(q);
+    };
     // Keep the conversation short enough to send, cutting only at a question the person asked (never between a tool call and its result).
     // Older tool results are cut short before sending (the model already answered from them): smaller requests, faster replies.
     const slim = () => { let lastQ = -1; st.msgs.forEach((m, i) => { if (m.role === 'user' && m.content.some((c) => c.type === 'text')) lastQ = i; });
@@ -3760,13 +3838,16 @@
       const wait = bubble('bot wait'); wait.append(el('span', 'dots', '')); wait.setAttribute('aria-label', 'Fasty is thinking');
       let answer = '', voice = null;
       try {
+        const fast = st.ai === false || A.mode !== 'auth' ? null : quick(q);
         if (st.ai === false || A.mode !== 'auth') answer = local(q);
+        else if (fast) { answer = fast; st.msgs.push({ role: 'user', content: [{ type: 'text', text: q }] }, { role: 'assistant', content: [{ type: 'text', text: fast }] }); trim(); }
         else {
+          if (window.__liveAct) window.__liveAct('click', 'Asked Fasty a question');
           st.msgs.push({ role: 'user', content: [{ type: 'text', text: q }] }); trim();
           for (let hop = 0; hop < 7; hop++) {
             // Never wait forever: after 30 seconds answer in basic mode and say why.
-            const res = await Promise.race([callApi({ action: 'assist', messages: slim(), context: ctx(), voice: st.voiceOn && st.tts ? { lang: st.lang } : null }), new Promise((r) => setTimeout(() => r({ ok: false, error: 'busy', slow: true }), 30000))]);
-            if (!res.ok && res.error === 'busy') { st.msgs.pop(); answer = local(q) + (res.slow ? ' (Quick answer: the AI service did not reply in 30 seconds, so I used basic mode.)' : ' (Quick answer: the AI service is busy right now, so I used basic mode.)'); break; }
+            const res = await Promise.race([callApi({ action: 'assist', messages: slim(), context: ctx(), voice: st.voiceOn && st.tts ? { lang: st.lang } : null }), new Promise((r) => setTimeout(() => r({ ok: false, error: 'busy', slow: true }), 20000))]);
+            if (!res.ok && res.error === 'busy') { st.msgs.pop(); answer = local(q) + (res.slow ? ' (Quick answer: the AI service did not reply in 20 seconds, so I used basic mode.)' : ' (Quick answer: the AI service is busy right now, so I used basic mode.)'); break; }
             if (!res.ok) { if (res.error === 'not_configured') { st.ai = false; paintHead(); st.msgs.pop(); answer = local(q); } else answer = res.error || 'Something went wrong. Try again.'; break; }
             if (res.stop_reason === 'refusal') { st.msgs.pop(); answer = 'I can not help with that one. Ask me about tasks, the team or reports.'; break; }
             st.msgs.push({ role: 'assistant', content: res.content });
@@ -3774,6 +3855,7 @@
             const calls = res.content.filter((c) => c.type === 'tool_use');
             if (res.stop_reason !== 'tool_use' || !calls.length) { answer = text || 'Done.'; break; }
             const results = [];
+            wait.setAttribute('aria-label', 'Fasty is looking it up'); wait.dataset.step = calls.some((c) => c.name === 'navigate') ? 'Opening it…' : 'Looking it up…';
             for (const c of calls) {
               let out; try { out = TOOLS[c.name] ? await TOOLS[c.name](c.input || {}) : { error: 'Unknown tool ' + c.name }; } catch (e) { out = { error: String(e.message || e) }; }
               results.push({ type: 'tool_result', tool_use_id: c.id, content: JSON.stringify(out).slice(0, 8000), is_error: !!(out && out.error && out.error !== 'not_allowed') });

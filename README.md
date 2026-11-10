@@ -119,6 +119,14 @@ Everyone lands on **My work** showing their own work (the owner lands on the Ove
 
 **Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) opens with how long approvals take: the typical (median) and longest wait, then bars for up to 7 days, 8–14, 15–30 and over 30 days (orange = over 14 days), each with its count and share. Click a bar (or press Enter on it) to list only those tasks; click again for all. Below that it groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
 
+## Live team activity (owner only)
+
+On the Overview (and the Access page) the owner sees **who is online**: a status dot (green = active, amber = idle for 2+ minutes, grey = away/offline), the page they are on, what they are doing there, their last action and how long they have been online. Below it, an **Activity** feed lists everyone's recent dashboard actions as they happen: pages opened, buttons clicked, boxes ticked, filters chosen, searches, tasks opened and updates saved (*Updates only* narrows it to changes). Dashboards report every 15 seconds and a few seconds after an action; the owner's view refreshes every 5 seconds. Times use the server clock. Nothing typed in notes is sent. Everyone is told about this in the privacy notice; it is kept 30 minutes and can be switched off in Settings.
+
+## Fasty speed
+
+Simple questions whose every word Fasty understands (what is overdue / due today / tomorrow, someone's open work, deliveries this month, "open Tasks") are answered instantly from the data already on screen, with no AI round trip. Everything else goes to the AI with today's headline numbers attached, so count questions need no extra lookup; if the AI takes over 20 seconds, Fasty answers in basic mode.
+
 ## Delivery date and turnaround
 
 Completed work (DONE or REJECTED) is dated by its **Design ETA**, which the team keeps as the actual delivery date once a task is done (else the request date, and never later than today). No extra column is needed.
