@@ -781,6 +781,9 @@
   };
   /* Needs attention: a composition bar and filter chips (all, overdue, due today, tomorrow, changes requested),
      then one compact row per task with a severity rail, the designer and how late or soon it is. */
+  // Empty results caused by the page filters say so, with one click to clear them.
+  const filterNote = () => { const p = dash.params(); return [p.src ? CO.cls(p.src) : '', p.designer === '__none' ? 'Unassigned' : p.designer, p.brand, p.type].filter(Boolean).join(', '); };
+  const clearBtn = () => { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-btn'; b.textContent = 'Clear filters'; b.addEventListener('click', () => dash.setParams({ src: '', designer: '', brand: '', type: '' })); return b; };
   const NA = { f: LS.get('co.naf', 'all'), all: false };
   dash.draw('attn', (el) => {
     if (CO.notReady(el, 'box')) return;
@@ -794,10 +797,10 @@
     el.replaceChildren();
     const head = document.createElement('div'); head.className = 'na-head';
     const hl = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Needs attention'; const cnt = document.createElement('span'); cnt.className = 'na-count' + (rows.length ? '' : ' ok'); cnt.textContent = rows.length; h2.append(cnt);
-    const note = document.createElement('p'); note.className = 'co-note'; note.textContent = rows.length ? 'Oldest deadline first. Click a task to open it.' : 'Nothing overdue, due soon or waiting on changes.'; hl.append(h2, note);
+    const note = document.createElement('p'); note.className = 'co-note'; const fl = filterNote(); note.textContent = rows.length ? 'Oldest deadline first. Click a task to open it.' + (fl ? ' Filtered: ' + fl + '.' : '') : fl ? 'Nothing for ' + fl + '.' : 'Nothing overdue, due soon or waiting on changes.'; hl.append(h2, note);
     const go = document.createElement('button'); go.type = 'button'; go.className = 'co-link'; go.textContent = 'All overdue'; go.dataset.goTasks = 'overdue'; go.addEventListener('click', () => CO.goTasks('overdue'));
     head.append(hl, go); el.append(head);
-    if (!rows.length) { const ok = document.createElement('div'); ok.className = 'na-clear'; ok.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>'; const p = document.createElement('p'); p.textContent = 'The team is on schedule.'; ok.append(p); el.append(ok); return; }
+    if (!rows.length) { const ok = document.createElement('div'); ok.className = 'na-clear'; ok.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>'; const p = document.createElement('p'); p.textContent = fl ? 'Nothing needs attention with these filters.' : 'The team is on schedule.'; ok.append(p); if (fl) ok.append(clearBtn()); el.append(ok); return; }
     // composition bar (each task counted once, by its most urgent reason)
     const comp = { late: 0, today: 0, tomorrow: 0, changes: 0 }; rows.forEach((r) => comp[cat(r)]++);
     const bar = document.createElement('div'); bar.className = 'na-bar'; bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', Object.entries(comp).filter((x) => x[1]).map(([k, v]) => v + ' ' + k).join(', '));
@@ -1205,7 +1208,7 @@
       tx.append(t1, t2); li.append(av, tx); li.title = r.brand + ' · ' + CO.topicText(r) + (r.id ? ' (' + r.id + ')' : ''); ul.append(li);
     });
     if (list.length > 40) { const m = document.createElement('li'); m.className = 'tw-more'; m.textContent = '+' + (list.length - 40) + ' more in Tasks'; ul.append(m); }
-    if (!list.length) { const m = document.createElement('li'); m.className = 'tw-empty'; m.textContent = TW.sel === 'done' ? 'Nothing delivered yet today.' : TW.sel === 'carried' ? 'Nothing carried over. Nice.' : 'Nothing here right now.'; ul.append(m); }
+    if (!list.length) { const m = document.createElement('li'); m.className = 'tw-empty'; const fl = filterNote(); m.textContent = (TW.sel === 'done' ? 'Nothing delivered yet today' : TW.sel === 'carried' ? 'Nothing carried over' : 'Nothing here right now') + (fl ? ' for ' + fl + '.' : '.'); if (fl) { m.append(document.createElement('br'), clearBtn()); } ul.append(m); }
     const foot = document.createElement('button'); foot.type = 'button'; foot.className = 'tw-foot'; foot.textContent = 'Open stand-up'; foot.addEventListener('click', () => dash.setParams({ tab: 'standup' }));
     inner.append(ul, foot); body.append(inner);
     el.append(head, tiles, body);

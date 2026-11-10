@@ -1741,3 +1741,14 @@ button.co-kpi:hover { transform: translateY(-2px); box-shadow: 0 18px 34px -22px
 [data-panel="team"] .co-table th, [data-panel="team"] .co-table td { padding-left: 8px; padding-right: 8px; }
 [data-panel="team"] .co-table th:first-child, [data-panel="team"] .co-table td:first-child { padding-left: 22px; }
 @media (max-width: 1320px) { [data-panel="team"] .co-table th, [data-panel="team"] .co-table td { padding-left: 6px; padding-right: 6px; } [data-panel="team"] .co-table { font-size: 12.5px; } }
+/* contrast pass (WCAG AA 4.5:1 for text) */
+:root, :root[data-theme="light"] { --muted: #64615a; --side-muted: #a7a49d; }
+:root[data-theme="dark"] { --side-muted: #9b9891; }
+.co-card.accent-bad .when.bad, .co-card.accent-bad .when { background: var(--org-p); color: var(--org-ink); }
+.co-card.accent-bad .src { background: var(--panel-2); color: var(--muted); }
+.src.ext { background: var(--org-p); color: var(--org-ink); }
+.src.int { background: var(--lav); color: var(--lav-ink); }
+:root[data-theme="light"] .av { background: var(--lav); color: var(--lav-ink); }
+.tw-tile.zero b { color: var(--muted); }
+.na-chip[aria-selected="true"] b { background: rgba(0, 0, 0, .22); }
+.tw-empty .co-btn, .na-clear .co-btn { margin-top: 8px; }
