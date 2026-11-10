@@ -439,9 +439,6 @@ function updateTask_(body) {
   const written = {};
   if (f.status != null) {
     track(c.status, function (cell) { cell.setValue(statusVal); written.status = statusVal; });
-    if ((f.status === 'Delivered' || f.status === 'Rejected') && c.delivered >= 0 && !clean_(sheet.getRange(row, c.delivered + 1).getDisplayValue())) {
-      track(c.delivered, function (d) { d.setValue(today_()); written.deliveredOn = true; });
-    }
   }
   if (f.designer != null) {
     // Checked before anything is written: a name outside the sheet's dropdown is refused.
@@ -475,7 +472,7 @@ function taskColumns_(kind, head) {
   const col = function (n, nth) { let seen = 0; for (let i = 0; i < head.length; i++) if (head[i] === n) { if (seen === (nth || 0)) return i; seen++; } return -1; };
   const any = function () { for (let i = 0; i < arguments.length; i++) { const k = col(arguments[i]); if (k >= 0) return k; } return -1; };
   const find = function (re) { for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; };
-  const c = { priority: col('priority'), qty: find(QTY_HEADER), delivered: find(/deliver/) };
+  const c = { priority: col('priority'), qty: find(QTY_HEADER) };
   if (kind === 'paid') {
     // Paid sheet: column A holds the ID; the second "Design ETA" column holds the design status.
     c.id = 0; c.eta = col('design eta', 0);
@@ -1043,7 +1040,6 @@ function prefs_(b, u) {
 /* Runs every 10 minutes (setup installs it). Sends the 10:00 and 18:00 IST emails once a day each, and note reminders when due. */
 function remindersTick() {
   try { maintenance_(); } catch (e) { console.log('maintenance: ' + e); }
-  try { deliveryDates_(); } catch (e) { console.log('delivery dates: ' + e); }
   if (!authOn_() || !hasAccessBook_()) return;
   const now = new Date(), day = Utilities.formatDate(now, IST, 'yyyy-MM-dd');
   const mins = Number(Utilities.formatDate(now, IST, 'H')) * 60 + Number(Utilities.formatDate(now, IST, 'mm'));
@@ -1384,7 +1380,7 @@ function testRead() {
       type: any('creative type'), brand: any('brands', 'brand'), topic: any('sku/topic'), channel: any('marketing channel'),
       priority: any('priority'), brief: any('creative brief'), owner: any('content owner'), cstatus: any('content status'),
       link: any('creative link'), file: any('open file'), live: any('live status'), liveDate: any('status live date', 'live status date'),
-      delivered: find(/deliver/), qty: find(QTY)
+      qty: find(QTY)
     });
     const v = (r, k) => (ix[k] >= 0 && r[ix[k]] != null ? clean(r[ix[k]]) : '');
     const rowNums = Array.isArray(src.rowNums) ? src.rowNums : [];
@@ -1395,7 +1391,7 @@ function testRead() {
         id: v(r, 'id'), req_date: parseDate(v(r, 'req')), req_text: v(r, 'req'), type: v(r, 'type'), brand: v(r, 'brand'), topic: v(r, 'topic'),
         channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: v(r, 'cstatus'),
         eta: parseDate(v(r, 'eta')), eta_text: v(r, 'eta'), creative_link: v(r, 'link'), design_status: v(r, 'dstatus'), designer: v(r, 'designer'),
-        open_file: v(r, 'file'), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')), delivered_on: parseDate(v(r, 'delivered')),
+        open_file: v(r, 'file'), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')),
         qty: qn > 0 ? qn : null
       };
     });
@@ -1525,18 +1521,14 @@ function testRead() {
     const list = Array.isArray(sources) ? sources : Object.keys(sources).map((k) => ({ kind: kindOf(k), rows: sources[k] || [] }));
     const seenIds = { paid: new Set(), mkt: new Set() };
     const both = [], ignored = [];
-    // A Delivered On date shared by 60 or more rows of one tab was written in bulk (not real delivery days): ignore it,
-    // date those tasks by their Design ETA as before, and flag them in Data health.
-    for (const s of list) { const n = new Map(); (s.rows || []).forEach((r) => { if (r.delivered_on) n.set(r.delivered_on, (n.get(r.delivered_on) || 0) + 1); }); s.bulkDates = new Set([...n].filter(([, c]) => c >= 60).map(([d]) => d)); }
     for (const s of list) {
       if (s.kind !== 'paid' && s.kind !== 'mkt') continue;
       const ids = new Set();
-      for (let r of s.rows || []) {
+      for (const r of s.rows || []) {
         const id = clean(r.id);
         if (id && seenIds[s.kind].has(id)) continue; // the same task in an older tab: the newer copy wins
         if (id) ids.add(id);
         const source = s.kind === 'paid' ? 'Paid' : 'Marketing';
-        if (r.delivered_on && s.bulkDates.has(r.delivered_on)) { r = Object.assign({}, r, { delivered_on: null, bulk_delivered: true }); }
         if (clean(r.brand) || clean(r.type) || clean(r.topic)) both.push([r, source]);
         else ignored.push({ src: r.src || '', row: r.row || null, id, source, owner: clean(r.owner), status: clean(r.design_status) || clean(r.content_status), eta: r.eta, req: r.req_date });
       }
@@ -1617,7 +1609,6 @@ function testRead() {
       if (G.done && !/^https?:/i.test(clean(r.creative_link))) flags.push('Completed, no creative link');
       if (!dsU && !csU) flags.push('Design and content status blank');
       if ((G.done || G.shared || G.review) && ['PENDING', 'INCOMPLETE BRIEF', 'TBD'].includes(csU)) flags.push('Design finished but brief not approved');
-      if (r.bulk_delivered) flags.push('Delivered On written in bulk (ignored)');
       if (!clean(r.brand)) flags.push('No brand');
       if (!idU) flags.push('No Creative_ID');
       else if (source === 'Paid' ? !/^SRAP\d/.test(idU) : !/^SRA\d/.test(idU)) flags.push(source === 'Paid' ? 'ID should start with SRAP (External sheet)' : 'ID should start with SRA (Internal sheet)');
@@ -1625,10 +1616,10 @@ function testRead() {
       let uid = (r.src || source) + ':' + (clean(r.id) || 'row' + (r.row || i + 2));
       while (seen.has(uid)) uid += '·';
       seen.add(uid);
-      // Delivery date: the Delivered On column if the sheet has one, else the ETA (or request date).
-      // A delivered task can't have been delivered in the future, so a later ETA counts as today.
-      // Completed work (DONE, REJECTED) is dated by Delivered On, else the Design ETA (the actual delivery date once done), else the request date.
-      let ddate = G.done ? (r.delivered_on || eta || req || null) : null;
+      // Delivery date (Creative Head, Nov 2026): completed work (DONE, REJECTED) is dated by its Design ETA, which is the
+      // actual delivery date once a task is done; else the request date. A delivered task can't be delivered in the future,
+      // so a later ETA counts as today.
+      let ddate = G.done ? (eta || req || null) : null;
       if (ddate && ddate > today) ddate = today;
       const pri = clean(r.priority).toUpperCase();
       const t0 = typeOf(r.type);
@@ -1639,7 +1630,7 @@ function testRead() {
         priority: /^P\d$/.test(pri) ? pri : '', owner: clean(r.owner),
         designers: des.join(' + '), stage, open, group: G.group, done: G.done, shared: G.shared, review: G.review, awaiting: G.brief,
         sub: sub || '', design_status: clean(r.design_status), content_status: clean(r.content_status), req, eta,
-        ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: G.done ? (r.delivered_on ? 'delivered' : eta ? 'eta' : 'request') : '',
+        ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: G.done ? (eta ? 'eta' : 'request') : '',
         live_status: clean(r.live_status).replace(/^Luanch/i, 'Launch'),
         brief: clean(r.brief), link: clean(r.creative_link), file: clean(r.open_file),
         flags: flags.join('; ')
@@ -1652,7 +1643,7 @@ function testRead() {
   // Which optional columns a source has (so the editor only offers what can be saved).
   function columnsOf(src) {
     const head = ((src && src.headers) || []).map((h) => clean(h).toLowerCase());
-    return { qty: head.some((h) => QTY.test(h)), delivered: head.some((h) => /deliver/.test(h)), priority: head.includes('priority') };
+    return { qty: head.some((h) => QTY.test(h)), priority: head.includes('priority') };
   }
   const OPEN_STAGES = ['To be planned', 'WIP', 'Changes requested'];
 
@@ -1987,7 +1978,7 @@ function maintenance_() {
     p.setProperty('ROTATED_2026_11_10', new Date().toISOString());
     try { audit_([{ who: Session.getEffectiveUser().getEmail(), role: 'Script owner', action: 'Signed everyone out', details: 'Secrets replaced automatically after they were shared in a screenshot', via: 'Apps Script' }]); } catch (e) { /* log optional */ }
   }
-  if (!p.getProperty('DELIV_REPAIR_2026_11_10')) { try { const r = repairDeliveredOn_(); if (r.ok) p.setProperty('DELIV_REPAIR_2026_11_10', new Date().toISOString()); console.log('delivered on repair: ' + JSON.stringify(r)); } catch (e) { console.log('delivered on repair: ' + e); } }
+  if (!p.getProperty('DELIV_REMOVED_2026_11_10')) { try { const r = removeDeliveredOn_(); if (r.ok) p.setProperty('DELIV_REMOVED_2026_11_10', new Date().toISOString()); console.log('delivered on removed: ' + JSON.stringify(r)); } catch (e) { console.log('delivered on removed: ' + e); } }
   if (p.getProperty('GEMINI_API_KEY')) {
     let tune = {}; try { tune = JSON.parse(p.getProperty('GEMINI_TUNE') || '{}'); } catch (e) { tune = {}; }
     if (!tune.model || !tune.at || Date.now() - tune.at > 7 * 864e5) tuneGemini_(false);
@@ -2120,7 +2111,7 @@ function seedRoles_() {
 }
 
 /* Today's status changes (IST), from the activity log: design status edits made in the sheets and task edits made on the
- * dashboard. The sheets have no "delivered on" column, so this is how the Daily To-Do knows what was delivered or started today. */
+ * dashboard. This is how the Daily To-Do knows what was delivered or started today. */
 function daily_() {
   const c = CacheService.getScriptCache(), hit = c.get('daily'); if (hit) return JSON.parse(hit);
   const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd'), moves = [];
@@ -2136,139 +2127,34 @@ function daily_() {
   return out;
 }
 
-/* ============================ Delivered On ============================
- * The sheets have no record of when a creative was actually delivered, so on-time rate and turnaround could not be
- * measured. Every 10 minutes (remindersTick) this:
- *  1. adds a "Delivered On" column to each task tab once (logged in the activity log),
- *  2. compares each task's design status with the last check (kept in the hidden "Delivery dates" tab of the access
- *     workbook) and writes today's date for tasks that have just become delivered (DONE, REJECTED, NO UPDATE),
- *     including tasks reopened and delivered again,
- *  3. on the first run, fills dates only from the activity log (status changes to DONE it recorded); older deliveries
- *     stay blank and the dashboard keeps dating them by their Design ETA. No date is ever guessed.
- * A date someone types in the column by hand is never overwritten (unless the task is reopened and delivered again). */
-const DELIV_TAB = 'Delivery dates';
-const DELIV_BULK = 25; // more "new" deliveries than this in one 10-minute check is a bulk change, never dated
-/* Reads one task tab: header, the Delivered On column (added once if missing) and each task's key and status. */
-function delivTab_(name, add, logged) {
-  const kind = kindOf_(name); if (kind === 'team') return null;
-  let sheet; try { sheet = openTab_(CONFIG.sources[name]); } catch (e) { return null; }
-  const lastRow = sheet.getLastRow(), lastCol = Math.max(1, sheet.getLastColumn()); if (lastRow < 2) return null;
-  const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
-  const c = taskColumns_(kind, head.map(function (h) { return clean_(h).toLowerCase(); }));
-  if (c.status < 0) return null;
-  if (c.delivered < 0) {
-    if (!add) return null;
-    if (sheet.getMaxColumns() <= lastCol) sheet.insertColumnAfter(lastCol);
-    sheet.getRange(1, lastCol + 1).setValue('Delivered On');
-    c.delivered = lastCol;
-    logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Column added', sheet: sheet.getParent().getName(), tab: sheet.getName(), field: 'Delivered On', after: 'Column ' + (lastCol + 1), details: 'Filled automatically with the date a task becomes delivered, for on-time rate and turnaround', via: 'Dashboard' });
-  }
-  const width = Math.max(c.id, c.status, c.delivered) + 1;
-  const vals = sheet.getRange(2, 1, lastRow - 1, width).getDisplayValues();
-  const seen = {}, rows = [];
-  vals.forEach(function (v, i) {
-    const id = clean_(v[c.id]); if (!id) return;
-    seen[id] = (seen[id] || 0) + 1;
-    rows.push({ row: i + 2, id: id, key: name + ' | ' + id + (seen[id] > 1 ? ' #' + seen[id] : ''), done: CODATA.groupOf(CODATA.stageOf(clean_(v[c.status]), '')[0]).done, value: clean_(v[c.delivered]) });
-  });
-  return { name: name, sheet: sheet, col: c.delivered + 1, rows: rows };
-}
-function delivState_(book) {
-  let st = book.getSheetByName(DELIV_TAB);
-  if (!st) { st = book.insertSheet(DELIV_TAB); try { st.hideSheet(); } catch (e) { /* ignore */ } }
-  return st;
-}
-function delivSave_(st, next) {
-  const keys = Object.keys(next);
-  st.clearContents();
-  st.getRange(1, 1, 1, 2).setValues([['Task (source | ID)', 'State']]);
-  if (keys.length) st.getRange(2, 1, keys.length, 2).setValues(keys.map(function (k) { return [k, next[k]]; }));
-}
-/* Every 10 minutes (remindersTick). The first complete run only notes which tasks are already delivered (nothing is
- * written to the task sheets). After that, a task whose status has just become DONE or REJECTED gets that day's date.
- * "First run done" is recorded only after the state is saved, so an interrupted run can never date old tasks as new.
- * More than DELIV_BULK new deliveries in one check (a pasted status column, a restored sheet) is treated as a bulk
- * change: nothing is dated, it is logged, and the state moves on. A date typed by hand is never overwritten. */
-function deliveryDates_() {
-  if (!hasAccessBook_()) return { ok: false };
-  const lock = LockService.getScriptLock(); if (!lock.tryLock(20000)) return { ok: false, error: 'busy' };
-  try {
-    const props = PropertiesService.getScriptProperties(), book = accessBook_(), st = delivState_(book);
-    const init = !!props.getProperty('DELIV_INIT'), logged = [], prev = {}, next = {};
-    if (init && st.getLastRow() > 1) st.getRange(2, 1, st.getLastRow() - 1, 2).getValues().forEach(function (r) { if (r[0]) prev[String(r[0])] = String(r[1]); });
-    const tabs = Object.keys(CONFIG.sources).map(function (n) { return delivTab_(n, true, logged); }).filter(Boolean);
-    const fresh = [];
-    tabs.forEach(function (t) {
-      t.rows.forEach(function (r) {
-        const was = prev[r.key];
-        if (r.done) { next[r.key] = 'delivered'; if (init && was !== 'delivered' && (!r.value || was === 'reopened')) fresh.push({ t: t, r: r }); }
-        else if (was === 'delivered' || was === 'reopened') next[r.key] = 'reopened';
-      });
-    });
-    let stamped = 0;
-    if (init && fresh.length > DELIV_BULK) {
-      logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On skipped', details: fresh.length + ' tasks became delivered in one check (a bulk change), so none were dated. Type their Delivered On dates by hand if needed.', via: 'Dashboard' });
-    } else if (init) {
-      const now = today_();
-      fresh.forEach(function (x) { x.t.sheet.getRange(x.r.row, x.t.col).setNumberFormat('dd-mmm-yyyy').setValue(now); stamped++; });
-      const byTab = {}; fresh.forEach(function (x) { (byTab[x.t.name] = byTab[x.t.name] || []).push(x); });
-      Object.keys(byTab).forEach(function (n) { const l = byTab[n], sh = l[0].t.sheet; logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On filled', sheet: sh.getParent().getName(), tab: sh.getName(), field: 'Delivered On', after: Utilities.formatDate(now, IST, 'd MMM yyyy'), details: l.length + ' task(s): ' + l.map(function (x) { return x.r.id; }).slice(0, 40).join(', '), via: 'Dashboard' }); });
-    }
-    delivSave_(st, next);
-    if (!init) { props.setProperty('DELIV_INIT', new Date().toISOString()); logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On started', details: Object.keys(next).length + ' delivered tasks noted; no dates written. From now on each delivery is dated when its status becomes DONE or REJECTED.', via: 'Dashboard' }); }
-    if (logged.length) audit_(logged);
-    if (stamped || logged.length) { bumpVersion_(); clearCache_(); }
-    return { ok: true, first: !init, stamped: stamped, skipped: init && fresh.length > DELIV_BULK ? fresh.length : 0, tracked: Object.keys(next).length };
-  } finally { lock.releaseLock(); }
-}
-/* One-time repair (10 Nov 2026): an interrupted first run let the next run date every delivered task with that day.
- * Clears Delivered On on any date that appears on DELIV_BULK or more rows of a tab, except where the activity log shows
- * that task's status changed to DONE/REJECTED on that date, or someone typed the date in. Then starts the state afresh. */
-function repairDeliveredOn_() {
+/* ============================ Delivered On (removed) ============================
+ * A "Delivered On" column was added to the task tabs on 10 Nov 2026 and removed the same day: the Creative Head confirmed
+ * that the Design ETA is the delivery date of completed work. This one-time clean-up (run by maintenance_) deletes the
+ * column the web app added (header exactly "Delivered On"; no other column is touched), the hidden "Delivery dates"
+ * state tab and its setting, and logs it in the activity log. */
+function removeDeliveredOn_() {
   if (!hasAccessBook_()) return { ok: false };
   const lock = LockService.getScriptLock(); if (!lock.tryLock(30000)) return { ok: false, error: 'busy' };
   try {
-    const evidence = {}; // 'tab | ID | yyyy-MM-dd' → true
-    const sh = accessBook_().getSheetByName('Audit');
-    if (sh && sh.getLastRow() > 1) {
-      const n = Math.min(sh.getLastRow() - 1, 30000);
-      sh.getRange(sh.getLastRow() - n + 1, 1, n, AUDIT_HEAD.length).getValues().forEach(function (v) {
-        const when = v[0] instanceof Date ? v[0] : new Date(v[0]); if (isNaN(when)) return;
-        const day = Utilities.formatDate(when, IST, 'yyyy-MM-dd'), tab = String(v[5]), id = clean_(v[6]), field = clean_(v[8]), after = clean_(v[10]), who = String(v[1]);
-        if (!id) return;
-        const human = !/^Script$/.test(String(v[2]));
-        if ((after && !/\d/.test(after) && CODATA.groupOf(CODATA.stageOf(after, '')[0]).done) || (human && /deliver/i.test(field))) evidence[tab + ' | ' + id + ' | ' + day] = true;
-      });
-    }
-    const report = [], logged = [];
+    const report = [];
     Object.keys(CONFIG.sources).forEach(function (name) {
-      const t = delivTab_(name, false, logged); if (!t) return;
-      const range = t.sheet.getRange(2, t.col, t.sheet.getLastRow() - 1, 1), cells = range.getValues(), shown = range.getDisplayValues();
-      const dayOf = function (v, d) { if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, IST, 'yyyy-MM-dd'); const p = CODATA.parseDate(d); return p || ''; };
-      const count = {}; cells.forEach(function (c, i) { const d = dayOf(c[0], shown[i][0]); if (d) count[d] = (count[d] || 0) + 1; });
-      const bulk = Object.keys(count).filter(function (d) { return count[d] >= DELIV_BULK; });
-      if (!bulk.length) return;
-      const idByRow = {}; t.rows.forEach(function (r) { idByRow[r.row] = r.id; });
-      let cleared = 0, kept = 0;
-      const out = cells.map(function (c, i) {
-        const d = dayOf(c[0], shown[i][0]); if (bulk.indexOf(d) < 0) return [c[0]];
-        const id = idByRow[i + 2];
-        if (id && evidence[t.sheet.getName() + ' | ' + id + ' | ' + d]) { kept++; return [c[0]]; }
-        cleared++; return [''];
-      });
-      if (cleared) range.setValues(out);
-      report.push(t.sheet.getName() + ': ' + cleared + ' cleared, ' + kept + ' kept (dates ' + bulk.join(', ') + ')');
+      if (kindOf_(name) === 'team') return;
+      let sheet; try { sheet = openTab_(CONFIG.sources[name]); } catch (e) { return; }
+      const lastCol = sheet.getLastColumn(); if (lastCol < 1) return;
+      const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+      for (let i = head.length - 1; i >= 0; i--) {
+        if (clean_(head[i]).toLowerCase() !== 'delivered on') continue;
+        sheet.deleteColumn(i + 1);
+        report.push(sheet.getParent().getName() + ' / ' + sheet.getName() + ': column ' + (i + 1));
+      }
     });
-    PropertiesService.getScriptProperties().deleteProperty('DELIV_INIT'); // the next check notes the current state afresh
-    if (report.length) audit_([{ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On repaired', details: 'Bulk-written dates removed. ' + report.join('; '), via: 'Dashboard' }]);
+    const book = accessBook_(), st = book.getSheetByName('Delivery dates'); if (st) book.deleteSheet(st);
+    PropertiesService.getScriptProperties().deleteProperty('DELIV_INIT');
+    audit_([{ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On removed', details: (report.length ? 'Deleted the Delivered On column: ' + report.join('; ') : 'No Delivered On column found') + '. Completed work is dated by its Design ETA.', via: 'Dashboard' }]);
     bumpVersion_(); clearCache_();
     return { ok: true, report: report };
   } finally { lock.releaseLock(); }
 }
-/** Run from the editor to set up the Delivered On column now instead of waiting for the next 10-minute check. */
-function setupDeliveredOn() { Logger.log(JSON.stringify(deliveryDates_())); }
-/** Run from the editor to clear bulk-written Delivered On dates again (normally done once, automatically). */
-function repairDeliveredOn() { Logger.log(JSON.stringify(repairDeliveredOn_())); }
 
 /* Only the person's own tasks (permission "scope: own"): rows whose designer/editor or content owner names them. */
 function permText_(p) {

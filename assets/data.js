@@ -56,7 +56,7 @@
       type: any('creative type'), brand: any('brands', 'brand'), topic: any('sku/topic'), channel: any('marketing channel'),
       priority: any('priority'), brief: any('creative brief'), owner: any('content owner'), cstatus: any('content status'),
       link: any('creative link'), file: any('open file'), live: any('live status'), liveDate: any('status live date', 'live status date'),
-      delivered: find(/deliver/), qty: find(QTY)
+      qty: find(QTY)
     });
     const v = (r, k) => (ix[k] >= 0 && r[ix[k]] != null ? clean(r[ix[k]]) : '');
     const rowNums = Array.isArray(src.rowNums) ? src.rowNums : [];
@@ -67,7 +67,7 @@
         id: v(r, 'id'), req_date: parseDate(v(r, 'req')), req_text: v(r, 'req'), type: v(r, 'type'), brand: v(r, 'brand'), topic: v(r, 'topic'),
         channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: v(r, 'cstatus'),
         eta: parseDate(v(r, 'eta')), eta_text: v(r, 'eta'), creative_link: v(r, 'link'), design_status: v(r, 'dstatus'), designer: v(r, 'designer'),
-        open_file: v(r, 'file'), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')), delivered_on: parseDate(v(r, 'delivered')),
+        open_file: v(r, 'file'), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')),
         qty: qn > 0 ? qn : null
       };
     });
@@ -197,18 +197,14 @@
     const list = Array.isArray(sources) ? sources : Object.keys(sources).map((k) => ({ kind: kindOf(k), rows: sources[k] || [] }));
     const seenIds = { paid: new Set(), mkt: new Set() };
     const both = [], ignored = [];
-    // A Delivered On date shared by 60 or more rows of one tab was written in bulk (not real delivery days): ignore it,
-    // date those tasks by their Design ETA as before, and flag them in Data health.
-    for (const s of list) { const n = new Map(); (s.rows || []).forEach((r) => { if (r.delivered_on) n.set(r.delivered_on, (n.get(r.delivered_on) || 0) + 1); }); s.bulkDates = new Set([...n].filter(([, c]) => c >= 60).map(([d]) => d)); }
     for (const s of list) {
       if (s.kind !== 'paid' && s.kind !== 'mkt') continue;
       const ids = new Set();
-      for (let r of s.rows || []) {
+      for (const r of s.rows || []) {
         const id = clean(r.id);
         if (id && seenIds[s.kind].has(id)) continue; // the same task in an older tab: the newer copy wins
         if (id) ids.add(id);
         const source = s.kind === 'paid' ? 'Paid' : 'Marketing';
-        if (r.delivered_on && s.bulkDates.has(r.delivered_on)) { r = Object.assign({}, r, { delivered_on: null, bulk_delivered: true }); }
         if (clean(r.brand) || clean(r.type) || clean(r.topic)) both.push([r, source]);
         else ignored.push({ src: r.src || '', row: r.row || null, id, source, owner: clean(r.owner), status: clean(r.design_status) || clean(r.content_status), eta: r.eta, req: r.req_date });
       }
@@ -289,7 +285,6 @@
       if (G.done && !/^https?:/i.test(clean(r.creative_link))) flags.push('Completed, no creative link');
       if (!dsU && !csU) flags.push('Design and content status blank');
       if ((G.done || G.shared || G.review) && ['PENDING', 'INCOMPLETE BRIEF', 'TBD'].includes(csU)) flags.push('Design finished but brief not approved');
-      if (r.bulk_delivered) flags.push('Delivered On written in bulk (ignored)');
       if (!clean(r.brand)) flags.push('No brand');
       if (!idU) flags.push('No Creative_ID');
       else if (source === 'Paid' ? !/^SRAP\d/.test(idU) : !/^SRA\d/.test(idU)) flags.push(source === 'Paid' ? 'ID should start with SRAP (External sheet)' : 'ID should start with SRA (Internal sheet)');
@@ -297,10 +292,10 @@
       let uid = (r.src || source) + ':' + (clean(r.id) || 'row' + (r.row || i + 2));
       while (seen.has(uid)) uid += '·';
       seen.add(uid);
-      // Delivery date: the Delivered On column if the sheet has one, else the ETA (or request date).
-      // A delivered task can't have been delivered in the future, so a later ETA counts as today.
-      // Completed work (DONE, REJECTED) is dated by Delivered On, else the Design ETA (the actual delivery date once done), else the request date.
-      let ddate = G.done ? (r.delivered_on || eta || req || null) : null;
+      // Delivery date (Creative Head, Nov 2026): completed work (DONE, REJECTED) is dated by its Design ETA, which is the
+      // actual delivery date once a task is done; else the request date. A delivered task can't be delivered in the future,
+      // so a later ETA counts as today.
+      let ddate = G.done ? (eta || req || null) : null;
       if (ddate && ddate > today) ddate = today;
       const pri = clean(r.priority).toUpperCase();
       const t0 = typeOf(r.type);
@@ -311,7 +306,7 @@
         priority: /^P\d$/.test(pri) ? pri : '', owner: clean(r.owner),
         designers: des.join(' + '), stage, open, group: G.group, done: G.done, shared: G.shared, review: G.review, awaiting: G.brief,
         sub: sub || '', design_status: clean(r.design_status), content_status: clean(r.content_status), req, eta,
-        ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: G.done ? (r.delivered_on ? 'delivered' : eta ? 'eta' : 'request') : '',
+        ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: G.done ? (eta ? 'eta' : 'request') : '',
         live_status: clean(r.live_status).replace(/^Luanch/i, 'Launch'),
         brief: clean(r.brief), link: clean(r.creative_link), file: clean(r.open_file),
         flags: flags.join('; ')
@@ -324,7 +319,7 @@
   // Which optional columns a source has (so the editor only offers what can be saved).
   function columnsOf(src) {
     const head = ((src && src.headers) || []).map((h) => clean(h).toLowerCase());
-    return { qty: head.some((h) => QTY.test(h)), delivered: head.some((h) => /deliver/.test(h)), priority: head.includes('priority') };
+    return { qty: head.some((h) => QTY.test(h)), priority: head.includes('priority') };
   }
   const OPEN_STAGES = ['To be planned', 'WIP', 'Changes requested'];
 

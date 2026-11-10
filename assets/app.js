@@ -1294,7 +1294,7 @@
     if (o.who !== false) { const w = document.createElement('span'); w.className = 'na-who'; (r.list.length ? r.list : ['Unassigned']).slice(0, 2).forEach((x) => w.append(CO.av(x))); const wn = document.createElement('span'); wn.className = 'na-wn'; wn.textContent = r.list.length ? r.list[0].split(' ')[0] + (r.list.length > 1 ? ' +' + (r.list.length - 1) : '') : 'Unassigned'; w.append(wn); li.append(w); }
     const when = document.createElement('span'); when.className = 'na-when k-' + k;
     if (o.waiting) { const wd = r.eta ? Math.max(0, CO.diffDays(r.eta, t)) : null; when.textContent = wd == null ? 'No date' : wd + 'd waiting'; when.title = r.eta ? 'Shared about ' + CO.fmtDate(r.eta, true) + ' (design ETA)' : ''; }
-    else if (o.done) { when.textContent = r.ddate === t ? 'Today' : CO.fmtDate(r.ddate); when.title = r.date_basis === 'delivered' ? 'Delivered on ' + CO.fmtDate(r.ddate, true) : 'Dated by Design ETA'; }
+    else if (o.done) { when.textContent = r.ddate === t ? 'Today' : CO.fmtDate(r.ddate); when.title = r.date_basis === 'eta' ? 'Delivered ' + CO.fmtDate(r.ddate, true) + ' (Design ETA)' : 'No Design ETA: dated by request date'; }
     else { when.textContent = d == null ? 'No ETA' : d < 0 ? (-d) + 'd late' : d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : CO.fmtDate(r.eta); when.title = r.eta ? 'Design ETA ' + CO.fmtDate(r.eta, true) : 'No Design ETA'; }
     li.append(when); return li;
   };
@@ -1472,26 +1472,25 @@
     el.append(wrap);
   });
 
-  /* Reports: on-time rate and turnaround, only from tasks with a real Delivered On date (no estimates). */
+  /* Reports: turnaround, from the request date to the Design ETA (the delivery date) of work completed in the period. */
   dash.draw('r-ontime', (el) => {
     if (CO.notReady(el, 'box')) return;
     el.replaceChildren();
     const pr = CO.period(), to = pr.to > CO.today() ? CO.today() : pr.to;
     const del = CO.rows().filter((r) => r.done && r.ddate && r.ddate >= pr.from && r.ddate <= to);
-    const dated = del.filter((r) => r.date_basis === 'delivered');
-    const withEta = dated.filter((r) => r.eta), onTime = withEta.filter((r) => r.ddate <= r.eta);
-    const withReq = dated.filter((r) => r.req && r.req <= r.ddate), tat = withReq.map((r) => Math.max(0, CO.workdays(r.req, r.ddate) - 1)).sort((a, b) => a - b);
-    const med = tat.length ? tat[Math.floor((tat.length - 1) / 2)] : null;
-    const hd = document.createElement('div'); hd.className = 'na-head'; const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'On time and turnaround'; const note = document.createElement('p'); note.className = 'co-note';
-    note.textContent = 'Only tasks with a real Delivered On date count (filled automatically when a status becomes DONE). ' + dated.length + ' of ' + del.length + ' tasks delivered in this period have one.'; l.append(h2, note); hd.append(l); el.append(hd);
-    const MIN = 10;
+    const withReq = del.filter((r) => r.date_basis === 'eta' && r.req && r.req <= r.ddate), tat = withReq.map((r) => Math.max(0, CO.workdays(r.req, r.ddate) - 1)).sort((a, b) => a - b);
+    const q = (p) => tat[Math.min(tat.length - 1, Math.ceil(tat.length * p) - 1)];
+    const hd = document.createElement('div'); hd.className = 'na-head'; const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Turnaround'; const note = document.createElement('p'); note.className = 'co-note';
+    note.textContent = 'Working days from the request date to the Design ETA (the delivery date) of work completed in this period. ' + withReq.length + ' of ' + del.length + ' tasks have both dates.'; l.append(h2, note); hd.append(l); el.append(hd);
+    const MIN = 10, days = (n) => n + (n === 1 ? ' day' : ' days');
     const tiles = document.createElement('div'); tiles.className = 'ot-tiles';
     const tile = (cls, val, label, sub) => { const d = document.createElement('div'); d.className = 'ot-tile ' + cls; const b = document.createElement('b'); b.textContent = val; const s1 = document.createElement('span'); s1.textContent = label; const s2 = document.createElement('small'); s2.textContent = sub; d.append(b, s1, s2); tiles.append(d); };
-    if (withEta.length >= MIN) tile('k-done', Math.round(onTime.length / withEta.length * 100) + '%', 'Delivered on or before the ETA', onTime.length + ' of ' + withEta.length + ' dated tasks');
-    else tile('k-wait', '—', 'On time', 'Needs ' + MIN + ' dated deliveries; ' + withEta.length + ' so far');
-    if (tat.length >= MIN) tile('k-pick', med + (med === 1 ? ' day' : ' days'), 'Typical turnaround (median)', 'Working days from request to delivery, ' + tat.length + ' tasks');
-    else tile('k-wait', '—', 'Turnaround', 'Needs ' + MIN + ' dated deliveries; ' + tat.length + ' so far');
-    tile('k-wip', CO.num(dated.length), 'Dated deliveries', del.length ? Math.round(dated.length / del.length * 100) + '% of this period' : 'none in this period');
+    if (tat.length >= MIN) {
+      tile('k-pick', days(q(0.5)), 'Typical turnaround (median)', 'Half the tasks took this long or less');
+      tile('k-wip', days(q(0.9)), '9 in 10 tasks within', 'The slowest tenth took longer');
+      const fast = tat.filter((n) => n <= 3).length;
+      tile('k-done', Math.round(fast / tat.length * 100) + '%', 'Within 3 working days', fast + ' of ' + tat.length + ' tasks');
+    } else tile('k-wait', '—', 'Turnaround', 'Needs ' + MIN + ' completed tasks with both dates; ' + tat.length + ' so far');
     el.append(tiles);
   });
 
@@ -1955,7 +1954,7 @@
   /* ================= Sheet health ================= */
   (() => {
     let pick = '';
-    const ORDER = ['Duplicate ID', 'No Creative_ID', 'ID should start with SRAP (External sheet)', 'ID should start with SRA (Internal sheet)', 'Incomplete row, not counted', 'Design and content status blank', 'Unrecognised status', 'Open, no ETA', 'No designer assigned', 'Completed, no designer', 'Completed, no creative link', 'Design finished but brief not approved', 'Delivered On written in bulk (ignored)', 'ETA before request date', 'Request date year looks mistyped', 'ETA year looks mistyped', 'Request date unreadable', 'ETA unreadable', 'No brand'];
+    const ORDER = ['Duplicate ID', 'No Creative_ID', 'ID should start with SRAP (External sheet)', 'ID should start with SRA (Internal sheet)', 'Incomplete row, not counted', 'Design and content status blank', 'Unrecognised status', 'Open, no ETA', 'No designer assigned', 'Completed, no designer', 'Completed, no creative link', 'Design finished but brief not approved', 'ETA before request date', 'Request date year looks mistyped', 'ETA year looks mistyped', 'Request date unreadable', 'ETA unreadable', 'No brand'];
     // Rows too incomplete to be a task are listed here so nothing drops out unseen.
     const ignoredRows = () => (S.ignored || []).filter((x) => !dash.params().src || x.source === dash.params().src).map((x) => ({ uid: 'ignored:' + x.src + ':' + x.row, id: x.id, source: x.source, src: x.src, row: x.row, brand: '—', topic: 'Row ' + x.row + ' of ' + ((S.sources[x.src] && S.sources[x.src].tab) || x.src) + (x.owner ? ' · ' + x.owner : '') + (x.status ? ' · ' + x.status : ''), designers: '', list: [], stage: 'Not counted', req: x.req, eta: x.eta, flags: 'Incomplete row, not counted', open: false }));
     const flagged = () => CO.rows().filter((r) => r.flags).concat(dash.params().designer || dash.params().brand || dash.params().type ? [] : ignoredRows());
@@ -2071,7 +2070,7 @@
         if ('designer' in fields) t.designers = fields.designer ? fields.designer.split(/\s*,\s*/).join(' + ') : '';
         if ('priority' in fields) t.priority = fields.priority;
         if (fields.qty) t.qty = Number(fields.qty);
-        Object.assign(t, CODATA.groupOf(t.stage)); if (t.done) { t.ddate = res.written && res.written.deliveredOn ? CO.today() : (t.eta || t.req); t.month = t.ddate ? t.ddate.slice(0, 7) : ''; } else { t.ddate = null; t.month = ''; }
+        Object.assign(t, CODATA.groupOf(t.stage)); if (t.done) { t.ddate = t.eta || t.req; if (t.ddate && t.ddate > CO.today()) t.ddate = CO.today(); t.month = t.ddate ? t.ddate.slice(0, 7) : ''; } else { t.ddate = null; t.month = ''; }
         if (res.row) t.row = res.row;
         S.tasks = S.tasks.map((x) => (x.uid === r.uid ? t : x));
         renderAll();

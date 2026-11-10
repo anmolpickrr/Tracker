@@ -119,208 +119,15 @@ Everyone lands on **My work** showing their own work (the owner lands on the Ove
 
 **Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) opens with how long approvals take: the typical (median) and longest wait, then bars for up to 7 days, 8–14, 15–30 and over 30 days (orange = over 14 days), each with its count and share. Click a bar (or press Enter on it) to list only those tasks; click again for all. Below that it groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
 
-## Delivered On, on-time rate and turnaround
+## Delivery date and turnaround
 
-The sheets didn't record when a creative was actually delivered, so the web app keeps a **Delivered On** column in each task tab:
+Completed work (DONE or REJECTED) is dated by its **Design ETA**, which the team keeps as the actual delivery date once a task is done (else the request date, and never later than today). No extra column is needed.
 
-- It adds the column once (logged) and checks every 10 minutes. A task whose status has just become DONE or REJECTED gets that day's date; a task reopened and delivered again gets the new date. A date typed by hand is kept.
-- The first complete check only notes which tasks are already delivered; it writes no dates. "First check done" is recorded only after that note is saved, so an interrupted check can never date old tasks.
-- If more than 25 tasks become delivered in one check (a pasted status column, a restored sheet), nothing is dated and it is logged as *Delivered On skipped*.
-- The dashboard ignores any Delivered On date shared by 60 or more rows of a tab (a bulk write) and dates those tasks by their Design ETA; Data health lists them.
-- **10 Nov 2026 incident, fixed:** an interrupted first check made the next one date every delivered task 10-Nov-2026, so "completed this month" and "delivered this week" were far too high. A one-time repair (logged as *Delivered On repaired*) clears those bulk dates, keeping only dates the activity log confirms, and the check starts afresh. `repairDeliveredOn` can be run from Apps Script again if ever needed.
+**Reports → Turnaround** shows working days from the request date to the Design ETA for work completed in the period: the median, the time 9 in 10 tasks fall within, and the share done within 3 working days. It appears once 10 such tasks fall in the period.
 
-**Reports → On time and turnaround** uses only real Delivered On dates and appears once 10 dated deliveries fall in the period.
+*History:* a "Delivered On" column was added to the task tabs on 10 Nov 2026 and dated old tasks wrongly after an interrupted first run. It was removed the same day: a one-time clean-up deletes that column (header exactly "Delivered On", nothing else) and its hidden "Delivery dates" tab, logged as *Delivered On removed*.
 
-## Today (Overview)
-
-The **Today** card at the top of the Overview's right-hand column shows the day's progress ring (delivered ÷ pick up + in progress + delivered) and four pastel tiles: **Pick up** (to be planned or changes requested, due today or the next working day), **In progress** (WIP), **Delivered** today and **Carried over** (open and past its ETA). Click a tile to list its tasks in the card; click a task to open it, or **Open stand-up** for the per-person view. Delivered today comes from the activity log: any design status changed to DONE today, in the sheet or on the dashboard; a delivered task with today's ETA also counts.
-
-## Meetings (Google Calendar)
-
-The card shows today and the next two days; **Show more** lists the rest of the next two weeks.
-
-The Overview's Meetings card shows the next meeting with a countdown, who is in it, a Join Google Meet button and a Take notes button (which starts a meeting note with the title and attendees filled in), plus the rest of today and the next two days. Each person connects their own calendar once, read-only; the access lasts for the browser session and is never sent to the web app or stored in the sheets.
-
-**Automatic for everyone:** the web app reads the signed-in person's own calendar, so team members see their meetings with no setup, as long as calendars share event details inside the company (Google Admin console → Apps → Google Workspace → Calendar → Sharing settings → Internal sharing options: *Share all information*). Run `testMeetings` in Apps Script to see who is covered. Anyone whose calendar isn't shared sees a **Connect Google Calendar** button instead (needs the Google Calendar API enabled in the "Creative Ops Tracker" Google Cloud project).
-
-Every meeting shows its name, date, time, duration and a Join link. If the calendar only shares free/busy times with the web app, meetings appear as "Busy (details hidden)" with a **Show names & Meet links** button: one click connects the person's own calendar (read-only, this browser session) and the full details replace the busy blocks. Changing the sharing setting above fixes it for everyone.
-
-## Who's online (admins)
-
-Admins see, under **Access**, who has the dashboard open, which page they are on, the task they are editing (if any) and when they were last active; the header shows the faces of people online now. Nothing else is collected: no keystrokes, no screen contents, no location. Everyone sees a notice about this in the bell menu, and an admin can switch it off under Reminders and notifications. "Last active" is saved in the Users tab at most every 10 minutes.
-
-## Live indicator
-
-The header shows a green dot and **Live** (or Syncing / Updating / Delayed / Offline). Hover over it, or tab to it, for the time of the data and when it was last checked.
-
-## Minimise and expand
-
-Every card on the Overview, My work, Brands, Team and Reports has a minimise button; the cards around it slide into place smoothly, nothing overlaps and no gaps are left. Choices are remembered on each device.
-
-## Live clock, Day and Night
-
-The clock in the header always shows India Standard Time, whatever the computer's own time zone. Click it to switch between 12-hour and 24-hour; the choice is remembered on that device.
-
-The theme follows the sun: **Day** (light) from sunrise and **Night** (dark) after sunset, using north-India sunrise and sunset times for the month. By day the clock is orange with a small sun rising over its edge; at night it turns violet with a moon and twinkling stars. The switch is a soft circular reveal. The sun/moon button picks the other theme until the next sunrise or sunset, then it goes back to automatic. Animations stop for anyone who has reduced motion turned on.
-
-## Fasty, the voice assistant
-
-The small blue buddy (round eyes, a smile and a lime-tipped antenna) at the bottom right (or **Alt+A**) opens **Fasty**, a voice and chat helper that knows the whole dashboard. Ask in Hindi, English, Hinglish or mixed sentences, by voice (tap the lime microphone) or by typing:
-
-**Fast replies, voice in step with the text:** the voice for the first sentence is made in the same request as the answer, so the reply appears and Fasty starts speaking at the same moment; the rest of the speech is made in parallel while the first sentence plays, so there is no pause between sentences. If natural speech is busy (Gemini's free voice has low limits), the device's own voice starts straight away instead, so there is never a silent wait. A new question stops the previous answer's voice. For even faster natural speech, add a Google Cloud Text-to-Speech key as `GOOGLE_TTS_KEY` in Script properties (paid by characters spoken; premium voices cost roughly ₹2,500 per million characters, about ₹500 per thousand replies; see Google Cloud pricing).
-
-Small tips pop up next to Fasty one at a time (each for about 2.5 seconds, with a pause between) with ideas of what to ask and live counts such as tasks overdue. They pause while Fasty is open or the pointer is on a tip; the × hides them for the rest of the day.
-
-- "Yashika ke kitne tasks overdue hain?", "What is due tomorrow for Huggler?", "SRAP372 ka status kya hai?"
-- "Is mahine kitne creatives deliver hue, internal vs external?", "Who delivered most last month?", "Team ka progress batao"
-- "Last month ka external report dikhao", "Open Gurleen's stand-up", "How do I add an action item?"
-- "SRAP372 ko under review kar do" (Editors and Admins)
-
-How it works:
-
-- **Answers come from the live data** you can already see, never from guesses. Matching tasks appear in the chat and open with a click. If something is unclear (two people with the same first name, an unclear period) Fasty asks one short question. Follow-ups such as "aur pichle mahine?" keep the context.
-- **Actions:** Fasty opens pages and sets filters directly. To change a task (status, ETA, designer, priority) Fasty says what will change, and the change is saved only after you press **Save change** on the card; it goes through the same save as the task editor, is checked against your access level by the web app and appears in the activity log. View-only users are told who can make the change.
-- **Voice:** speech is turned into text by the browser (Chrome, Edge and Safari; Firefox can type). The language button switches between English (which also understands Hinglish) and हिन्दी. Replies are spoken in a female voice: Google's natural Chirp 3 HD voice when set up (below), else the most natural female voice on the device. The speaker button turns voice replies off. When a reply ends with a question, Fasty listens again automatically.
-- **Privacy:** your question and the dashboard rows needed to answer it are sent to Claude (Anthropic) through the web app; nothing is stored by the dashboard. The API key stays in Apps Script and never reaches a browser. Each person can ask about 40 questions every 10 minutes.
-
-**Setup (owner, once, about 10 minutes):**
-
-1. **Update the web app.** On GitHub open `apps-script/Code.gs` → *Raw* → select all, copy. In Apps Script, open `Code.gs`, select all, paste, save. Then **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**. The URL stays the same.
-2. **Free AI (recommended): Google Gemini.** Signed in as design.tools@pickrr.com, open aistudio.google.com → **Get API key → Create API key** (pick the "Creative Ops Tracker" project). In Apps Script: **Project Settings (⚙) → Script properties → Add script property**: name `GEMINI_API_KEY`, value the key → **Save**. No redeploy needed.
-3. **Check:** reload the dashboard. The System check no longer says "basic mode", and Fasty's panel says "Answers use Google Gemini".
-4. *Optional, paid:* `ANTHROPIC_API_KEY` for Claude (see costs below), and `GOOGLE_TTS_KEY` for Google's natural voice. `GEMINI_MODEL` pins a specific Gemini model (default `gemini-flash-latest`, which follows Google's current Flash model).
-
-**Which AI answers:** Access → Reminders and notifications → *Fasty, the assistant*. **Automatic** (default) uses free Gemini when its key is set, otherwise Claude Haiku 5.5. When Gemini's free daily or per-minute limit is reached, Fasty answers that question in basic mode and says so, instead of failing.
-
-**About the free tier:** Google charges nothing, but limits requests per minute and per day (shown in AI Studio, and changed from time to time) and **may use free-tier requests to improve its products**. The questions and the task rows Fasty looks up (brands, creative titles, designer names, dates) are sent. If that is not acceptable for client work, use Claude Haiku 5.5 (about ₹900 a month for the team; Anthropic does not train on API data) or turn on billing for the Gemini key (paid tier data is not used for training).
-
-Without any AI key, Fasty runs in **basic mode**: it still answers the common questions (overdue, due today or open work for anyone, deliveries this month, opening pages) in English or Hinglish, and says so at the bottom of the panel. Fasty runs at low effort for quick spoken replies. An admin picks the model under **Access → Reminders and notifications** (the change is logged): Claude Haiku 5.5 (fast, lowest cost), Claude Sonnet 5.5 (balanced) or Claude Opus 5.5 (most capable, the default). Sonnet and Opus use Anthropic's automatic fallback if a request is declined.
-
-### Cost (estimate)
-
-A question usually takes two calls to Claude (look up the data, then answer). Per question that is roughly 6,000 input tokens sent fresh (the conversation and the data found), 6,000 read from the cache (Fasty's instructions and tools, about 2,700 tokens, reused) and 700 output tokens. For 20 people × 20 questions = 400 questions a working day, 22 working days a month:
-
-| Model | Price per million tokens (input / output) | Per question | Per day | Per month |
-| --- | --- | --- | --- | --- |
-| Claude Haiku 5.5 | $0.10 / $0.50 | about $0.001 | about $0.45 | about $10 (≈ ₹900) |
-| Claude Sonnet 5.5 | $2 / $10 | about $0.02 | about $8.50 | about $190 (≈ ₹17,000) |
-| Claude Opus 5.5 | $4 / $20 | about $0.04 | about $17 | about $380 (≈ ₹34,000) |
-
-Long back-and-forth conversations cost more (the conversation is resent), short ones less; allow ±50%. Speech-to-text is done by the browser and is free. The optional Google natural voice costs about $30 per million characters after a free allowance: 400 spoken answers × ~200 characters ≈ 1.8 million characters a month, about $25–55 (≈ ₹2,000–4,500); without it, the device voice is free.
-
-Limits: each person can make 40 assistant calls (about 20 questions) and 80 voice replies every 10 minutes, which is far above normal use; the Anthropic account's own rate limits are well above 400 questions a day. Set a monthly spend limit in the Anthropic console to cap costs.
-
-## Notes
-
-The **Notes** page is a sticky-note board for meeting notes, daily updates, ideas and personal notes.
-
-- **Quick capture:** type in the sticky at the top and press **Enter**. The first line becomes the title; lines starting with `[]` become to-dos for you; **Shift+Enter** adds a line. Pick **Meeting**, **Idea / discussion** or **Personal** first (personal notes are private; the others are visible to the team).
-- **The board:** stickies are coloured by kind (meetings violet, ideas lime, personal orange, stand-ups cream with lime tape), pinned ones first, then this week, then earlier. Tick to-dos right on the sticky; hover a sticky to **pin** or **delete** it. Pinned stickies come first. Search and the filters above narrow the board.
-- **Open a note:** click a sticky to open it as a large sticky over the board: title, text (type `@` to mention someone), action items with an owner and due date, and **Details** (date, brand, category, who can see it, sharing, follow-ups, email reminder). **Save & close** (or Ctrl/⌘+S) saves; **Esc** closes.
-- **Templates:** **Stand-up** pre-fills attendees, updates, blockers, decisions and today's overdue list.
-- **Who sees a note:** Only me; people I mention or add (plus anyone with an action item); or everyone with access. Admins can see every note. Only the author or an admin can edit or delete; anyone with an action item can tick it.
-- **Instant:** adding, ticking, pinning, saving and deleting update the board at once and save in the background (a sticky shows "Saving…" until it is stored). If a save fails, the change is undone and a message says why. Deleting shows **Undo** for 5 seconds.
-- **Storage:** the *Notes* tab of the access spreadsheet. Every create, edit, delete and tick is in the activity log; deleted notes stay in the spreadsheet, marked deleted. Unsaved writing is kept as a draft in the browser, and saving over someone else's newer edit is refused.
-
-## Access and sign-in
-
-### Who can do what
-
-**The owner** (CONFIG.access.owners: Anmol Sharma, Creative Head, Admin and Team Manager) has every permission and is the **only** person who can give or change access, read the activity log, see live team activity and change settings (briefing times, presence, the AI model). Nobody else, whatever their role, can grant access or see anyone's activity history.
-
-Everyone else gets a role, which sets their defaults:
-
-| | View only | Can edit | Manager |
-| --- | --- | --- | --- |
-| Pages | all except Data health | all except Data health | all |
-| Edit tasks | no | yes | yes |
-| Download data (CSV) | yes | yes | yes |
-| Workload estimates, "View as" on My work | no | no | yes |
-| Manage the team list | no | no | yes |
-| Fasty | yes | yes | yes |
-| Tasks they see | all | all | all |
-
-**Per-person permissions:** on Access, click a person and use *What they can see and do* to choose exactly which pages they see (My work is always on), whether they can edit tasks, download data, see workload and others' work, manage the team list and use Fasty, and whether they see **all tasks** or **only the tasks assigned to them** (or whose brief they own). "Only their own" is enforced by the web app: other tasks are never sent to their browser. Every change is logged with before and after, and reaches their open dashboard within 30 seconds. *Reset to defaults* returns them to their role's defaults. Permissions are stored in a *Permissions* column of the Users tab.
-
-### Live team activity (owner only)
-
-The Overview (and Access) shows who is on the dashboard right now, the page they are on and what they are doing there ("Viewing Tasks · filtered by Huggler", "Editing SRAP372…", "Asking Fasty", idle after 2 minutes), each with a cursor-style marker in their own colour and their Google photo. With *Cursors* on, the owner also sees small labelled cursors where teammates are pointing on the same page. Dashboards send a heartbeat every 15 seconds and the owner's dashboard refreshes every 8 seconds, so it is near real time. Nothing is stored: the server keeps it for 3 minutes. Everyone is told about it in the notification panel, and the owner can switch it off in settings.
-
-### How a person gets in
-
-1. They open the site and choose **Sign up**: they enter their team and an optional note, then continue with their work Google account. Choosing **Log in** without having access does the same, just without the team and note. Either way, all they get is a request, and no data.
-2. Only Google Workspace accounts on **@pickrr.com** or **@shiprocket.com** are accepted (`CONFIG.access.domains`). Personal Google accounts and other domains are refused, and the refusal is logged.
-3. The admins get an email. The request appears under **Access → Access requests**.
-4. An admin picks **View only**, **Can edit** or **Admin** and clicks **Approve**, or clicks **Reject**. The person gets an email and can then **Log in**.
-
-Everything about access is managed on the **Access** tab, with no need to open Google Sheets or Apps Script:
-
-- The tab reads **Access (n waiting)** when requests are open.
-- Click anyone's name to open their **profile**: Google photo, name, email, team, note, when they asked, who decided and when, last sign-in, and their own activity. From the profile you can approve, reject, change their access level, revoke, or give access again.
-- **People with access** lists everyone, with an access-level menu, a **Revoke** button and an **Activity** link that filters the log to that person.
-- **Give access** adds someone directly by email, without them asking first.
-- Rejected and revoked people can't get back in by signing up again. Their attempts appear in the log as "Sign-in blocked".
-
-A sign-in lasts 12 hours on a browser (`sessionHours`), then Google signs the person back in with one click. To end every session at once, run `signOutEveryone` in Apps Script.
-
-### Activity log
-
-**Access → Activity log** lists every change, newest first: when, who (and their role), what, which task or record, which column, the value **before and after**, and where (sheet, tab, row). You can search it by task ID, person, brand or value, filter it by kind, and download it as CSV. Opening a task and clicking **Change history** shows that task's entries.
-
-| Recorded | Who is recorded | Before and after |
-| --- | --- | --- |
-| Task edits made on the dashboard | The signed-in person | Yes, every cell written |
-| Edits typed into the sheets (tabs the dashboard reads) | The Google account, when Google reports it (it usually does inside your company; otherwise "Not reported by Google") | Yes for single cells. For pastes and fills, Google only gives the new values; the sheet's version history has the old ones |
-| Rows or columns added or deleted in the sheets | As above | Google doesn't say which rows; see version history |
-| Team list changes, access requests, approvals, role changes, revocations | The admin, or the person asking | Yes |
-| Sign-ins, sign-outs, refused sign-ins | The person | — |
-
-The log is kept in the *Creative Ops Tracker – Access & Audit Log* spreadsheet in design.tools' Drive. Only the web app writes to it, and its tabs are protected. Owners can view it but nobody can edit or delete entries through the dashboard. Edits made by other scripts and integrations (they don't fire Google's edit triggers) still sync to the dashboard, but they are not in this log; the sheet's version history has them.
-
-The dashboard controls who can use the **dashboard**. It doesn't change who can open the **Google Sheets** themselves: that is still set by each sheet's Share settings. The requirement sheets are currently editable by everyone at pickrr.com. Edits made there are logged as above.
-
-### Switching sign-in on (once, about 10 minutes)
-
-Do this in the browser profile signed into **design.tools@pickrr.com** only.
-
-**1. Create the Google sign-in client** at https://console.cloud.google.com
-
-1. Create a project named **Creative Ops Tracker** (top bar → project picker → **New project**).
-2. Go to **Google Auth Platform** (search for "Google Auth Platform", or open **APIs & Services → OAuth consent screen**) and click **Get started**:
-   - App name **Creative Ops Tracker**; support email design.tools@pickrr.com.
-   - Audience **External**. Users from both @pickrr.com and @shiprocket.com have to sign in, and the web app enforces the two domains itself.
-   - Contact email design.tools@pickrr.com. Agree, then click **Create**.
-3. **Audience → Publish app → Confirm.** Sign-in only uses the basic name and email scopes, so Google doesn't review the app.
-4. **Clients → Create client**:
-   - Type **Web application**, name **Tracker site**.
-   - **Authorised JavaScript origins:** `https://anmolpickrr.github.io`
-   - Leave redirect URIs empty and click **Create**.
-5. Copy the **Client ID** (it ends in `.apps.googleusercontent.com`). It is not a secret.
-
-**2. Update the web app** at https://script.google.com, project *Creative Ops Tracker API*:
-
-1. Replace everything in **Code.gs** with [this repository's `Code.gs`](https://raw.githubusercontent.com/anmolpickrr/Tracker/main/apps-script/Code.gs). Then add a second file: **+ → Script**, named `Config`, holding the Drive file *Creative Ops Tracker – Config.gs*. In Config.gs, paste the client ID over `PASTE_GOOGLE_CLIENT_ID`.
-2. **Project Settings → Show "appsscript.json"**, then paste [`apps-script/appsscript.json`](apps-script/appsscript.json) over it. It adds permission to check sign-ins with Google and to send the approval emails.
-3. Save, run **setup** and allow the permissions. The log prints the address of the access list and log, and says *Sign-in is ON*.
-4. **Deploy → Manage deployments → Edit → Version: New version → Deploy.** The URL stays the same.
-
-From then on, the shared key no longer works. Everyone, including you, signs in with Google at https://anmolpickrr.github.io/Tracker/. Ask the team to sign up, then approve them under **Access**.
-
-## Fast start
-
-On a device that has signed in before, the dashboard opens at once from a copy of the last data saved in the browser (IndexedDB, for that person only), shows "Saved copy · updating…" and swaps in the live data a few seconds later. It skips the settings and sign-in round trips (the data request checks the session), and loads notes, history, the activity feed, settings and the briefing check only after the data has arrived. Signing out, or losing access, deletes the saved copy.
-
-## Live sync
-
-Open dashboards ask the web app **every 30 seconds** whether anything changed, and reload only when it has:
-
-- **Edits typed in the sheets** are caught by the edit triggers that `setup()` installs.
-- **Edits made by other scripts, forms and integrations** (the Marketing sheet has two automation accounts writing to it) don't fire edit triggers, so the web app also checks each sheet's Google Drive "last modified" time. This needs the read-only Drive permission in [`apps-script/appsscript.json`](apps-script/appsscript.json): in Apps Script, **Project Settings → Show "appsscript.json" manifest file**, paste that file over it, save, and run `setup` once.
-- The web app keeps one cached copy of the sheets and serves it only while nothing has changed, so many open dashboards don't slow it down, and nobody sees a stale copy after a change.
-- A full reload also runs every 5 minutes and when you return to the tab. "Overdue" and "due today" move at midnight on their own.
-- The header shows **Live · data from <time> · checked <n>s ago**. **Sheet health** shows which account the web app runs as and whether both kinds of change detection are on.
-
-**Dashboard → sheet:** click any task (in Today, Stand-up, All tasks or Sheet health) to change its **design status, Design ETA, designer or priority**, and **No. of Creatives** once that column exists. **Save to sheet** writes into that task's row, found by its ID. Status values are written in the sheet's own spelling (its dropdown's options, else the values already used: `WIP`, `TBP`, `DONE`, `Shared`…). Marking a task Delivered also fills **Delivered On** when that column exists and is empty. Team Active/Inactive switches and **Add a team member** write to the team list sheet.
+**Dashboard → sheet:** click any task (in Today, Stand-up, All tasks or Sheet health) to change its **design status, Design ETA, designer or priority**, and **No. of Creatives** once that column exists. **Save to sheet** writes into that task's row, found by its ID. Status values are written in the sheet's own spelling (its dropdown's options, else the values already used: `WIP`, `TBP`, `DONE`, `Shared`…). Team Active/Inactive switches and **Add a team member** write to the team list sheet.
 
 Rows without an ID, or whose ID appears twice in a tab, are not edited from the dashboard: the dialog says so, and they can be fixed in the sheet.
 
@@ -331,7 +138,7 @@ Rows without an ID, or whose ID appears twice in a tab, are not edited from the 
 - **Two different tasks with the same ID** in one tab: both are counted, and both are flagged "Duplicate ID" so the ID can be fixed.
 - **Creatives** = sum of "No. of Creatives" when that column exists, else 1 per task.
 - **Open** = To be planned + WIP + Changes requested (plus any status the dashboard doesn't recognise). **Overdue** = open with a Design ETA before today. Under review, Shared, No update, Awaiting brief and Hold are never overdue.
-- **Completed** = design status DONE (Delivered, approved) or REJECTED, dated by **Delivered On** if the sheet has it, else the Design ETA (else the request date), and never later than today. Shared and No update are shared work, not completed.
+- **Completed** = design status DONE (Delivered, approved) or REJECTED, dated by its **Design ETA** (else the request date), and never later than today. Shared and No update are shared work, not completed.
 - **Mistyped years** (e.g. a February 2026 request typed as 2025, or "0206") are corrected using the tab's normal date range, the neighbouring rows and the other date on the row. Every correction is listed in Sheet health; no date is changed silently.
 - Brand and creative-type spellings that differ only in case or a plural "s" are merged ("Gif"/"GIF", "Listings"/"Listing").
 - A task shared by two designers counts once in team totals and once for each designer in per-person views.
@@ -404,7 +211,6 @@ Design Status is the primary field. Content Status only decides whether a task w
 The dashboard picks these up automatically by their header name:
 
 - **`No. of Creatives`**: how many creatives a task asks for. Without it, each row counts as one.
-- **`Delivered On`**: the date the creative was actually delivered. Without it, delivered work is dated by its Design ETA, so monthly reports are close but not exact.
 
 ## Adding a sheet or tab (for example, a new year)
 
