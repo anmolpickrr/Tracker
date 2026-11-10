@@ -1305,3 +1305,42 @@ body:not([data-admin="1"]) .adm-only { display: none !important; }
 .dl-note { margin: 0; font-size: 11.5px; }
 @media (max-width: 900px) { .dl-sum, .dl-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dl-tasks { padding-left: 10px; } }
 @media (max-width: 520px) { .dl-head { grid-template-columns: minmax(0, 1fr) auto; } .dl-head .ef-load { display: none; } .dl-pill { min-width: 24px; padding: 2px 6px; } }
+
+/* Meetings: date, duration and Join on every row; hidden-details hint */
+.cal-limited { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 12px; border-radius: 14px; background: var(--violet-soft); }
+.cal-limited p { margin: 0; font-size: 12.5px; color: var(--fg-2); flex: 1 1 14rem; }
+.cal-list li.cal-day { display: block; padding: 8px 10px 2px; font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.cal-list li.cal-day:hover { background: none; }
+.cal-li-n { display: grid; min-width: 0; }
+.cal-li-n b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-li-n small { font-size: 11.5px; color: var(--muted); }
+
+/* ============ Day / Night ============
+   The theme follows sunrise and sunset (IST). The clock shows a small sun rising by day and a moon with twinkling stars
+   at night, peeking over its edge. Theme changes use a soft circular reveal (or a quick colour fade). */
+.clock { overflow: visible; isolation: isolate; transition: background .8s ease, box-shadow .8s ease; }
+:root[data-theme="light"] .clock { background: linear-gradient(135deg, #ff8a3d, #ff5a26 55%, #ffb000 130%); }
+:root[data-theme="dark"] .clock { background: linear-gradient(135deg, #3b2f8f, #685bc7 60%, #2a2266); box-shadow: 0 10px 26px -12px rgba(104, 91, 199, .9), inset 0 1px 0 rgba(255, 255, 255, .18); }
+.clk-sky { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.clk-sun { position: absolute; left: -9px; top: -11px; width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 40% 38%, #fff6b0, #ffd23f 55%, #ffb000); box-shadow: 0 0 0 3px rgba(255, 210, 63, .25), 0 0 14px 4px rgba(255, 190, 40, .55); transition: transform .9s cubic-bezier(.2, .8, .2, 1), opacity .6s; }
+.clk-sun b { position: absolute; inset: -7px; border-radius: 50%; background: repeating-conic-gradient(rgba(255, 200, 40, .85) 0 8deg, transparent 8deg 30deg); -webkit-mask: radial-gradient(circle, transparent 55%, #000 57%, #000 70%, transparent 72%); mask: radial-gradient(circle, transparent 55%, #000 57%, #000 70%, transparent 72%); animation: sun-spin 14s linear infinite; }
+@keyframes sun-spin { to { transform: rotate(360deg); } }
+:root[data-theme="light"] .clk-sun { animation: sun-rise 1.4s cubic-bezier(.2, .8, .2, 1) both, sun-float 5s 1.4s ease-in-out infinite; }
+@keyframes sun-rise { from { transform: translateY(16px) scale(.6); opacity: 0; } }
+@keyframes sun-float { 50% { transform: translateY(-2px); } }
+.clk-moon { position: absolute; left: -8px; top: -12px; width: 20px; height: 20px; border-radius: 50%; background: transparent; box-shadow: inset -6px 2px 0 0 #fff4c7; filter: drop-shadow(0 0 6px rgba(255, 244, 199, .7)); opacity: 0; transform: translateY(16px) rotate(-20deg); transition: transform .9s cubic-bezier(.2, .8, .2, 1), opacity .6s; }
+.clk-star { position: absolute; width: 5px; height: 5px; opacity: 0; background: #fff; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); }
+.clk-star.s1 { left: 16px; top: -9px; } .clk-star.s2 { right: 18px; top: -7px; width: 4px; height: 4px; } .clk-star.s3 { right: -4px; bottom: 2px; width: 6px; height: 6px; }
+:root[data-theme="dark"] .clk-sun { opacity: 0; transform: translateY(16px) scale(.6); }
+:root[data-theme="dark"] .clk-moon { opacity: 1; transform: none; animation: moon-bob 6s ease-in-out infinite; }
+@keyframes moon-bob { 50% { transform: translateY(-2px) rotate(-6deg); } }
+:root[data-theme="dark"] .clk-star { animation: twinkle 2.4s ease-in-out infinite; }
+:root[data-theme="dark"] .clk-star.s2 { animation-delay: .8s; } :root[data-theme="dark"] .clk-star.s3 { animation-delay: 1.5s; }
+@keyframes twinkle { 0%, 100% { opacity: .15; transform: scale(.6) rotate(0); } 50% { opacity: 1; transform: scale(1.1) rotate(20deg); } }
+/* theme change: circular reveal from the clicked control */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-new(root) { animation: vt-reveal .7s cubic-bezier(.4, 0, .2, 1); }
+@keyframes vt-reveal { from { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 0)); } to { clip-path: circle(var(--vt-r, 150vmax) at var(--vt-x, 50%) var(--vt-y, 0)); } }
+.theme-fade, .theme-fade * { transition: background-color .6s ease, color .6s ease, border-color .6s ease, fill .6s ease !important; }
+@media (prefers-reduced-motion: reduce) { .clk-sun, .clk-sun b, .clk-moon, .clk-star { animation: none !important; } }
+@media (max-width: 720px) { .clk-sun, .clk-moon { left: -6px; top: -9px; width: 16px; height: 16px; } }

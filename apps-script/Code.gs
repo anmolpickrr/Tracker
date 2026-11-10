@@ -1907,7 +1907,7 @@ function meetings_(user) {
     const me = user.email.toLowerCase();
     const events = (r.items || []).filter(function (e) { return e.status !== 'cancelled' && e.start && e.start.dateTime && !(e.attendees || []).some(function (a) { return String(a.email).toLowerCase() === me && a.responseStatus === 'declined'; }); }).map(function (e) {
       const meet = e.hangoutLink || ((e.conferenceData && e.conferenceData.entryPoints) || []).filter(function (p) { return p.entryPointType === 'video'; }).map(function (p) { return p.uri; })[0] || '';
-      return { id: e.id, title: e.summary || (e.visibility === 'private' ? 'Private event' : '(No title)'), start: e.start.dateTime, end: e.end.dateTime, meet: /^https:\/\/meet\.google\.com\//.test(meet) ? meet : '', link: /^https:\/\/www\.google\.com\/calendar\//.test(e.htmlLink || '') ? e.htmlLink : '',
+      return { id: e.id, limited: !e.summary, title: e.summary || 'Busy (details hidden)', start: e.start.dateTime, end: e.end.dateTime, meet: /^https:\/\/meet\.google\.com\//.test(meet) ? meet : '', link: /^https:\/\/www\.google\.com\/calendar\//.test(e.htmlLink || '') ? e.htmlLink : '',
         people: (e.attendees || []).filter(function (a) { return !a.resource; }).map(function (a) { return { name: a.displayName || String(a.email).split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, function (x) { return x.toUpperCase(); }), email: a.email, self: String(a.email).toLowerCase() === me, rsvp: a.responseStatus }; }) };
     });
     out = { ok: true, events: events };

@@ -537,13 +537,27 @@
     });
     inp.addEventListener('blur', () => { const pr = CO.period(); inp.value = pr.all ? '' : (key === 'rfrom' ? pr.from : pr.to); });
   });
-  const themeLabel = () => { const root = document.documentElement; const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; const b = document.getElementById('btn-theme'); b.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme'); b.title = b.getAttribute('aria-label'); };
+  const themeLabel = () => { const root = document.documentElement; const dark = root.dataset.theme === 'dark'; const manual = !!LS.get('co.themeUntil', ''); const b = document.getElementById('btn-theme'); b.setAttribute('aria-label', (dark ? 'Switch to the Day theme' : 'Switch to the Night theme') + (manual ? ' (your choice, until the light changes)' : ' (automatic: Day after sunrise, Night after sunset)')); b.title = b.getAttribute('aria-label'); };
+  /* Smooth theme change: a soft circular reveal from the clock (View Transitions), or a quick colour cross-fade. */
+  function applyTheme(next, origin) {
+    const root = document.documentElement; if (root.dataset.theme === next) return;
+    const swap = () => { root.dataset.theme = next; themeLabel(); renderAll(); document.dispatchEvent(new Event('co-theme')); };
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduce && document.startViewTransition && origin) {
+      const r = origin.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, rad = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+      root.style.setProperty('--vt-x', x + 'px'); root.style.setProperty('--vt-y', y + 'px'); root.style.setProperty('--vt-r', rad + 'px');
+      document.startViewTransition(swap);
+    } else { root.classList.add('theme-fade'); swap(); setTimeout(() => root.classList.remove('theme-fade'), 700); }
+  }
+  // Follow sunrise and sunset automatically (checked every minute) unless someone chose a theme for now.
+  setInterval(() => { const until = +LS.get('co.themeUntil', '0'); if (until && Date.now() > until) { LS.set('co.themeUntil', null); LS.set('co.theme', null); } if (!LS.get('co.themeUntil', '')) applyTheme(window.COTHEME ? COTHEME.autoTheme() : document.documentElement.dataset.theme, document.getElementById('clock')); }, 60 * 1000);
   themeLabel();
   document.getElementById('btn-refresh').addEventListener('click', () => (A.mode ? load(true) : start()));
   document.getElementById('btn-theme').addEventListener('click', () => {
-    const root = document.documentElement;
-    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-    root.dataset.theme = dark ? 'light' : 'dark'; LS.set('co.theme', root.dataset.theme); themeLabel(); renderAll();
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    // A manual choice lasts until the next sunrise or sunset; choosing the automatic theme again clears it.
+    if (window.COTHEME && next === COTHEME.autoTheme()) { LS.set('co.theme', null); LS.set('co.themeUntil', null); } else { LS.set('co.theme', next); LS.set('co.themeUntil', String(window.COTHEME ? COTHEME.nextChange() : Date.now() + 6 * 3600e3)); }
+    applyTheme(next, document.getElementById('btn-theme'));
   });
 
   /* Connection dialog */
@@ -2561,14 +2575,15 @@
     CAL.busy = true;
     try {
       const b = await callApi({ action: 'meetings' });
-      if (b.ok) { const now = new Date(); CAL.events = (b.events || []).filter((e) => new Date(e.end) > now).map((e) => Object.assign({ allDay: false }, e)); CAL.via = 'server'; CAL.server = true; CAL.err = ''; CAL.at = Date.now(); }
+      if (b.ok) { const now = new Date(); CAL.events = (b.events || []).filter((e) => new Date(e.end) > now).map((e) => Object.assign({ allDay: false }, e)); CAL.limited = CAL.events.some((e) => e.limited || /^(Private event|Busy \(details hidden\))$/.test(e.title)); if (CAL.token) { CAL.busy = false; return calLoad(true); } CAL.via = 'server'; CAL.server = true; CAL.err = ''; CAL.at = Date.now(); }
       else { CAL.server = false; CAL.serverErr = b.error || 'error'; }
     } catch (e) { if (e instanceof AuthLost) return; CAL.server = false; CAL.serverErr = 'error'; }
     CAL.busy = false; dash.draw('cal'); syncControls(); dash.draw('np-list');
   }
   async function calLoad(force) {
-    if (CAL.via === 'server') return calServer(force);
-    if (!CAL.token || CAL.exp < Date.now() + 30000) { CAL.token = ''; dash.draw('cal'); return; }
+    if (CAL.via === 'server' && !CAL.token) return calServer(force);
+    // When the personal connection expires (about an hour), go back to the automatic copy instead of an empty card.
+    if (!CAL.token || CAL.exp < Date.now() + 30000) { CAL.token = ''; if (CAL.via === 'token') { CAL.via = ''; CAL.server = undefined; CAL.events = null; } dash.draw('cal'); return; }
     if (CAL.busy || (!force && CAL.events && Date.now() - CAL.at < 4 * 60 * 1000)) return;
     CAL.busy = true;
     try {
@@ -2591,8 +2606,8 @@
         return { id: e.id, title: e.summary || '(No title)', start: e.start.dateTime || e.start.date, end: e.end.dateTime || e.end.date, allDay: !e.start.dateTime, meet: /^https:\/\/meet\.google\.com\//.test(meet) ? meet : '', link: /^https:\/\/www\.google\.com\/calendar\//.test(e.htmlLink || '') ? e.htmlLink : '',
           people: (e.attendees || []).filter((a) => !a.resource).map((a) => ({ name: a.displayName || a.email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()), email: a.email, self: !!a.self, rsvp: a.responseStatus })) };
       }).filter((e) => !e.allDay && new Date(e.end) > now);
-      CAL.err = ''; CAL.at = Date.now();
-    } catch (e) { if (e.message !== 'expired') CAL.err = e.message; }
+      CAL.err = ''; CAL.at = Date.now(); CAL.via = 'token'; CAL.limited = false;
+    } catch (e) { if (e.message !== 'expired') CAL.err = e.message; if (CAL.via === 'token' && !CAL.token) { CAL.via = ''; CAL.server = undefined; } }
     CAL.busy = false; dash.draw('cal'); syncControls(); dash.draw('np-list');
   }
   setInterval(() => { if ((CAL.token || CAL.via === 'server') && document.visibilityState === 'visible') calLoad(); }, 60 * 1000);
@@ -2630,25 +2645,38 @@
     if (!CAL.events) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = CAL.err || 'Loading your calendar…'; el.append(p); calLoad(); return; }
     if (CAL.err) { const p = document.createElement('p'); p.className = 'co-note bad'; p.textContent = CAL.err; el.append(p); }
     const evs = CAL.events; if (!evs.length) { const p = document.createElement('p'); p.className = 'cal-free'; p.textContent = 'No meetings in the next three days.'; el.append(p); return; }
+    // When the calendar only shares busy times with the dashboard, offer the person's own read-only connection (names + Meet links).
+    if (CAL.limited && CAL.via !== 'token') {
+      const tip = document.createElement('div'); tip.className = 'cal-limited';
+      const tx = document.createElement('p'); tx.textContent = 'Meeting names and Meet links are hidden by your calendar sharing.';
+      const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'co-btn primary'; bt.textContent = 'Show names & Meet links'; bt.addEventListener('click', calConnect);
+      tip.append(tx, bt); el.append(tip);
+    }
+    const dur = (e) => { const m = Math.round((new Date(e.end) - new Date(e.start)) / 60000); return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min'; };
+    const day = (iso) => { const d = new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }), t = CO.today(); return d === t ? 'Today' : d === CO.addDays(t, 1) ? 'Tomorrow' : new Date(iso).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short' }); };
     const next = evs[0], live = new Date(next.start) <= new Date();
     const card = document.createElement('div'); card.className = 'cal-next' + (live ? ' live' : '');
     const when = document.createElement('span'); when.className = 'cal-when'; when.textContent = live ? 'Happening now' : 'Next · ' + untilText(next.start);
     const t = document.createElement('b'); t.className = 'cal-title'; t.textContent = next.title;
-    const tm = document.createElement('span'); tm.className = 'cal-time'; tm.textContent = fmtRange(next.start, next.end) + ' IST';
+    const tm = document.createElement('span'); tm.className = 'cal-time'; tm.textContent = day(next.start) + ' · ' + fmtRange(next.start, next.end) + ' IST · ' + dur(next);
     const ppl = document.createElement('span'); ppl.className = 'cal-ppl';
     next.people.slice(0, 5).forEach((p) => { const a = CO.av(p.name); a.title = p.name + (p.rsvp === 'accepted' ? ' · going' : p.rsvp === 'tentative' ? ' · maybe' : ''); ppl.append(a); });
     if (next.people.length > 5) ppl.append(Object.assign(document.createElement('span'), { className: 'cal-more', textContent: '+' + (next.people.length - 5) }));
     const acts = document.createElement('div'); acts.className = 'cal-acts';
     if (next.meet) { const j = document.createElement('a'); j.className = 'co-btn primary'; j.href = next.meet; j.target = '_blank'; j.rel = 'noopener'; j.textContent = 'Join Google Meet'; acts.append(j); }
     const nt = document.createElement('button'); nt.type = 'button'; nt.className = 'co-btn'; nt.textContent = 'Take notes'; nt.addEventListener('click', () => meetingNote(next)); acts.append(nt);
-    card.append(when, t, tm, ppl, acts); el.append(card);
-    const rest = evs.slice(1, 6);
+    card.append(when, t, tm); if (next.people.length) card.append(ppl); card.append(acts); el.append(card);
+    const rest = evs.slice(1, 8);
     if (rest.length) {
       const ul = document.createElement('ul'); ul.className = 'cal-list';
+      let lastDay = day(next.start);
       rest.forEach((e) => {
+        const d = day(e.start);
+        if (d !== lastDay) { const h = document.createElement('li'); h.className = 'cal-day'; h.textContent = d; ul.append(h); lastDay = d; }
         const li = document.createElement('li');
-        const a = document.createElement('span'); a.className = 'cal-li-t'; a.textContent = CO.istTime(e.start); const b = document.createElement('span'); b.className = 'cal-li-n'; b.textContent = e.title; b.title = e.people.map((p) => p.name).join(', ');
-        li.append(a, b);
+        const a = document.createElement('span'); a.className = 'cal-li-t'; a.textContent = CO.istTime(e.start);
+        const b2 = document.createElement('span'); b2.className = 'cal-li-n'; const nm = document.createElement('b'); nm.textContent = e.title; const sm = document.createElement('small'); sm.textContent = dur(e) + (e.people.length ? ' · ' + e.people.length + ' people' : ''); b2.append(nm, sm); b2.title = e.people.map((p) => p.name).join(', ');
+        li.append(a, b2);
         if (e.meet) { const j = document.createElement('a'); j.href = e.meet; j.target = '_blank'; j.rel = 'noopener'; j.className = 'cal-join'; j.textContent = 'Join'; li.append(j); }
         ul.append(li);
       });
