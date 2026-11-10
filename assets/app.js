@@ -815,7 +815,7 @@
     });
     el.append(chips);
     const fn = (F.find((f) => f[0] === NA.f) || F[0])[2];
-    const list = rows.filter(fn), LIM = 12;
+    const list = rows.filter(fn), LIM = 40;
     const ul = document.createElement('ul'); ul.className = 'na-list';
     (NA.all ? list : list.slice(0, LIM)).forEach((r, i) => {
       const k = cat(r), li = document.createElement('li'); li.className = 'na-row k-' + k + (animate ? ' in' : ''); li.style.setProperty('--i', Math.min(i, 12)); li.dataset.uid = r.uid; li.tabIndex = 0;
@@ -894,7 +894,7 @@
     const L = Math.min(W * 0.45, meas.node().getComputedTextLength() + 14); meas.remove();
     const x = d3.scaleLinear([0, d3.max(data, (d) => d.total)], [L, W - 34]);
     const y = d3.scaleBand(data.map((d) => d.name), [0, H - 24]).padding(0.42);
-    const keys = [['overdue', 'var(--bad)', 'Overdue'], ['week', 'var(--warn)', 'Due in 7 days'], ['later', 'var(--chart-muted)', 'Later or no ETA']];
+    const keys = [['overdue', 'var(--worse-fill)', 'Overdue'], ['week', 'var(--primary)', 'Due in 7 days'], ['later', 'var(--chart-muted)', 'Later or no ETA']];
     const ticks = x.ticks(Math.max(2, Math.floor((W - L) / 70))).filter(Number.isInteger);
     svg.append('g').selectAll('line').data(ticks).join('line').attr('class', 'grid').attr('x1', x).attr('x2', x).attr('y1', 0).attr('y2', H - 24);
     svg.append('g').selectAll('text').data(ticks).join('text').attr('class', 'tick').attr('x', x).attr('y', H - 8).attr('text-anchor', 'middle').text((d) => d);
@@ -1143,7 +1143,7 @@
   };
   /* Today widget (sidebar on desktop, top of the Overview on phones): a progress ring for the day, four tiles
      (pick up, in progress, delivered, carried forward) and the tasks behind the chosen tile. */
-  const TW = { sel: LS.get('co.twsel', ''), open: LS.get('co.twopen', '1') !== '0', pop: false };
+  const TW = { sel: LS.get('co.twsel', ''), open: LS.get('co.twopen', '0') === '1', pop: false };
   const TW_KINDS = [['pick', 'Pick up', 'To be planned or changes requested, due today or the next working day'], ['wip', 'In progress', 'WIP'], ['done', 'Delivered', 'Delivered today (status changed to DONE today, or ETA today)'], ['carried', 'Carried over', 'Open and past its ETA']];
   const countUp = (node, to, from) => {
     if (from == null || from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { node.textContent = CO.num(to); return; }
@@ -1294,7 +1294,7 @@
         const stats = document.createElement('div'); stats.className = 'su-stats';
         const st = (n, lab, cls, color) => { if (!n) return; const s = document.createElement('span'); s.className = 'chip ' + cls; if (color) s.style.color = color; s.textContent = n + ' ' + lab; stats.append(s); };
         st(c.overdue.length, 'overdue', 's-bad'); st(c.today.length, 'due today', 's-warn'); st(c.open.filter((r) => r.stage === 'WIP').length, 'WIP', '', CO.stageColor('WIP'));
-        st(c.open.filter((r) => r.stage === 'To be planned').length, 'TBP', 's-mute'); st(c.review.length, 'pending approval', '', CO.stageColor('Pending approval'));
+        st(c.open.filter((r) => r.stage === 'To be planned').length, 'TBP', 's-mute'); st(c.review.length, 'pending approval', 's-lav');
         if (stats.childNodes.length) card.append(stats);
         const more = () => CO.goTasks('open', { designer: c.name === 'Unassigned' ? '__none' : c.name });
         [section('Overdue', c.overdue, 4, more), section('Due today', c.today, 4, more), section('WIP', c.wip, 4, more), section('Changes requested', c.changes, 3, more), section('Up next', c.next, 3, more)].forEach((s) => { if (s) card.append(s); });
@@ -1436,18 +1436,18 @@
         const tr = tb.insertRow();
         const nb = document.createElement('button'); nb.type = 'button'; nb.className = 'co-name'; const nt = document.createElement('span'); nt.textContent = d.name; nb.append(CO.av(d.name), nt); nb.title = 'Open ' + d.name + "'s tasks"; nb.addEventListener('click', () => CO.goTasks('active', { designer: d.name }));
         CO.td(tr, nb, 'co-nowrap'); CO.td(tr, statusCell(d.name), 'co-nowrap');
-        CO.td(tr, EF.role(d.name) || '—', 'co-nowrap co-muted co-hide-md');
+        CO.td(tr, EF.role(d.name) || '—', 'co-nowrap co-muted co-hide-xl');
         { const L = EF.load(d.name); const b2 = document.createElement('span'); b2.className = 'ef-load ' + (L.days > 5 ? 'hi' : L.days > 2.5 ? 'mid' : 'lo'); b2.textContent = L.hours ? (L.days < 1 ? Math.round(L.hours) + ' h' : L.days.toFixed(1) + ' d') : 'free'; const c = CO.td(tr, b2, 'n adm-only co-nowrap'); c.title = L.tasks + ' open tasks ≈ ' + Math.round(L.hours) + ' hours of work = ' + L.days.toFixed(1) + ' working days at ' + EF.CAP + ' h a day' + (L.content ? ' (incl. ' + L.content + ' content in progress)' : '') + '. Estimate by creative type and role.'; }
         const ob = document.createElement('span'); ob.className = 'co-inbar'; const bi = document.createElement('i'); bi.style.width = (d.open / maxOpen * 3) + 'rem'; ob.append(bi, String(d.open)); CO.td(tr, ob, 'n');
         CO.td(tr, String(d.wip), 'n co-hide-lg');
         CO.td(tr, String(d.overdue), 'n' + (d.overdue ? ' bad' : ''));
-        CO.td(tr, String(d.week), 'n co-hide-md'); CO.td(tr, String(d.review), 'n'); const tm = document.createElement('span'); tm.className = 'n-with-dl'; const tmb = document.createElement('b'); tmb.textContent = CO.num(d.thisM); tm.append(tmb, CO.delta(d.thisM, d.lastSame, 'up')); tm.lastChild.title += ' (vs the same number of working days last month)'; CO.td(tr, tm, 'n'); CO.td(tr, CO.num(d.lastM), 'n'); const pd = CO.td(tr, d.perDay ? d.perDay.toFixed(1) : '0', 'n'); pd.title = CO.num(d.thisM) + ' creatives ÷ ' + CO.workdays(m + '-01', CO.today()) + ' working days so far this month (Mon–Fri)';
+        CO.td(tr, String(d.week), 'n co-hide-lg'); CO.td(tr, String(d.review), 'n'); const tm = document.createElement('span'); tm.className = 'n-with-dl'; const tmb = document.createElement('b'); tmb.textContent = CO.num(d.thisM); tm.append(tmb, CO.delta(d.thisM, d.lastSame, 'up')); tm.lastChild.title += ' (vs the same number of working days last month)'; CO.td(tr, tm, 'n'); CO.td(tr, CO.num(d.lastM), 'n'); const pd = CO.td(tr, d.perDay ? d.perDay.toFixed(1) : '0', 'n'); pd.title = CO.num(d.thisM) + ' creatives ÷ ' + CO.workdays(m + '-01', CO.today()) + ' working days so far this month (Mon–Fri)';
         CO.td(tr, d.brands, 'co-hide-lg co-clip').title = d.brands;
         const mix = document.createElement('span'); mix.className = 'co-mix';
         const total = CO.sumQty(d.del);
         top.forEach((t) => { const c = CO.sumQty(d.del.filter((r) => CO.typeOf(r, top) === t)); if (!c) return; const i = document.createElement('i'); i.style.flex = c + ' 1 0'; i.style.background = cmap.get(t); i.title = t + ': ' + c; mix.append(i); });
         mix.title = top.map((t) => t + ': ' + CO.sumQty(d.del.filter((r) => CO.typeOf(r, top) === t))).filter((x) => !/: 0$/.test(x)).join(' · ');
-        CO.td(tr, mix, 'co-hide-md');
+        CO.td(tr, mix, 'co-hide-xl');
       });
     });
     dash.draw('team-wd', (el) => {
@@ -3370,7 +3370,8 @@
       head.append(dot, tx, when);
       el.append(head);
       if (!list.length) return;
-      const open = el.dataset.open !== '0' && (real > 0 || el.dataset.open === '1');
+      const open = el.dataset.open === '1' || (el.dataset.open !== '0' && list.some((x) => x.level === 'bad'));
+      const more = document.createElement('span'); more.className = 'sys-more'; more.textContent = open ? 'Hide' : 'Details'; head.insertBefore(more, when);
       head.setAttribute('aria-expanded', String(open));
       head.addEventListener('click', () => { el.dataset.open = open ? '0' : '1'; dash.draw('syscheck'); });
       if (!open) return;
