@@ -989,6 +989,7 @@ function prefs_(b, u) {
 /* Runs every 10 minutes (setup installs it). Sends the 10:00 and 18:00 IST emails once a day each, and note reminders when due. */
 function remindersTick() {
   try { maintenance_(); } catch (e) { console.log('maintenance: ' + e); }
+  try { deliveryDates_(); } catch (e) { console.log('delivery dates: ' + e); }
   if (!authOn_() || !hasAccessBook_()) return;
   const now = new Date(), day = Utilities.formatDate(now, IST, 'yyyy-MM-dd');
   const mins = Number(Utilities.formatDate(now, IST, 'H')) * 60 + Number(Utilities.formatDate(now, IST, 'mm'));
@@ -2045,3 +2046,81 @@ function daily_() {
   c.put('daily', JSON.stringify(out), 60);
   return out;
 }
+
+/* ============================ Delivered On ============================
+ * The sheets have no record of when a creative was actually delivered, so on-time rate and turnaround could not be
+ * measured. Every 10 minutes (remindersTick) this:
+ *  1. adds a "Delivered On" column to each task tab once (logged in the activity log),
+ *  2. compares each task's design status with the last check (kept in the hidden "Delivery dates" tab of the access
+ *     workbook) and writes today's date for tasks that have just become delivered (DONE, REJECTED, NO UPDATE),
+ *     including tasks reopened and delivered again,
+ *  3. on the first run, fills dates only from the activity log (status changes to DONE it recorded); older deliveries
+ *     stay blank and the dashboard keeps dating them by their Design ETA. No date is ever guessed.
+ * A date someone types in the column by hand is never overwritten (unless the task is reopened and delivered again). */
+const DELIV_TAB = 'Delivery dates';
+function deliveryDates_() {
+  if (!hasAccessBook_()) return { ok: false };
+  const lock = LockService.getScriptLock(); if (!lock.tryLock(20000)) return { ok: false, error: 'busy' };
+  try {
+    const book = accessBook_();
+    let st = book.getSheetByName(DELIV_TAB), first = false;
+    if (!st) { st = book.insertSheet(DELIV_TAB); st.getRange(1, 1, 1, 2).setValues([['Task (source | ID)', 'State']]); try { st.hideSheet(); } catch (e) { /* ignore */ } first = true; }
+    const prev = {};
+    if (st.getLastRow() > 1) st.getRange(2, 1, st.getLastRow() - 1, 2).getValues().forEach(function (r) { if (r[0]) prev[String(r[0])] = String(r[1]); });
+    const fromLog = first ? deliveredFromLog_() : {};
+    const now = today_(), next = {}, logged = [];
+    let stamped = 0, backfilled = 0;
+    Object.keys(CONFIG.sources).forEach(function (name) {
+      const kind = kindOf_(name); if (kind === 'team') return;
+      let sheet; try { sheet = openTab_(CONFIG.sources[name]); } catch (e) { return; }
+      const lastRow = sheet.getLastRow(), lastCol = Math.max(1, sheet.getLastColumn()); if (lastRow < 2) return;
+      const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+      const c = taskColumns_(kind, head.map(function (h) { return clean_(h).toLowerCase(); }));
+      if (c.status < 0) return;
+      if (c.delivered < 0) {
+        if (sheet.getMaxColumns() <= lastCol) sheet.insertColumnAfter(lastCol);
+        sheet.getRange(1, lastCol + 1).setValue('Delivered On');
+        c.delivered = lastCol;
+        logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Column added', sheet: sheet.getParent().getName(), tab: sheet.getName(), field: 'Delivered On', after: 'Column ' + (lastCol + 1), details: 'Filled automatically with the date a task becomes delivered, for on-time rate and turnaround', via: 'Dashboard' });
+      }
+      const width = Math.max(c.id, c.status, c.delivered) + 1;
+      const vals = sheet.getRange(2, 1, lastRow - 1, width).getDisplayValues();
+      const seen = {}, writes = [];
+      vals.forEach(function (v, i) {
+        const id = clean_(v[c.id]); if (!id) return;
+        seen[id] = (seen[id] || 0) + 1;
+        const key = name + ' | ' + id + (seen[id] > 1 ? ' #' + seen[id] : ''), was = prev[key];
+        const delivered = CODATA.stageOf(clean_(v[c.status]), '')[0] === 'Delivered', empty = !clean_(v[c.delivered]);
+        if (delivered) {
+          next[key] = 'delivered';
+          if (first) { const d = fromLog[sheet.getName() + ' | ' + id]; if (empty && d) { writes.push([i + 2, d, id]); backfilled++; } }
+          else if (was !== 'delivered' && (empty || was === 'reopened')) { writes.push([i + 2, now, id]); stamped++; }
+        } else if (was === 'delivered' || was === 'reopened') next[key] = 'reopened';
+      });
+      writes.forEach(function (w) { sheet.getRange(w[0], c.delivered + 1).setNumberFormat('dd-mmm-yyyy').setValue(w[1]); });
+      if (writes.length && !first) logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On filled', sheet: sheet.getParent().getName(), tab: sheet.getName(), field: 'Delivered On', after: Utilities.formatDate(now, IST, 'd MMM yyyy'), details: writes.length + ' task(s): ' + writes.map(function (w) { return w[2]; }).slice(0, 40).join(', '), via: 'Dashboard' });
+    });
+    const keys = Object.keys(next);
+    if (st.getLastRow() > 1) st.getRange(2, 1, st.getLastRow() - 1, 2).clearContent();
+    if (keys.length) st.getRange(2, 1, keys.length, 2).setValues(keys.map(function (k) { return [k, next[k]]; }));
+    if (first) logged.push({ who: Session.getEffectiveUser().getEmail(), role: 'Script', action: 'Delivered On started', details: keys.length + ' delivered tasks noted; ' + backfilled + ' dated from the activity log. From now on each delivery is dated when its status becomes DONE.', via: 'Dashboard' });
+    if (logged.length) audit_(logged);
+    if (stamped || backfilled || logged.length) { bumpVersion_(); clearCache_(); }
+    return { ok: true, first: first, stamped: stamped, backfilled: backfilled, tracked: keys.length };
+  } finally { lock.releaseLock(); }
+}
+// Latest date a task's status changed to a delivered status, from the activity log: { 'tab | ID': Date }.
+function deliveredFromLog_() {
+  const out = {}; if (!hasAccessBook_()) return out;
+  const sh = accessBook_().getSheetByName('Audit'); if (!sh || sh.getLastRow() < 2) return out;
+  const n = Math.min(sh.getLastRow() - 1, 20000), vals = sh.getRange(sh.getLastRow() - n + 1, 1, n, AUDIT_HEAD.length).getValues();
+  vals.forEach(function (v) {
+    const when = v[0] instanceof Date ? v[0] : new Date(v[0]), tab = String(v[5]), id = clean_(v[6]), after = clean_(v[10]);
+    if (!id || isNaN(when) || !after || CODATA.stageOf(after, '')[0] !== 'Delivered' || /\d/.test(after)) return;
+    const k = tab + ' | ' + id, day = new Date(Utilities.formatDate(when, IST, 'yyyy/MM/dd'));
+    if (!out[k] || out[k] < day) out[k] = day;
+  });
+  return out;
+}
+/** Run from the editor to set up the Delivered On column now instead of waiting for the next 10-minute check. */
+function setupDeliveredOn() { Logger.log(JSON.stringify(deliveryDates_())); }

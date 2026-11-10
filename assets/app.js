@@ -11,7 +11,7 @@
   const P = Object.assign({}, DEFAULTS);
   try { Object.assign(P, JSON.parse(LS.get('co.view', '{}'))); } catch (e) { /* ignore */ }
   let TASK_SAVE = null; // set by the task editor; also used by the assistant
-  const TABS = ['today', 'standup', 'tasks', 'notes', 'team', 'reports', 'health', 'access'];
+  const TABS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health', 'access'];
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
   const CFG = window.CO_CONFIG || {};
   const RANK = { Viewer: 1, Editor: 2, Admin: 3 };
@@ -461,6 +461,7 @@
   // The loading screen stays until the FASTRR reveal has landed (or 2.5 s at most), then fades.
   const bootLanded = new Promise((res) => { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); setTimeout(res, Math.max(0, 950 - performance.now())); });
   const hideBoot = () => { const b = document.getElementById('boot'); if (!b || b.dataset.leaving) return; b.dataset.leaving = '1'; bootLanded.then(() => { b.classList.add('done'); setTimeout(() => b.remove(), 500); }); };
+  let landed = false;
   function syncControls() {
     const p = dash.params();
     const admin = A.mode === 'auth' && can('Admin');
@@ -478,7 +479,12 @@
     document.querySelector('.btabs').classList.toggle('four', !signed);
     document.body.classList.toggle('syncing', !!S.refreshing || S.status === 'loading');
     document.getElementById('add-member').hidden = !can('Admin');
-    const tab = TABS.includes(p.tab) && (p.tab !== 'access' || admin) && (p.tab !== 'notes' || signed) ? p.tab : 'today';
+    document.querySelector('.co-tab[data-tab="mine"]').hidden = !signed;
+    // Team members land on My work (admins on the Overview), unless the link names a page.
+    if (!landed && signed && S.team && CO.status() === 'ok') { landed = true; if (!location.hash && !admin && myDesigner() && p.tab === 'today') { dash.setParams({ tab: 'mine' }); return; } }
+    // On phones the second tab is My work for team members and Stand-up for admins.
+    { const bt2 = document.querySelector('.btabs .bt[data-tab="standup"], .btabs .bt[data-tab="mine"]'); const mineFirst = signed && !admin; bt2.dataset.tab = mineFirst ? 'mine' : 'standup'; bt2.querySelector('span').textContent = mineFirst ? 'My work' : 'Stand-up'; }
+    const tab = TABS.includes(p.tab) && (p.tab !== 'access' || admin) && ((p.tab !== 'notes' && p.tab !== 'mine') || signed) ? p.tab : 'today';
     document.querySelectorAll('[data-panel]').forEach((s) => {
       const show = s.dataset.panel === tab;
       // A short entrance when the page changes (not on every refresh).
@@ -489,7 +495,7 @@
     if (tab === 'notes') NB.open();
     document.querySelectorAll('.co-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     document.querySelectorAll('.bt[data-tab]').forEach((b) => { if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
-    document.getElementById('bt-more').toggleAttribute('aria-current', !['today', 'standup', 'tasks', 'notes'].includes(tab));
+    document.getElementById('bt-more').toggleAttribute('aria-current', !['today', document.querySelector('.btabs .bt[data-tab="mine"]') ? 'mine' : 'standup', 'tasks', 'notes'].includes(tab));
     document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes';
     ['src', 'designer', 'brand', 'type'].forEach((k) => { const el = document.querySelector('.co-f[data-param="' + k + '"]'); if (el) el.classList.toggle('is-set', !!p[k]); });
     document.getElementById('f-reset').hidden = !(p.src || p.designer || p.brand || p.type);
@@ -518,7 +524,7 @@
   document.querySelectorAll('[data-rchart]').forEach((b) => b.addEventListener('click', () => dash.setParams({ rchart: b.dataset.rchart })));
   document.querySelectorAll('.co-f').forEach((s) => s.addEventListener('change', () => dash.setParams({ [s.dataset.param]: s.value })));
   document.getElementById('f-reset').addEventListener('click', () => dash.setParams({ src: '', designer: '', brand: '', type: '' }));
-  document.querySelectorAll('.co-kpi[data-go]').forEach((b) => b.addEventListener('click', () => CO.goTasks(b.dataset.go)));
+  document.querySelectorAll('.co-kpi[data-go]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.go === 'review') { dash.setParams({ tab: 'brands' }); setTimeout(() => { const w = document.getElementById('waiting'); if (w) w.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 120); } else CO.goTasks(b.dataset.go); }));
   document.getElementById('t-stage').addEventListener('change', (e) => dash.setParams({ stage: e.target.value }));
   document.getElementById('su-sort').addEventListener('change', (e) => dash.setParams({ susort: e.target.value }));
   document.getElementById('team-who').addEventListener('change', (e) => dash.setParams({ who: e.target.value }));
@@ -607,7 +613,9 @@
 
   /* ================= Header, sync state and filters ================= */
   const PAGES = {
+    mine: ['My work', 'Your overdue work, what is due today, what is next and what you delivered this week.'],
     today: ['Overview', () => 'What needs attention today.'],
+    brands: ['Brands', 'Every brand at a glance, and the work waiting on clients.'],
     notes: ['Notes', 'Meeting minutes, discussions, action items and personal notes.'],
     standup: ['Daily stand-up', 'One card per active designer: what is late, due today, in progress and up next.'],
     tasks: ['Tasks', 'Every task from both sheets. Click a row to open or edit it.'],
@@ -616,7 +624,7 @@
     health: ['Data health', 'Rows that make tracking less reliable, and the connection to the sheets.'],
     access: ['Access & activity', 'Who can use the dashboard, and every change they made.']
   };
-  const curTab = () => { const t = dash.params().tab; return PAGES[t] && (t !== 'access' || (A.mode === 'auth' && can('Admin'))) && (t !== 'notes' || (A.mode === 'auth' && A.user)) ? t : 'today'; };
+  const curTab = () => { const t = dash.params().tab; return PAGES[t] && (t !== 'access' || (A.mode === 'auth' && can('Admin'))) && ((t !== 'notes' && t !== 'mine') || (A.mode === 'auth' && A.user)) ? t : 'today'; };
   const greeting = () => { const h = CO.istHour(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
   const firstName = () => (A.user && A.user.name ? A.user.name.split(' ')[0] : '');
   dash.draw('page-title', (el) => { const t = curTab(); el.textContent = t === 'today' && firstName() ? greeting() + ', ' + firstName() : PAGES[t][0]; });
@@ -1219,6 +1227,195 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && TW.pop) { TW.pop = false; dash.draw('tw'); } });
   document.addEventListener('click', (e) => { const li = e.target.closest('[data-tw-uid]'); if (li && TW.pop) { TW.pop = false; dash.draw('tw'); } if (li) document.dispatchEvent(new CustomEvent('co-open-editor', { detail: li.dataset.twUid })); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-tw-uid]')) document.dispatchEvent(new CustomEvent('co-open-editor', { detail: e.target.dataset.twUid })); });
+
+  /* ================= Shared task row (My work, Brands) ================= */
+  const workRow = (r, opts) => {
+    const o = opts || {}, t = CO.today(), d = r.eta ? CO.diffDays(t, r.eta) : null;
+    const k = o.kind || (r.due === 'overdue' ? 'late' : r.due === 'today' ? 'today' : r.stage === 'Pending approval' ? 'changes' : 'tomorrow');
+    const li = document.createElement('li'); li.className = 'na-row k-' + k; li.dataset.uid = r.uid; li.tabIndex = 0;
+    const rail = document.createElement('i'); rail.className = 'na-rail';
+    const main = document.createElement('div'); main.className = 'na-main';
+    const t1 = document.createElement('span'); t1.className = 'na-t'; const bb = document.createElement('b'); bb.textContent = r.brand; if (o.noBrand) t1.append(CO.topicText(r)); else t1.append(bb, ' ' + CO.topicText(r)); t1.title = r.brand + ' · ' + CO.topicText(r);
+    const m = document.createElement('span'); m.className = 'na-m'; const id = document.createElement('span'); id.className = 'co-id'; id.textContent = r.id || 'no ID';
+    m.append(id, r.type + (r.qty > 1 ? ' ×' + r.qty : ''), CO.srcTag(r)); if (!o.waiting) m.append(CO.chip(r, true));
+    main.append(t1, m); li.append(rail, main);
+    if (o.who !== false) { const w = document.createElement('span'); w.className = 'na-who'; (r.list.length ? r.list : ['Unassigned']).slice(0, 2).forEach((x) => w.append(CO.av(x))); const wn = document.createElement('span'); wn.className = 'na-wn'; wn.textContent = r.list.length ? r.list[0].split(' ')[0] + (r.list.length > 1 ? ' +' + (r.list.length - 1) : '') : 'Unassigned'; w.append(wn); li.append(w); }
+    const when = document.createElement('span'); when.className = 'na-when k-' + k;
+    if (o.waiting) { const wd = r.eta ? Math.max(0, CO.diffDays(r.eta, t)) : null; when.textContent = wd == null ? 'No date' : wd + 'd waiting'; when.title = r.eta ? 'Shared about ' + CO.fmtDate(r.eta, true) + ' (design ETA)' : ''; }
+    else if (o.done) { when.textContent = r.ddate === t ? 'Today' : CO.fmtDate(r.ddate); when.title = r.date_basis === 'delivered' ? 'Delivered on ' + CO.fmtDate(r.ddate, true) : 'Dated by Design ETA'; }
+    else { when.textContent = d == null ? 'No ETA' : d < 0 ? (-d) + 'd late' : d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : CO.fmtDate(r.eta); when.title = r.eta ? 'Design ETA ' + CO.fmtDate(r.eta, true) : 'No Design ETA'; }
+    li.append(when); return li;
+  };
+  const mondayOf = (iso) => { let d = iso; while (new Date(d + 'T00:00:00Z').getUTCDay() !== 1) d = CO.addDays(d, -1); return d; };
+  const filterNote2 = () => { const p = dash.params(); return [p.src ? CO.cls(p.src) : '', p.designer === '__none' ? 'Unassigned' : p.designer, p.brand, p.type].filter(Boolean).join(', '); };
+  const clearBtn2 = () => { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-btn'; b.textContent = 'Clear filters'; b.addEventListener('click', () => dash.setParams({ src: '', designer: '', brand: '', type: '' })); return b; };
+  const card = (title, note, count) => { const c = document.createElement('section'); c.className = 'co-card'; const hd = document.createElement('div'); hd.className = 'na-head'; const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = title; if (count != null) { const n = document.createElement('span'); n.className = 'na-count' + (count ? '' : ' ok'); n.textContent = count; h2.append(n); } const p = document.createElement('p'); p.className = 'co-note'; p.textContent = note; l.append(h2, p); hd.append(l); c.append(hd); return c; };
+  const emptyLine = (text) => { const p = document.createElement('p'); p.className = 'mw-empty'; p.textContent = text; return p; };
+
+  /* ================= My work =================
+     One person's day: overdue and due today first, then what is next, what is with the client and what they delivered
+     this week. Team members land here; admins can view any team member. */
+  const MW = { who: LS.get('co.mwho', '') };
+  dash.draw('mine', (el) => {
+    if (A.mode !== 'auth' || !A.user) { el.replaceChildren(); return; }
+    if (CO.notReady(el, 'box')) return;
+    el.replaceChildren();
+    const admin = can('Admin'), mine = myDesigner();
+    const people = (S.team || []).filter((m) => m.status !== 'Inactive' && !EF.hidden(m.name)).map((m) => m.name).sort((a, b) => a.localeCompare(b));
+    let who = admin ? (MW.who && people.includes(MW.who) ? MW.who : mine && people.includes(mine) ? mine : people[0]) : mine;
+    const head = document.createElement('section'); head.className = 'co-card mw-head';
+    if (!who) {
+      const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Your name (' + (A.user.name || A.user.email) + ') is not on the team list, so there is no personal view yet. Ask the admin to add it, or to add this spelling under "Also written as" in the team sheet.';
+      head.append(p); el.append(head); return;
+    }
+    const all = CO.rows().filter((r) => r.list.includes(who));
+    const t = CO.today(), wk = mondayOf(t);
+    const open = all.filter((r) => r.open), focus = open.filter((r) => r.due === 'overdue' || r.due === 'today').sort((a, b) => (a.eta || '').localeCompare(b.eta || ''));
+    const next = open.filter((r) => r.due !== 'overdue' && r.due !== 'today').sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || (a.priority || 'P9').localeCompare(b.priority || 'P9'));
+    const waiting = all.filter((r) => r.stage === 'Pending approval').sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999'));
+    const done = all.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= wk && r.ddate <= t).sort((a, b) => b.ddate.localeCompare(a.ddate));
+    // header: who, role, load; admins pick the person
+    const id = document.createElement('div'); id.className = 'mw-id'; const av = CO.av(who); av.classList.add('lg');
+    const nm = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = who === mine ? 'Your work, ' + who.split(' ')[0] : who; const rl = document.createElement('p'); rl.className = 'co-note';
+    const L = EF.load(who); rl.textContent = [EF.role(who) || 'Role not set', open.length ? open.length + ' open' : 'nothing open', L.hours ? 'about ' + (L.days < 1 ? Math.round(L.hours) + ' h' : L.days.toFixed(1) + ' working days') + ' of work' + (L.content && !open.length ? ' (content writing)' : '') : ''].filter(Boolean).join(' · ');
+    nm.append(h2, rl); id.append(av, nm); head.append(id);
+    if (admin) {
+      const sel = document.createElement('select'); sel.className = 'co-select'; sel.setAttribute('aria-label', 'View as');
+      people.forEach((n) => { const o = document.createElement('option'); o.value = n; o.textContent = n === mine ? n + ' (you)' : n; sel.append(o); }); sel.value = who;
+      sel.addEventListener('change', () => { MW.who = sel.value; LS.set('co.mwho', sel.value); dash.draw('mine'); });
+      const lab = document.createElement('label'); lab.className = 'mw-as'; lab.append('View as ', sel); head.append(lab);
+    }
+    // tiles
+    const tiles = document.createElement('div'); tiles.className = 'mw-tiles';
+    [['late', 'Overdue', open.filter((r) => r.due === 'overdue')], ['today', 'Due today', open.filter((r) => r.due === 'today')], ['wip', 'In progress', open.filter((r) => r.stage === 'WIP')], ['done', 'Delivered this week', done]].forEach(([k, l, list]) => {
+      const b = document.createElement('div'); b.className = 'mw-tile k-' + k + (list.length ? '' : ' zero'); const n = document.createElement('b'); n.textContent = CO.num(CO.sumQty(list)); const sp = document.createElement('span'); sp.textContent = l; const sm = document.createElement('small'); sm.textContent = list.length + (list.length === 1 ? ' task' : ' tasks'); b.append(n, sp, sm); tiles.append(b);
+    });
+    head.append(tiles); el.append(head);
+    const fl = filterNote2();
+    const section = (title, note, list, opts, empty, limit) => {
+      const c = card(title, note, list.length); const ul = document.createElement('ul'); ul.className = 'na-list mw-list';
+      list.slice(0, limit || 50).forEach((r, i) => { const li = workRow(r, Object.assign({ who: false }, opts)); li.classList.add('in'); li.style.setProperty('--i', Math.min(i, 10)); ul.append(li); });
+      if (list.length > (limit || 50)) { const m = document.createElement('li'); m.className = 'tw-more'; m.textContent = '+' + (list.length - (limit || 50)) + ' more in Tasks'; ul.append(m); }
+      if (!list.length) { c.append(emptyLine(fl ? empty + ' (filtered: ' + fl + ')' : empty)); if (fl) c.append(clearBtn2()); } else c.append(ul);
+      return c;
+    };
+    const grid = document.createElement('div'); grid.className = 'mw-grid';
+    const left = document.createElement('div'); left.className = 'mw-col'; const right = document.createElement('div'); right.className = 'mw-col';
+    // Content writers: briefs whose content they are still writing (the design has not started).
+    const first = who.toLowerCase().split(' ')[0], writing = CO.rows().filter((r) => r.sub === 'Content in progress' && r.owner && r.owner.toLowerCase().split(/[ ,]/)[0] === first);
+    if (writing.length) left.append(section('Content to write', 'Briefs where your content is in progress; design starts after it.', writing, { kind: 'changes' }, ''));
+    left.append(section('Focus now', 'Overdue and due today, oldest deadline first.', focus, {}, 'Nothing overdue or due today.'),
+      section('Up next', 'Open work by ETA; work with no ETA comes last.', next, { kind: 'tomorrow' }, 'Nothing else open.', 12));
+    right.append(section('With the client', 'Shared and waiting for approval. Not counted as late.', waiting, { waiting: true, kind: 'changes' }, 'Nothing waiting on a client.', 10),
+      section('Delivered this week', 'Since Monday ' + CO.fmtDate(wk) + '.', done, { done: true, kind: 'done' }, 'Nothing delivered yet this week.'));
+    grid.append(left, right); el.append(grid);
+  });
+
+  /* ================= Brands ================= */
+  const BR2 = { q: '', sort: LS.get('co.brsort', 'late'), dir: -1 };
+  dash.draw('brands', (el) => {
+    if (CO.notReady(el, 'box')) return;
+    const keepFocus = document.activeElement && document.activeElement.classList.contains('br-search');
+    el.replaceChildren();
+    const rows = CO.rows(), t = CO.today(), m0 = t.slice(0, 7) + '-01', pm = CO.addMonths(t.slice(0, 7), -1), pm0 = pm + '-01';
+    const lastSameEnd = CO.sameWorkdaysEnd(m0, t, pm0, CO.monthEnd(pm));
+    const map = new Map();
+    rows.forEach((r) => {
+      const b = map.get(r.brand) || { brand: r.brand, src: new Set(), open: 0, late: 0, wait: 0, oldest: null, thisM: 0, lastSame: 0, last: '' };
+      b.src.add(r.source);
+      if (r.open) { b.open += r.qty || 1; if (r.due === 'overdue') b.late += r.qty || 1; }
+      if (r.stage === 'Pending approval') { b.wait++; const wd = r.eta && r.eta < t ? CO.diffDays(r.eta, t) : 0; if (b.oldest == null || wd > b.oldest) b.oldest = wd; }
+      if (r.stage === 'Delivered' && r.ddate) { if (r.ddate >= m0 && r.ddate <= t) b.thisM += r.qty || 1; if (r.ddate >= pm0 && r.ddate <= lastSameEnd) b.lastSame += r.qty || 1; if (r.ddate > b.last) b.last = r.ddate; }
+      map.set(r.brand, b);
+    });
+    let list = [...map.values()].filter((b) => b.open || b.wait || b.thisM || b.lastSame);
+    const q = BR2.q.trim().toLowerCase(); if (q) list = list.filter((b) => b.brand.toLowerCase().includes(q));
+    const key = { brand: (b) => b.brand.toLowerCase(), open: (b) => b.open, late: (b) => b.late * 1000 + b.open, wait: (b) => b.wait, thisM: (b) => b.thisM, last: (b) => b.last }[BR2.sort] || ((b) => b.late);
+    list.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * (BR2.sort === 'brand' ? 1 : -1) * (BR2.dir === 1 ? -1 : 1) || a.brand.localeCompare(b.brand); });
+    const hd = document.createElement('div'); hd.className = 'na-head';
+    const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Brands'; const note = document.createElement('p'); note.className = 'co-note'; note.textContent = 'Brands with open work, work with a client or deliveries this month or last. Click a brand for its tasks.'; l.append(h2, note);
+    const tools = document.createElement('div'); tools.className = 'br-tools';
+    const search = document.createElement('input'); search.type = 'search'; search.className = 'co-input br-search'; search.placeholder = 'Search brands'; search.value = BR2.q; search.setAttribute('aria-label', 'Search brands');
+    search.addEventListener('input', () => { BR2.q = search.value; dash.draw('brands'); });
+    const count = document.createElement('span'); count.className = 'co-note'; count.textContent = list.length + (list.length === 1 ? ' brand' : ' brands');
+    tools.append(search, count); hd.append(l, tools); el.append(hd);
+    if (!list.length) { const fl = filterNote2(); el.append(emptyLine(q ? 'No brand matches "' + BR2.q + '".' : fl ? 'No brands for ' + fl + '.' : 'No brand activity yet.')); if (fl) el.append(clearBtn2()); if (keepFocus) search.focus(); return; }
+    const wrap = document.createElement('div'); wrap.className = 'co-tablewrap';
+    const tb = document.createElement('table'); tb.className = 'co-table br-table';
+    const cols = [['brand', 'Brand', ''], ['src', 'Int / Ext', 'co-hide-md'], ['open', 'Open', 'n'], ['late', 'Late', 'n'], ['wait', 'With client', 'n'], ['thisM', 'Delivered this month', 'n'], ['vs', 'vs same days last month', 'n co-hide-md'], ['last', 'Last delivery', 'co-hide-md']];
+    const thead = tb.createTHead().insertRow();
+    cols.forEach(([k, label, cls]) => {
+      const th = document.createElement('th'); th.className = cls; th.scope = 'col';
+      if (['brand', 'open', 'late', 'wait', 'thisM', 'last'].includes(k)) { const b = document.createElement('button'); b.type = 'button'; b.className = 'th-sort'; b.textContent = label; th.setAttribute('aria-sort', BR2.sort === k ? (BR2.dir === -1 ? 'descending' : 'ascending') : 'none'); b.addEventListener('click', () => { if (BR2.sort === k) BR2.dir = -BR2.dir; else { BR2.sort = k; BR2.dir = -1; } LS.set('co.brsort', k); dash.draw('brands'); }); th.append(b); }
+      else th.textContent = label;
+      thead.append(th);
+    });
+    const body = tb.createTBody();
+    list.forEach((b) => {
+      const tr = body.insertRow(); tr.className = 'click'; tr.tabIndex = 0; tr.title = 'Open ' + b.brand + "'s tasks";
+      const go = () => CO.goTasks('active', { brand: b.brand });
+      tr.addEventListener('click', go); tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      const nb = document.createElement('b'); nb.textContent = b.brand; CO.td(tr, nb);
+      CO.td(tr, [...b.src].map((x) => CO.cls(x)).join(' + '), 'co-hide-md co-muted');
+      CO.td(tr, CO.num(b.open), 'n'); CO.td(tr, b.late ? CO.num(b.late) : '0', 'n' + (b.late ? ' bad' : ''));
+      const w = CO.td(tr, b.wait ? b.wait + (b.oldest ? ' · ' + b.oldest + 'd' : '') : '0', 'n'); if (b.wait) w.title = 'Oldest has waited about ' + b.oldest + ' days';
+      CO.td(tr, CO.num(b.thisM), 'n');
+      const vs = document.createElement('span'); vs.append(CO.delta(b.thisM, b.lastSame, 'up')); CO.td(tr, vs, 'n co-hide-md');
+      CO.td(tr, b.last ? CO.fmtDate(b.last) : '—', 'co-hide-md co-muted');
+    });
+    wrap.append(tb); el.append(wrap);
+    if (keepFocus) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
+  });
+
+  /* Waiting on client: everything shared and waiting for approval, by brand, longest wait first. */
+  dash.draw('waiting', (el) => {
+    if (CO.notReady(el, 'box')) return;
+    el.replaceChildren();
+    const t = CO.today(), rows = CO.rows().filter((r) => r.stage === 'Pending approval');
+    const days = (r) => r.eta && r.eta < t ? CO.diffDays(r.eta, t) : 0;
+    const by = new Map(); rows.forEach((r) => { const l = by.get(r.brand) || []; l.push(r); by.set(r.brand, l); });
+    const groups = [...by].map(([brand, list]) => ({ brand, list: list.sort((a, b) => days(b) - days(a)), oldest: Math.max(...list.map(days)) })).sort((a, b) => b.oldest - a.oldest || b.list.length - a.list.length);
+    const over = rows.filter((r) => days(r) > 14).length;
+    const hd = document.createElement('div'); hd.className = 'na-head';
+    const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Waiting on client'; const n = document.createElement('span'); n.className = 'na-count' + (rows.length ? '' : ' ok'); n.textContent = rows.length; h2.append(n);
+    const note = document.createElement('p'); note.className = 'co-note'; note.textContent = rows.length ? 'Shared and waiting for approval, by brand, longest wait first. Days are counted from the design ETA. ' + over + ' have waited more than 14 days.' : 'Nothing is waiting on a client.'; l.append(h2, note);
+    const dl = document.createElement('button'); dl.type = 'button'; dl.className = 'co-btn'; dl.textContent = 'Download CSV'; dl.disabled = !rows.length;
+    dl.addEventListener('click', () => CO.csv('waiting-on-client-' + t + '.csv', ['Brand', 'ID', 'Creative', 'Type', 'Creatives', 'Designer', 'Shared (design ETA)', 'Days waiting', 'Internal / External'], groups.flatMap((g) => g.list.map((r) => [r.brand, r.id, CO.topicText(r), r.type, r.qty || 1, r.list.join(', '), r.eta || '', days(r), CO.cls(r.source)]))));
+    hd.append(l, dl); el.append(hd);
+    if (!rows.length) { const fl = filterNote2(); if (fl) { el.append(emptyLine('Nothing for ' + fl + '.'), clearBtn2()); } return; }
+    const wrap = document.createElement('div'); wrap.className = 'wc-groups';
+    groups.forEach((g, gi) => {
+      const d = document.createElement('details'); d.className = 'wc-group'; if (gi < 3) d.open = true;
+      const sm = document.createElement('summary'); const b = document.createElement('b'); b.textContent = g.brand; const c = document.createElement('span'); c.className = 'co-note'; c.textContent = g.list.length + (g.list.length === 1 ? ' task' : ' tasks'); const o = document.createElement('span'); o.className = 'na-when ' + (g.oldest > 14 ? 'k-late' : 'k-changes'); o.textContent = 'oldest ' + g.oldest + 'd';
+      sm.append(b, c, o); d.append(sm);
+      const ul = document.createElement('ul'); ul.className = 'na-list'; g.list.forEach((r) => ul.append(workRow(r, { waiting: true, noBrand: true, kind: days(r) > 14 ? 'late' : 'changes' }))); d.append(ul);
+      wrap.append(d);
+    });
+    el.append(wrap);
+  });
+
+  /* Reports: on-time rate and turnaround, only from tasks with a real Delivered On date (no estimates). */
+  dash.draw('r-ontime', (el) => {
+    if (CO.notReady(el, 'box')) return;
+    el.replaceChildren();
+    const pr = CO.period(), to = pr.to > CO.today() ? CO.today() : pr.to;
+    const del = CO.rows().filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= pr.from && r.ddate <= to);
+    const dated = del.filter((r) => r.date_basis === 'delivered');
+    const withEta = dated.filter((r) => r.eta), onTime = withEta.filter((r) => r.ddate <= r.eta);
+    const withReq = dated.filter((r) => r.req && r.req <= r.ddate), tat = withReq.map((r) => Math.max(0, CO.workdays(r.req, r.ddate) - 1)).sort((a, b) => a - b);
+    const med = tat.length ? tat[Math.floor((tat.length - 1) / 2)] : null;
+    const hd = document.createElement('div'); hd.className = 'na-head'; const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'On time and turnaround'; const note = document.createElement('p'); note.className = 'co-note';
+    note.textContent = 'Only tasks with a real Delivered On date count (filled automatically when a status becomes DONE). ' + dated.length + ' of ' + del.length + ' tasks delivered in this period have one.'; l.append(h2, note); hd.append(l); el.append(hd);
+    const MIN = 10;
+    const tiles = document.createElement('div'); tiles.className = 'ot-tiles';
+    const tile = (cls, val, label, sub) => { const d = document.createElement('div'); d.className = 'ot-tile ' + cls; const b = document.createElement('b'); b.textContent = val; const s1 = document.createElement('span'); s1.textContent = label; const s2 = document.createElement('small'); s2.textContent = sub; d.append(b, s1, s2); tiles.append(d); };
+    if (withEta.length >= MIN) tile('k-done', Math.round(onTime.length / withEta.length * 100) + '%', 'Delivered on or before the ETA', onTime.length + ' of ' + withEta.length + ' dated tasks');
+    else tile('k-wait', '—', 'On time', 'Needs ' + MIN + ' dated deliveries; ' + withEta.length + ' so far');
+    if (tat.length >= MIN) tile('k-pick', med + (med === 1 ? ' day' : ' days'), 'Typical turnaround (median)', 'Working days from request to delivery, ' + tat.length + ' tasks');
+    else tile('k-wait', '—', 'Turnaround', 'Needs ' + MIN + ' dated deliveries; ' + tat.length + ' so far');
+    tile('k-wip', CO.num(dated.length), 'Dated deliveries', del.length ? Math.round(dated.length / del.length * 100) + '% of this period' : 'none in this period');
+    el.append(tiles);
+  });
 
   /* ================= Stand-up ================= */
   const SU = { cards: null };

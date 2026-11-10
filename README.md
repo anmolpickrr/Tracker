@@ -109,6 +109,27 @@ Browsers cannot show a dashboard alert when no dashboard tab is open (that would
 
 The bell lists, for the signed-in person: their overdue tasks and tasks due today or tomorrow; for admins, team overdue and unassigned totals; new requirements since yesterday; status, sheet and team changes made by others in the last 48 hours; note mentions and action items; meetings starting within 15 minutes; and the two daily briefings. Every item opens the task, note or page it is about. Emails are not read: the dashboard has no access to anyone's inbox.
 
+## My work (team members)
+
+Everyone on the team list lands on **My work** when they sign in (admins land on the Overview and can open My work for anyone with **View as**). It shows four tiles (overdue, due today, in progress, delivered this week) and four lists: **Focus now** (overdue and due today), **Up next** (open work by ETA), **With the client** (shared and waiting for approval, with days waiting) and **Delivered this week**. Content writers also see **Content to write**: briefs whose content they own and are still writing. The person is matched by their Google name against the team list; if a name is spelt differently, add it under *Also written as* in the team sheet. On phones My work replaces Stand-up in the bottom bar for team members.
+
+## Brands and Waiting on client
+
+**Brands** lists every brand with open work, work with a client or deliveries this month or last: open, late, with the client (and the oldest wait), delivered this month against the same working days last month, and the last delivery. Search, sort any column (click or Enter on the header) and click a brand for its tasks.
+
+**Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
+
+## Delivered On, on-time rate and turnaround
+
+The sheets didn't record when a creative was actually delivered, so the web app now keeps a **Delivered On** column in each task tab:
+
+- It adds the column once (logged in the activity log) and checks every 10 minutes. A task whose status has just become DONE, REJECTED or NO UPDATE gets that day's date; a task reopened and delivered again gets the new date. A date typed by hand is kept.
+- On the first run it fills dates only from the activity log (status changes to DONE it recorded). Older deliveries stay blank and are dated by their Design ETA as before. No date is guessed.
+- Which tasks were already delivered is remembered in a hidden *Delivery dates* tab of the access workbook.
+- To start it straight away instead of waiting up to 10 minutes, run `setupDeliveredOn` in Apps Script.
+
+**Reports → On time and turnaround** uses only real Delivered On dates: the share delivered on or before the Design ETA, and the typical (median) working days from request to delivery. Each appears once at least 10 dated deliveries fall in the chosen period; until then it says how many there are so far.
+
 ## Today (Overview)
 
 The **Today** card at the top of the Overview's right-hand column shows the day's progress ring (delivered ÷ pick up + in progress + delivered) and four pastel tiles: **Pick up** (to be planned or changes requested, due today or the next working day), **In progress** (WIP), **Delivered** today and **Carried over** (open and past its ETA). Click a tile to list its tasks in the card; click a task to open it, or **Open stand-up** for the per-person view. Delivered today comes from the activity log: any design status changed to DONE today, in the sheet or on the dashboard; a delivered task with today's ETA also counts.

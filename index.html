@@ -7,13 +7,13 @@
 <meta name="description" content="Creative Ops: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
 <meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: https://*.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/ https://www.googleapis.com; frame-src https://accounts.google.com/gsi/; media-src data: blob:; form-action 'none'; base-uri 'none'; object-src 'none'">
-<link rel="icon" href="assets/favicon.svg?v=20261110z" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.svg?v=20261111a" type="image/svg+xml">
 <meta name="theme-color" content="#0f0f0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=20261110z">
-<script src="assets/theme.js?v=20261110z"></script>
+<link rel="stylesheet" href="assets/style.css?v=20261111a">
+<script src="assets/theme.js?v=20261111a"></script>
 </head>
 <body>
 <div class="boot" id="boot" aria-hidden="true"><div class="boot-lock"><svg class="logo mark boot-mark" viewBox="30 140 452 212" aria-hidden="true"><defs><clipPath id="mk-c-boot"><path d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></clipPath><linearGradient id="mk-t-boot" x1="0" x2="1"><stop offset="0" class="mk-s0"/><stop offset="1" class="mk-s1"/></linearGradient><linearGradient id="mk-h-boot" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect class="sl sl1" x="-170" y="160" width="300" height="9" rx="4.5" fill="url(#mk-t-boot)"/><rect class="sl sl2" x="-230" y="244" width="360" height="7" rx="3.5" fill="url(#mk-t-boot)"/><rect class="sl sl3 lime" x="-120" y="214" width="220" height="6" rx="3" /><rect class="sl sl4" x="-260" y="350" width="330" height="8" rx="4" fill="url(#mk-t-boot)"/><rect class="lt lt1" x="20" y="176" width="190" height="24" rx="12" fill="url(#mk-t-boot)"/><rect class="lt lt2" x="-150" y="292" width="200" height="24" rx="12" fill="url(#mk-t-boot)"/><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/><g clip-path="url(#mk-c-boot)"><rect class="mk-shine" x="0" y="140" width="130" height="212" fill="url(#mk-h-boot)"/></g></svg></div></div>
@@ -24,6 +24,7 @@
     </div>
     <nav class="side-nav co-tabs" role="tablist" aria-label="Views">
       <p class="nav-h">Workspace</p>
+      <button class="co-tab" role="tab" data-tab="mine" aria-selected="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a6 6 0 0 1 6-6h3M15 18l2 2 4-4"/></svg><span class="nav-l">My work</span><span class="nav-badge" hidden></span></button>
       <button class="co-tab" role="tab" data-tab="today" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/></svg><span class="nav-l">Overview</span><span class="nav-badge" hidden></span></button>
       <button class="co-tab" role="tab" data-tab="standup" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8 13c-2.7 0-8 1.3-8 4v3h16v-3c0-2.7-5.3-4-8-4zM16 13c-.3 0-.7 0-1.1.1A4.2 4.2 0 0 1 17 17v3h7v-3c0-2.7-5.3-4-8-4z"/></svg><span class="nav-l">Stand-up</span><span class="nav-badge" hidden></span></button>
       <button class="co-tab" role="tab" data-tab="tasks" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span class="nav-l">Tasks</span><span class="nav-badge" hidden></span></button>
@@ -31,6 +32,7 @@
       <p class="nav-h">Insights</p>
       <button class="co-tab" role="tab" data-tab="team" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span class="nav-l">Team</span><span class="nav-badge" hidden></span></button>
       <button class="co-tab" role="tab" data-tab="reports" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="nav-l">Reports</span><span class="nav-badge" hidden></span></button>
+      <button class="co-tab" role="tab" data-tab="brands" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12V3h9l9 9-9 9zM7.5 7.5h.01"/></svg><span class="nav-l">Brands</span><span class="nav-badge" hidden></span></button>
       <p class="nav-h">Admin</p>
       <button class="co-tab" role="tab" data-tab="health" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span class="nav-l">Data health</span><span class="nav-badge" hidden></span></button>
       <button class="co-tab" role="tab" data-tab="access" aria-selected="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.4 8.7-8 10-4.6-1.3-8-5-8-10V6z M9 12l2 2 4-4"/></svg><span class="nav-l">Access</span><span class="nav-badge" hidden></span></button>
@@ -226,6 +228,17 @@
     </div>
   </section>
 
+  <!-- MY WORK -->
+  <section class="co-panel" id="mine" data-panel="mine" hidden>
+    <div class="mw" data-draw="mine"></div>
+  </section>
+
+  <!-- BRANDS -->
+  <section class="co-panel" id="brands" data-panel="brands" hidden>
+    <section class="co-card br-card" data-draw="brands" aria-label="Brands"></section>
+    <section class="co-card wc-card" id="waiting" data-draw="waiting" aria-label="Waiting on client"></section>
+  </section>
+
   <!-- TEAM -->
   <section class="co-panel" id="team" data-panel="team" hidden>
     <div class="co-card">
@@ -292,6 +305,7 @@
       <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12V3h9l9 9-9 9zM7.5 7.5h.01"/></svg></span><span class="co-kpi-label">Brands served</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="brands">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="brands">—</span></div>
       <div class="co-kpi"><span class="kpi-head"><span class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg></span><span class="co-kpi-label">Per designer, per working day</span></span><span class="co-kpi-val" data-draw="rkpi" data-kpi="per">—</span><span class="co-kpi-sub" data-draw="rkpi-sub" data-kpi="per">—</span></div>
     </div>
+    <section class="co-card ot-card" data-draw="r-ontime" aria-label="On time and turnaround"></section>
     <div class="co-card">
       <div class="co-card-head">
         <div><h2 class="co-h2">Creatives delivered</h2><p class="co-note" data-draw="r-chart-note">The report period is highlighted. Click a bar to report on it.</p></div>
@@ -637,8 +651,8 @@
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-<script src="assets/config.js?v=20261110z"></script>
-<script src="assets/data.js?v=20261110z"></script>
-<script src="assets/app.js?v=20261110z"></script>
+<script src="assets/config.js?v=20261111a"></script>
+<script src="assets/data.js?v=20261111a"></script>
+<script src="assets/app.js?v=20261111a"></script>
 </body>
 </html>

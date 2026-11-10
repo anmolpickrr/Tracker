@@ -1774,3 +1774,63 @@ button.co-kpi:hover { transform: translateY(-2px); box-shadow: 0 18px 34px -22px
 :root, :root[data-theme="light"] { --bar-on: #6037d7; --bar-soft: #8f84e8; --chart-later: #8f8b83; --st-review: #8f84e8; --st-await: #e06a3a; --st-hold: #8f8b83; --st-plan: #5f5c55; }
 :root[data-theme="dark"] { --bar-on: #ddff00; --bar-soft: #7a6fdb; --chart-later: #77746c; --st-review: #7a6fdb; --st-hold: #77746c; }
 :root[data-theme="light"] .tb-list button:first-child .tr i { background: var(--primary); }
+
+/* ============ My work ============ */
+.mw { display: grid; gap: 16px; }
+.mw-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px 20px; padding: 20px 22px; }
+.mw-id { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.mw-id .av.lg { width: 52px; height: 52px; font-size: 17px; }
+.mw-id .co-h2 { font-size: 22px; }
+.mw-as { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.mw-tiles { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.mw-tile { display: grid; gap: 2px; padding: 14px 16px; border-radius: 20px; background: var(--sunken); }
+.mw-tile b { font: 600 30px/1.1 var(--font-display); letter-spacing: -.02em; }
+.mw-tile span { font-size: 13px; font-weight: 500; }
+.mw-tile small { font-size: 12px; color: var(--muted); }
+.mw-tile.k-late { background: var(--org-p); } .mw-tile.k-late b { color: var(--org-ink); }
+.mw-tile.k-today { background: var(--lav); } .mw-tile.k-done { background: var(--lime-p); }
+.mw-tile.zero b { color: var(--muted); }
+.mw-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.mw-col { display: grid; gap: 16px; }
+.mw-col > .co-card { display: grid; gap: 10px; }
+.mw-list { max-height: none; }
+.mw-empty { margin: 4px 0 0; padding: 18px; border-radius: 16px; background: var(--panel-2); color: var(--muted); font-size: 13px; text-align: center; }
+.na-when.k-done { background: var(--lime-p); color: var(--lime-ink); }
+.na-row.k-done .na-rail { background: #b5d300; }
+:root[data-theme="dark"] .na-row.k-done .na-rail { background: #ddff00; }
+@media (max-width: 1100px) { .mw-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .mw-head { grid-template-columns: 1fr; } .mw-tiles { grid-template-columns: 1fr 1fr; } .mw-tile b { font-size: 24px; } }
+
+/* ============ Brands + Waiting on client ============ */
+#brands { display: grid; gap: 16px; }
+.br-card, .wc-card { display: grid; gap: 12px; }
+.br-tools { display: flex; align-items: center; gap: 12px; }
+.br-search { min-width: 220px; }
+.th-sort { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; white-space: nowrap; }
+.th-sort:hover { color: var(--fg); }
+.th-sort:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.br-table td.bad { color: var(--org-ink); font-weight: 600; }
+.br-table tr.click { cursor: pointer; }
+.br-table tr.click:focus-visible td { background: var(--primary-soft); }
+.wc-groups { display: grid; gap: 8px; }
+.wc-group { border-radius: 18px; background: var(--panel-2); padding: 4px 12px; }
+.wc-group summary { display: flex; align-items: center; gap: 10px; padding: 10px 2px; cursor: pointer; list-style: none; }
+.wc-group summary::-webkit-details-marker { display: none; }
+.wc-group summary::before { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .2s; margin-right: 4px; }
+.wc-group[open] summary::before { transform: rotate(45deg); }
+.wc-group summary b { font-size: 14px; }
+.wc-group summary .na-when { margin-left: auto; }
+.wc-group .na-list { margin: 0 -6px 6px; max-height: none; }
+.wc-group .na-row:hover { background: var(--panel); }
+@media (max-width: 640px) { .br-tools { flex-wrap: wrap; } .br-search { min-width: 0; width: 100%; } }
+
+/* ============ Reports: on time and turnaround ============ */
+.ot-card { display: grid; gap: 12px; }
+.ot-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ot-tile { display: grid; gap: 2px; padding: 14px 16px; border-radius: 20px; background: var(--sunken); }
+.ot-tile b { font: 600 28px/1.1 var(--font-display); }
+.ot-tile span { font-size: 13px; font-weight: 500; }
+.ot-tile small { font-size: 12px; color: var(--muted); }
+.ot-tile.k-done { background: var(--lime-p); } .ot-tile.k-pick { background: var(--lav); }
+.ot-tile.k-wait b { color: var(--muted); }
+@media (max-width: 640px) { .ot-tiles { grid-template-columns: 1fr; } }
