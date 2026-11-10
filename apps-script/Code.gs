@@ -22,7 +22,49 @@
 
 /* Roles, lowest first. Viewer: sees everything. Editor: also edits tasks. Admin: also team list, access and the audit log. */
 const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+/* ============================ Access model ============================
+ * The OWNER (CONFIG.access.owners: the Creative Head, Admin and Team Manager) has every permission and is the only
+ * person who can grant or change access, read the activity log, see live team activity and change settings.
+ * Everyone else gets a role (View only / Can edit / Manager) whose defaults the owner can fine-tune per person:
+ * which pages they see, and whether they can edit tasks, download data, see workload estimates and other people's
+ * work, manage the team list and use Fasty, and whether they see all tasks or only their own. */
+const PAGE_KEYS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health'];
+const OWNER_ONLY = { users: 1, setAccess: 1, audit: 1, settings: 1, saveSettings: 1, presence: 1 };
+function defaultPerms_(role) {
+  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'all' };
+  if (role === 'Editor') p.edit = true;
+  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; }
+  return p;
+}
+function permsOf_(u) {
+  if (!u) return defaultPerms_('Viewer');
+  if (u.owner || isOwner_(u.email)) { const all = defaultPerms_('Admin'); all.owner = true; return all; }
+  const p = defaultPerms_(u.role), o = u.perms || {};
+  if (Array.isArray(o.pages)) p.pages = o.pages.filter(function (k) { return PAGE_KEYS.indexOf(k) >= 0; });
+  ['edit', 'export', 'load', 'team', 'fasty'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
+  if (o.scope === 'own' || o.scope === 'all') p.scope = o.scope;
+  if (p.pages.indexOf('mine') < 0) p.pages.unshift('mine'); // everyone keeps their own work page
+  return p;
+}
+function cleanPerms_(o) {
+  if (!o || typeof o !== 'object') return null;
+  const out = {};
+  if (Array.isArray(o.pages)) out.pages = o.pages.map(String).filter(function (k, i, a) { return PAGE_KEYS.indexOf(k) >= 0 && a.indexOf(k) === i; });
+  ['edit', 'export', 'load', 'team', 'fasty'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
+  if (o.scope === 'own' || o.scope === 'all') out.scope = o.scope;
+  return out;
+}
+function allowed_(u, action) {
+  if (!NEEDS[action]) return false;
+  if (OWNER_ONLY[action]) return !!(u.owner || isOwner_(u.email));
+  const p = permsOf_(u);
+  if (action === 'updateTask') return p.edit;
+  if (action === 'setMember') return p.team;
+  if (action === 'health') return p.pages.indexOf('health') >= 0;
+  if (action === 'assist' || action === 'speak') return p.fasty;
+  return true;
+}
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', presence: 'Admin', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -228,14 +270,16 @@ function doPost(e) {
     if (!who.ok) return json_(who);
     const user = who.user, need = NEEDS[body.action];
     if (!need) return json_({ ok: false, error: 'unknown_action' });
-    if (ROLES[user.role] < ROLES[need]) return json_({ ok: false, error: 'forbidden', need: need, role: user.role });
+    if (!allowed_(user, body.action)) return json_({ ok: false, error: 'forbidden', need: OWNER_ONLY[body.action] ? 'Owner' : need, role: user.role });
     // Reads
     if (body.action === 'me') return json_({ ok: true, user: publicUser_(user) });
+    if (body.action === 'beat') { if (settings_().presence) presenceBeat_(user, body.at); return json_({ ok: true }); }
+    if (body.action === 'presence') return json_({ ok: true, presence: settings_().presence ? presenceList_() : [], on: !!settings_().presence });
     if (body.action === 'ver') {
       const set = settings_();
-      const out = { ok: true, ver: liveVersion_(), role: user.role, update: updateStatus_(), calOff: user.role === 'Admin' ? PropertiesService.getScriptProperties().getProperty('CAL_API_OFF') || '' : '', remind: { morning: set.morning, evening: set.evening }, presenceOn: set.presence, assist: assistStatus_() };
+      const out = { ok: true, ver: liveVersion_(), role: user.role, perms: permsOf_(user), custom: !!(user.perms && Object.keys(user.perms).length), update: updateStatus_(), calOff: isOwner_(user.email) ? PropertiesService.getScriptProperties().getProperty('CAL_API_OFF') || '' : '', remind: { morning: set.morning, evening: set.evening }, presenceOn: set.presence, assist: assistStatus_() };
       if (set.presence) presenceBeat_(user, body.at);
-      if (user.role === 'Admin') { out.pending = users_().list.filter(function (u) { return u.status === 'Pending'; }).length; if (set.presence) out.presence = presenceList_(); }
+      if (isOwner_(user.email)) { out.pending = users_().list.filter(function (u) { return u.status === 'Pending'; }).length; if (set.presence) out.presence = presenceList_(); }
       return json_(out);
     }
     if (body.action === 'feed') return json_(feed_(user));
@@ -245,7 +289,7 @@ function doPost(e) {
     if (body.action === 'speak') return json_(speak_(user, body));
     if (body.action === 'history') return json_({ ok: true, days: history_() });
     if (body.action === 'settings') { const st = settings_(); return json_({ ok: true, settings: Object.assign({}, st, { chat: st.chat ? 'set' : '' }) }); }
-    if (body.action === 'data') return text_(dataText_(!!body.fresh));
+    if (body.action === 'data') { const pm = permsOf_(user); return text_(pm.scope === 'own' ? ownDataText_(user, !!body.fresh) : dataText_(!!body.fresh)); }
     if (body.action === 'health') return json_(health_());
     if (body.action === 'users') return json_({ ok: true, users: users_().list.map(publicUser_), you: user.email, owners: owners_() });
     if (body.action === 'audit') return json_(auditRead_(body));
@@ -485,7 +529,7 @@ function listOptions_(cell) {
  * Nobody else can edit it; owners get view access.
  */
 const UNKNOWN_EDITOR = 'Not reported by Google';
-const USER_HEAD = ['Email', 'Name', 'Role', 'Status', 'Team / role', 'Note', 'Requested on', 'Decided by', 'Decided on', 'Last sign-in', 'Sessions valid from', 'Photo', 'Email reminders', 'Last active'];
+const USER_HEAD = ['Email', 'Name', 'Role', 'Status', 'Team / role', 'Note', 'Requested on', 'Decided by', 'Decided on', 'Last sign-in', 'Sessions valid from', 'Photo', 'Email reminders', 'Last active', 'Permissions'];
 const AUDIT_HEAD = ['When', 'Who', 'Their role', 'Action', 'Sheet', 'Tab', 'Task / record', 'Row', 'Field', 'Before', 'After', 'Details', 'Via'];
 
 function authOn_() { const id = String(CONFIG.access && CONFIG.access.clientId || ''); return !!id && !/^PASTE_/.test(id); }
@@ -614,6 +658,7 @@ function setAccess_(body, admin) {
     const name = clean_(body.name).slice(0, 80);
     if (name && !plain_(name)) return { ok: false, error: 'Names cannot start with = + - or @' };
     appendUser_({ email: email, name: name, role: role || 'Viewer', status: status || 'Approved', note: 'Added by ' + admin.email, requestedOn: now, decidedBy: admin.email, decidedOn: now });
+    if (body.perms) { const nu = userByEmail_(email); if (nu) updateUser_(nu, { perms: JSON.stringify(cleanPerms_(body.perms) || {}) }); }
     changes.push(Object.assign({}, base, { action: 'User added by admin', field: 'Access', before: '', after: (role || 'Viewer') + ', ' + (status || 'Approved') }));
     u = userByEmail_(email);
     if ((status || 'Approved') === 'Approved') notifyApproved_(u);
@@ -625,6 +670,11 @@ function setAccess_(body, admin) {
       const action = status === 'Approved' ? (u.status === 'Pending' ? 'Access approved' : 'Access restored') : status === 'Denied' ? 'Access denied' : 'Access revoked';
       changes.push(Object.assign({}, base, { action: action, field: 'Status', before: u.status, after: status }));
       if (status !== 'Approved') patch.validFrom = now.getTime(); // ends every session they have
+    }
+    if (body.perms !== undefined) {
+      const np = body.perms === null ? null : cleanPerms_(body.perms);
+      const before = JSON.stringify(permsOf_(u)), after = JSON.stringify(permsOf_(Object.assign({}, u, { perms: np })));
+      if (before !== after || (body.perms === null && u.perms)) { patch.perms = np ? JSON.stringify(np) : ''; changes.push(Object.assign({}, base, { action: 'Permissions changed', field: 'Permissions', before: permText_(permsOf_(u)), after: permText_(permsOf_(Object.assign({}, u, { perms: np }))) })); }
     }
     if (!changes.length) return { ok: true, user: publicUser_(u) };
     patch.decidedBy = admin.email; patch.decidedOn = now;
@@ -652,7 +702,7 @@ function users_() {
         row: i + 1, email: email, name: clean_(v[i][1]), role: ROLES[clean_(v[i][2])] ? clean_(v[i][2]) : 'Viewer',
         status: ['Approved', 'Pending', 'Revoked', 'Denied'].indexOf(clean_(v[i][3])) >= 0 ? clean_(v[i][3]) : 'Pending',
         team: clean_(v[i][4]), note: clean_(v[i][5]), requestedOn: iso_(v[i][6]), decidedBy: clean_(v[i][7]), decidedOn: iso_(v[i][8]), lastSignIn: iso_(v[i][9]),
-        validFrom: Number(v[i][10]) || 0, photo: photo_(v[i][11]), reminders: clean_(v[i][12]) !== 'Off', lastActive: iso_(v[i][13])
+        validFrom: Number(v[i][10]) || 0, photo: photo_(v[i][11]), reminders: clean_(v[i][12]) !== 'Off', lastActive: iso_(v[i][13]), perms: (function () { try { return cleanPerms_(JSON.parse(String(v[i][14] || '') || 'null')); } catch (e) { return null; } })()
       };
       if (isOwner_(email)) { u.role = 'Admin'; u.status = 'Approved'; u.owner = true; }
       out.list.push(u);
@@ -666,7 +716,7 @@ function userByEmail_(email) {
   return users_().list.filter(function (u) { return u.email === email; })[0] || null;
 }
 function publicUser_(u) {
-  return { email: u.email, name: u.name || '', role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), reminders: u.reminders !== false, lastActive: u.lastActive || '', owner: !!u.owner || isOwner_(u.email) };
+  return { email: u.email, name: u.name || '', role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), reminders: u.reminders !== false, lastActive: u.lastActive || '', owner: !!u.owner || isOwner_(u.email), perms: permsOf_(u), custom: !!(u.perms && Object.keys(u.perms).length) };
 }
 /* Only Google profile photos are kept and shown. */
 function photo_(url) { const s = String(url || ''); return /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\/[^\s"'<>]+$/i.test(s) ? s.slice(0, 500) : ''; }
@@ -674,6 +724,7 @@ function userHeader_(sh) {
   if (String(sh.getRange(1, 12).getValue()) !== 'Photo') sh.getRange(1, 12).setValue('Photo');
   if (String(sh.getRange(1, 13).getValue()) !== 'Email reminders') sh.getRange(1, 13).setValue('Email reminders');
   if (String(sh.getRange(1, 14).getValue()) !== 'Last active') sh.getRange(1, 14).setValue('Last active');
+  if (String(sh.getRange(1, 15).getValue()) !== 'Permissions') sh.getRange(1, 15).setValue('Permissions');
 }
 function appendUser_(u) {
   const sh = accessBook_().getSheetByName('Users');
@@ -688,7 +739,7 @@ function updateUser_(u, patch) {
   const row = emails.indexOf(u.email) + 1;
   if (row < 2) throw new Error('User ' + u.email + ' is no longer in the access list');
   userHeader_(sh);
-  const cols = { name: 2, role: 3, status: 4, team: 5, note: 6, decidedBy: 8, decidedOn: 9, lastSignIn: 10, validFrom: 11, photo: 12, reminders: 13, lastActive: 14 };
+  const cols = { name: 2, role: 3, status: 4, team: 5, note: 6, decidedBy: 8, decidedOn: 9, lastSignIn: 10, validFrom: 11, photo: 12, reminders: 13, lastActive: 14, perms: 15 };
   Object.keys(patch).forEach(function (k) { if (cols[k] && patch[k] != null) sh.getRange(row, cols[k]).setValue(safe_(patch[k])); });
   CacheService.getScriptCache().remove('users');
 }
@@ -837,7 +888,7 @@ function serialToDate_(before, after) {
 function notifyAdmins_(g, pr) {
   if (!CONFIG.access.emailAdmins) return;
   try {
-    const to = users_().list.filter(function (u) { return u.role === 'Admin' && u.status === 'Approved'; }).map(function (u) { return u.email; });
+    const to = owners_();
     if (!to.length) return;
     MailApp.sendEmail({
       to: to.join(','), subject: 'Creative Ops Tracker: ' + (g.name || g.email) + ' asked for access',
@@ -897,10 +948,10 @@ function noteReaders_(n) {
 }
 function canSeeNote_(n, u) {
   if (n.deleted) return false;
-  if (u.role === 'Admin' || n.createdBy === u.email || n.visibility === 'team') return true;
+  if (isOwner_(u.email) || n.createdBy === u.email || n.visibility === 'team') return true;
   return n.visibility === 'people' && !!noteReaders_(n)[u.email];
 }
-function canEditNote_(n, u) { return u.role === 'Admin' || n.createdBy === u.email; }
+function canEditNote_(n, u) { return isOwner_(u.email) || n.createdBy === u.email; }
 function allNotes_() {
   if (!hasAccessBook_()) return [];
   const sh = notesSheet_(), last = sh.getLastRow();
@@ -1072,7 +1123,7 @@ function digestHtml_(kind, u, team, mine, myActions, today) {
     if (kind === 'evening') h += list('Yours, due tomorrow', mine.filter(function (r) { return r.eta > today; }).sort(function (a, b) { return a.eta.localeCompare(b.eta); }), 5);
   }
   if (myActions.length) h += '<h3 style="font:600 14px Arial;margin:22px 0 6px">Your action items from meeting notes (' + myActions.length + ')</h3><ul style="font:13px Arial;padding-left:18px;margin:0">' + myActions.slice(0, 10).map(function (a) { return '<li style="margin:4px 0">' + esc_(a.text) + ' <span style="color:#666">· ' + esc_(a.note) + (a.due ? ' · due ' + fmt(a.due) : '') + '</span></li>'; }).join('') + '</ul>';
-  if (u.role === 'Admin' || !mine.length) {
+  if (permsOf_(u).load || !mine.length) {
     h += list('Team: overdue', team.overdue);
     h += list(kind === 'morning' ? 'Team: due today' : 'Team: due tomorrow', kind === 'morning' ? team.today : team.tomorrow);
     if (kind === 'evening') h += list('Delivered today', team.deliveredToday, 10);
@@ -1110,10 +1161,11 @@ function sendNoteReminders_(now) {
  * every 30 seconds, the page in use and the task being edited (if any). Kept 3 minutes in the cache;
  * "Last active" is written to the access list at most every 10 minutes. Nothing else is collected.
  */
-const PAGES_OK = ['today', 'standup', 'tasks', 'notes', 'team', 'reports', 'health', 'access'];
+const PAGES_OK = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health', 'access'];
 function presenceBeat_(u, at) {
   at = at || {};
-  const rec = { email: u.email, name: u.name || u.email, at: Date.now(), page: PAGES_OK.indexOf(at.page) >= 0 ? at.page : '', task: clean_(at.task).slice(0, 40), taskLabel: clean_(at.taskLabel).slice(0, 90) };
+  const num = function (v) { const n = Number(v); return isFinite(n) ? Math.max(0, Math.min(1, Math.round(n * 1000) / 1000)) : null; };
+  const rec = { email: u.email, name: u.name || u.email, photo: photo_(u.photo), at: Date.now(), page: PAGES_OK.indexOf(at.page) >= 0 ? at.page : '', task: clean_(at.task).slice(0, 40), taskLabel: clean_(at.taskLabel).slice(0, 90), doing: clean_(at.doing).slice(0, 100), idle: !!at.idle, away: !!at.away, x: num(at.x), y: num(at.y) };
   const cache = CacheService.getScriptCache();
   cache.put('pres:' + u.email, JSON.stringify(rec), 180);
   const last = Number(cache.get('pres-saved:' + u.email) || 0);
@@ -1127,12 +1179,12 @@ function presenceList_() {
   const got = CacheService.getScriptCache().getAll(users.map(function (u) { return 'pres:' + u.email; }));
   return users.map(function (u) {
     let p = null; try { p = JSON.parse(got['pres:' + u.email] || 'null'); } catch (err) { p = null; }
-    return { email: u.email, name: u.name || u.email, role: u.role, online: !!p && Date.now() - p.at < 90 * 1000, at: p ? new Date(p.at).toISOString() : (u.lastActive || u.lastSignIn || ''), page: p ? p.page : '', task: p ? p.task : '', taskLabel: p ? p.taskLabel : '' };
+    return { email: u.email, name: u.name || u.email, role: u.role, online: !!p && Date.now() - p.at < 90 * 1000, at: p ? new Date(p.at).toISOString() : (u.lastActive || u.lastSignIn || ''), photo: photo_(u.photo), doing: p ? p.doing || '' : '', idle: !!(p && p.idle), away: !!(p && p.away), x: p ? p.x : null, y: p ? p.y : null, page: p ? p.page : '', task: p ? p.task : '', taskLabel: p ? p.taskLabel : '' };
   });
 }
 /* Recent changes for the notification bell: task and team changes for everyone; notes and access only for admins. */
 function feed_(u) {
-  const r = auditRead_({ limit: 60 }), since = Date.now() - 2 * 864e5, admin = u.role === 'Admin';
+  const r = auditRead_({ limit: 60 }), since = Date.now() - 2 * 864e5, admin = isOwner_(u.email);
   return { ok: true, entries: (r.entries || []).filter(function (e) {
     if (new Date(e.when) < since || e.who === u.email) return false;
     if (/^(Task updated|Sheet edited|Rows (added|deleted)|Team member)/.test(e.action)) return true;
@@ -1412,8 +1464,11 @@ function testRead() {
   const SPLIT = /\s*(?:,|&|\+|\/|;|\band\b)\s*/i;
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // Learn each person from cells that name one person, then split cells that run several names together.
-  function designerSplitter(cells) {
+  // known: names from the team list (and their other spellings), so names typed together split the same way
+  // however few rows are loaded (for example when a person sees only their own tasks).
+  function designerSplitter(cells, known) {
     const counts = new Map(), display = new Map();
+    (known || []).forEach((n0) => { const n = clean(n0); if (!n) return; const k = n.toLowerCase(); counts.set(k, (counts.get(k) || 0) + 5); if (!display.has(k)) display.set(k, n); });
     for (const c0 of cells) { const c = clean(c0); if (!c) continue; for (const part of c.split(SPLIT).filter(Boolean)) { const k = part.toLowerCase(); counts.set(k, (counts.get(k) || 0) + 1); if (!display.has(k)) display.set(k, part); } }
     const keys = [...counts.keys()];
     const firstOf = (k) => k.split(' ')[0];
@@ -1465,7 +1520,7 @@ function testRead() {
   // sources: [{ kind: 'paid'|'mkt', rows }] in the web app's order (newest tab of each kind first),
   // or the older form { paid: rows, mkt: rows, mkt2025: rows }.
   // Returns the task list; rows that are too incomplete to be a task are on its `ignored` property.
-  function buildTasks(sources, today) {
+  function buildTasks(sources, today, known) {
     if (!today) { const d = new Date(); today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
     const list = Array.isArray(sources) ? sources : Object.keys(sources).map((k) => ({ kind: kindOf(k), rows: sources[k] || [] }));
     const seenIds = { paid: new Set(), mkt: new Set() };
@@ -1487,7 +1542,7 @@ function testRead() {
     // Designer cells: an email becomes a name ("neha@shiprocket.com" → "Neha").
     // Emails become names (neha@… → Neha), and names typed together without a space ("Shubham RanaHimanshu Saxena") are separated.
     const fromEmail = (v) => clean(v).replace(/([A-Za-z0-9._-]+)@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m, u) => u.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())).replace(/([a-z])([A-Z][a-z])/g, '$1 $2');
-    const designersOf = designerSplitter(both.map(([r]) => fromEmail(r.designer)));
+    const designersOf = designerSplitter(both.map(([r]) => fromEmail(r.designer)), known);
 
     // One spelling per brand and per creative type (case, spacing and plurals merged; the most used spelling wins).
     const canon = (values, keyOf, pretty) => {
@@ -1993,7 +2048,7 @@ function meetings_(user) {
   let out;
   try {
     if (typeof Calendar === 'undefined') throw new Error('service_off');
-    const now = new Date(), r = Calendar.Events.list(user.email, { timeMin: new Date(now - 3600e3).toISOString(), timeMax: new Date(+now + 3 * 864e5).toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 100 });
+    const now = new Date(), r = Calendar.Events.list(user.email, { timeMin: new Date(now - 3600e3).toISOString(), timeMax: new Date(+now + 14 * 864e5).toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 100 });
     const me = user.email.toLowerCase();
     const events = (r.items || []).filter(function (e) { return e.status !== 'cancelled' && e.start && e.start.dateTime && !(e.attendees || []).some(function (a) { return String(a.email).toLowerCase() === me && a.responseStatus === 'declined'; }); }).map(function (e) {
       const meet = e.hangoutLink || ((e.conferenceData && e.conferenceData.entryPoints) || []).filter(function (p) { return p.entryPointType === 'video'; }).map(function (p) { return p.uri; })[0] || '';
@@ -2152,3 +2207,31 @@ function deliveredFromLog_() {
 }
 /** Run from the editor to set up the Delivered On column now instead of waiting for the next 10-minute check. */
 function setupDeliveredOn() { Logger.log(JSON.stringify(deliveryDates_())); }
+
+/* Only the person's own tasks (permission "scope: own"): rows whose designer/editor or content owner names them. */
+function permText_(p) {
+  return 'pages: ' + p.pages.join(', ') + '; edit tasks: ' + (p.edit ? 'yes' : 'no') + '; download data: ' + (p.export ? 'yes' : 'no') + '; workload and others\' work: ' + (p.load ? 'yes' : 'no') + '; manage team list: ' + (p.team ? 'yes' : 'no') + '; Fasty: ' + (p.fasty ? 'yes' : 'no') + '; tasks: ' + (p.scope === 'own' ? 'only their own' : 'all');
+}
+function ownDataText_(user, fresh) {
+  const all = JSON.parse(dataText_(fresh));
+  const names = [user.name || ''];
+  try {
+    const team = all.sources && Object.keys(all.sources).map(function (k) { return all.sources[k]; }).filter(function (x) { return x && x.kind === 'team'; })[0];
+    if (team) { const t = CODATA.parseTeam(team); const me = t.filter(function (m) { return m.name.toLowerCase() === String(user.name || '').toLowerCase() || String(m.aliases || '').toLowerCase().split(/\s*,\s*/).indexOf(String(user.name || '').toLowerCase()) >= 0; })[0]; if (me) { names.push(me.name); String(me.aliases || '').split(',').forEach(function (a) { names.push(a); }); } }
+  } catch (e) { /* names from the Google profile only */ }
+  const keys = names.map(function (n) { return String(n).toLowerCase().trim(); }).filter(function (n) { return n.length > 2; });
+  const first = keys.length ? keys[0].split(' ')[0] : '';
+  Object.keys(all.sources || {}).forEach(function (k) {
+    const src = all.sources[k]; if (!src || src.kind === 'team' || !Array.isArray(src.rows)) return;
+    const head = (src.headers || []).map(function (h) { return clean_(h).toLowerCase(); });
+    const cols = taskColumns_(kindOf_(k), head); cols.owner = head.findIndex(function (h) { return /content owner|^owner$/.test(h); });
+    const keep = [], nums = [];
+    src.rows.forEach(function (r, i) {
+      const d = String(r[cols.designer] == null ? '' : r[cols.designer]).toLowerCase(), o = cols.owner >= 0 ? String(r[cols.owner] == null ? '' : r[cols.owner]).toLowerCase() : '';
+      if (keys.some(function (n) { return d.indexOf(n) >= 0; }) || (first && o.split(/[ ,]+/).indexOf(first) >= 0)) { keep.push(r); if (src.rowNums) nums.push(src.rowNums[i]); }
+    });
+    src.rows = keep; if (src.rowNums) src.rowNums = nums;
+  });
+  all.scope = 'own';
+  return JSON.stringify(all);
+}

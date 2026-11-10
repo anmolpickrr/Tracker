@@ -136,8 +136,11 @@
   const SPLIT = /\s*(?:,|&|\+|\/|;|\band\b)\s*/i;
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // Learn each person from cells that name one person, then split cells that run several names together.
-  function designerSplitter(cells) {
+  // known: names from the team list (and their other spellings), so names typed together split the same way
+  // however few rows are loaded (for example when a person sees only their own tasks).
+  function designerSplitter(cells, known) {
     const counts = new Map(), display = new Map();
+    (known || []).forEach((n0) => { const n = clean(n0); if (!n) return; const k = n.toLowerCase(); counts.set(k, (counts.get(k) || 0) + 5); if (!display.has(k)) display.set(k, n); });
     for (const c0 of cells) { const c = clean(c0); if (!c) continue; for (const part of c.split(SPLIT).filter(Boolean)) { const k = part.toLowerCase(); counts.set(k, (counts.get(k) || 0) + 1); if (!display.has(k)) display.set(k, part); } }
     const keys = [...counts.keys()];
     const firstOf = (k) => k.split(' ')[0];
@@ -189,7 +192,7 @@
   // sources: [{ kind: 'paid'|'mkt', rows }] in the web app's order (newest tab of each kind first),
   // or the older form { paid: rows, mkt: rows, mkt2025: rows }.
   // Returns the task list; rows that are too incomplete to be a task are on its `ignored` property.
-  function buildTasks(sources, today) {
+  function buildTasks(sources, today, known) {
     if (!today) { const d = new Date(); today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
     const list = Array.isArray(sources) ? sources : Object.keys(sources).map((k) => ({ kind: kindOf(k), rows: sources[k] || [] }));
     const seenIds = { paid: new Set(), mkt: new Set() };
@@ -211,7 +214,7 @@
     // Designer cells: an email becomes a name ("neha@shiprocket.com" → "Neha").
     // Emails become names (neha@… → Neha), and names typed together without a space ("Shubham RanaHimanshu Saxena") are separated.
     const fromEmail = (v) => clean(v).replace(/([A-Za-z0-9._-]+)@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m, u) => u.replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())).replace(/([a-z])([A-Z][a-z])/g, '$1 $2');
-    const designersOf = designerSplitter(both.map(([r]) => fromEmail(r.designer)));
+    const designersOf = designerSplitter(both.map(([r]) => fromEmail(r.designer)), known);
 
     // One spelling per brand and per creative type (case, spacing and plurals merged; the most used spelling wins).
     const canon = (values, keyOf, pretty) => {

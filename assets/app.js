@@ -15,9 +15,15 @@
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
   const CFG = window.CO_CONFIG || {};
   const RANK = { Viewer: 1, Editor: 2, Admin: 3 };
-  const ROLE_LABEL = { Viewer: 'View only', Editor: 'Can edit', Admin: 'Admin' };
+  const ROLE_LABEL = { Viewer: 'View only', Editor: 'Can edit', Admin: 'Manager' };
+  const roleText = (u) => u && u.owner ? 'Admin · Team Manager' : (ROLE_LABEL[u && u.role] || (u && u.role) || '') + (u && u.custom ? ' (custom)' : '');
   const A = { mode: null, url: '', clientId: '', domains: [], session: LS.get('co.session', ''), user: null };
   const can = (need) => A.mode === 'key' || !!(A.user && RANK[A.user.role] >= RANK[need]);
+  /* Permissions come from the web app (role defaults, fine-tuned per person by the owner). The owner (the Creative Head:
+     Admin and Team Manager) has all of them and is the only one who manages access, the activity log, live activity and settings. */
+  const isOwner = () => A.mode === 'key' || !!(A.user && A.user.owner);
+  const perm = (k) => A.mode === 'key' || !!(A.user && (A.user.owner || (A.user.perms ? !!A.user.perms[k] : (k === 'edit' ? RANK[A.user.role] >= 2 : k === 'export' || k === 'fasty' ? true : RANK[A.user.role] >= 3))));
+  const pageOk = (t) => { if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access'; if (t === 'access') return isOwner(); if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
 
   const S = { status: 'idle', error: '', tasks: null, team: null, teamRaw: [], sources: {}, generatedAt: null, loadedAt: null };
@@ -66,10 +72,11 @@
     try { return JSON.parse(text); } catch (e) { throw new Error(/<html/i.test(text) ? 'The web app answered with a web page instead of data. Check that it is deployed with access set to "Anyone".' : 'The web app returned something that is not data.'); }
   };
   /* Signed-in requests: everything goes by POST with the session, never in the URL. */
-  async function callApi(payload) {
+  // quiet: background calls (the live-activity heartbeat) never sign anyone out; the 30-second check handles that with the right message.
+  async function callApi(payload, quiet) {
     const res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)) });
     const body = parse(await res.text());
-    if (!body.ok && ['signin_required', 'session_expired', 'no_access'].includes(body.error)) { lostAccess(body); throw new AuthLost(body.error); }
+    if (!quiet && !body.ok && ['signin_required', 'session_expired', 'no_access'].includes(body.error)) { lostAccess(body); throw new AuthLost(body.error); }
     return body;
   }
   async function keyGet(params) {
@@ -121,10 +128,11 @@
       S.sources = src;
       // Every task tab the web app reports, in its order (newest tab of each kind first).
       const keys = Object.keys(src).filter((k) => !src[k].error && CODATA.kindOf(k, src[k].kind) !== 'team');
-      S.tasks = CODATA.buildTasks(keys.map((k) => ({ kind: CODATA.kindOf(k, src[k].kind), rows: CODATA.parseSource(CODATA.kindOf(k, src[k].kind), src[k], k) })));
-      S.ignored = S.tasks.ignored || [];
       const teamKey = Object.keys(src).find((k) => CODATA.kindOf(k, src[k].kind) === 'team');
       S.teamRaw = CODATA.parseTeam(teamKey ? src[teamKey] : null);
+      const known = S.teamRaw.flatMap((m) => [m.name].concat(String(m.aliases || '').split(',').map((x) => x.trim()).filter((x) => x.includes(' '))));
+      S.tasks = CODATA.buildTasks(keys.map((k) => ({ kind: CODATA.kindOf(k, src[k].kind), rows: CODATA.parseSource(CODATA.kindOf(k, src[k].kind), src[k], k) })), undefined, known);
+      S.ignored = S.tasks.ignored || [];
       S.team = S.teamRaw;
       S.cols = {}; Object.keys(src).forEach((k) => { S.cols[k] = CODATA.columnsOf(src[k]); });
       S.ver = body.ver || null;
@@ -150,7 +158,7 @@
   }
   /* Integration health from the web app (account, change detection, edit access). Admins only. Best effort. */
   async function loadHealth() {
-    if (!can('Admin')) { S.health = null; return; }
+    if (!pageOk('health')) { S.health = null; return; }
     try {
       const body = A.mode === 'auth' ? await callApi({ action: 'health' }) : await keyGet({ mode: 'health' });
       S.health = body.ok ? body : null;
@@ -177,8 +185,12 @@
     try {
       const body = await probeVer();
       S.checkedAt = new Date();
+      // Access changes made by the owner reach open dashboards on the next check (role and fine-grained permissions).
+      if (A.mode === 'auth' && body.ok && A.user && body.perms && !A.user.owner && JSON.stringify(body.perms) !== JSON.stringify(A.user.perms) && body.role === A.user.role) {
+        A.user.perms = body.perms; A.user.custom = !!body.custom; toast('Your access was updated.'); renderAll(); loadHealth(); ASH.show(perm('fasty'));
+      }
       if (A.mode === 'auth' && body.ok && body.role && A.user && body.role !== A.user.role) {
-        A.user.role = body.role; toast('Your access is now: ' + ROLE_LABEL[body.role] + '.'); renderAll(); loadHealth();
+        A.user.role = body.role; if (body.perms) { A.user.perms = body.perms; A.user.custom = !!body.custom; } toast('Your access is now: ' + roleText(A.user) + '.'); renderAll(); loadHealth();
       }
       if (A.mode === 'auth' && body.ok && typeof body.pending === 'number' && body.pending !== AX.pending) { AX.pending = body.pending; syncControls(); }
       if (P.tab === 'access') axRefresh(false);
@@ -190,7 +202,7 @@
         if (body.assist) ASH.setStatus(body.assist);
       }
       if (body.ok && body.ver && S.ver && body.ver !== S.ver) await load(false);
-      dash.draw('sync-text');
+      dash.draw('sync-text'); dash.draw('sync-detail');
     } catch (e) { /* a missed check is retried on the next tick */ }
     checking = false;
   }
@@ -199,7 +211,7 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.loadedAt) { if (Date.now() - S.loadedAt > 5 * 60 * 1000) load(false); else checkForChanges(); } });
   // Keep the 'checked … ago' line current, and redraw everything when the date changes (overdue and due-today move at midnight).
   let shownDay = new Date().toDateString();
-  setInterval(() => { const d = new Date().toDateString(); if (d !== shownDay) { shownDay = d; renderAll(); } else dash.draw('sync-text'); }, 15 * 1000);
+  setInterval(() => { const d = new Date().toDateString(); if (d !== shownDay) { shownDay = d; renderAll(); } else { dash.draw('sync-text'); dash.draw('sync-detail'); } }, 15 * 1000);
 
   /* ================= Helpers ================= */
   const CO = (() => {
@@ -472,27 +484,31 @@
   let landed = false;
   function syncControls() {
     const p = dash.params();
-    const admin = A.mode === 'auth' && can('Admin');
-    document.body.dataset.admin = admin ? '1' : '';
+    const admin = A.mode === 'auth' && isOwner();
+    document.body.dataset.admin = A.mode === 'auth' && perm('load') ? '1' : '';
+    document.body.dataset.owner = admin ? '1' : '';
+    document.body.dataset.export = perm('export') ? '1' : '';
     const axTab = document.querySelector('.co-tab[data-tab="access"]');
     axTab.hidden = !admin;
+    // Pages each person may see (set by the owner on the Access page).
+    document.querySelectorAll('.co-tab[data-tab], .btabs .bt[data-tab]').forEach((b) => { if (b.dataset.tab === 'access' || b.dataset.tab === 'notes' || b.dataset.tab === 'mine') return; b.hidden = !pageOk(b.dataset.tab); });
     const badge = axTab.querySelector('.nav-badge'); badge.hidden = !AX.pending; badge.textContent = AX.pending ? AX.pending + ' waiting' : '';
     document.querySelector('.bt-dot').hidden = !(admin && AX.pending);
     const signed = A.mode === 'auth' && !!A.user;
     const bell = document.getElementById('btn-bell'); bell.hidden = !signed;
     const unread = NT.unread(); bell.querySelector('.bell-dot').hidden = !unread;
     bell.title = unread ? unread + ' new notification' + (unread === 1 ? '' : 's') : 'Notifications'; bell.setAttribute('aria-label', bell.title);
-    document.querySelector('.co-tab[data-tab="notes"]').hidden = !signed;
+    document.querySelector('.co-tab[data-tab="notes"]').hidden = !signed || !pageOk('notes');
     document.querySelector('.bt[data-tab="notes"]').hidden = !signed;
     document.querySelector('.btabs').classList.toggle('four', !signed);
     document.body.classList.toggle('syncing', !!S.refreshing || S.status === 'loading');
-    document.getElementById('add-member').hidden = !can('Admin');
+    document.getElementById('add-member').hidden = !perm('team');
     document.querySelector('.co-tab[data-tab="mine"]').hidden = !signed;
     // Team members land on My work (admins on the Overview), unless the link names a page.
-    if (!landed && signed && S.team && CO.status() === 'ok') { landed = true; if (!location.hash && !admin && myDesigner() && p.tab === 'today') { dash.setParams({ tab: 'mine' }); return; } }
+    if (!landed && signed && S.team && CO.status() === 'ok') { landed = true; if (!location.hash && !admin && (myDesigner() || !pageOk('today')) && p.tab === 'today') { dash.setParams({ tab: 'mine' }); return; } }
     // On phones the second tab is My work for team members and Stand-up for admins.
     { const bt2 = document.querySelector('.btabs .bt[data-tab="standup"], .btabs .bt[data-tab="mine"]'); const mineFirst = signed && !admin; bt2.dataset.tab = mineFirst ? 'mine' : 'standup'; bt2.querySelector('span').textContent = mineFirst ? 'My work' : 'Stand-up'; }
-    const tab = TABS.includes(p.tab) && (p.tab !== 'access' || admin) && ((p.tab !== 'notes' && p.tab !== 'mine') || signed) ? p.tab : 'today';
+    const tab = TABS.includes(p.tab) && pageOk(p.tab) ? p.tab : pageOk('today') ? 'today' : 'mine';
     document.querySelectorAll('[data-panel]').forEach((s) => {
       const show = s.dataset.panel === tab;
       // A short entrance when the page changes (not on every refresh).
@@ -632,7 +648,7 @@
     health: ['Data health', 'Rows that make tracking less reliable, and the connection to the sheets.'],
     access: ['Access & activity', 'Who can use the dashboard, and every change they made.']
   };
-  const curTab = () => { const t = dash.params().tab; return PAGES[t] && (t !== 'access' || (A.mode === 'auth' && can('Admin'))) && ((t !== 'notes' && t !== 'mine') || (A.mode === 'auth' && A.user)) ? t : 'today'; };
+  const curTab = () => { const t = dash.params().tab; return PAGES[t] && pageOk(t) ? t : pageOk('today') ? 'today' : 'mine'; };
   const greeting = () => { const h = CO.istHour(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
   const firstName = () => (A.user && A.user.name ? A.user.name.split(' ')[0] : '');
   dash.draw('page-title', (el) => { const t = curTab(); el.textContent = t === 'today' && firstName() ? greeting() + ', ' + firstName() : PAGES[t][0]; });
@@ -643,28 +659,36 @@
     el.append(chip);
     if (t === 'today' && firstName()) { const sep = document.createElement('span'); sep.className = 'ws-sep'; sep.textContent = '/'; const pg = document.createElement('span'); pg.className = 'ws-page'; pg.textContent = 'Overview'; el.append(sep, pg); }
   });
-  dash.draw('top-av', (el) => { el.replaceChildren(); if (A.user) { const a = CO.av(A.user.name || A.user.email); a.title = (A.user.name || A.user.email) + ' · ' + (ROLE_LABEL[A.user.role] || A.user.role); el.append(a); } });
+  dash.draw('top-av', (el) => { el.replaceChildren(); if (A.user) { const a = CO.av(A.user.name || A.user.email); a.title = (A.user.name || A.user.email) + ' · ' + roleText(A.user); el.append(a); } });
   dash.draw('page-sub', (el) => { const s = PAGES[curTab()][1]; el.textContent = typeof s === 'function' ? s() : s; });
   dash.draw('filter-count', (el) => { const p = dash.params(); const n = ['src', 'designer', 'brand', 'type'].filter((k) => p[k]).length; el.textContent = n ? String(n) : ''; });
   dash.draw('me-card', (el) => {
     el.replaceChildren(); if (!A.user) return;
     const w = document.createElement('span'); w.className = 'su-who';
     const b = document.createElement('b'); b.textContent = A.user.name || A.user.email;
-    const sm = document.createElement('small'); sm.textContent = (ROLE_LABEL[A.user.role] || A.user.role) + ' · ' + A.user.email;
+    const sm = document.createElement('small'); sm.textContent = roleText(A.user) + ' · ' + A.user.email;
     w.append(b, sm); el.append(CO.av(A.user.name || A.user.email, 'lg'), w); el.title = A.user.email;
   });
   dash.draw('today-date', (el) => { el.textContent = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); });
   dash.draw('sync-dot', (el) => { el.className = 'co-sync-dot ' + (S.status === 'ok' ? (S.staleError ? 'warn' : 'ok') : S.status === 'error' ? 'bad' : S.status === 'loading' ? 'busy' : ''); });
-  dash.draw('sync-text', (el) => {
-    if (S.status === 'ok') {
-      const at = new Date(S.generatedAt || S.loadedAt);
-      const live = S.ver && S.ver !== '0';
-      const ago = S.checkedAt || S.loadedAt ? Math.max(0, Math.round((Date.now() - (S.checkedAt > S.loadedAt ? S.checkedAt : S.loadedAt)) / 1000)) : null;
-      el.textContent = (S.cached ? 'Saved copy · updating… ' : S.refreshing ? 'Syncing… ' : live ? 'Live · ' : '') + 'data from ' + CO.istTime(at) + (ago != null && !S.refreshing ? ' · checked ' + (ago < 5 ? 'just now' : ago + 's ago') : '') + (S.staleError ? ' · last refresh failed' : '');
-      el.title = live ? 'Checks the sheets for changes every 30 seconds' : 'Run setup() in Apps Script to turn on instant change detection';
-    } else el.textContent = S.status === 'loading' ? 'Loading sheets…' : S.status === 'error' ? 'Could not load' : 'Not connected';
+  // The header shows only the state ("Live"); the details are in a small card on hover or keyboard focus.
+  const syncInfo = () => {
+    if (S.status !== 'ok') return { short: S.status === 'loading' ? 'Loading' : S.status === 'error' ? 'Offline' : 'Not connected', rows: [] };
+    const at = new Date(S.generatedAt || S.loadedAt), live = S.ver && S.ver !== '0';
+    const ago = S.checkedAt || S.loadedAt ? Math.max(0, Math.round((Date.now() - (S.checkedAt > S.loadedAt ? S.checkedAt : S.loadedAt)) / 1000)) : null;
+    const short = S.cached ? 'Updating' : S.refreshing ? 'Syncing' : S.staleError ? 'Delayed' : live ? 'Live' : 'Connected';
+    const rows = [['Data from', CO.istTime(at) + ' IST'], ['Last checked', ago == null ? '—' : ago < 5 ? 'just now' : ago < 120 ? ago + ' seconds ago' : Math.round(ago / 60) + ' minutes ago'], ['Checks', live ? 'every 30 seconds for sheet changes' : 'when you refresh']];
+    if (S.cached) rows.push(['Showing', 'the copy saved on this device while fresh data loads']);
+    if (S.staleError) rows.push(['Last refresh failed', S.staleError]);
+    return { short, rows };
+  };
+  dash.draw('sync-text', (el) => { const i = syncInfo(); el.textContent = i.short; el.title = i.rows.map((r) => r[0] + ': ' + r[1]).join('\n'); });
+  dash.draw('sync-detail', (el) => {
+    const i = syncInfo(); el.replaceChildren();
+    const h = document.createElement('b'); h.textContent = i.short === 'Live' ? 'Live sync is on' : i.short; el.append(h);
+    const dl = document.createElement('dl'); i.rows.forEach(([k, v]) => { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v; dl.append(dt, dd); }); el.append(dl);
   });
-  dash.draw('me', (el) => { el.textContent = A.user ? (A.user.name || A.user.email) + ' · ' + (ROLE_LABEL[A.user.role] || A.user.role) : ''; el.title = A.user ? A.user.email : ''; });
+  dash.draw('me', (el) => { el.textContent = A.user ? (A.user.name || A.user.email) + ' · ' + roleText(A.user) : ''; el.title = A.user ? A.user.email : ''; });
   dash.draw('banner-title', (el) => { el.textContent = S.status === 'error' ? 'The sheets could not be loaded' : 'Connect the dashboard to your sheets'; });
   dash.draw('banner-text', (el) => { el.textContent = S.status === 'error' ? S.error : 'Paste the web app URL and key from the Apps Script set-up (see the README). They are kept in this browser only.'; });
   dash.draw('foot', (el) => {
@@ -822,7 +846,7 @@
     const tog = document.createElement('button'); tog.type = 'button'; tog.className = 'na-tog'; tog.setAttribute('aria-expanded', String(!NA.min)); tog.setAttribute('aria-controls', 'na-body');
     tog.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>'; tog.append(Object.assign(document.createElement('span'), { textContent: NA.min ? 'Expand' : 'Minimise' }));
     tog.title = NA.min ? 'Show the list' : 'Minimise to one line';
-    tog.addEventListener('click', () => { NA.min = !NA.min; LS.set('co.namin', NA.min ? '1' : ''); el._drawn = false; dash.draw('attn'); const t2 = el.querySelector('.na-tog'); if (t2) t2.focus(); });
+    tog.addEventListener('click', () => { flip(() => { NA.min = !NA.min; LS.set('co.namin', NA.min ? '1' : ''); el._drawn = false; dash.draw('attn'); }); const t2 = el.querySelector('.na-tog'); if (t2) t2.focus(); });
     const acts = document.createElement('div'); acts.className = 'na-acts'; acts.append(go, tog);
     head.append(hl, acts); el.append(head);
     el.classList.toggle('collapsed', NA.min); const grid = el.closest('.ov-grid'); if (grid) grid.classList.toggle('na-min', NA.min);
@@ -902,7 +926,7 @@
     const head = document.createElement('div'); head.className = 'co-card-head';
     const hd = document.createElement('div'); const h = document.createElement('h2'); h.className = 'co-h2'; h.textContent = 'Unassigned'; const n = document.createElement('p'); n.className = 'co-note'; n.textContent = 'Open tasks with no designer yet.'; hd.append(h, n); head.append(hd);
     if (open.length) { const go = document.createElement('button'); go.type = 'button'; go.className = 'co-link'; go.textContent = 'Open queue'; go.addEventListener('click', () => CO.goTasks('open', { designer: '__none' })); head.append(go); }
-    el.append(head);
+    el.append(head); collapser(el, 'unassigned', 'Unassigned');
     if (!open.length) { const p = document.createElement('p'); p.className = 'su-free'; p.textContent = 'Every open task has a designer.'; el.append(p); return; }
     const late = open.filter((r) => r.due === 'overdue').length, noeta = open.filter((r) => r.due === 'noeta').length;
     const big = document.createElement('div'); big.className = 'uq-big';
@@ -1210,7 +1234,7 @@
     const side = el.classList.contains('tw-s'), isOpen = side ? TW.pop : TW.open;
     const tog = document.createElement('button'); tog.type = 'button'; tog.className = 'tw-tog'; tog.setAttribute('aria-expanded', String(isOpen)); tog.setAttribute('aria-label', isOpen ? 'Hide tasks' : 'Show tasks'); tog.innerHTML = side ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
     const setOpen = (v) => { if (side) TW.pop = v; else { TW.open = v; LS.set('co.twopen', v ? '1' : '0'); } };
-    tog.addEventListener('click', (e) => { e.stopPropagation(); setOpen(!isOpen); dash.draw('tw'); });
+    tog.addEventListener('click', (e) => { e.stopPropagation(); flip(() => { setOpen(!isOpen); dash.draw('tw'); }); });
     head.append(rWrap, tt, tog);
     // tiles
     const tiles = document.createElement('div'); tiles.className = 'tw-tiles'; tiles.setAttribute('role', 'tablist'); tiles.setAttribute('aria-label', 'Today');
@@ -1288,7 +1312,7 @@
     if (A.mode !== 'auth' || !A.user) { el.replaceChildren(); return; }
     if (CO.notReady(el, 'box')) return;
     el.replaceChildren();
-    const admin = can('Admin'), mine = myDesigner();
+    const admin = perm('load'), mine = myDesigner();
     const people = (S.team || []).filter((m) => m.status !== 'Inactive' && !EF.hidden(m.name)).map((m) => m.name).sort((a, b) => a.localeCompare(b));
     let who = admin ? (MW.who && people.includes(MW.who) ? MW.who : mine && people.includes(mine) ? mine : people[0]) : mine;
     const head = document.createElement('section'); head.className = 'co-card mw-head';
@@ -1321,7 +1345,7 @@
     head.append(tiles); el.append(head);
     const fl = filterNote2();
     const section = (title, note, list, opts, empty, limit) => {
-      const c = card(title, note, list.length); const ul = document.createElement('ul'); ul.className = 'na-list mw-list';
+      const c = card(title, note, list.length); collapser(c, 'mw:' + title, title); const ul = document.createElement('ul'); ul.className = 'na-list mw-list';
       list.slice(0, limit || 50).forEach((r, i) => { const li = workRow(r, Object.assign({ who: false }, opts)); li.classList.add('in'); li.style.setProperty('--i', Math.min(i, 10)); ul.append(li); });
       if (list.length > (limit || 50)) { const m = document.createElement('li'); m.className = 'tw-more'; m.textContent = '+' + (list.length - (limit || 50)) + ' more in Tasks'; ul.append(m); }
       if (!list.length) { c.append(emptyLine(fl ? empty + ' (filtered: ' + fl + ')' : empty)); if (fl) c.append(clearBtn2()); } else c.append(ul);
@@ -1366,7 +1390,7 @@
     const search = document.createElement('input'); search.type = 'search'; search.className = 'co-input br-search'; search.placeholder = 'Search brands'; search.value = BR2.q; search.setAttribute('aria-label', 'Search brands');
     search.addEventListener('input', () => { BR2.q = search.value; dash.draw('brands'); });
     const count = document.createElement('span'); count.className = 'co-note'; count.textContent = list.length + (list.length === 1 ? ' brand' : ' brands');
-    tools.append(search, count); hd.append(l, tools); el.append(hd);
+    tools.append(search, count); hd.append(l, tools); el.append(hd); collapser(el, 'brands', 'Brands');
     if (!list.length) { const fl = filterNote2(); el.append(emptyLine(q ? 'No brand matches "' + BR2.q + '".' : fl ? 'No brands for ' + fl + '.' : 'No brand activity yet.')); if (fl) el.append(clearBtn2()); if (keepFocus) search.focus(); return; }
     const wrap = document.createElement('div'); wrap.className = 'co-tablewrap';
     const tb = document.createElement('table'); tb.className = 'co-table br-table';
@@ -1410,9 +1434,9 @@
     const hd = document.createElement('div'); hd.className = 'na-head';
     const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Waiting on client'; const n = document.createElement('span'); n.className = 'na-count' + (rows.length ? '' : ' ok'); n.textContent = rows.length; h2.append(n);
     const note = document.createElement('p'); note.className = 'co-note'; note.textContent = rows.length ? 'Shared and waiting for approval, by brand, longest wait first. Days are counted from the design ETA. ' + over + ' have waited more than 14 days.' : 'Nothing is waiting on a client.'; l.append(h2, note);
-    const dl = document.createElement('button'); dl.type = 'button'; dl.className = 'co-btn'; dl.textContent = 'Download CSV'; dl.disabled = !rows.length;
+    const dl = document.createElement('button'); dl.type = 'button'; dl.className = 'co-btn dl-csv'; dl.textContent = 'Download CSV'; dl.disabled = !rows.length;
     dl.addEventListener('click', () => CO.csv('waiting-on-client-' + t + '.csv', ['Brand', 'ID', 'Creative', 'Type', 'Creatives', 'Designer', 'Shared (design ETA)', 'Days waiting', 'Internal / External'], groups.flatMap((g) => g.list.map((r) => [r.brand, r.id, CO.topicText(r), r.type, r.qty || 1, r.list.join(', '), r.eta || '', days(r), CO.cls(r.source)]))));
-    hd.append(l, dl); el.append(hd);
+    hd.append(l, dl); el.append(hd); collapser(el, 'waiting', 'Waiting on client');
     if (!rows.length) { const fl = filterNote2(); if (fl) { el.append(emptyLine('Nothing for ' + fl + '.'), clearBtn2()); } return; }
     // How long approvals take: the median and the longest wait, then how many tasks fall in each band (click to filter).
     const ds = rows.map(days).sort((a, b) => a - b), med = ds[Math.floor((ds.length - 1) / 2)], max = ds[ds.length - 1];
@@ -1651,7 +1675,7 @@
       const tag = document.createElement('span');
       tag.className = m.status === 'New' ? 'tag-new' : m.status === 'Inactive' ? 'tag-off' : 'chip s-ok';
       tag.textContent = m.status === 'New' ? 'New · not on list' : m.status;
-      if (!can('Admin')) { wrap.append(tag); return wrap; }
+      if (!perm('team')) { wrap.append(tag); return wrap; }
       const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'co-link';
       btn.textContent = m.status === 'New' ? 'Add to team' : m.status === 'Active' ? 'Set inactive' : 'Set active';
       btn.addEventListener('click', (e) => { e.stopPropagation(); setMember(name, m.status === 'Active' ? 'Inactive' : 'Active'); });
@@ -1968,7 +1992,7 @@
       const r = S.tasks.find((t) => t.uid === uid); if (!r) return;
       current = r;
       EDITING.uid = r.src + ':' + (r.id || r.row); EDITING.label = (r.id ? r.id + ' · ' : '') + r.brand + ' · ' + CO.topicText(r).slice(0, 50);
-      if (can('Editor')) setTimeout(checkForChanges, 50);
+      if (perm('edit')) setTimeout(checkForChanges, 50);
       const list = r.designers ? [...new Set(r.designers.split(' + ').map(CO.canon))] : [];
       before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1) };
       $('ed-where').textContent = CO.cls(r) + ' · ' + (SHEET[r.src] || r.source) + (r.row ? ' · row ' + r.row : '') + (r.id ? ' · ' + r.id : '');
@@ -1992,12 +2016,12 @@
       const links = CO.links(r); $('ed-links').replaceChildren(links);
       $('ed-msg').textContent = r.id ? '' : 'This row has no ID in the sheet, so it can only be edited there.';
       $('ed-save').disabled = !r.id; $('ed-save').textContent = 'Save to sheet';
-      const edit = can('Editor');
+      const edit = perm('edit');
       ['ed-status', 'ed-eta', 'ed-designer', 'ed-qty'].forEach((id) => { $(id).disabled = !edit; });
       if (!edit) $('ed-priority').disabled = true;
       $('ed-save').hidden = !edit;
       if (!edit) $('ed-msg').textContent = 'View only. Ask the admin for Editor access to change tasks.';
-      $('ed-history').hidden = !(A.mode === 'auth' && can('Admin') && r.id);
+      $('ed-history').hidden = !(A.mode === 'auth' && isOwner() && r.id);
       if (dlgE.showModal) dlgE.showModal(); else dlgE.setAttribute('open', '');
     }
     const openFrom = (e) => {
@@ -2007,6 +2031,8 @@
     document.querySelector('.co').addEventListener('click', openFrom);
     // Read-only hook for the reconciliation checks (the same rows this page already shows; nothing new is exposed).
   window.CO_rows = () => (CO.rows() || []).map((r) => Object.assign({}, r));
+  // Static cards (their content is drawn inside them): Overview charts and lists, Team and Reports sections.
+  setTimeout(() => document.querySelectorAll('[data-panel="today"] .co-card:not([data-draw]), [data-panel="team"] .co-card:not([data-draw]), [data-panel="reports"] > .co-card:not([data-draw])').forEach((c) => { const h = c.querySelector(':scope > .co-card-head .co-h2'); if (h && !c.classList.contains('na') && !c.classList.contains('daily')) collapser(c, 'card:' + h.textContent.trim(), h.textContent.trim()); }), 0);
   document.addEventListener('co-open-editor', (e) => openEditor(e.detail));
     document.querySelector('.co').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-uid][tabindex]')) openEditor(e.target.dataset.uid); });
     $('ed-cancel').addEventListener('click', () => dlgE.close());
@@ -2014,7 +2040,7 @@
     $('ed-history').addEventListener('click', () => { if (!current) return; dlgE.close(); AX.q = current.id; AX.kind = ''; document.getElementById('ax-q').value = current.id; document.getElementById('ax-kind').value = ''; dash.setParams({ tab: 'access' }); });
     $('editor-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const r = current; if (!r || !can('Editor')) return;
+      const r = current; if (!r || !perm('edit')) return;
       const now = { status: $('ed-status').value, eta: $('ed-eta').value, designer: $('ed-designer').value.replace(/\s*\+\s*/g, ', ').replace(/\s+/g, ' ').trim(), priority: $('ed-priority').value, qty: $('ed-qty').value };
       if ($('ed-eta').value && !$('ed-eta').validity.valid) { $('ed-msg').textContent = 'Pick a complete date.'; return; }
       const fields = {};
@@ -2057,7 +2083,7 @@
   /* ================= Access (admins): requests, people, activity log ================= */
   const AX = { users: null, you: '', log: null, next: null, total: 0, q: '', kind: '', who: '', err: '', busy: false, pending: 0 };
   async function axRefresh(withLog) {
-    if (A.mode !== 'auth' || !can('Admin')) return;
+    if (A.mode !== 'auth' || !isOwner()) return;
     try {
       const b = await callApi({ action: 'users' });
       if (b.ok) { AX.users = b.users; AX.you = b.you; AX.err = ''; AX.pending = b.users.filter((u) => u.status === 'Pending').length; syncControls(); fillWho(); if (PR.email) drawPerson(); } else AX.err = errText(b.error);
@@ -2122,14 +2148,14 @@
     if (!u) { head.append(el('p', 'co-note', 'Not on the access list.')); return; }
     const who = el('div', 'pr-who');
     who.append(el('h2', 'co-h2', u.name || u.email), el('span', 'co-note', u.email));
-    const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : u.status === 'Pending' ? 's-warn' : 's-mute'), STATUS_LABEL[u.status] + (u.status === 'Approved' ? ' · ' + ROLE_LABEL[u.role] : ''));
+    const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : u.status === 'Pending' ? 's-warn' : 's-mute'), STATUS_LABEL[u.status] + (u.status === 'Approved' ? ' · ' + roleText(u) : ''));
     who.append(chip);
     head.append(avatar(u, 'lg'), who);
     const fact = (k, v) => { if (!v) return; facts.append(el('dt', '', k), el('dd', '', v)); };
     fact('Team / role', u.team); fact('Note to admin', u.note); fact('First asked', when(u.requestedOn));
     fact('Decided by', u.decidedBy ? nameOf(u.decidedBy) + ' · ' + when(u.decidedOn) : ''); fact('Last sign-in', when(u.lastSignIn));
     const locked = u.owner || u.email === AX.you;
-    if (locked) act.append(el('p', 'co-note', u.owner ? 'The owner always has Admin access.' : 'You cannot change your own access.'));
+    if (locked) act.append(el('p', 'co-note', u.owner ? 'The owner (Admin and Team Manager) always has every permission.' : 'You cannot change your own access.'));
     else {
       const sel = roleSelect(u.role);
       const lab = el('label', 'co-field', 'Access level'); lab.append(sel);
@@ -2144,6 +2170,27 @@
       } else {
         btn('Give access', 'primary', () => setAccess(u.email, { status: 'Approved', role: sel.value }, (u.name || u.email) + ' has access: ' + ROLE_LABEL[sel.value]));
       }
+    }
+    // Fine-grained access for this person (owner only): pages, abilities and which tasks they see.
+    if (!locked && u.status === 'Approved') {
+      const P0 = u.perms || {}, box = el('fieldset', 'pm-box'); box.append(el('legend', '', 'What ' + ((u.name || u.email).split(' ')[0]) + ' can see and do'));
+      const PAGES_L = [['mine', 'My work'], ['today', 'Overview'], ['standup', 'Stand-up'], ['tasks', 'Tasks'], ['notes', 'Notes'], ['team', 'Team'], ['reports', 'Reports'], ['brands', 'Brands'], ['health', 'Data health']];
+      const pg = el('div', 'pm-pages'); pg.append(el('span', 'pm-h', 'Pages'));
+      const pgs = el('div', 'pm-chips');
+      PAGES_L.forEach(([k, l]) => { const lab = el('label', 'pm-chip'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = k; cb.checked = (P0.pages || []).includes(k); if (k === 'mine') { cb.checked = true; cb.disabled = true; lab.title = 'Everyone keeps their own work page'; } lab.append(cb, el('span', '', l)); pgs.append(lab); });
+      pg.append(pgs); box.append(pg);
+      const AB = [['edit', 'Edit tasks', 'Change status, ETA, designer and priority (written to the sheet and logged)'], ['export', 'Download data', 'CSV downloads on Tasks, Reports and Brands'], ['load', 'See workload and others\' work', 'Workload estimates and "View as" on My work'], ['team', 'Manage the team list', 'Add people and set them active or inactive'], ['fasty', 'Use Fasty', 'The voice and chat assistant']];
+      const ab = el('div', 'pm-abs');
+      AB.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = !!P0[k]; const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); ab.append(lab); });
+      box.append(ab);
+      const sc = el('label', 'co-field', 'Tasks they can see'); const scs = el('select', 'co-select'); scs.append(new Option('All tasks', 'all'), new Option('Only tasks assigned to them (or whose brief they own)', 'own')); scs.value = P0.scope || 'all'; sc.append(scs); box.append(sc);
+      box.append(el('p', 'co-note', 'Always yours only: giving access, the activity log, live team activity and settings.' + (u.custom ? ' This person has custom permissions.' : ' Using the defaults for ' + ROLE_LABEL[u.role] + '.')));
+      const row = el('div', 'pm-act');
+      const save = el('button', 'co-btn primary', 'Save permissions'); save.type = 'button';
+      save.addEventListener('click', () => { const perms = { pages: [...pgs.querySelectorAll('input:checked')].map((x) => x.value), scope: scs.value }; ab.querySelectorAll('input[data-k]').forEach((x) => { perms[x.dataset.k] = x.checked; }); setAccess(u.email, { perms }, 'Permissions saved for ' + (u.name || u.email)); });
+      row.append(save);
+      if (u.custom) { const rs = el('button', 'co-btn', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
+      box.append(row); act.append(box);
     }
     if (!PR.log) { log.append(el('p', 'co-note', 'Loading activity…')); return; }
     if (!PR.log.length) { log.append(el('p', 'co-note', 'No activity yet.')); return; }
@@ -2198,7 +2245,7 @@
       CO.td(tr, personLink(u), 'co-nowrap');
       CO.td(tr, u.email, 'co-nowrap');
       const rc = tr.insertCell();
-      if (locked || u.status !== 'Approved') rc.textContent = ROLE_LABEL[u.role];
+      if (locked || u.status !== 'Approved') rc.textContent = u.owner ? 'Admin · Team Manager (owner)' : ROLE_LABEL[u.role] + (u.custom ? ' · custom' : '');
       else { const s = roleSelect(u.role); s.addEventListener('change', () => setAccess(u.email, { role: s.value }, (u.name || u.email) + ': ' + ROLE_LABEL[s.value])); rc.append(s); }
       const sc = tr.insertCell(); const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : 's-mute'), STATUS_LABEL[u.status]); sc.append(chip);
       CO.td(tr, when(u.lastSignIn), 'co-nowrap');
@@ -2261,32 +2308,115 @@
   const REMIND_AT = { morning: 600, evening: 1080, label: { morning: '10:00', evening: '18:00' } };
   /* Presence: who is online (admins only see the list; everyone is told it is visible). */
   const PRS = { on: true, list: [] };
-  const PAGE_NAME = { today: 'Overview', standup: 'Stand-up', tasks: 'Tasks', notes: 'Notes', team: 'Team', reports: 'Reports', health: 'Data health', access: 'Access' };
+  const PAGE_NAME = { mine: 'My work', today: 'Overview', standup: 'Stand-up', tasks: 'Tasks', notes: 'Notes', team: 'Team', reports: 'Reports', brands: 'Brands', health: 'Data health', access: 'Access' };
   const agoText = (iso) => { if (!iso) return 'never'; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : CO.istDateTime(iso); };
   dash.draw('presence-mini', (el) => {
-    el.replaceChildren(); if (!can('Admin') || A.mode !== 'auth' || !PRS.on) return;
+    el.replaceChildren(); if (!isOwner() || A.mode !== 'auth' || !PRS.on) return;
     const on = PRS.list.filter((p) => p.online && (!A.user || p.email !== A.user.email));
     if (!on.length) return;
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-mini'; b.title = on.map((p) => p.name + ' · ' + (PAGE_NAME[p.page] || 'dashboard') + (p.taskLabel ? ' · editing ' + p.taskLabel : '')).join('\n');
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-mini'; b.title = on.map((p) => p.name + ' · ' + (p.doing || PAGE_NAME[p.page] || 'dashboard')).join('\n');
     on.slice(0, 4).forEach((p) => { const a = CO.av(p.name); a.classList.add('live'); b.append(a); });
     const n = document.createElement('span'); n.textContent = on.length + ' online'; b.append(n);
-    b.addEventListener('click', () => dash.setParams({ tab: 'access' })); el.append(b);
+    b.addEventListener('click', () => { dash.setParams({ tab: 'today' }); setTimeout(() => { const c = document.querySelector('.la-card'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 150); }); el.append(b);
   });
   dash.draw('presence', (el) => {
     el.replaceChildren();
     if (!PRS.on) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Presence is switched off in the reminder settings below.'; el.append(p); return; }
     const list = PRS.list.slice().sort((a, b) => (b.online - a.online) || String(b.at).localeCompare(String(a.at)));
     if (!list.length) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Checking who is online…'; el.append(p); return; }
-    list.forEach((p) => {
-      const r = document.createElement('div'); r.className = 'pr-row' + (p.online ? ' online' : '');
-      const a = CO.av(p.name); if (p.online) a.classList.add('live');
-      const t = document.createElement('div'); const n = document.createElement('b'); n.textContent = p.name; const sm = document.createElement('small');
-      sm.textContent = p.online ? 'On ' + (PAGE_NAME[p.page] || 'the dashboard') + (p.taskLabel ? ' · editing ' + p.taskLabel : '') : 'Last active ' + agoText(p.at);
-      t.append(n, sm);
-      const st = document.createElement('span'); st.className = 'pr-state'; st.textContent = p.online ? (p.taskLabel ? 'Editing' : 'Online') : 'Away';
-      r.append(a, t, st); el.append(r);
-    });
+    const box = document.createElement('div'); box.className = 'la-list'; list.forEach((p) => box.append(liveRow(p))); el.append(box);
   });
+
+  /* ============ Live team activity ============
+     Everyone's dashboard sends a short heartbeat every 15 seconds (while the tab is open): the page, a one-line description
+     of what they are doing, whether they are idle, and where their pointer is (as a fraction of the page). The owner's
+     dashboard asks for the list every 8 seconds and shows it on the Overview and the Access page, plus small cursors with
+     each person's identity on the page the owner is looking at. Nothing is stored beyond 3 minutes (server cache). */
+  const LIVE = { x: null, y: null, lastInput: Date.now(), cursors: LS.get('co.cursors', '1') !== '0', poll: 0 };
+  addEventListener('pointermove', (e) => { LIVE.x = e.clientX / Math.max(1, innerWidth); LIVE.y = (e.clientY + scrollY) / Math.max(1, document.documentElement.scrollHeight); LIVE.lastInput = Date.now(); }, { passive: true });
+  ['keydown', 'scroll', 'pointerdown'].forEach((ev) => addEventListener(ev, () => { LIVE.lastInput = Date.now(); }, { passive: true }));
+  const describeActivity = () => {
+    const p = dash.params(), tab = curTab(), parts = [];
+    if (EDITING.uid) return 'Editing ' + EDITING.label;
+    const fy = document.querySelector('.ash:not([hidden])'); if (fy) return 'Asking Fasty';
+    const dlg = document.querySelector('dialog[open]'); if (dlg) { const t = (dlg.querySelector('h2, .co-h2, [id$="title"]') || {}).textContent; if (tab === 'notes' || /note/i.test(dlg.id)) return 'Writing a note'; if (t) return 'Viewing ' + t.trim().slice(0, 60); }
+    const f = [p.src ? CO.cls(p.src) : '', p.designer === '__none' ? 'Unassigned' : p.designer, p.brand, p.type].filter(Boolean);
+    const q = document.activeElement && document.activeElement.type === 'search' && document.activeElement.value ? 'searching "' + document.activeElement.value.slice(0, 30) + '"' : '';
+    if (tab === 'tasks') parts.push('Tasks' + (p.stage && p.stage !== 'active' ? ': ' + p.stage.replace(/-/g, ' ') : ''));
+    else if (tab === 'reports') parts.push('Reports: ' + (p.rpreset || 'this month').replace(/-/g, ' '));
+    else if (tab === 'mine') parts.push('My work');
+    else parts.push(PAGE_NAME[tab] || 'Dashboard');
+    if (f.length) parts.push('filtered by ' + f.join(', '));
+    if (q) parts.push(q);
+    return 'Viewing ' + parts.join(' · ');
+  };
+  const sendBeat = () => {
+    if (A.mode !== 'auth' || !A.user || document.visibilityState !== 'visible') return;
+    const idle = Date.now() - LIVE.lastInput > 2 * 60 * 1000;
+    callApi({ action: 'beat', at: { page: curTab(), task: EDITING.uid, taskLabel: EDITING.label, doing: describeActivity(), idle, away: false, x: LIVE.x, y: LIVE.y } }, true).catch(() => {});
+  };
+  setInterval(sendBeat, 15 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sendBeat(); });
+  async function pollPresence() {
+    if (A.mode !== 'auth' || !isOwner() || document.visibilityState !== 'visible') return;
+    try { const b = await callApi({ action: 'presence' }, true); if (b.ok) { PRS.on = b.on !== false; PRS.list = b.presence || []; PRS.at = Date.now(); dash.draw('presence'); dash.draw('presence-mini'); dash.draw('live-activity'); drawCursors(); } } catch (e) { /* next time */ }
+  }
+  setInterval(pollPresence, 8 * 1000);
+  // A colour per person, from the brand palette, so their cursor and marker are recognisable.
+  const HUES = ['#6037d7', '#ff5a26', '#2f8fa0', '#8aa000', '#c2410c', '#685bc7', '#1e1e1e', '#b8357a'];
+  const hueOf = (email) => { let h = 0; for (const c of String(email)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return HUES[h % HUES.length]; };
+  const CURSOR_SVG = '<svg viewBox="0 0 16 20" aria-hidden="true"><path d="M1 1l13 10.5-6 .7 3.6 6.4-2.6 1.4-3.6-6.5L1 18z"/></svg>';
+  const identity = (p, size) => {
+    const w = document.createElement('span'); w.className = 'la-id' + (size ? ' ' + size : ''); w.style.setProperty('--hue', hueOf(p.email));
+    const cur = document.createElement('i'); cur.className = 'la-cur'; cur.innerHTML = CURSOR_SVG;
+    const av = document.createElement('span'); av.className = 'la-av';
+    if (p.photo) { const im = document.createElement('img'); im.src = p.photo; im.alt = ''; im.referrerPolicy = 'no-referrer'; im.onerror = () => { im.remove(); av.textContent = CO.initials(p.name); }; av.append(im); } else av.textContent = CO.initials(p.name);
+    w.append(cur, av); return w;
+  };
+  const stateOf = (p) => !p.online ? 'offline' : p.away ? 'away' : p.idle ? 'idle' : p.taskLabel ? 'editing' : 'active';
+  const STATE_L = { active: 'Active', editing: 'Editing', idle: 'Idle', away: 'Away', offline: 'Offline' };
+  const secsAgo = (iso) => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 10 ? 'now' : s < 60 ? s + 's ago' : Math.round(s / 60) + 'm ago'; };
+  const liveRow = (p) => {
+    const st = stateOf(p), r = document.createElement('div'); r.className = 'la-row s-' + st;
+    const tx = document.createElement('div'); tx.className = 'la-tx';
+    const top = document.createElement('div'); top.className = 'la-top'; const n = document.createElement('b'); n.textContent = p.name; const pg = document.createElement('span'); pg.className = 'la-page'; pg.textContent = p.online ? (PAGE_NAME[p.page] || 'Dashboard') : ''; top.append(n); if (p.online) top.append(pg);
+    const d = document.createElement('small'); d.className = 'la-doing'; d.textContent = p.online ? (p.doing || (p.taskLabel ? 'Editing ' + p.taskLabel : 'On ' + (PAGE_NAME[p.page] || 'the dashboard'))) : 'Last active ' + agoText(p.at);
+    tx.append(top, d);
+    const s2 = document.createElement('span'); s2.className = 'la-state'; s2.textContent = STATE_L[st]; if (p.online) s2.title = 'Updated ' + secsAgo(p.at);
+    r.append(identity(p), tx, s2); return r;
+  };
+  dash.draw('live-activity', (el) => {
+    const show = A.mode === 'auth' && isOwner() && PRS.on;
+    el.classList.toggle('la-off', !show); if (!show) { el.replaceChildren(); return; }
+    const others = PRS.list.filter((p) => !A.user || p.email !== A.user.email);
+    const on = others.filter((p) => p.online).sort((a, b) => (stateOf(a) === 'idle') - (stateOf(b) === 'idle') || a.name.localeCompare(b.name));
+    el.replaceChildren();
+    const hd = document.createElement('div'); hd.className = 'na-head';
+    const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; const dot = document.createElement('i'); dot.className = 'la-pulse'; h2.append(dot, 'Live team activity'); const c = document.createElement('span'); c.className = 'na-count' + (on.length ? '' : ' ok'); c.textContent = on.length; h2.append(c);
+    const nt = document.createElement('p'); nt.className = 'co-note'; nt.textContent = on.length ? 'Who is on the dashboard and what they are doing. Only you see this.' : 'Nobody else is on the dashboard right now.'; l.append(h2, nt);
+    const tg = document.createElement('label'); tg.className = 'sw la-sw'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = LIVE.cursors; cb.addEventListener('change', () => { LIVE.cursors = cb.checked; LS.set('co.cursors', cb.checked ? '1' : '0'); drawCursors(); }); tg.append(cb, Object.assign(document.createElement('span'), { className: 'sw-ui' }), Object.assign(document.createElement('span'), { textContent: 'Cursors' })); tg.title = 'Show where people are pointing on the page you are viewing';
+    hd.append(l, tg); el.append(hd); collapser(el, 'live', 'Live team activity');
+    const list = document.createElement('div'); list.className = 'la-list'; on.forEach((p) => list.append(liveRow(p)));
+    const recent = others.filter((p) => !p.online && p.at && Date.now() - new Date(p.at) < 24 * 3600e3).slice(0, 3);
+    if (recent.length) { const sep = document.createElement('p'); sep.className = 'la-sep'; sep.textContent = 'Earlier today'; list.append(sep); recent.forEach((p) => list.append(liveRow(p))); }
+    el.append(list);
+  });
+  // Cursors of people on the same page as the owner, positioned where they are pointing (smoothly moved between updates).
+  const curLayer = document.createElement('div'); curLayer.className = 'la-layer'; curLayer.setAttribute('aria-hidden', 'true'); document.body.append(curLayer);
+  function drawCursors() {
+    const tab = curTab(), want = (A.mode === 'auth' && isOwner() && LIVE.cursors && PRS.on) ? PRS.list.filter((p) => p.online && !p.away && p.page === tab && p.x != null && p.y != null && (!A.user || p.email !== A.user.email)) : [];
+    const keep = new Set(want.map((p) => p.email));
+    [...curLayer.children].forEach((c) => { if (!keep.has(c.dataset.email)) { c.classList.add('out'); setTimeout(() => c.remove(), 300); } });
+    want.forEach((p) => {
+      let c = curLayer.querySelector('[data-email="' + CSS.escape(p.email) + '"]');
+      if (!c) { c = document.createElement('div'); c.className = 'la-ghost'; c.dataset.email = p.email; c.style.setProperty('--hue', hueOf(p.email)); c.innerHTML = CURSOR_SVG; const tag = document.createElement('span'); tag.className = 'la-tag'; c.append(tag); curLayer.append(c); }
+      c.querySelector('.la-tag').textContent = p.name.split(' ')[0] + (p.idle ? ' · idle' : '');
+      c.title = p.name + ': ' + (p.doing || '');
+      c.style.transform = 'translate(' + Math.round(p.x * innerWidth) + 'px,' + Math.round(p.y * document.documentElement.scrollHeight) + 'px)';
+      c.classList.toggle('idle', !!p.idle);
+    });
+  }
+  addEventListener('resize', drawCursors);
 
   /* Daily snapshots kept by the web app (open, overdue… per day, IST), for exact before/after comparisons. */
   const HS = { days: [], at: 0 };
@@ -2298,6 +2428,36 @@
 
   /* ================= Motion helpers ================= */
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /* Smooth layout (FLIP): note where every card is, make the change, then glide each card from its old place and size to
+     the new one, so minimising or expanding anything never makes the page jump, overlap or leave a gap. */
+  function flip(mutate) {
+    const root = document.querySelector('.co-panel:not([hidden])') || document.body;
+    const items = REDUCED ? [] : [...root.querySelectorAll('.co-card, .su, .co-kpi, .sys, .brief-card')].filter((e) => e.offsetParent);
+    const before = new Map(items.map((e) => [e, e.getBoundingClientRect()]));
+    mutate();
+    items.forEach((e) => {
+      if (!e.isConnected || !e.offsetParent) return;
+      const a = before.get(e), b = e.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top, dh = a.height - b.height;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(dh) < 1) return;
+      const opts = { duration: 420, easing: 'cubic-bezier(.2, .8, .2, 1)' };
+      if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) e.animate([{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'none' }], opts);
+      if (Math.abs(dh) >= 1) { e.style.overflow = 'hidden'; const an = e.animate([{ height: a.height + 'px' }, { height: b.height + 'px' }], opts); an.onfinish = an.oncancel = () => { e.style.overflow = ''; }; }
+    });
+  }
+  /* Minimise / expand for any card with a header: one consistent control, remembered per device, animated with flip(). */
+  const MIN = new Set((() => { try { return JSON.parse(LS.get('co.min', '[]')) || []; } catch (e) { return []; } })());
+  function collapser(card, key, label) {
+    const head = card && card.querySelector(':scope > .co-card-head, :scope > .na-head'); if (!head) return;
+    const min = MIN.has(key); card.classList.toggle('is-min', min);
+    let b = head.querySelector(':scope > .min-tog');
+    if (!b) {
+      b = document.createElement('button'); b.type = 'button'; b.className = 'min-tog'; b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+      b.addEventListener('click', () => { flip(() => { if (MIN.has(key)) MIN.delete(key); else MIN.add(key); LS.set('co.min', JSON.stringify([...MIN])); card.classList.toggle('is-min', MIN.has(key)); sync(); }); });
+      head.append(b);
+    }
+    const sync = () => { const m = MIN.has(key); b.setAttribute('aria-expanded', String(!m)); b.setAttribute('aria-label', (m ? 'Expand ' : 'Minimise ') + label); b.title = m ? 'Expand' : 'Minimise'; };
+    sync();
+  }
   // Animate a chart only when what it shows changed (not on every 30-second check).
   const freshSig = (el, sig) => { const go = !REDUCED && el.__sig !== sig; el.__sig = sig; return go; };
   const ease = (t) => 1 - Math.pow(1 - t, 3); // cubic ease-out; no dependency on d3 being loaded
@@ -2399,7 +2559,7 @@
           all.filter((r) => r.open && r.list.includes(me) && r.due === 'overdue').slice(0, 6).forEach((r) => out.push({ id: 'od-' + r.uid + '-' + t, icon: 'clock', tone: 'bad', t: 'Overdue: ' + r.brand + ' · ' + CO.topicText(r), s: (r.id || '') + ' · ' + CO.diffDays(r.eta, t) + 'd late · ' + r.stage, go: openTask(r) }));
           all.filter((r) => r.open && r.list.includes(me) && (r.eta === t || r.eta === tm)).slice(0, 6).forEach((r) => out.push({ id: 'due-' + r.uid + '-' + r.eta, icon: 'cal', tone: 'warn', t: (r.eta === t ? 'Due today: ' : 'Due tomorrow: ') + r.brand + ' · ' + CO.topicText(r), s: (r.id || '') + ' · ' + r.type + ' · ' + r.stage, go: openTask(r) }));
         }
-        if (can('Admin') || !me) {
+        if (isOwner() || !me) {
           const od = all.filter((r) => r.due === 'overdue').length, dt = all.filter((r) => r.due === 'today').length;
           if (od) out.push({ id: 'team-od-' + t + '-' + od, icon: 'clock', tone: 'bad', t: od + ' tasks overdue across the team', s: 'Oldest ' + Math.max(...all.filter((r) => r.due === 'overdue').map((r) => CO.diffDays(r.eta, t))) + ' days late', go: () => CO.goTasks('overdue', { designer: '' }) });
           if (dt) out.push({ id: 'team-dt-' + t + '-' + dt, icon: 'cal', tone: 'warn', t: dt + ' tasks due today', s: 'Across the team', go: () => CO.goTasks('today', { designer: '' }) });
@@ -2412,11 +2572,11 @@
         const task = all && e.record ? all.find((r) => r.id === e.record) : null;
         const who = e.who.includes('@') ? e.who.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Someone';
         const what = /^Task|^Sheet/.test(e.action) ? (e.field ? e.field + ': ' + (e.before || '(blank)') + ' → ' + (e.after || '(blank)') : e.action) : e.action + (e.field ? ' · ' + e.field : '');
-        out.push({ id: 'fd-' + e.when + '-' + e.record + '-' + e.field, icon: /^Team/.test(e.action) ? 'user' : 'edit', tone: '', t: who + ' updated ' + (e.record || e.sheet || 'a record'), s: what.slice(0, 90) + ' · ' + agoText(e.when), go: task ? () => document.dispatchEvent(new CustomEvent('co-open-task', { detail: task.uid })) : () => dash.setParams({ tab: can('Admin') ? 'access' : 'tasks' }) });
+        out.push({ id: 'fd-' + e.when + '-' + e.record + '-' + e.field, icon: /^Team/.test(e.action) ? 'user' : 'edit', tone: '', t: who + ' updated ' + (e.record || e.sheet || 'a record'), s: what.slice(0, 90) + ' · ' + agoText(e.when), go: task ? () => document.dispatchEvent(new CustomEvent('co-open-task', { detail: task.uid })) : () => dash.setParams({ tab: isOwner() ? 'access' : 'tasks' }) });
       });
       // Meetings starting within 15 minutes (connected Google Calendar).
       (CAL.events || []).forEach((ev) => { const m = (new Date(ev.start) - Date.now()) / 60000; if (m <= 15 && m > -5) out.unshift({ id: 'mtg-' + ev.id + '-' + ev.start, icon: 'video', tone: 'lime', t: (m > 0 ? 'Starts ' + untilText(ev.start) + ': ' : 'Now: ') + ev.title, s: fmtRange(ev.start, ev.end) + (ev.people.length ? ' · ' + ev.people.length + ' people' : ''), go: () => { if (ev.meet) window.open(ev.meet, '_blank', 'noopener'); else dash.setParams({ tab: 'today' }); } }); });
-      if (can('Admin') && AX.pending) out.unshift({ id: 'access-' + AX.pending + '-' + t, icon: 'user', tone: 'violet', t: AX.pending + (AX.pending === 1 ? ' access request' : ' access requests') + ' waiting', s: 'Approve or reject on the Access page', go: () => dash.setParams({ tab: 'access' }) });
+      if (isOwner() && AX.pending) out.unshift({ id: 'access-' + AX.pending + '-' + t, icon: 'user', tone: 'violet', t: AX.pending + (AX.pending === 1 ? ' access request' : ' access requests') + ' waiting', s: 'Approve or reject on the Access page', go: () => dash.setParams({ tab: 'access' }) });
       NB.notes.forEach((n) => {
         if (n.reminder && n.reminder <= nowLocal && n.reminder.slice(0, 10) >= CO.addDays(t, -2) && (n.createdBy === A.user.email || (n.actions || []).some((a) => !a.done && a.email === A.user.email))) out.unshift({ id: 'rem-' + n.id + '-' + n.reminder, icon: 'bell', tone: 'bad', t: 'Reminder: ' + n.title, s: CO.istDateTime(n.reminder + ':00+05:30') + (n.followUps ? ' · ' + n.followUps.slice(0, 60) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } });
         (n.actions || []).forEach((a) => { if (!a.done && a.email === A.user.email && (!a.due || a.due <= CO.addDays(t, 1))) out.push({ id: 'act-' + n.id + '-' + a.id + '-' + (a.due || ''), icon: 'check', tone: a.due && a.due < t ? 'bad' : '', t: a.text, s: 'Action item · ' + n.title + (a.due ? ' · due ' + CO.fmtDate(a.due) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } }); });
@@ -2873,7 +3033,7 @@
   /* ================= Admin: reminder and presence settings ================= */
   const ST = { s: null };
   async function loadSettings() {
-    if (A.mode !== 'auth' || !can('Admin')) return;
+    if (A.mode !== 'auth' || !isOwner()) return;
     try { const b = await callApi({ action: 'settings' }); if (b.ok) { ST.s = b.settings; fillSettings(); } } catch (e) { /* older web app */ }
   }
   function fillSettings() {
@@ -2946,7 +3106,7 @@
     CAL.busy = true;
     try {
       const now = new Date(), u = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
-      u.searchParams.set('timeMin', new Date(now - 60 * 60 * 1000).toISOString()); u.searchParams.set('timeMax', new Date(+now + 3 * 864e5).toISOString());
+      u.searchParams.set('timeMin', new Date(now - 60 * 60 * 1000).toISOString()); u.searchParams.set('timeMax', new Date(+now + 14 * 864e5).toISOString());
       u.searchParams.set('singleEvents', 'true'); u.searchParams.set('orderBy', 'startTime'); u.searchParams.set('maxResults', '25');
       const res = await fetch(u.toString(), { headers: { Authorization: 'Bearer ' + CAL.token } });
       if (res.status === 401) { CAL.token = ''; sessionStorage.removeItem('co.calToken'); throw new Error('expired'); }
@@ -2955,7 +3115,7 @@
         let msg = ''; try { msg = ((await res.json()).error || {}).message || ''; } catch (e2) { /* no body */ }
         const m = msg.match(/https:\/\/console\.(?:developers|cloud)\.google\.com\/apis\/api\/calendar-json\.googleapis\.com\/overview\?project=\d+/);
         CAL.off = true; CAL.enableUrl = m ? m[0] : 'https://console.cloud.google.com/apis/library/calendar-json.googleapis.com';
-        throw new Error(can('Admin') ? 'The Google Calendar API is switched off in the Google Cloud project, so meetings cannot load. Switch it on, wait a minute, then press Try again.' : 'Meetings will show here once the admin switches on the Google Calendar API.');
+        throw new Error(isOwner() ? 'The Google Calendar API is switched off in the Google Cloud project, so meetings cannot load. Switch it on, wait a minute, then press Try again.' : 'Meetings will show here once the admin switches on the Google Calendar API.');
       }
       CAL.off = false;
       const body = await res.json();
@@ -2983,7 +3143,7 @@
     el.replaceChildren();
     const head = document.createElement('div'); head.className = 'co-card-head';
     const hd = document.createElement('div'); const h = document.createElement('h2'); h.className = 'co-h2'; h.textContent = 'Meetings'; const n = document.createElement('p'); n.className = 'co-note'; n.textContent = 'Your Google Calendar, today and the next two days.'; hd.append(h, n); head.append(hd);
-    el.append(head);
+    el.append(head); collapser(el, 'cal', 'Meetings');
     if (A.mode !== 'auth') return;
     if (CAL.server === undefined && !CAL.token) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Loading your meetings…'; el.append(p); calServer(); return; }
     if (!CAL.token && CAL.via !== 'server') {
@@ -2996,7 +3156,7 @@
     if (CAL.off) {
       const box = document.createElement('div'); box.className = 'cal-empty'; const p = document.createElement('p'); p.className = 'bad'; p.textContent = CAL.err; box.append(p);
       const row = document.createElement('div'); row.className = 'cal-acts';
-      if (can('Admin')) { const a = document.createElement('a'); a.className = 'co-btn primary'; a.href = CAL.enableUrl; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Switch on in Google Cloud'; row.append(a); }
+      if (isOwner()) { const a = document.createElement('a'); a.className = 'co-btn primary'; a.href = CAL.enableUrl; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Switch on in Google Cloud'; row.append(a); }
       const r = document.createElement('button'); r.type = 'button'; r.className = 'co-btn'; r.textContent = 'Try again'; r.addEventListener('click', () => calLoad(true)); row.append(r); box.append(row);
       el.append(box); return;
     }
@@ -3024,7 +3184,11 @@
     if (next.meet) { const j = document.createElement('a'); j.className = 'co-btn primary'; j.href = next.meet; j.target = '_blank'; j.rel = 'noopener'; j.textContent = 'Join Google Meet'; acts.append(j); }
     const nt = document.createElement('button'); nt.type = 'button'; nt.className = 'co-btn'; nt.textContent = 'Take notes'; nt.addEventListener('click', () => meetingNote(next)); acts.append(nt);
     card.append(when, t, tm); if (next.people.length) card.append(ppl); card.append(acts); el.append(card);
-    const rest = evs.slice(1, 8);
+    // Today and the next two days by default; later meetings (up to two weeks) behind "Show more".
+    const limit = CO.addDays(CO.today(), 2), dayOf = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const near = evs.slice(1).filter((e) => dayOf(e.start) <= limit), later = evs.slice(1).filter((e) => dayOf(e.start) > limit);
+    const rest = CAL.more ? near.concat(later) : near;
+    const moreBtn = () => { if (!later.length) return; const b = document.createElement('button'); b.type = 'button'; b.className = 'co-link cal-more-btn'; b.textContent = CAL.more ? 'Show fewer' : 'Show ' + later.length + ' more meeting' + (later.length === 1 ? '' : 's') + ' (next 2 weeks)'; b.setAttribute('aria-expanded', String(!!CAL.more)); b.addEventListener('click', () => { flip(() => { CAL.more = !CAL.more; dash.draw('cal'); }); }); el.append(b); };
     if (rest.length) {
       const ul = document.createElement('ul'); ul.className = 'cal-list';
       let lastDay = day(next.start);
@@ -3040,6 +3204,7 @@
       });
       el.append(ul);
     }
+    moreBtn();
   });
 
   /* ================= Sign-in ================= */
@@ -3129,9 +3294,9 @@
     renderAll();
     DC.get(user.email).then((c) => { if (c && c.body && c.body.ok && S.status !== 'ok') { try { applyData(c.body); S.cached = true; S.refreshing = true; renderAll(); } catch (e) { /* ignore a bad copy */ } } });
     load(false);
-    ASH.show(true);
+    ASH.show(perm('fasty'));
     // Admins see how many access requests are waiting as soon as they open the dashboard.
-    if (can('Admin')) callApi({ action: 'ver' }).then((b) => { if (b.ok && typeof b.pending === 'number') { AX.pending = b.pending; syncControls(); } }).catch(() => {});
+    if (isOwner()) callApi({ action: 'ver' }).then((b) => { if (b.ok && typeof b.pending === 'number') { AX.pending = b.pending; syncControls(); } }).catch(() => {});
   }
   /* The session ended or access was removed: forget it and clear the page, so no data stays on screen. */
   let signingOut = false; // a background check that ends during sign-out must not replace the 'signed out' message
@@ -3468,7 +3633,7 @@
       },
       navigate(a) {
         const tab = { overview: 'today', standup: 'standup', tasks: 'tasks', notes: 'notes', team: 'team', reports: 'reports', health: 'health', access: 'access' }[a.section] || 'today';
-        if ((tab === 'health' || tab === 'access') && !can('Admin')) return { error: 'not_allowed', detail: 'Only admins can open ' + PAGE_NAME[tab] + '.' };
+        if (!pageOk(tab)) return { error: 'not_allowed', detail: 'This person does not have access to ' + PAGE_NAME[tab] + '.' };
         const p = { tab }; const said = [];
         if (a.clear_filters) Object.assign(p, { src: '', designer: '', brand: '', type: '' });
         if (a.designer) { const x = findPerson(a.designer); if (x && x.ambiguous) return { ambiguous: x.ambiguous }; if (x && x.name) { p.designer = x.name; said.push(x.name); } }
@@ -3484,7 +3649,7 @@
         document.dispatchEvent(new CustomEvent('co-open-task', { detail: r.uid })); return { opened: brief(r) };
       },
       async update_task(a) {
-        if (A.mode === 'auth' && !can('Editor')) return { error: 'not_allowed', detail: 'This person has view-only access. An Editor or the Admin can change tasks.' };
+        if (A.mode === 'auth' && !perm('edit')) return { error: 'not_allowed', detail: 'This person has view-only access. An Editor or the Admin can change tasks.' };
         if (!TASK_SAVE) return { error: 'Editing is not available right now.' };
         const r = allRows().find((x) => String(x.id).toLowerCase() === String(a.id).toLowerCase().replace(/\s+/g, ''));
         if (!r) return { error: 'No task with ID ' + a.id + '.' };
@@ -3590,7 +3755,7 @@
   const SYS = (() => {
     const last = { ok: 0, at: null };
     const checks = () => {
-      const out = [], admin = can('Admin'), t = CO.today();
+      const out = [], admin = isOwner(), t = CO.today();
       const add = (level, title, detail, act) => out.push({ level, title, detail, act });
       // 1. Data loading and sheets
       if (S.status === 'error') add('bad', 'The data could not load', S.error);

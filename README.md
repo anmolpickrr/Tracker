@@ -136,6 +136,8 @@ The **Today** card at the top of the Overview's right-hand column shows the day'
 
 ## Meetings (Google Calendar)
 
+The card shows today and the next two days; **Show more** lists the rest of the next two weeks.
+
 The Overview's Meetings card shows the next meeting with a countdown, who is in it, a Join Google Meet button and a Take notes button (which starts a meeting note with the title and attendees filled in), plus the rest of today and the next two days. Each person connects their own calendar once, read-only; the access lasts for the browser session and is never sent to the web app or stored in the sheets.
 
 **Automatic for everyone:** the web app reads the signed-in person's own calendar, so team members see their meetings with no setup, as long as calendars share event details inside the company (Google Admin console → Apps → Google Workspace → Calendar → Sharing settings → Internal sharing options: *Share all information*). Run `testMeetings` in Apps Script to see who is covered. Anyone whose calendar isn't shared sees a **Connect Google Calendar** button instead (needs the Google Calendar API enabled in the "Creative Ops Tracker" Google Cloud project).
@@ -145,6 +147,14 @@ Every meeting shows its name, date, time, duration and a Join link. If the calen
 ## Who's online (admins)
 
 Admins see, under **Access**, who has the dashboard open, which page they are on, the task they are editing (if any) and when they were last active; the header shows the faces of people online now. Nothing else is collected: no keystrokes, no screen contents, no location. Everyone sees a notice about this in the bell menu, and an admin can switch it off under Reminders and notifications. "Last active" is saved in the Users tab at most every 10 minutes.
+
+## Live indicator
+
+The header shows a green dot and **Live** (or Syncing / Updating / Delayed / Offline). Hover over it, or tab to it, for the time of the data and when it was last checked.
+
+## Minimise and expand
+
+Every card on the Overview, My work, Brands, Team and Reports has a minimise button; the cards around it slide into place smoothly, nothing overlaps and no gaps are left. Choices are remembered on each device.
 
 ## Live clock, Day and Night
 
@@ -215,17 +225,25 @@ The **Notes** page is a sticky-note board for meeting notes, daily updates, idea
 
 ### Who can do what
 
-Nobody sees any data until an admin approves them.
+**The owner** (CONFIG.access.owners: Anmol Sharma, Creative Head, Admin and Team Manager) has every permission and is the **only** person who can give or change access, read the activity log, see live team activity and change settings (briefing times, presence, the AI model). Nobody else, whatever their role, can grant access or see anyone's activity history.
 
-| Role | Can |
-| --- | --- |
-| *(not approved)* | See the sign-in screen. Nothing else: the web app gives no data without an approved sign-in. |
-| **View only** | See every tab and download CSVs. Task details open read-only. |
-| **Can edit** | View only, plus change tasks: design status, Design ETA, designer, priority and number of creatives. |
-| **Admin** | Can edit, plus the team list (Active / Inactive, add members), the **Access** tab (approve, change roles, revoke), the activity log and the integration checks on Sheet health. |
-| **Owner** | Admin who can never be revoked or demoted from the dashboard (`CONFIG.access.owners`), so you can't be locked out. |
+Everyone else gets a role, which sets their defaults:
 
-The web app checks the role on **every** request. Hiding buttons on the page is only for convenience, so changing the page's code gains nothing. Role changes and revocations reach open dashboards within 30 seconds. A revoked person's screen is cleared, they are signed out, and they cannot sign back in.
+| | View only | Can edit | Manager |
+| --- | --- | --- | --- |
+| Pages | all except Data health | all except Data health | all |
+| Edit tasks | no | yes | yes |
+| Download data (CSV) | yes | yes | yes |
+| Workload estimates, "View as" on My work | no | no | yes |
+| Manage the team list | no | no | yes |
+| Fasty | yes | yes | yes |
+| Tasks they see | all | all | all |
+
+**Per-person permissions:** on Access, click a person and use *What they can see and do* to choose exactly which pages they see (My work is always on), whether they can edit tasks, download data, see workload and others' work, manage the team list and use Fasty, and whether they see **all tasks** or **only the tasks assigned to them** (or whose brief they own). "Only their own" is enforced by the web app: other tasks are never sent to their browser. Every change is logged with before and after, and reaches their open dashboard within 30 seconds. *Reset to defaults* returns them to their role's defaults. Permissions are stored in a *Permissions* column of the Users tab.
+
+### Live team activity (owner only)
+
+The Overview (and Access) shows who is on the dashboard right now, the page they are on and what they are doing there ("Viewing Tasks · filtered by Huggler", "Editing SRAP372…", "Asking Fasty", idle after 2 minutes), each with a cursor-style marker in their own colour and their Google photo. With *Cursors* on, the owner also sees small labelled cursors where teammates are pointing on the same page. Dashboards send a heartbeat every 15 seconds and the owner's dashboard refreshes every 8 seconds, so it is near real time. Nothing is stored: the server keeps it for 3 minutes. Everyone is told about it in the notification panel, and the owner can switch it off in settings.
 
 ### How a person gets in
 
