@@ -90,20 +90,28 @@
   const title = (s) => s.toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase());
   function stageOf(ds0, cs0) {
     const ds = clean(ds0).toUpperCase(), cs = clean(cs0).toUpperCase();
+    /* Status rules agreed with the Creative Head (Nov 2026):
+       DONE = delivered. REJECTED = delivered, then rejected by the client: counts as completed work (the time was spent);
+       the redo is a new task. NO UPDATE = shared with the client long ago, no reply despite follow-ups: counts as completed.
+       SHARED = Pending approval (with the client): never overdue, not in workload. HOLD = Hold, DEPRIORITIZED = Deprioritised:
+       never overdue, not in workload. Content INCOMPLETE BRIEF / PENDING / TBD (or WIP while design hasn't started) = Incomplete brief. */
     if (['DONE', 'DELIVERED', 'COMPLETED', 'COMPLETE'].includes(ds)) return ['Delivered', false];
-    if (['WIP', 'IN PROGRESS', 'WORK IN PROGRESS', 'ONGOING', 'IN-PROGRESS'].includes(ds)) return ['In progress', true];
-    if (['SHARED', 'UNDER REVIEW', 'IN REVIEW', 'REVIEW', 'SENT FOR REVIEW'].includes(ds)) return ['Under review', false];
+    if (ds === 'REJECTED') return ['Delivered', false, 'Rejected by client'];
+    if (ds === 'NO UPDATE') return ['Delivered', false, 'No client update'];
+    if (['WIP', 'IN PROGRESS', 'WORK IN PROGRESS', 'ONGOING', 'IN-PROGRESS'].includes(ds)) return ['WIP', true];
+    if (['SHARED', 'UNDER REVIEW', 'IN REVIEW', 'REVIEW', 'SENT FOR REVIEW'].includes(ds)) return ['Pending approval', false];
     if (['CHANGES', 'CHANGES REQUESTED', 'REVISION', 'REWORK', 'FEEDBACK'].includes(ds)) return ['Changes requested', true];
-    if (['HOLD', 'ON HOLD', 'NO UPDATE', 'PAUSED'].includes(ds)) return ['On hold', false];
-    if (['DEPRIORITIZED', 'DEPRIORITISED', 'REJECTED', 'CANCELLED', 'CANCELED', 'DROPPED', 'NOT NEEDED'].includes(ds)) return ['Dropped', false];
+    if (['HOLD', 'ON HOLD', 'PAUSED'].includes(ds)) return ['Hold', false];
+    if (['DEPRIORITIZED', 'DEPRIORITISED', 'CANCELLED', 'CANCELED', 'DROPPED', 'NOT NEEDED'].includes(ds)) return ['Deprioritised', false];
     if (ds === '' || ['TBP', 'TO BE PLANNED', 'NOT STARTED', 'PLANNED', 'TODO', 'TO DO'].includes(ds)) {
-      if (cs === 'HOLD') return ['On hold', false];
-      if (['INCOMPLETE BRIEF', 'PENDING', 'TBD', 'TBP', 'WIP'].includes(cs)) return ['Awaiting brief', false];
+      if (cs === 'HOLD') return ['Hold', false];
+      if (cs === 'WIP') return ['Incomplete brief', false, 'Content in progress'];
+      if (['INCOMPLETE BRIEF', 'PENDING', 'TBD', 'TBP'].includes(cs)) return ['Incomplete brief', false];
       return ['To be planned', true];
     }
     return [title(clean(ds0)), true];
   }
-  const KNOWN = ['Delivered', 'In progress', 'Under review', 'Changes requested', 'On hold', 'Dropped', 'To be planned', 'Awaiting brief'];
+  const KNOWN = ['Delivered', 'WIP', 'Pending approval', 'Changes requested', 'Hold', 'Deprioritised', 'To be planned', 'Incomplete brief'];
 
   const TYPES = { 'video (in-house)': 'In-House Video', 'in-house video': 'In-House Video', 'a+': 'A+ Content', 'a++': 'A+ Content', 'static ad': 'Static', 'static ads': 'Static', 'carousel ': 'Carousel', 'carousel ads': 'Carousel', 'gif ads': 'GIF', 'ai ugc video': 'AI Video', 'in-house edit': 'Video Edit', 'reels': 'Reel' };
   const typeOf = (s) => { const c = clean(s); if (!c) return 'Unspecified'; return TYPES[c.toLowerCase()] || c; };
@@ -246,11 +254,11 @@
       if (!req && clean(r.req_text) && !flags.includes('Request date unreadable')) flags.push('Request date unreadable');
       if (!eta && clean(r.eta_text) && !flags.includes('ETA unreadable')) flags.push('ETA unreadable');
       if (req && eta && days(req, eta) < 0) flags.push('ETA before request date');
-      const [stage, open] = stageOf(r.design_status, r.content_status);
+      const [stage, open, sub] = stageOf(r.design_status, r.content_status);
       if (!KNOWN.includes(stage)) flags.push('Unrecognised status');
       const des = designersOf(fromEmail(r.designer));
       if (open && !eta) flags.push('Open, no ETA');
-      if ((open || stage === 'Under review') && !des.length) flags.push('No designer assigned');
+      if ((open || stage === 'Pending approval') && !des.length) flags.push('No designer assigned');
       if (stage === 'Delivered' && !des.length) flags.push('Delivered, no designer');
       if (stage === 'Delivered' && !/^https?:/i.test(clean(r.creative_link))) flags.push('Delivered, no creative link');
       if (!clean(r.brand)) flags.push('No brand');
@@ -269,7 +277,7 @@
         brand: clean(r.brand) ? brandName.get(brandKey(clean(r.brand))) : 'No brand',
         topic: clean(r.topic), type: typeName.get(typeKey(t0)) || t0, channel: clean(r.channel), qty: r.qty || 1,
         priority: /^P\d$/.test(pri) ? pri : '', owner: clean(r.owner),
-        designers: des.join(' + '), stage, open, design_status: clean(r.design_status), req, eta,
+        designers: des.join(' + '), stage, open, sub: sub || '', design_status: clean(r.design_status), req, eta,
         ddate, month: ddate ? ddate.slice(0, 7) : '', date_basis: stage === 'Delivered' ? (r.delivered_on ? 'delivered' : eta ? 'eta' : 'request') : '',
         live_status: clean(r.live_status).replace(/^Luanch/i, 'Launch'),
         brief: clean(r.brief), link: clean(r.creative_link), file: clean(r.open_file),
@@ -285,7 +293,7 @@
     const head = ((src && src.headers) || []).map((h) => clean(h).toLowerCase());
     return { qty: head.some((h) => QTY.test(h)), delivered: head.some((h) => /deliver/.test(h)), priority: head.includes('priority') };
   }
-  const OPEN_STAGES = ['To be planned', 'In progress', 'Changes requested'];
+  const OPEN_STAGES = ['To be planned', 'WIP', 'Changes requested'];
 
   const api = { kindOf, parseDate, parseSource, parseTeam, stageOf, buildTasks, designerSplitter, columnsOf, OPEN_STAGES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.CODATA = api;

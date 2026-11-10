@@ -12,7 +12,7 @@ Navigation is a sidebar on desktop and a bottom tab bar on phones (More opens th
 | --- | --- |
 | **Overview** | Open, overdue, due-today, in-progress, under-review and delivered-this-month counts (each opens the matching task list). **Needs attention**: overdue, due soon and changes requested. **Unassigned**: work nobody has picked up, oldest and overdue first. **Pipeline** by design status, **workload** per designer, and what is **coming up** in the next 14 days. |
 | **Stand-up** | One card per active team member for the daily meeting: overdue, due today, in progress, changes requested and up next, with a summary strip on top. |
-| **Tasks** | Every task from both sheets. One-click status chips with counts (Not delivered, Open, Overdue, Due this week, No ETA, Under review, Delivered this month, All), search, sorting, CSV. Click a task to open or edit it. On phones each task is a card. |
+| **Tasks** | Every task from both sheets. One-click status chips with counts (Not delivered, Open, Overdue, Due this week, No ETA, Pending approval, Delivered this month, All), search, sorting, CSV. Click a task to open or edit it. On phones each task is a card. |
 | **Team** | Scorecard per person (open, overdue, due in 7 days, in review, delivered this month and last, monthly average, main brands, type mix), a designer-by-month delivery grid, and Active / Inactive switches (admins). |
 | **Reports** | Creatives delivered for any month, quarter, year or custom range, compared with the period before: monthly chart (total or by type), by brand, by designer, by creative type. CSV. |
 | **Data health** | Rows that make tracking unreliable (no ETA, no designer, unknown status, mistyped dates, duplicates) and the connection status of every sheet. |
@@ -278,7 +278,7 @@ Rows without an ID, or whose ID appears twice in a tab, are not edited from the 
 - **Same task in two tabs** (for example a task carried into a new year's sheet with the same ID): counted once, from the tab listed first.
 - **Two different tasks with the same ID** in one tab: both are counted, and both are flagged "Duplicate ID" so the ID can be fixed.
 - **Creatives** = sum of "No. of Creatives" when that column exists, else 1 per task.
-- **Open** = To be planned + In progress + Changes requested (plus any status the dashboard doesn't recognise). **Overdue** = open with a Design ETA before today.
+- **Open** = To be planned + WIP + Changes requested (plus any status the dashboard doesn't recognise). **Overdue** = open with a Design ETA before today.
 - **Delivered** = design status DONE/Delivered, dated by **Delivered On** if the sheet has it, else the Design ETA (else the request date), and never later than today.
 - **Mistyped years** (e.g. a February 2026 request typed as 2025, or "0206") are corrected using the tab's normal date range, the neighbouring rows and the other date on the row. Every correction is listed in Sheet health; no date is changed silently.
 - Brand and creative-type spellings that differ only in case or a plural "s" are merged ("Gif"/"GIF", "Listings"/"Listing").
@@ -299,13 +299,13 @@ A strip at the top of the Overview checks the dashboard every refresh and every 
 
 ### Change colours (green is better, red is worse)
 
-Every comparison shows the change as a coloured chip: **green when the number moved the good way, red when it moved the bad way**, and grey for no change. The good way depends on the measure: more delivered is green, but **fewer open, fewer overdue and fewer unassigned is green** and more of them is red. Under review has no good or bad direction and stays grey. The shade deepens with the size of the change and reaches full strength at a 50% change, so a small wobble stays pale.
+Every comparison shows the change as a coloured chip: **green when the number moved the good way, red when it moved the bad way**, and grey for no change. The good way depends on the measure: more delivered is green, but **fewer open, fewer overdue and fewer unassigned is green** and more of them is red. Pending approval has no good or bad direction and stays grey. The shade deepens with the size of the change and reaches full strength at a 50% change, so a small wobble stays pale.
 
 What each comparison is against:
 - **Delivered this month, Top brands, Team "This month":** the same days of last month (1 to 9 November against 1 to 9 October), so a month in progress is never compared with a full month.
 - **Monthly report bars and "vs prev." columns:** each complete month against the month before; the current month against the same days of the previous month. Bars for months outside the chosen range are faded and striped.
 - **Delivery trend:** the last complete week against the week before. The current week is drawn faintly and never counted as a drop.
-- **Open, Overdue, Under review:** against the daily snapshot closest to 7 days ago. These are counts at a moment in time, so the web app saves one snapshot a day after 09:00 IST in the History tab; the comparison appears once a week of snapshots exists and only while no filters are applied.
+- **Open, Overdue, Pending approval:** against the daily snapshot closest to 7 days ago. These are counts at a moment in time, so the web app saves one snapshot a day after 09:00 IST in the History tab; the comparison appears once a week of snapshots exists and only while no filters are applied.
 
 ## Managing the team
 
@@ -320,13 +320,13 @@ What each comparison is against:
 | In the sheet | Shown as | Counts as open work |
 | --- | --- | --- |
 | TBP, blank | To be planned | yes |
-| WIP, In progress | In progress | yes |
+| WIP, WIP | WIP | yes |
 | Changes | Changes requested | yes |
-| Under review, Review, Shared | Under review | no |
+| Pending approval, Review, Shared | Pending approval | no |
 | DONE, Delivered | Delivered | no |
-| HOLD, On hold, No update | On hold | no |
-| Deprioritized, Rejected, Cancelled | Dropped | no |
-| blank/TBP with content Incomplete brief, Pending, WIP or TBD | Awaiting brief | no |
+| HOLD, Hold, No update | Hold | no |
+| Deprioritized, Rejected, Cancelled | Deprioritised | no |
+| blank/TBP with content Incomplete brief, Pending, WIP or TBD | Incomplete brief | no |
 | anything else | shown as typed, flagged in Sheet health | yes |
 
 **Designers** come from *Designer/Editor* (Paid) and *Creator* (Marketing). Several names in one cell ("Rajnish Shubham Rana", "Yashika Agrawal, Sagun") are split into each person, and a task shared by two people counts for both.

@@ -251,7 +251,7 @@
     const istTime = (d) => new Date(d).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit' });
     const istDateTime = (d, withYear) => new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: withYear ? 'numeric' : undefined, hour: 'numeric', minute: '2-digit' });
     const sumQty = (rs) => rs.reduce((a, r) => a + (r.qty || 1), 0);
-    const CLOSED = new Set(['Delivered', 'Dropped']);
+    const CLOSED = new Set(['Delivered', 'Deprioritised']);
     const VIDEO = /video|gif|reel/i;
 
     let teamMemo = { data: undefined, out: null };
@@ -310,20 +310,20 @@
         case 'active': return !CLOSED.has(r.stage);
         case 'open': return r.open;
         case 'tbp': return r.stage === 'To be planned';
-        case 'wip': return r.stage === 'In progress';
+        case 'wip': return r.stage === 'WIP';
         case 'changes': return r.stage === 'Changes requested';
         case 'overdue': case 'today': case 'week': case 'noeta': return r.due === s;
-        case 'review': return r.stage === 'Under review';
-        case 'awaiting': return r.stage === 'Awaiting brief';
-        case 'hold': return r.stage === 'On hold';
+        case 'review': return r.stage === 'Pending approval';
+        case 'awaiting': return r.stage === 'Incomplete brief';
+        case 'hold': return r.stage === 'Hold';
         case 'delivered': return r.stage === 'Delivered';
         case 'delivered-month': return r.stage === 'Delivered' && r.month === thisMonth();
         case 'delivered-range': return r.stage === 'Delivered' && r.ddate && r.ddate >= ctx.from && r.ddate <= ctx.to;
-        case 'dropped': return r.stage === 'Dropped';
+        case 'dropped': return r.stage === 'Deprioritised';
         default: return true;
       }
     };
-    const stageColor = (s) => ({ 'In progress': 'var(--st-wip)', 'Under review': 'var(--st-review)', 'To be planned': 'var(--st-plan)', 'Awaiting brief': 'var(--st-await)', 'On hold': 'var(--st-hold)', 'Changes requested': 'var(--warn)', 'Delivered': 'var(--ok)' })[s];
+    const stageColor = (s) => ({ 'WIP': 'var(--st-wip)', 'Pending approval': 'var(--st-review)', 'To be planned': 'var(--st-plan)', 'Incomplete brief': 'var(--st-await)', 'Hold': 'var(--st-hold)', 'Changes requested': 'var(--warn)', 'Delivered': 'var(--ok)' })[s];
     // plain: the row already shows how late it is (a "when" badge), so the chip shows only the status.
     const chip = (r, plain) => {
       const el = document.createElement('span');
@@ -333,6 +333,9 @@
       else if (r.stage === 'Changes requested') cls = 's-warn';
       else if (r.stage === 'Delivered') cls = 's-ok';
       else if (stageColor(r.stage)) { cls = ''; el.style.color = stageColor(r.stage); }
+      // Extra detail agreed with the Creative Head: why something counts as delivered, and how long a client has had it.
+      if (!plain && r.sub && r.due !== 'overdue') { txt += ' · ' + (r.sub === 'Rejected by client' ? 'rejected' : r.sub === 'No client update' ? 'no client update' : 'content WIP'); if (r.sub === 'Rejected by client') cls = 's-warn'; }
+      if (!plain && r.stage === 'Pending approval' && r.eta && r.eta < today()) { const d = diffDays(r.eta, today()); txt += ' · ' + d + 'd'; el.title = 'With the client since about ' + fmtDate(r.eta) + ' (design ETA)'; }
       el.className = 'chip ' + cls; el.textContent = txt;
       return el;
     };
@@ -662,7 +665,7 @@
     if (CO.notReady(el, 'text')) return;
     const rs = CO.rows(), m = CO.thisMonth();
     const n = key === 'open' ? rs.filter((r) => r.open).length
-      : key === 'wip' ? rs.filter((r) => r.stage === 'In progress').length
+      : key === 'wip' ? rs.filter((r) => r.stage === 'WIP').length
       : key === 'delivered' ? CO.sumQty(rs.filter((r) => r.stage === 'Delivered' && r.month === m))
       : rs.filter((r) => r.due === key).length;
     el.textContent = CO.num(n);
@@ -699,10 +702,10 @@
   /* ================= Today ================= */
   const tiles = {
     open: (rs) => rs.filter((r) => r.open),
-    wip: (rs) => rs.filter((r) => r.stage === 'In progress'),
+    wip: (rs) => rs.filter((r) => r.stage === 'WIP'),
     overdue: (rs) => rs.filter((r) => r.due === 'overdue'),
     today: (rs) => rs.filter((r) => r.due === 'today'),
-    review: (rs) => rs.filter((r) => r.stage === 'Under review'),
+    review: (rs) => rs.filter((r) => r.stage === 'Pending approval'),
     delivered: (rs) => rs.filter((r) => r.stage === 'Delivered' && r.month === CO.thisMonth())
   };
   /* Numbers count up to their new value when they change. */
@@ -734,7 +737,7 @@
     else if (k === 'wip') { el.textContent = rs.filter((r) => r.stage === 'To be planned').length + ' to be planned (TBP)'; }
     else if (k === 'overdue') { if (!list.length) el.textContent = 'Nothing late'; else { const worst = Math.max(...list.map((r) => CO.diffDays(r.eta, CO.today()))); el.textContent = 'Oldest ' + worst + (worst === 1 ? ' day' : ' days') + ' late'; } cmp(list.length, 'overdue', 'down'); }
     else if (k === 'today') { el.textContent = rs.filter((r) => r.due === 'week').length + ' more in the next 7 days'; }
-    else if (k === 'review') { el.textContent = rs.filter((r) => r.stage === 'Awaiting brief').length + ' awaiting brief'; cmp(list.length, 'review', 'none'); }
+    else if (k === 'review') { el.textContent = rs.filter((r) => r.stage === 'Incomplete brief').length + ' with an incomplete brief'; cmp(list.length, 'review', 'none'); }
     else if (k === 'delivered') {
       const m = CO.thisMonth(), pm = CO.prevMonth(m), pto = CO.sameWorkdaysEnd(m + '-01', CO.today(), pm + '-01', CO.monthEnd(pm));
       const prevSame = CO.sumQty(rs.filter((r) => r.stage === 'Delivered' && r.ddate && r.ddate >= pm + '-01' && r.ddate <= pto));
@@ -844,7 +847,7 @@
   dash.draw('pipeline', (el) => {
     if (CO.notReady(el, 'box')) return;
     const rs = CO.rows().filter((r) => !CO.CLOSED.has(r.stage));
-    const base = [['To be planned', 'tbp'], ['In progress', 'wip'], ['Changes requested', 'changes'], ['Under review', 'review'], ['Awaiting brief', 'awaiting'], ['On hold', 'hold']];
+    const base = [['To be planned', 'tbp'], ['WIP', 'wip'], ['Changes requested', 'changes'], ['Pending approval', 'review'], ['Incomplete brief', 'awaiting'], ['Hold', 'hold']];
     const known = new Set(base.map((b) => b[0]));
     const other = [...new Set(rs.map((r) => r.stage).filter((s) => !known.has(s)))];
     const st = base.concat(other.map((s) => [s, 'active'])).map(([s, go]) => ({ s, go, c: CO.stageColor(s) || 'var(--chart-muted)', n: rs.filter((r) => r.stage === s).length })).filter((d) => d.n || known.has(d.s));
@@ -1100,10 +1103,10 @@
       const cards = [...people].map(([name, list]) => {
         const open = list.filter((r) => r.open);
         return { name, open, overdue: open.filter((r) => r.due === 'overdue').sort(byEta), today: open.filter((r) => r.due === 'today'),
-          wip: open.filter((r) => r.stage === 'In progress' && notLateOrToday(r)).sort(byEta),
+          wip: open.filter((r) => r.stage === 'WIP' && notLateOrToday(r)).sort(byEta),
           changes: open.filter((r) => r.stage === 'Changes requested' && notLateOrToday(r)).sort(byEta),
-          next: open.filter((r) => r.stage !== 'In progress' && r.stage !== 'Changes requested' && notLateOrToday(r)).sort(byEta),
-          review: list.filter((r) => r.stage === 'Under review'), done: list.filter((r) => r.stage === 'Delivered') };
+          next: open.filter((r) => r.stage !== 'WIP' && r.stage !== 'Changes requested' && notLateOrToday(r)).sort(byEta),
+          review: list.filter((r) => r.stage === 'Pending approval'), done: list.filter((r) => r.stage === 'Delivered') };
       });
       const sort = p.susort || 'urgent';
       cards.sort((a, b) => (a.name === 'Unassigned') - (b.name === 'Unassigned') || (sort === 'name' ? a.name.localeCompare(b.name)
@@ -1125,11 +1128,11 @@
         head.append(nm, load); card.append(head);
         const stats = document.createElement('div'); stats.className = 'su-stats';
         const st = (n, lab, cls, color) => { if (!n) return; const s = document.createElement('span'); s.className = 'chip ' + cls; if (color) s.style.color = color; s.textContent = n + ' ' + lab; stats.append(s); };
-        st(c.overdue.length, 'overdue', 's-bad'); st(c.today.length, 'due today', 's-warn'); st(c.open.filter((r) => r.stage === 'In progress').length, 'WIP', '', CO.stageColor('In progress'));
-        st(c.open.filter((r) => r.stage === 'To be planned').length, 'TBP', 's-mute'); st(c.review.length, 'in review', '', CO.stageColor('Under review'));
+        st(c.overdue.length, 'overdue', 's-bad'); st(c.today.length, 'due today', 's-warn'); st(c.open.filter((r) => r.stage === 'WIP').length, 'WIP', '', CO.stageColor('WIP'));
+        st(c.open.filter((r) => r.stage === 'To be planned').length, 'TBP', 's-mute'); st(c.review.length, 'pending approval', '', CO.stageColor('Pending approval'));
         if (stats.childNodes.length) card.append(stats);
         const more = () => CO.goTasks('open', { designer: c.name === 'Unassigned' ? '__none' : c.name });
-        [section('Overdue', c.overdue, 4, more), section('Due today', c.today, 4, more), section('In progress', c.wip, 4, more), section('Changes requested', c.changes, 3, more), section('Up next', c.next, 3, more)].forEach((s) => { if (s) card.append(s); });
+        [section('Overdue', c.overdue, 4, more), section('Due today', c.today, 4, more), section('WIP', c.wip, 4, more), section('Changes requested', c.changes, 3, more), section('Up next', c.next, 3, more)].forEach((s) => { if (s) card.append(s); });
         if (!c.open.length) { const f = document.createElement('p'); f.className = 'su-free'; f.textContent = c.review.length ? 'No open design work, ' + c.review.length + ' with reviewers. Free to take new tasks.' : 'No open design work. Free to take new tasks.'; card.append(f); }
         if (c.done.length) { const d = document.createElement('p'); d.className = 'su-done'; const nd = CO.sumQty(c.done); d.textContent = CO.num(nd) + (nd === 1 ? ' creative' : ' creatives') + ' delivered in the last 7 days (by ETA)'; card.append(d); }
         el.append(card);
@@ -1161,7 +1164,7 @@
     });
     dash.draw('task-count', (el) => { if (CO.notReady(el, 'text')) return; el.textContent = CO.num(filtered().length); });
     // One-click status views with live counts; the full list stays in the status menu.
-    const CHIPS = [['active', 'Not delivered'], ['open', 'Open'], ['overdue', 'Overdue'], ['week', 'Due this week'], ['noeta', 'No ETA'], ['review', 'Under review'], ['delivered-month', 'Delivered this month'], ['all', 'All']];
+    const CHIPS = [['active', 'Not delivered'], ['open', 'Open'], ['overdue', 'Overdue'], ['week', 'Due this week'], ['noeta', 'No ETA'], ['review', 'Pending approval'], ['delivered-month', 'Delivered this month'], ['all', 'All']];
     dash.draw('t-chips', (el) => {
       if (CO.status() !== 'ok') { el.replaceChildren(); return; }
       const rs = CO.rows(), ctx = CO.period(), cur = dash.params().stage || 'active';
@@ -1220,8 +1223,8 @@
         const ms = new Set(del.map((r) => r.month).filter(Boolean));
         const open = list.filter((r) => r.open);
         return {
-          name, open: CO.sumQty(open), wip: open.filter((r) => r.stage === 'In progress').length, overdue: list.filter((r) => r.due === 'overdue').length,
-          week: list.filter((r) => r.due === 'today' || r.due === 'week').length, review: list.filter((r) => r.stage === 'Under review').length,
+          name, open: CO.sumQty(open), wip: open.filter((r) => r.stage === 'WIP').length, overdue: list.filter((r) => r.due === 'overdue').length,
+          week: list.filter((r) => r.due === 'today' || r.due === 'week').length, review: list.filter((r) => r.stage === 'Pending approval').length,
           thisM: CO.sumQty(del.filter((r) => r.month === m)), lastM: CO.sumQty(del.filter((r) => r.month === pm)),
           lastSame: CO.sumQty(del.filter((r) => r.ddate && r.ddate >= pm + '-01' && r.ddate <= CO.sameWorkdaysEnd(m + '-01', CO.today(), pm + '-01', CO.monthEnd(pm)))),
           perDay: CO.workdays(m + '-01', CO.today()) ? CO.sumQty(del.filter((r) => r.month === m)) / CO.workdays(m + '-01', CO.today()) : 0,
@@ -1512,7 +1515,7 @@
       const cols = (S.cols && S.cols[r.src]) || {};
       $('ed-qty-wrap').hidden = !cols.qty; $('ed-qty').value = before.qty;
       $('ed-priority').disabled = cols.priority === false;
-      $('ed-info').textContent = r.stage === 'Awaiting brief' ? 'Waiting on the brief: design has not started because the content status is not done yet.' : (r.stage === 'Delivered' && !cols.delivered ? '' : '');
+      $('ed-info').textContent = r.stage === 'Incomplete brief' ? 'Waiting on the brief: design has not started because the content status is not done yet.' : (r.stage === 'Delivered' && !cols.delivered ? '' : '');
       const links = CO.links(r); $('ed-links').replaceChildren(links);
       $('ed-msg').textContent = r.id ? '' : 'This row has no ID in the sheet, so it can only be edited there.';
       $('ed-save').disabled = !r.id; $('ed-save').textContent = 'Save to sheet';
@@ -1841,7 +1844,7 @@
     const open = all.filter((r) => r.open);
     const b = {
       kind, me, overdue: open.filter((r) => r.due === 'overdue'), today: open.filter((r) => r.due === 'today'), tomorrow: open.filter((r) => r.eta === tm),
-      unassigned: open.filter((r) => !r.list.length), review: all.filter((r) => r.stage === 'Under review'), delivered: all.filter((r) => r.stage === 'Delivered' && r.ddate === t)
+      unassigned: open.filter((r) => !r.list.length), review: all.filter((r) => r.stage === 'Pending approval'), delivered: all.filter((r) => r.stage === 'Delivered' && r.ddate === t)
     };
     b.mine = me ? open.filter((r) => r.list.includes(me)) : [];
     b.actions = NB.myActions().filter((a) => !a.done);
@@ -1861,7 +1864,7 @@
     const st = document.createElement('div'); st.className = 'brief-stats';
     const stat = (n, l) => { const d = document.createElement('div'); const v = document.createElement('b'); v.textContent = CO.num(n); d.append(v, l); st.append(d); };
     stat(b.overdue.length, 'overdue'); stat(b.today.length, 'due today');
-    if (b.kind === 'evening') { stat(CO.sumQty(b.delivered), 'delivered today'); stat(b.tomorrow.length, 'due tomorrow'); } else { stat(b.unassigned.length, 'unassigned'); stat(b.review.length, 'in review'); }
+    if (b.kind === 'evening') { stat(CO.sumQty(b.delivered), 'delivered today'); stat(b.tomorrow.length, 'due tomorrow'); } else { stat(b.unassigned.length, 'unassigned'); stat(b.review.length, 'pending approval'); }
     el.append(st);
     const list = (title, rs, max) => {
       if (!rs.length) return;
@@ -2865,7 +2868,7 @@
         if (a.type) rs = rs.filter((r) => norm(r.type).includes(norm(a.type)));
         rs = rs.filter((r) => clsOk(r, a.classification));
         const s = (a.status || (a.due && a.due !== 'any' ? 'open' : a.delivered_from ? 'delivered' : 'active')).toLowerCase();
-        if (s === 'open') rs = rs.filter((r) => r.open); else if (s === 'active') rs = rs.filter((r) => r.stage !== 'Delivered' && r.stage !== 'Dropped'); else if (s !== 'any') rs = rs.filter((r) => r.stage.toLowerCase() === s);
+        if (s === 'open') rs = rs.filter((r) => r.open); else if (s === 'active') rs = rs.filter((r) => r.stage !== 'Delivered' && r.stage !== 'Deprioritised'); else if (s !== 'any') rs = rs.filter((r) => r.stage.toLowerCase() === s);
         const we = CO.addDays(weekStartOf(t), 6);
         const D = { overdue: (r) => r.due === 'overdue', today: (r) => r.open && r.eta === t, tomorrow: (r) => r.open && r.eta === tm, 'this week': (r) => r.open && r.eta && r.eta >= t && r.eta <= we, 'next 7 days': (r) => r.open && r.eta && r.eta >= t && r.eta <= CO.addDays(t, 7), 'no eta': (r) => r.open && !r.eta };
         if (a.due && D[a.due]) rs = rs.filter(D[a.due]);
@@ -2883,14 +2886,14 @@
         const t = CO.today(), open = rs.filter((r) => r.open), m = CO.thisMonth(), pm = CO.prevMonth(m), pto = CO.sameWorkdaysEnd(m + '-01', t, pm + '-01', CO.monthEnd(pm));
         const del = rs.filter((r) => r.stage === 'Delivered' && r.ddate);
         return { for: lab.join(', ') || 'everyone', open_tasks: open.length, open_creatives: CO.sumQty(open), overdue: open.filter((r) => r.due === 'overdue').length, due_today: open.filter((r) => r.eta === t).length, due_tomorrow: open.filter((r) => r.eta === CO.addDays(t, 1)).length, no_eta: open.filter((r) => !r.eta).length,
-          in_progress: rs.filter((r) => r.stage === 'In progress').length, to_be_planned: rs.filter((r) => r.stage === 'To be planned').length, changes_requested: rs.filter((r) => r.stage === 'Changes requested').length, under_review: rs.filter((r) => r.stage === 'Under review').length, awaiting_brief: rs.filter((r) => r.stage === 'Awaiting brief').length, on_hold: rs.filter((r) => r.stage === 'On hold').length,
+          in_progress: rs.filter((r) => r.stage === 'WIP').length, to_be_planned: rs.filter((r) => r.stage === 'To be planned').length, changes_requested: rs.filter((r) => r.stage === 'Changes requested').length, under_review: rs.filter((r) => r.stage === 'Pending approval').length, awaiting_brief: rs.filter((r) => r.stage === 'Incomplete brief').length, on_hold: rs.filter((r) => r.stage === 'Hold').length,
           unassigned_open: open.filter((r) => !r.list.length).length, delivered_this_month_creatives: CO.sumQty(del.filter((r) => r.month === m)), delivered_same_working_days_last_month: CO.sumQty(del.filter((r) => r.ddate >= pm + '-01' && r.ddate <= pto)), working_days_so_far_this_month: CO.workdays(m + '-01', t), working_days_in_month: CO.workdays(m + '-01', CO.monthEnd(m)), oldest_overdue_days: open.filter((r) => r.due === 'overdue').reduce((x, r) => Math.max(x, CO.diffDays(r.eta, t)), 0) };
       },
       team_progress(a) {
         const P = period(a.period, a.from, a.to), rs = allRows(), t = CO.today();
         const names = new Set((S.team || []).filter((m) => m.status !== 'Inactive').map((m) => m.name)); rs.forEach((r) => { if (r.open) r.list.forEach((n) => names.add(n)); });
         const rows = [...names].map((n) => { const mine = rs.filter((r) => r.list.includes(n)), op = mine.filter((r) => r.open), dl = mine.filter((r) => r.stage === 'Delivered' && r.ddate);
-          return { designer: n, open: op.length, overdue: op.filter((r) => r.due === 'overdue').length, due_today: op.filter((r) => r.eta === t).length, under_review: mine.filter((r) => r.stage === 'Under review').length, delivered: CO.sumQty(dl.filter((r) => r.ddate >= P.from && r.ddate <= P.to)), delivered_previous_period: CO.sumQty(dl.filter((r) => r.ddate >= P.pfrom && r.ddate <= P.pto)) }; })
+          return { designer: n, open: op.length, overdue: op.filter((r) => r.due === 'overdue').length, due_today: op.filter((r) => r.eta === t).length, under_review: mine.filter((r) => r.stage === 'Pending approval').length, delivered: CO.sumQty(dl.filter((r) => r.ddate >= P.from && r.ddate <= P.to)), delivered_previous_period: CO.sumQty(dl.filter((r) => r.ddate >= P.pfrom && r.ddate <= P.pto)) }; })
           .sort((x, y) => y.open - x.open);
         const un = rs.filter((r) => r.open && !r.list.length).length;
         return { period: P.label + ' (' + P.from + ' to ' + P.to + ')', previous_period: P.pfrom + ' to ' + P.pto, designers: rows, unassigned_open_tasks: un };
