@@ -856,7 +856,7 @@
     tog.addEventListener('click', () => { flip(() => { NA.min = !NA.min; LS.set('co.namin', NA.min ? '1' : ''); el._drawn = false; dash.draw('attn'); }); const t2 = el.querySelector('.na-tog'); if (t2) t2.focus(); });
     const acts = document.createElement('div'); acts.className = 'na-acts'; acts.append(go, tog);
     head.append(hl, acts); el.append(head);
-    el.classList.toggle('collapsed', NA.min); const grid = el.closest('.ov-grid'); if (grid) { grid.classList.toggle('na-min', NA.min); grid.classList.toggle('na-short', !NA.min && rows.length <= 6); }
+    el.classList.toggle('collapsed', NA.min); const grid = el.closest('.ov-grid'); if (grid) { grid.classList.toggle('na-min', NA.min); if (NA.min) grid.classList.remove('na-short'); requestAnimationFrame(naFit); }
     if (NA.min) {
       if (rows.length) {
         const parts = [[rows.filter((r) => r.due === 'overdue').length, 'overdue'], [rows.filter((r) => r.due === 'today').length, 'due today'], [rows.filter((r) => r.open && r.eta === tm).length, 'due tomorrow'], [rows.filter((r) => r.stage === 'Changes requested').length, 'changes requested']].filter((x) => x[0]);
@@ -916,7 +916,20 @@
     const t = CO.today(), lim = CO.addDays(t, 14);
     // Dated work only: open tasks with no ETA are one click away (link in the card header), not 40 rows of noise.
     const list = CO.rows().filter((r) => r.open && r.eta && r.eta > t && r.eta <= lim).sort((a, b) => a.eta.localeCompare(b.eta) || (a.priority || 'P9').localeCompare(b.priority || 'P9'));
-    if (!list.length) return CO.emptyRow(tb, 4, 'No open work due in the next two weeks.');
+    if (!list.length) {
+      // Nothing dated in the next two weeks: show the open work that has no ETA yet (it needs a date), oldest request first.
+      const noEta = CO.rows().filter((r) => r.due === 'noeta').sort((a, b) => (a.req || '9999').localeCompare(b.req || '9999'));
+      CO.emptyRow(tb, 4, noEta.length ? 'Nothing due in the next two weeks. Open work with no ETA, oldest request first:' : 'No open work due in the next two weeks.');
+      noEta.slice(0, 5).forEach((r) => {
+        const tr = tb.insertRow(); tr.className = 'click up-mini'; tr.dataset.uid = r.uid; const td = tr.insertCell(); td.colSpan = 4;
+        const row = document.createElement('div'); row.className = 'up-row';
+        const chip = document.createElement('span'); chip.className = 'up-chip'; chip.textContent = 'No ETA';
+        const tx = document.createElement('span'); tx.className = 'up-t'; const b = document.createElement('b'); b.textContent = r.brand; tx.append(b, ' · ' + CO.topicText(r)); tx.title = (r.id ? r.id + ' · ' : '') + r.brand + ' · ' + CO.topicText(r);
+        const who = document.createElement('span'); who.className = 'up-who'; who.textContent = r.list.length ? r.list.join(', ') : 'Unassigned';
+        row.append(chip, tx, who); td.append(row);
+      });
+      return;
+    }
     list.forEach((r) => cells(tb.insertRow(), r, ['when', 'task', 'who', 'stage']));
   });
   dash.draw('upcoming-noeta', (el) => {
@@ -940,9 +953,9 @@
     const b = document.createElement('b'); b.textContent = CO.num(CO.sumQty(open)); const sp = document.createElement('span');
     sp.textContent = (CO.sumQty(open) === 1 ? 'creative' : 'creatives') + ' waiting' + (late ? ' · ' : '') ; if (late) { const x = document.createElement('span'); x.className = 'bad'; x.textContent = late + ' overdue'; sp.append(x); } if (noeta) sp.append(' · ' + noeta + ' with no ETA');
     big.append(b, sp); el.append(big);
-    const list = document.createElement('div'); list.className = 'uq-list';
-    open.slice().sort((a, b2) => (a.due === 'overdue' ? 0 : 1) - (b2.due === 'overdue' ? 0 : 1) || (a.eta || '9999').localeCompare(b2.eta || '9999') || String(a.req || '').localeCompare(String(b2.req || ''))).slice(0, 5).forEach((r) => {
-      const row = document.createElement('div'); row.className = 'row click'; row.dataset.uid = r.uid; row.tabIndex = 0;
+    const list = document.createElement('div'); list.className = 'uq-list'; list.dataset.fill = '1';
+    open.slice().sort((a, b2) => (a.due === 'overdue' ? 0 : 1) - (b2.due === 'overdue' ? 0 : 1) || (a.eta || '9999').localeCompare(b2.eta || '9999') || String(a.req || '').localeCompare(String(b2.req || ''))).slice(0, 20).forEach((r, i) => {
+      const row = document.createElement('div'); row.className = 'row click'; row.dataset.uid = r.uid; row.tabIndex = 0; if (i >= 5) row.hidden = true; // more show when the column has room
       row.append(CO.task(r), whenChip(r)); list.append(row);
     });
     el.append(list);
@@ -1110,7 +1123,11 @@
     if (CO.notReady(el, 'box')) return;
     const T = trendSeries(), ser = T.ser, g = T.g; el.replaceChildren();
     if (ser.length < 2) { const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Pick a range that covers at least two ' + TB.G[g].noun + 's.'; el.append(p); return; }
-    const W = Math.max(300, el.clientWidth), H = 230, mB = 26, mT = 16;
+    // Taller when the card beside it (Top brands) is taller, so the two cards end together without blank space.
+    let H = 230; { const card = el.closest('.co-card'), grid = card && card.parentElement, sib = grid && [...grid.children].find((c) => c !== card && c.classList.contains('co-card'));
+      if (sib && getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length > 1) { const extra = sib.offsetHeight - card.offsetHeight; H = Math.max(230, Math.min(420, (el.offsetHeight || 230) + extra)); }
+      if (sib && !el._ro) { let tm = 0; el._ro = new ResizeObserver(() => { clearTimeout(tm); tm = setTimeout(() => { const c2 = el.closest('.co-card'); if (Math.abs(sib.offsetHeight - c2.offsetHeight) > 12) { el._drawn = false; dash.draw('trend'); } }, 120); }); el._ro.observe(sib); } }
+    const W = Math.max(300, el.clientWidth), mB = 26, mT = 16;
     const lastRunning = ser[ser.length - 1].running;
     const done = lastRunning ? ser.slice(0, -1) : ser, avg = d3.mean(done, (d) => d.n) || 0;
     const y = d3.scaleLinear([0, Math.max(4, d3.max(ser, (d) => d.n), avg) * 1.1], [H - mB, mT]).nice();
@@ -2685,6 +2702,21 @@
      or on tablets) packs each card under the shortest column instead of leaving row gaps. CSS grid with 1px rows: each card
      spans its own height. One column = normal flow. */
   const MAS = { list: [], ro: null, queued: false, mos: [] };
+  /* Needs attention beside the side cards only when its list is at least as tall as them; otherwise it goes full
+     width on top and the side cards pack in two columns below, so neither column leaves blank space. */
+  function naFit() {
+    const na = document.querySelector('.ov-grid.fill > .co-card.na'), grid = na && na.closest('.ov-grid'), side = grid && grid.querySelector('.ov-side');
+    if (!na || !side || !na.offsetParent || NA.min || innerWidth <= 1100) { if (grid && innerWidth <= 1100) grid.classList.remove('na-short'); return; }
+    const list = na.querySelector('.na-list');
+    const naNeed = [...na.children].reduce((h, c) => h + (c === list ? c.scrollHeight : c.offsetHeight), 0) + 60;
+    const kids = [...side.children].filter((k) => getComputedStyle(k).display !== 'none'), gap = 16;
+    const short = grid.classList.contains('na-short');
+    // the side column's single-column height (cards keep similar heights; hysteresis avoids flipping back and forth)
+    const sideNeed = kids.reduce((h, k) => h + k.scrollHeight + gap, 0) * (short ? 1.15 : 1);
+    const want = naNeed < sideNeed * (short ? 1 : 0.92);
+    if (want !== short) { grid.classList.toggle('na-short', want); masQueue(); }
+  }
+  addEventListener('resize', () => requestAnimationFrame(naFit));
   function masLayout(c) {
     const all = [...c.children];
     all.forEach((k) => { k.style.gridColumn = ''; k.style.gridRowStart = ''; k.style.gridRowEnd = ''; k.style.minHeight = ''; k.classList.remove('mas-wide'); });
@@ -2725,6 +2757,17 @@
       const wide = plan(true); items.forEach((x, i) => { x.h = hN[i]; });
       if (wide.voidPx + wide.height * 0.02 < best.voidPx + best.height * 0.02) { best = wide; items.forEach((x) => { if (x.flex) x.h = x.hw; }); }
     }
+    // A column that ends short: if its last card has more rows to show ([data-fill]), show as many as fit.
+    const lastIn = {}; best.out.forEach((q) => { if (q.col >= 0 && (!lastIn[q.col] || q.top > lastIn[q.col].top)) lastIn[q.col] = q; });
+    let filled = false;
+    Object.values(lastIn).forEach((q) => {
+      const end = q.top + q.span, segEnd = best.out.filter((o) => o.col >= 0 && o.top < end + 1 && o.top + o.span > q.top).reduce((m, o) => Math.max(m, o.top + o.span), 0), room = segEnd - end;
+      const fl = room > 40 && q.x.k.querySelector('[data-fill]'); if (!fl) return;
+      const hid = [...fl.children].filter((c) => c.hidden), shown = [...fl.children].find((c) => !c.hidden);
+      const rh = shown ? shown.offsetHeight + 8 : 60; let n = Math.floor(room / rh);
+      hid.slice(0, n).forEach((c) => { c.hidden = false; filled = true; });
+    });
+    if (filled) { MAS.mos.forEach((o) => o.takeRecords()); return masLayout(c); }
     best.out.forEach((q) => {
       const k = q.x.k; k.classList.toggle('mas-wide', q.col < 0);
       k.style.gridColumn = q.col < 0 ? '1 / -1' : String(q.col + 1);
@@ -2733,7 +2776,7 @@
       if (q.grow) k.style.minHeight = (k.getBoundingClientRect().height + q.grow) + 'px';
     });
   }
-  const masAll = () => { MAS.queued = false; MAS.list.forEach((c) => { if (c.isConnected && c.offsetParent) masLayout(c); }); MAS.mos.forEach((o) => o.takeRecords()); };
+  const masAll = () => { MAS.queued = false; naFit(); MAS.list.forEach((c) => { if (c.isConnected && c.offsetParent) masLayout(c); }); MAS.mos.forEach((o) => o.takeRecords()); };
   const masQueue = () => { if (MAS.queued) return; MAS.queued = true; requestAnimationFrame(masAll); };
   function masonry(c) {
     if (!c || MAS.list.includes(c)) return; MAS.list.push(c);
@@ -4036,7 +4079,7 @@
       if (admin && S.status === 'ok') {
         const all = CO.rows(true) || [], skipped = (S.ignored || []).length, unknown = all.filter((r) => /Unrecognised status/.test(String(r.flags || ''))).length;
         const noEta = all.filter((r) => r.open && !r.eta).length, noDes = all.filter((r) => r.open && !r.list.length).length;
-        if (skipped || unknown) add('warn', (skipped + unknown) + ' rows are not counted correctly', [skipped ? skipped + ' incomplete rows are left out' : '', unknown ? unknown + ' have a status the dashboard does not recognise' : ''].filter(Boolean).join('; ') + '. Fix them in the sheets.', ['Open Data health', () => dash.setParams({ tab: 'health' })]);
+        if (skipped || unknown) add('warn', skipped && !unknown ? skipped + ' incomplete rows left out of the counts' : (skipped + unknown) + ' rows left out of the counts', [skipped ? skipped + ' incomplete rows are left out' : '', unknown ? unknown + ' have a status the dashboard does not recognise' : ''].filter(Boolean).join('; ') + '. Fix them in the sheets.', ['Open Data health', () => dash.setParams({ tab: 'health' })]);
         if (noEta > 20 || noDes > 20) add('info', 'Open work missing details', noEta + ' open tasks have no Design ETA and ' + noDes + ' have no designer, so they cannot count as overdue or in anyone\'s workload.', ['Open Data health', () => dash.setParams({ tab: 'health' })]);
       }
       // 4. Calculation self-check: the same numbers worked out two independent ways must agree.

@@ -2543,3 +2543,22 @@ select.cs-open { border-color: var(--primary) !important; box-shadow: 0 0 0 3px 
 .su-summary .ct b { color: inherit; }
 .ct-table td.ct-open { font-weight: 700; }
 .ct-table .su-role { font-size: 11px; color: var(--muted); }
+/* Coming up: fixed columns that trim instead of overlapping in a narrow card. */
+.up-table { table-layout: fixed; width: 100%; min-width: 0 !important; }
+.up-table col.c-eta { width: 84px; } .up-table col.c-who { width: 22%; } .up-table col.c-st { width: 24%; }
+.up-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap !important; }
+.up-table td > * { max-width: 100%; min-width: 0; }
+.up-table td .co-task, .up-table td .t-task, .up-table td div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.up-table td[colspan] { white-space: normal !important; }
+@media (max-width: 700px) { .up-table col.c-who { width: 0; } .up-table th:nth-child(3), .up-table td:nth-child(3) { display: none; } }
+.up-table col.c-who { width: 20%; } .up-table col.c-st { width: 28%; }
+.up-mini td { padding-top: 8px !important; padding-bottom: 8px !important; }
+.up-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.up-chip { flex: none; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--sunken); color: var(--fg-2); }
+.up-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.up-who { flex: none; max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+@media (min-width: 641px) {
+  .co-card-head:has(> .min-tog):not(:has(> :nth-child(4))) { flex-wrap: nowrap; }
+  .co-card-head:has(> .min-tog):not(:has(> :nth-child(4))) > :first-child { flex: 1 1 0; min-width: 0; }
+  .co-card-head:has(> .min-tog):not(:has(> :nth-child(4))) > :not(:first-child) { flex: none; }
+}
