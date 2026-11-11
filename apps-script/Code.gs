@@ -920,7 +920,7 @@ function iso_(v) { return v instanceof Date && !isNaN(v) ? v.toISOString() : (v 
 /*
  * Stored in the Notes tab of the access book (owned by the web app account, not shared for editing).
  * Who sees a note:
- *   private – only its author                   team – everyone with dashboard access
+ *   private – its author (and the owner and Admins, who see every note)   team – everyone with dashboard access
  *   people  – its author, the people it is shared with, everyone @mentioned and everyone it is assigned to
  * Who changes it: its author or an admin. Anyone with an action item can tick that item.
  * Every create, edit and delete is in the audit log; deleted notes are kept, marked deleted.
@@ -949,13 +949,17 @@ function noteReaders_(n) {
   (n.actions || []).forEach(function (a) { if (a && a.email) out[String(a.email).toLowerCase()] = 1; });
   return out;
 }
-function canSeeNote_(n, u) {
+// As a team member: their own notes, notes for everyone, and shared notes they are tagged in, assigned or added to.
+function memberCanSee_(n, u) {
   if (n.deleted) return false;
   if (n.createdBy === u.email || n.visibility === 'team') return true;
-  // Shared notes: the people it is shared with, everyone @mentioned and everyone a note is assigned to. Private notes: only the author.
   return n.visibility === 'people' && !!noteReaders_(n)[u.email];
 }
-function canEditNote_(n, u) { return n.createdBy === u.email || (isOwner_(u.email) && canSeeNote_(n, u)); }
+// The owner and Admins see every note on the team (Creative Head, Nov 2026); everyone is told so in the composer.
+function canSeeNote_(n, u) { return !n.deleted && (memberCanSee_(n, u) || isAdminUser_(u)); }
+// The author changes a note (and the owner, for notes shared with them as before); notes seen only as Admin are
+// read-only. Assignees tick their own item (noteAction).
+function canEditNote_(n, u) { return n.createdBy === u.email || (isOwner_(u.email) && memberCanSee_(n, u)); }
 function allNotes_() {
   if (!hasAccessBook_()) return [];
   const sh = notesSheet_(), last = sh.getLastRow();
@@ -966,6 +970,7 @@ function allNotes_() {
 function publicNote_(n, u) {
   const o = Object.assign({}, n); delete o.row; delete o.reminderSent; delete o.deleted;
   o.canEdit = canEditNote_(n, u);
+  if (!memberCanSee_(n, u)) o.viaAdmin = true; // visible only because they are an Admin
   return o;
 }
 function notesList_(u) {
@@ -1009,7 +1014,7 @@ function noteSave_(b, u) {
   }
   const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
   if (!cur || cur.deleted) return { ok: false, error: 'This note no longer exists.' };
-  if (!canEditNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note (or an admin) can change it.' };
+  if (!canEditNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note (or the owner, if it is shared with them) can change it.' };
   if (b.updatedAt && cur.updatedAt && b.updatedAt !== cur.updatedAt) return { ok: false, error: 'stale', note: publicNote_(cur, u) };
   // A changed reminder time is sent again.
   const sent = n.reminder && n.reminder === cur.reminder ? cur.reminderSent : '';
@@ -1022,7 +1027,7 @@ function noteSave_(b, u) {
 function noteDelete_(b, u) {
   const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
   if (!cur || cur.deleted) return { ok: false, error: 'This note no longer exists.' };
-  if (!canEditNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note (or an admin) can delete it.' };
+  if (!canEditNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note (or the owner, if it is shared with them) can delete it.' };
   const sh = notesSheet_();
   sh.getRange(cur.row, 19, 1, 2).setValues([[true, u.email]]);
   sh.getRange(cur.row, 4, 1, 2).setValues([[new Date(), u.email]]);
@@ -1033,7 +1038,7 @@ function noteAction_(b, u) {
   if (!cur || !canSeeNote_(cur, u)) return { ok: false, error: 'This note no longer exists.' };
   const a = (cur.actions || []).filter(function (x) { return x.id === String(b.actionId); })[0];
   if (!a) return { ok: false, error: 'That action item is gone.' };
-  if (!canEditNote_(cur, u) && a.email !== u.email) return { ok: false, error: 'Only the person it is assigned to, the author or an admin can tick this.' };
+  if (!canEditNote_(cur, u) && a.email !== u.email) return { ok: false, error: 'Only the person it is assigned to or the author can tick this.' };
   a.done = !!b.done; a.doneBy = a.done ? u.email : ''; a.doneAt = a.done ? new Date().toISOString() : '';
   notesSheet_().getRange(cur.row, 15).setValue(JSON.stringify(cur.actions));
   return { ok: true, actions: cur.actions, changes: [{ action: 'Note action item ' + (a.done ? 'done' : 'reopened'), sheet: 'Notes', record: cur.title, field: 'Action item', before: a.done ? 'Open' : 'Done', after: a.done ? 'Done' : 'Open', details: a.text }] };

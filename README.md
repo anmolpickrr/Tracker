@@ -133,7 +133,7 @@ The owner and Admins see **who is online**: a status dot (green = active, amber 
 
 ## Notes
 
-Quick sticky notes. Type a note; **@name** tags someone and shares the note with them; **Assign** gives it to teammates (each gets a tick box on the sticky and a bell notification until it is done); **Remind** sets a reminder (in 1 hour, today 6 pm, tomorrow 10 am, Monday 10 am or any time), shown in the bell and emailed. Who can see a note is shown on it: only you, you and the people tagged or assigned, or everyone (*Everyone can see*). Private notes are visible only to their author. Click your own sticky to edit it in place; tabs filter All, Mine, Shared with me, Assigned to me and Reminders. Changes by others appear within 30 seconds.
+Quick sticky notes. Type a note; **@name** tags someone and shares the note with them; **Assign** gives it to teammates (each gets a tick box on the sticky and a bell notification until it is done); **Remind** sets a reminder (in 1 hour, today 6 pm, tomorrow 10 am, Monday 10 am or any time), shown in the bell and emailed. Who can see a note is shown on it: only you, you and the people tagged or assigned, or everyone (*Everyone can see*). Private notes are visible to their author and to Admins: the owner and Admins see every note on the team (a *Team notes* tab, each marked *Visible to you as Admin*, read-only), and the composer tells everyone so ("Only you and Admins can see this"). Click your own sticky to edit it in place; tabs filter All, Mine, Shared with me, Assigned to me and Reminders. Changes by others appear within 30 seconds.
 
 ## Fasty: languages, voice and speed
 

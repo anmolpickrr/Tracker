@@ -2529,3 +2529,7 @@ details > summary { cursor: pointer; }
 select.cs-open { border-color: var(--primary) !important; box-shadow: 0 0 0 3px var(--primary-soft) !important; }
 @media (prefers-reduced-motion: reduce) { .cs-menu { animation: none; } }
 .pm-warn { margin: 4px 0 0; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn, #c27a00) 14%, transparent); color: var(--fg); font-size: 12.5px; }
+/* Notes an Admin sees only as Admin: a quiet blue-grey sticky and a label. */
+.qn-note.k-team { --st: #e3e8f2; }
+:root[data-theme="dark"] .qn-note.k-team { --st: #cdd6e8; }
+.qn-pill.adm { background: #1e1e1e; color: #fff; border-color: #1e1e1e; }

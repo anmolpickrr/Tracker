@@ -2902,7 +2902,7 @@
     /* ---- reading a note ---- */
     const isAssign = (a) => /^as-/.test(a.id || '');
     const assignees = (n) => (n.actions || []).filter(isAssign);
-    const kindOf = (n) => (n.createdBy === me() ? 'mine' : assignees(n).some((a) => a.email === me()) ? 'assigned' : 'shared');
+    const kindOf = (n) => (n.createdBy === me() ? 'mine' : assignees(n).some((a) => a.email === me()) ? 'assigned' : n.viaAdmin ? 'team' : 'shared');
     const textOf = (n) => [n.title && n.title !== 'Untitled note' ? n.title : '', n.body || ''].filter(Boolean).join('\n');
     const istStamp = (d) => new Date(d.getTime() + 5.5 * 3600e3).toISOString().slice(0, 16);
     const remindText = (r) => { if (!r) return ''; const d = r.slice(0, 10), t = CO.today(); const hm = new Date('2000-01-01T' + r.slice(11, 16)).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); return (d === t ? 'Today' : d === CO.addDays(t, 1) ? 'Tomorrow' : CO.fmtDate(d)) + ', ' + hm; };
@@ -2910,7 +2910,7 @@
       if (n.visibility === 'team') return 'Everyone';
       const who = new Set(); (n.mentions || []).forEach((m) => m.email && who.add(m.email)); assignees(n).forEach((a) => a.email && who.add(a.email)); (n.sharedWith || []).forEach((e) => who.add(e));
       who.delete(n.createdBy);
-      if (n.visibility !== 'people' || !who.size) return 'Only ' + (n.createdBy === me() ? 'you' : first(nameOf2(n.createdBy)));
+      if (n.visibility !== 'people' || !who.size) return 'Only ' + (n.createdBy === me() ? 'you' : first(nameOf2(n.createdBy))) + ' and Admins';
       const names = [...who].map((e) => (e === me() ? 'you' : first(nameOf2(e))));
       return (n.createdBy === me() ? 'You, ' : first(nameOf2(n.createdBy)) + ', ') + (names.length > 2 ? names.slice(0, 2).join(', ') + ' +' + (names.length - 2) : names.join(' and '));
     };
@@ -2975,7 +2975,7 @@
         assignDd.btn.querySelector('.qn-dd-l').textContent = S2.assign.length ? 'Assigned · ' + S2.assign.length : 'Assign';
         remindDd.btn.querySelector('.qn-dd-l').textContent = S2.reminder ? 'Reminder set' : 'Remind';
         const tg = tagged(), who = new Set([...tg.map((p) => p.email), ...S2.assign.map((a) => a.email)]);
-        vis.textContent = S2.team ? 'Everyone with access can see this' : who.size ? 'Visible to you and ' + [...who].map((e) => first(nameOf2(e))).slice(0, 3).join(', ') + (who.size > 3 ? ' +' + (who.size - 3) : '') : 'Only you can see this';
+        vis.textContent = S2.team ? 'Everyone with access can see this' : who.size ? 'Visible to you, ' + [...who].map((e) => first(nameOf2(e))).slice(0, 3).join(', ') + (who.size > 3 ? ' +' + (who.size - 3) : '') + ' and Admins' : 'Only you and Admins can see this';
         save.disabled = !ta.value.trim();
       }
       // @ autocomplete
@@ -3034,12 +3034,13 @@
     document.addEventListener('click', (e) => { if (!e.target.closest('.qn-dd')) document.querySelectorAll('.qn-dd-pan').forEach((p) => { p.hidden = true; p.previousSibling.setAttribute('aria-expanded', 'false'); }); });
 
     /* ---- the board ---- */
-    const TABS = [['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me'], ['assigned', 'Assigned to me'], ['reminders', 'Reminders']];
-    const inTab = (n, t) => t === 'all' || (t === 'mine' ? n.createdBy === me() : t === 'shared' ? n.createdBy !== me() : t === 'assigned' ? assignees(n).some((a) => a.email === me()) : !!n.reminder);
+    const TABS = [['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me'], ['assigned', 'Assigned to me'], ['reminders', 'Reminders'], ['team', 'Team notes']];
+    const inTab = (n, t) => t === 'all' || (t === 'mine' ? n.createdBy === me() : t === 'shared' ? n.createdBy !== me() && !n.viaAdmin : t === 'assigned' ? assignees(n).some((a) => a.email === me()) : t === 'team' ? n.createdBy !== me() : !!n.reminder);
     const matches = (n) => { const q = norm(st.q); if (!q) return true; return norm([n.title, n.body, nameOf2(n.createdBy), ...(n.mentions || []).map((m) => m.name), ...assignees(n).map((a) => a.assignee)].join(' ')).includes(q); };
     dash.draw('qn-tabs', (el) => {
       el.replaceChildren();
-      TABS.forEach(([k, l]) => {
+      if (st.f === 'team' && !isAdmin()) st.f = 'all';
+      TABS.filter(([k]) => k !== 'team' || isAdmin()).forEach(([k, l]) => {
         const n = st.notes.filter((x) => inTab(x, k)).length, b = mk('button', 'qn-tab' + (st.f === k ? ' on' : '')); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(st.f === k));
         b.append(mk('span', '', l)); if (k !== 'all' && n) b.append(mk('span', 'qn-n', String(n)));
         b.addEventListener('click', () => { st.f = k; LS.set('co.qnf', k); dash.draw('qn-tabs'); flip(() => dash.draw('qn-board')); }); el.append(b);
@@ -3069,6 +3070,7 @@
       const meta = mk('div', 'qn-meta');
       if (n.reminder) { const due = n.reminder <= istStamp(new Date()); const r = mk('span', 'qn-pill rm' + (due ? ' due' : '')); r.textContent = (due ? 'Reminder ' : '⏰ ') + remindText(n.reminder); meta.append(r); }
       meta.append(mk('span', 'qn-pill vis', visText(n)));
+      if (n.viaAdmin) meta.append(mk('span', 'qn-pill adm', 'Visible to you as Admin'));
       c.append(meta);
       const ft = mk('footer', 'qn-foot'); ft.append(CO.av(nameOf2(n.createdBy)), mk('span', '', (n.createdBy === me() ? 'You' : first(nameOf2(n.createdBy))) + ' · ' + ago(n.updatedAt || n.createdAt)));
       if (n.createdBy === me()) { const e2 = mk('button', 'qn-edit', 'Edit'); e2.type = 'button'; ft.append(e2); }
@@ -3080,7 +3082,7 @@
       el.replaceChildren();
       if (!st.loaded) { el.append(mk('p', 'qn-empty', A.mode === 'auth' ? 'Loading notes…' : 'Sign in to use notes.')); return; }
       const list = st.notes.filter((n) => inTab(n, st.f) && matches(n)).sort((a, b) => (b.pinned - a.pinned) || String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
-      if (!list.length) { el.append(mk('p', 'qn-empty', st.q ? 'No notes match “' + st.q + '”.' : st.f === 'all' ? 'No notes yet. Write one above; tag someone with @ to share it with them.' : st.f === 'assigned' ? 'Nothing assigned to you.' : st.f === 'reminders' ? 'No reminders set.' : st.f === 'shared' ? 'Nobody has shared a note with you yet.' : 'You have not written a note yet.')); return; }
+      if (!list.length) { el.append(mk('p', 'qn-empty', st.q ? 'No notes match “' + st.q + '”.' : st.f === 'all' ? 'No notes yet. Write one above; tag someone with @ to share it with them.' : st.f === 'assigned' ? 'Nothing assigned to you.' : st.f === 'reminders' ? 'No reminders set.' : st.f === 'shared' ? 'Nobody has shared a note with you yet.' : st.f === 'team' ? 'No notes from the team yet.' : 'You have not written a note yet.')); return; }
       list.slice(0, 120).forEach((n) => el.append(card(n)));
     });
     let qT = 0; $n('qn-q').addEventListener('input', (e) => { clearTimeout(qT); qT = setTimeout(() => { st.q = e.target.value.trim(); dash.draw('qn-board'); }, 200); });
