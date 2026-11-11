@@ -121,7 +121,8 @@ Everyone lands on **My work** showing their own work (the owner lands on the Ove
 
 ## Access levels and sections
 
-- **View only** and **Can edit** see only their own work by default (tasks assigned to them, or whose brief they own) across My work, Overview, Tasks and the rest; **Admin** and the owner see everyone's. The owner or an Admin can change this per person.
+- **View only** sees only their own work by default (tasks assigned to them by their name on the team list, or whose brief they own). **Can edit**, **Admin** and the owner see everyone's work, brands and workload. The owner or an Admin can change this per person.
+- "Own work" matches people by their team-list name. Someone not on the team list (a KAM, for example) would see nothing, so the Access page warns when that would happen, and the person's dashboard explains it instead of staying blank.
 - **Sections:** when you add someone, approve a request or give access back, the *Sections they can open* dropdown picks one, several or all sections; the rest are hidden from their menu and cannot be opened. Click a name on the Access page to change it later. My work is always included.
 - **Admins** (and the owner) manage access and see the activity log and live team activity. Admins cannot change the owner's access or their own. Settings stay owner-only.
 - Every role sees the same layout and design; only which sections and controls appear changes.

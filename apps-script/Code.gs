@@ -34,9 +34,10 @@ const OWNER_ONLY = { settings: 1, saveSettings: 1 };
 const ADMIN_ONLY = { users: 1, setAccess: 1, audit: 1, presence: 1 };
 function isAdminUser_(u) { return !!u && (u.owner || isOwner_(u.email) || u.role === 'Admin'); }
 function defaultPerms_(role) {
-  // View only and Can edit see only their own work by default (Creative Head, Nov 2026); Admins see everyone's.
+  // View only sees only their own work by default; Can edit and Admin see everyone's work (Creative Head, Nov 2026:
+  // edit access means working with all tasks, brands and people, e.g. KAMs who are not on the designer team list).
   const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own' };
-  if (role === 'Editor') p.edit = true;
+  if (role === 'Editor') { p.edit = true; p.load = true; p.scope = 'all'; }
   if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; }
   return p;
 }
@@ -296,7 +297,7 @@ function doPost(e) {
     if (body.action === 'settings') { const st = settings_(); return json_({ ok: true, settings: Object.assign({}, st, { chat: st.chat ? 'set' : '' }) }); }
     if (body.action === 'data') { const pm = permsOf_(user); return text_(pm.scope === 'own' ? ownDataText_(user, !!body.fresh) : dataText_(!!body.fresh)); }
     if (body.action === 'health') return json_(health_());
-    if (body.action === 'users') return json_({ ok: true, users: users_().list.map(publicUser_), you: user.email, owners: owners_() });
+    if (body.action === 'users') { let all = null; try { all = JSON.parse(dataText_(false)); } catch (e) { all = null; } return json_({ ok: true, users: users_().list.map(function (u) { return publicUser_(u, all); }), you: user.email, owners: owners_() }); }
     if (body.action === 'audit') return json_(auditRead_(body));
     if (body.action === 'directory') return json_({ ok: true, people: users_().list.filter(function (u) { return u.status === 'Approved'; }).map(function (u) { return { email: u.email, name: u.name || '', photo: photo_(u.photo) }; }) });
     if (body.action === 'notes') return json_(notesList_(user));
@@ -717,8 +718,8 @@ function userByEmail_(email) {
   email = String(email || '').toLowerCase();
   return users_().list.filter(function (u) { return u.email === email; })[0] || null;
 }
-function publicUser_(u) {
-  return { email: u.email, name: u.name || '', role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), reminders: u.reminders !== false, lastActive: u.lastActive || '', owner: !!u.owner || isOwner_(u.email), perms: permsOf_(u), custom: !!(u.perms && Object.keys(u.perms).length) };
+function publicUser_(u, all) {
+  return { onTeam: !!teamEntryOf_(u, all), email: u.email, name: u.name || '', role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), reminders: u.reminders !== false, lastActive: u.lastActive || '', owner: !!u.owner || isOwner_(u.email), perms: permsOf_(u), custom: !!(u.perms && Object.keys(u.perms).length) };
 }
 /* Only Google profile photos are kept and shown. */
 function photo_(url) { const s = String(url || ''); return /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\/[^\s"'<>]+$/i.test(s) ? s.slice(0, 500) : ''; }
@@ -2189,6 +2190,16 @@ function removeDeliveredOn_() {
 function permText_(p) {
   return 'pages: ' + p.pages.join(', ') + '; edit tasks: ' + (p.edit ? 'yes' : 'no') + '; download data: ' + (p.export ? 'yes' : 'no') + '; workload and others\' work: ' + (p.load ? 'yes' : 'no') + '; manage team list: ' + (p.team ? 'yes' : 'no') + '; Fasty: ' + (p.fasty ? 'yes' : 'no') + '; tasks: ' + (p.scope === 'own' ? 'only their own' : 'all');
 }
+/* The team-list entry for a signed-in person (by name or alias), or null. "Only their own work" depends on it. */
+function teamEntryOf_(user, all) {
+  try {
+    all = all || JSON.parse(dataText_(false));
+    const team = all.sources && Object.keys(all.sources).map(function (k) { return all.sources[k]; }).filter(function (x) { return x && x.kind === 'team'; })[0];
+    if (!team) return null;
+    const n = String(user.name || '').toLowerCase().trim(); if (!n) return null;
+    return CODATA.parseTeam(team).filter(function (m) { return m.name.toLowerCase() === n || String(m.aliases || '').toLowerCase().split(/\s*,\s*/).indexOf(n) >= 0; })[0] || null;
+  } catch (e) { return null; }
+}
 function ownDataText_(user, fresh) {
   const all = JSON.parse(dataText_(fresh));
   const names = [user.name || ''];
@@ -2210,5 +2221,7 @@ function ownDataText_(user, fresh) {
     src.rows = keep; if (src.rowNums) src.rowNums = nums;
   });
   all.scope = 'own';
+  // Not on the team list and nothing assigned by name: the dashboard explains why it is empty instead of showing a blank page.
+  if (!teamEntryOf_(user, JSON.parse(dataText_(false)))) all.ownNoMatch = true;
   return JSON.stringify(all);
 }

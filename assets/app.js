@@ -128,7 +128,7 @@
       const src = body.sources || {};
       const taskKeys = Object.keys(src).filter((k) => CODATA.kindOf(k, src[k].kind) !== 'team' && !src[k].optional);
       if (taskKeys.length && taskKeys.every((k) => src[k].error)) throw new Error('None of the task sheets could be opened by the web app: ' + src[taskKeys[0]].error);
-      S.sources = src;
+      S.sources = src; S.ownNoMatch = !!(body && body.ownNoMatch);
       // Every task tab the web app reports, in its order (newest tab of each kind first).
       const keys = Object.keys(src).filter((k) => !src[k].error && CODATA.kindOf(k, src[k].kind) !== 'team');
       const teamKey = Object.keys(src).find((k) => CODATA.kindOf(k, src[k].kind) === 'team');
@@ -2195,6 +2195,8 @@
       if (u.status !== 'Approved') {
         pick = secPicker(DEF_PAGES(u.role)); const pl = el('div', 'co-field'); pl.append(el('span', '', 'Sections they can open'), pick); act.append(pl);
         sel.addEventListener('change', () => { if (!pick.touched) pick.set(DEF_PAGES(sel.value)); });
+        const w2 = el('p', 'co-note warn pm-warn', (u.name || u.email).split(' ')[0] + ' is not on the team list: as View only they would see no tasks (they only see work assigned to them). Choose Can edit, or set All tasks after approving.'); act.append(w2);
+        const pw = () => { w2.hidden = !(sel.value === 'Viewer' && u.onTeam === false); }; sel.addEventListener('change', pw); pw();
       }
       const withPerms = (o) => { const pm = pick ? permsFor(sel.value, pick.read()) : undefined; return pm ? Object.assign(o, { perms: pm }) : o; };
       const btn = (text, cls, fn) => { const b = el('button', 'co-btn' + (cls ? ' ' + cls : ''), text); b.type = 'button'; b.addEventListener('click', fn); act.append(b); };
@@ -2218,7 +2220,9 @@
       const ab = el('div', 'pm-abs');
       AB.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = !!P0[k]; const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); ab.append(lab); });
       box.append(ab);
-      const sc = el('label', 'co-field', 'Tasks they can see'); const scs = el('select', 'co-select'); scs.append(new Option('All tasks', 'all'), new Option('Only tasks assigned to them (or whose brief they own)', 'own')); scs.value = P0.scope || (u.role === 'Admin' ? 'all' : 'own'); sc.append(scs); box.append(sc);
+      const sc = el('label', 'co-field', 'Tasks they can see');
+      const ownWarn = el('p', 'co-note warn pm-warn', (u.name || u.email).split(' ')[0] + ' is not on the team list, so "only tasks assigned to them" would show nothing. Choose All tasks, or add them to the team list first.'); const scs = el('select', 'co-select'); scs.append(new Option('All tasks', 'all'), new Option('Only tasks assigned to them (or whose brief they own)', 'own')); scs.value = P0.scope || (u.role === 'Viewer' ? 'own' : 'all'); sc.append(scs); box.append(sc); box.append(ownWarn);
+      const paintWarn = () => { ownWarn.hidden = !(scs.value === 'own' && u.onTeam === false); }; scs.addEventListener('change', paintWarn); paintWarn();
       box.append(el('p', 'co-note', 'Only you and Admins: giving access, the activity log and live team activity. Only you: settings.' + (u.custom ? ' This person has custom permissions.' : ' Using the defaults for ' + ROLE_LABEL[u.role] + '.')));
       const row = el('div', 'pm-act');
       const save = el('button', 'co-btn primary', 'Save permissions'); save.type = 'button';
@@ -3902,6 +3906,8 @@
     const checks = () => {
       const out = [], admin = isOwner(), t = CO.today();
       const add = (level, title, detail, act) => out.push({ level, title, detail, act });
+      // 0. "Only their own work" for someone the team list does not know: say why the dashboard is empty.
+      if (A.mode === 'auth' && S.ownNoMatch) add('warn', 'You see only tasks assigned to you, and none are', 'Your name' + (A.user && A.user.name ? ' (' + A.user.name + ')' : '') + ' is not on the team list, so no task matches you. Ask an Admin to give you access to all tasks, or to add you to the team list.');
       // 1. Data loading and sheets
       if (S.status === 'error') add('bad', 'The data could not load', S.error);
       if (S.staleError) add('warn', 'The last refresh failed', 'Showing data from ' + (S.loadedAt ? CO.istTime(S.loadedAt) : 'earlier') + '. ' + S.staleError, ['Try again', () => load(true)]);
@@ -3955,11 +3961,12 @@
       const tx = document.createElement('span'); tx.className = 'sys-t';
       const real = list.filter((x) => x.level !== 'info').length;
       tx.textContent = !list.length ? 'All systems working: data, sheets, live sync and ' + last.ok + ' calculation checks passed' : real ? real + (real === 1 ? ' thing needs' : ' things need') + ' attention' : 'Working, with ' + list.length + (list.length === 1 ? ' note' : ' notes');
+      if (real === 1) tx.textContent = list.find((x) => x.level !== 'info').title; // one issue: say what it is
       const when = document.createElement('span'); when.className = 'sys-when'; when.textContent = 'Checked ' + CO.istTime(last.at);
       head.append(dot, tx, when);
       el.append(head);
       if (!list.length) return;
-      const open = el.dataset.open === '1' || (el.dataset.open !== '0' && list.some((x) => x.level === 'bad'));
+      const open = el.dataset.open === '1' || (el.dataset.open !== '0' && (list.some((x) => x.level === 'bad') || S.ownNoMatch));
       const more = document.createElement('span'); more.className = 'sys-more'; more.textContent = open ? 'Hide' : 'Details'; head.insertBefore(more, when);
       head.setAttribute('aria-expanded', String(open));
       head.addEventListener('click', () => { el.dataset.open = open ? '0' : '1'; dash.draw('syscheck'); });

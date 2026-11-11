@@ -2528,3 +2528,4 @@ details > summary { cursor: pointer; }
 .cs-find { position: sticky; top: -6px; z-index: 1; margin: -6px -6px 4px; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--line-2); border-radius: 14px 14px 0 0; background: var(--panel); color: var(--fg); font: 13px var(--font-body); outline: none; }
 select.cs-open { border-color: var(--primary) !important; box-shadow: 0 0 0 3px var(--primary-soft) !important; }
 @media (prefers-reduced-motion: reduce) { .cs-menu { animation: none; } }
+.pm-warn { margin: 4px 0 0; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn, #c27a00) 14%, transparent); color: var(--fg); font-size: 12.5px; }
