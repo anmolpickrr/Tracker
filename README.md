@@ -119,6 +119,12 @@ Everyone lands on **My work** showing their own work (the owner lands on the Ove
 
 **Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) opens with how long approvals take: the typical (median) and longest wait, then bars for up to 7 days, 8–14, 15–30 and over 30 days (orange = over 14 days), each with its count and share. Click a bar (or press Enter on it) to list only those tasks; click again for all. Below that it groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
 
+## Content tasks (briefs, scripts, content)
+
+Counted separately from design and editing, never mixed with creatives. A content task belongs to everyone named in its **Content Owner** cell (shared cells such as "Anmol, Jahanvi" count for each). **Content Status** decides where it is: **open** (in the writer's bucket) = PENDING, WIP, CHANGES, INCOMPLETE BRIEF, TBP, TBD; **with the client** = SHARED; **completed** = DONE, dated by the Design ETA (else the request date, never later than today); **on hold** = HOLD. Dropped (Deprioritised) tasks are not open content work.
+
+Content writers: Jahanvi and Gul (content only: they appear under Content tasks, not in design counts or workload unless they hold open design work), anyone with the *Content Writer* role, and the Creative Head (Anmol), whose own design work also shows in Stand-up, Team and workload. Shown in Stand-up (a Content tasks block per writer, plus the total open), Team › Content tasks (open, by status, with client, on hold, completed this and last month) and My work.
+
 ## Access levels and sections
 
 - **View only** sees only their own work by default (tasks assigned to them by their name on the team list, or whose brief they own). **Can edit**, **Admin** and the owner see everyone's work, brands and workload. The owner or an Admin can change this per person.

@@ -2533,3 +2533,13 @@ select.cs-open { border-color: var(--primary) !important; box-shadow: 0 0 0 3px 
 .qn-note.k-team { --st: #e3e8f2; }
 :root[data-theme="dark"] .qn-note.k-team { --st: #cdd6e8; }
 .qn-pill.adm { background: #1e1e1e; color: #fff; border-color: #1e1e1e; }
+/* Content tasks: their own block on a writer's stand-up card, own chips and table. */
+.su-content { display: grid; gap: 8px; margin-top: 4px; padding: 12px; border-radius: 14px; background: color-mix(in srgb, #ddff00 12%, var(--box)); border: 1px solid color-mix(in srgb, #9bb000 30%, var(--box-line)); }
+:root[data-theme="dark"] .su-content { background: color-mix(in srgb, #ddff00 7%, var(--box)); }
+.su-ct-h { display: flex; align-items: center; justify-content: space-between; margin: 0; font-size: 12.5px; font-weight: 700; }
+.su-ct-h b { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: #1e1e1e; color: #ddff00; }
+.chip.s-content { background: color-mix(in srgb, #9bb000 18%, transparent); color: #3a5800; }
+:root[data-theme="dark"] .chip.s-content { color: #e4ff66; }
+.su-summary .ct b { color: inherit; }
+.ct-table td.ct-open { font-weight: 700; }
+.ct-table .su-role { font-size: 11px; color: var(--muted); }

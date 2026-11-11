@@ -2227,6 +2227,7 @@ function ownDataText_(user, fresh) {
   });
   all.scope = 'own';
   // Not on the team list and nothing assigned by name: the dashboard explains why it is empty instead of showing a blank page.
-  if (!teamEntryOf_(user, JSON.parse(dataText_(false)))) all.ownNoMatch = true;
+  const kept = Object.keys(all.sources || {}).reduce(function (n, k) { const x = all.sources[k]; return n + (x && x.kind !== 'team' && Array.isArray(x.rows) ? x.rows.length : 0); }, 0);
+  if (!kept && !teamEntryOf_(user, JSON.parse(dataText_(false)))) all.ownNoMatch = true;
   return JSON.stringify(all);
 }

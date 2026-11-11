@@ -1319,8 +1319,9 @@
     if (A.mode !== 'auth' || !A.user) { el.replaceChildren(); return; }
     if (CO.notReady(el, 'box')) return;
     el.replaceChildren();
-    const admin = perm('load'), mine = myDesigner();
-    const people = (S.team || []).filter((m) => m.status !== 'Inactive' && !EF.hidden(m.name)).map((m) => m.name).sort((a, b) => a.localeCompare(b));
+    const fn = String(A.user.name || '').toLowerCase().split(' ')[0];
+    const admin = perm('load'), mine = myDesigner() || CT.writers().find((w) => w.toLowerCase().split(' ')[0] === fn) || null; // content writers not on the team list (Gul)
+    const people = (S.team || []).filter((m) => m.status !== 'Inactive' && !EF.hidden(m.name)).map((m) => m.name).concat(CT.writers().filter((w) => !(S.team || []).some((m) => m.name === w))).sort((a, b) => a.localeCompare(b));
     // My work is always the signed-in person's own work first; "View as" (owner and managers) is a deliberate switch.
     if (mine && !people.includes(mine)) people.unshift(mine);
     let who = admin && MW.who && people.includes(MW.who) ? MW.who : mine || (admin ? people[0] : null);
@@ -1364,8 +1365,10 @@
     const grid = document.createElement('div'); grid.className = 'mw-grid';
     const left = document.createElement('div'); left.className = 'mw-col'; const right = document.createElement('div'); right.className = 'mw-col';
     // Content writers: briefs whose content they are still writing (the design has not started).
-    const first = who.toLowerCase().split(' ')[0], writing = CO.rows().filter((r) => r.awaiting && ['Brief in progress', 'Brief ready for scripting', 'Brief changes requested'].includes(r.sub) && r.owner && r.owner.toLowerCase().split(/[ ,]/)[0] === first);
-    if (writing.length) left.append(section('Content to write', 'Briefs where your content is in progress; design starts after it.', writing, { kind: 'changes' }, ''));
+    // Content tasks (briefs, scripts, content), separate from design: every task whose Content Owner names this person.
+    const cto = CT.of(who), isWriter = CT.writers().some((w) => w === who) || CT.contentOnly(who);
+    if (isWriter || cto.open.length) left.append(section('Content tasks', 'Briefs, scripts and content in your bucket.', cto.open, { kind: 'changes' }, 'No open content tasks.'));
+    if (cto.client.length) right.append(section('Content with the client', 'Briefs shared with the client.', cto.client, { waiting: true }, ''));
     left.append(section('Focus now', 'Overdue and due today, oldest deadline first.', focus, {}, 'Nothing overdue or due today.'),
       section('Up next', 'Open work by ETA; work with no ETA comes last.', next, { kind: 'tomorrow' }, 'Nothing else open.', 12));
     if (who === mine && isOwner()) { const rev = CO.rows().filter((r) => r.review).sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999')); right.append(section('Waiting for your review', 'Your team finished these (UNDER REVIEW). Move each to DONE or SHARED after reviewing.', rev, { kind: 'today' }, 'Nothing waiting for your review.')); }
@@ -1512,6 +1515,7 @@
     pill(d3.sum(cs, (c) => c.today.length), 'due today');
     pill(people.filter((c) => !c.open.length).length, 'free to take work');
     if (un) pill(un.open.length, 'unassigned', un.overdue.length ? 'bad' : '');
+    const cOpen = new Set(cs.flatMap((c) => (c.content ? c.content.open.map((r) => r.uid) : []))).size; pill(cOpen, cOpen === 1 ? 'content task open' : 'content tasks open', 'ct');
   });
   (() => {
     const line = (r) => {
@@ -1533,6 +1537,26 @@
       return s;
     };
     const byEta = (a, b) => (a.eta || '9999').localeCompare(b.eta || '9999');
+    // Content tasks block on a writer's card: its own count and breakdown, separate from design and editing.
+    const CLAB = { PENDING: 'Pending', WIP: 'WIP', CHANGES: 'Changes', 'INCOMPLETE BRIEF': 'Incomplete brief', TBP: 'TBP', TBD: 'TBD' };
+    const cline = (r) => {
+      const d = line(r); const m = d.querySelector('.meta'); m.textContent = [r.id, r.type, 'Content: ' + (CLAB[String(r.content_status).trim().toUpperCase()] || r.content_status), r.designers ? 'Design: ' + r.designers : '', CO.cls(r)].filter(Boolean).join(' · ');
+      const mm = d.querySelector('.m'); mm.textContent = r.eta ? 'ETA ' + CO.fmtDate(r.eta) : 'No ETA'; mm.classList.remove('bad', 'warn'); return d;
+    };
+    function contentBlock(ct, name) {
+      const box = document.createElement('div'); box.className = 'su-content';
+      const h = document.createElement('h3'); h.className = 'su-ct-h'; h.append('Content tasks'); const n = document.createElement('b'); n.textContent = ct.open.length + ' open'; h.append(n); box.append(h);
+      const chips = document.createElement('div'); chips.className = 'su-stats';
+      CT.OPEN.forEach((k) => { const l = (ct.by[k] || []).length; if (l) { const s2 = document.createElement('span'); s2.className = 'chip s-content'; s2.textContent = l + ' ' + CLAB[k]; chips.append(s2); } });
+      if (ct.client.length) { const s2 = document.createElement('span'); s2.className = 'chip s-lav'; s2.textContent = ct.client.length + ' with client'; chips.append(s2); }
+      if (ct.hold.length) { const s2 = document.createElement('span'); s2.className = 'chip s-mute'; s2.textContent = ct.hold.length + ' on hold'; chips.append(s2); }
+      if (chips.childNodes.length) box.append(chips);
+      if (ct.open.length) { const sec = document.createElement('div'); sec.className = 'su-sec'; ct.open.slice(0, 5).forEach((r) => sec.append(cline(r))); if (ct.open.length > 5) { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-link'; b.textContent = '+' + (ct.open.length - 5) + ' more'; b.addEventListener('click', () => { dash.setParams({ tab: 'mine' }); }); sec.append(b); } box.append(sec); }
+      else { const f = document.createElement('p'); f.className = 'su-free'; f.textContent = 'No open content tasks.'; box.append(f); }
+      const t = CO.today(), wk = ct.doneIn(CO.addDays(t, -6), t).length;
+      if (wk) { const d = document.createElement('p'); d.className = 'su-done'; d.textContent = wk + (wk === 1 ? ' content task' : ' content tasks') + ' completed in the last 7 days (by ETA)'; box.append(d); }
+      return box;
+    }
     dash.draw('standup', (el) => {
       if (CO.notReady(el, 'box')) return;
       const rs = CO.rows(), t = CO.today(), wkAgo = CO.addDays(t, -6);
@@ -1545,6 +1569,9 @@
         // Inactive people appear only while they still hold open work, so it can be reassigned.
         r.list.forEach((d) => { if (EF.hidden(d) || (!CO.isActive(d) && !r.open)) return; if (!people.has(d)) people.set(d, []); people.get(d).push(r); });
       });
+      // Content-only writers have no design card unless they hold design work; every content writer gets a card.
+      [...people.keys()].forEach((k) => { if (CT.contentOnly(k) && !people.get(k).length) people.delete(k); });
+      CT.writers().forEach((w) => { if (!people.has(w)) people.set(w, []); });
       const p = dash.params();
       if (p.designer && p.designer !== '__none') [...people.keys()].forEach((k) => { if (k !== p.designer) people.delete(k); });
       if (p.designer === '__none') [...people.keys()].forEach((k) => { if (k !== 'Unassigned') people.delete(k); });
@@ -1555,7 +1582,8 @@
           wip: open.filter((r) => r.stage === 'WIP' && notLateOrToday(r)).sort(byEta),
           changes: open.filter((r) => r.stage === 'Changes requested' && notLateOrToday(r)).sort(byEta),
           next: open.filter((r) => r.stage !== 'WIP' && r.stage !== 'Changes requested' && notLateOrToday(r)).sort(byEta),
-          review: list.filter((r) => r.shared), done: list.filter((r) => r.done) };
+          review: list.filter((r) => r.shared), done: list.filter((r) => r.done),
+          content: CT.writers().includes(name) ? CT.of(name, rs) : null };
       });
       const sort = p.susort || 'urgent';
       cards.sort((a, b) => (a.name === 'Unassigned') - (b.name === 'Unassigned') || (sort === 'name' ? a.name.localeCompare(b.name)
@@ -1566,14 +1594,15 @@
       dash.draw('su-summary');
       if (!cards.length) { const n = document.createElement('p'); n.className = 'co-note'; n.textContent = 'No active team members match these filters.'; el.append(n); return; }
       cards.forEach((c) => {
-        const card = document.createElement('article'); card.className = 'su ' + (c.overdue.length ? 'late' : c.open.length ? 'busy' : 'free');
+        const cOnly = c.content && CT.contentOnly(c.name) && !c.open.length;
+        const card = document.createElement('article'); card.className = 'su ' + (c.overdue.length ? 'late' : c.open.length || (cOnly && c.content.open.length) ? 'busy' : 'free') + (c.content ? ' has-content' : '');
         const head = document.createElement('div'); head.className = 'su-head';
         const nm = document.createElement('span'); nm.className = 'su-name'; nm.append(CO.av(c.name === 'Unassigned' ? '?' : c.name, 'lg' + (c.name === 'Unassigned' ? ' none' : '')), c.name);
         const mem = CO.member(c.name);
         if (mem.role) { const r = document.createElement('span'); r.className = 'su-role'; r.textContent = mem.role; nm.append(r); }
         if (mem.status === 'New' && c.name !== 'Unassigned') { const n = document.createElement('span'); n.className = 'tag-new'; n.textContent = 'New'; nm.append(n); }
         if (mem.status === 'Inactive') { const n = document.createElement('span'); n.className = 'tag-new'; n.textContent = 'Inactive · reassign'; nm.append(n); }
-        const load = document.createElement('span'); load.className = 'su-load'; load.append(CO.num(CO.sumQty(c.open))); const sm = document.createElement('small'); sm.textContent = 'open'; load.append(sm);
+        const load = document.createElement('span'); load.className = 'su-load'; load.append(CO.num(cOnly ? c.content.open.length : CO.sumQty(c.open))); const sm = document.createElement('small'); sm.textContent = cOnly ? 'content open' : 'open'; load.append(sm);
         head.append(nm, load); card.append(head);
         const stats = document.createElement('div'); stats.className = 'su-stats';
         const st = (n, lab, cls, color) => { if (!n) return; const s = document.createElement('span'); s.className = 'chip ' + cls; if (color) s.style.color = color; s.textContent = n + ' ' + lab; stats.append(s); };
@@ -1582,8 +1611,10 @@
         if (stats.childNodes.length) card.append(stats);
         const more = () => CO.goTasks('open', { designer: c.name === 'Unassigned' ? '__none' : c.name });
         [section('Overdue', c.overdue, 4, more), section('Due today', c.today, 4, more), section('WIP', c.wip, 4, more), section('Changes requested', c.changes, 3, more), section('Up next', c.next, 3, more)].forEach((s) => { if (s) card.append(s); });
-        if (!c.open.length) { const f = document.createElement('p'); f.className = 'su-free'; f.textContent = c.review.length ? 'No open design work, ' + c.review.length + ' with reviewers. Free to take new tasks.' : 'No open design work. Free to take new tasks.'; card.append(f); }
+        const onlyContent = c.content && CT.contentOnly(c.name) && !c.open.length && !c.review.length && !c.done.length;
+        if (!c.open.length && !onlyContent) { const f = document.createElement('p'); f.className = 'su-free'; f.textContent = c.review.length ? 'No open design work, ' + c.review.length + ' with reviewers. Free to take new tasks.' : 'No open design work. Free to take new tasks.'; card.append(f); }
         if (c.done.length) { const d = document.createElement('p'); d.className = 'su-done'; const nd = CO.sumQty(c.done); d.textContent = CO.num(nd) + (nd === 1 ? ' creative' : ' creatives') + ' delivered in the last 7 days (by ETA)'; card.append(d); }
+        if (c.content) card.append(contentBlock(c.content, c.name));
         el.append(card);
       });
     });
@@ -1651,7 +1682,7 @@
     const HOURS = { 'Static': 1.5, 'Banner': 1.5, 'Frame': 1.5, 'GIF': 2, 'Carousel': 2.5, 'A+ Content': 3, 'Infographic': 2.5, 'Video': 4, 'Video Edit': 4, 'Reel': 4, 'AI Video': 5, 'Animation': 5, 'In-House Video': 6, 'Unspecified': 2 };
     const CAP = 7;
     const role = (name) => (CO.member(name).role || '').trim();
-    const hidden = (name) => /not shown/i.test(role(name));
+    const hidden = (name) => /not shown/i.test(role(name)) && !/creative head/i.test(role(name)) && !/^anmol\b/i.test(name); // the Creative Head's own work is shown (Nov 2026)
     const intern = (name) => /intern/i.test(role(name));
     const writer = (name) => /content writer/i.test(role(name));
     const typeHours = (t) => HOURS[t] != null ? HOURS[t] : CO.VIDEO.test(t || '') ? 4 : 2;
@@ -1676,9 +1707,54 @@
     return { HOURS, CAP, role, hidden, intern, writer, typeHours, hoursFor, load };
   })();
 
+  /* ================= Content tasks (briefs, scripts, content) =================
+     Counted separately from design and editing, never mixed with creatives. A content task belongs to everyone named in
+     its Content Owner cell ("Anmol, Jahanvi" counts for both). Content Status decides where it is:
+       open (the writer's bucket): PENDING, WIP, CHANGES, INCOMPLETE BRIEF, TBP, TBD
+       with the client: SHARED      completed: DONE (dated by Design ETA, else request date, never later than today)
+       on hold: HOLD                 blank: not a content task
+     Content writers: Jahanvi and Gul (content only), anyone with the "Content Writer" role, and the Creative Head
+     (Anmol), who also does design work. Dropped tasks (Deprioritised) are not open content work. */
+  const CT = (() => {
+    const OPEN = ['PENDING', 'WIP', 'CHANGES', 'INCOMPLETE BRIEF', 'TBP', 'TBD'];
+    const ONLY = ['jahanvi', 'gul'], ALSO = ['anmol'];
+    const first = (n) => String(n || '').toLowerCase().trim().split(/\s+/)[0];
+    const isHead = (name) => /creative head/i.test(EF.role(name)) || ALSO.includes(first(name));
+    const contentOnly = (name) => !isHead(name) && (ONLY.includes(first(name)) || EF.writer(name));
+    const writers = () => {
+      const out = [], seen = new Set();
+      (S.team || []).filter((m) => m.status !== 'Inactive').forEach((m) => { if (contentOnly(m.name) || isHead(m.name)) { out.push(m.name); seen.add(first(m.name)); } });
+      ONLY.concat(ALSO).forEach((f) => { if (!seen.has(f)) out.push(f.charAt(0).toUpperCase() + f.slice(1)); }); // e.g. Gul, who is not on the team list
+      return out;
+    };
+    const owners = (r) => String(r.owner || '').toLowerCase().split(/\s*(?:,|&|\/|\+|\band\b)\s*/).map((x) => x.trim()).filter(Boolean);
+    const owns = (r, name) => { const f = first(name), full = String(name).toLowerCase().trim(); return owners(r).some((o) => o === full || o.split(/\s+/)[0] === f); };
+    const state = (r) => {
+      const cs = String(r.content_status || '').trim().toUpperCase().replace(/\s+/g, ' ');
+      if (!cs) return '';
+      if (cs === 'DONE') return 'done';
+      if (r.group === 'dropped') return '';
+      if (cs === 'SHARED') return 'client';
+      if (cs === 'HOLD') return 'hold';
+      return OPEN.includes(cs) ? 'open' : '';
+    };
+    const cdate = (r) => { const d = r.eta || r.req || ''; const t = CO.today(); return d && d > t ? t : d; };
+    const of = (name, rows) => {
+      const rs = (rows || CO.rows() || []).filter((r) => owns(r, name)), o = { open: [], client: [], hold: [], done: [], by: {} };
+      rs.forEach((r) => { const st = state(r); if (!st) return; o[st].push(r); if (st === 'open') { const k = String(r.content_status).trim().toUpperCase().replace(/\s+/g, ' '); (o.by[k] = o.by[k] || []).push(r); } });
+      const byEta = (a, b) => (a.eta || '9999').localeCompare(b.eta || '9999');
+      o.open.sort(byEta); o.client.sort(byEta);
+      o.doneIn = (from, to) => o.done.filter((r) => { const d = cdate(r); return d && d >= from && d <= to; });
+      return o;
+    };
+    return { OPEN, writers, contentOnly, isHead, owns, state, cdate, of };
+  })();
+  window.CO_ct = (name) => { const o = CT.of(name); return { open: o.open.length, by: Object.fromEntries(Object.entries(o.by).map(([k, v]) => [k, v.length])), client: o.client.length, hold: o.hold.length, done: o.done.length }; }; // read-only (tests)
+  window.CO_writers = () => CT.writers();
+
   /* ================= Team ================= */
   (() => {
-    const shown = (n) => !EF.hidden(n) && ((dash.params().who || 'active') === 'all' || CO.isActive(n));
+    const shown = (n) => !EF.hidden(n) && ((dash.params().who || 'active') === 'all' || CO.isActive(n)) && !(CT.contentOnly(n) && !(CO.rows() || []).some((r) => r.open && r.list.includes(n))); // content-only writers are in Content tasks (unless they hold open design work)
     const statusCell = (name) => {
       const m = CO.member(name);
       const wrap = document.createElement('span'); wrap.className = 'co-status';
@@ -1691,6 +1767,31 @@
       btn.addEventListener('click', (e) => { e.stopPropagation(); setMember(name, m.status === 'Active' ? 'Inactive' : 'Active'); });
       wrap.append(tag, btn); return wrap;
     };
+    dash.draw('team-content', (tb) => {
+      if (CO.notReady(tb, 'table')) return;
+      tb.replaceChildren();
+      const m = CO.thisMonth(), pm = CO.prevMonth(m), mEnd = CO.today(), rs = CO.rows();
+      const monthRange = (mm) => [mm + '-01', CO.addDays((mm.slice(5) === '12' ? (+mm.slice(0, 4) + 1) + '-01' : mm.slice(0, 5) + String(+mm.slice(5) + 1).padStart(2, '0')) + '-01', -1)];
+      const [pf, pt] = monthRange(pm);
+      const total = { open: new Set(), done: new Set() };
+      CT.writers().forEach((w) => {
+        const ct = CT.of(w, rs), tr = tb.insertRow(); tr.className = 'click';
+        const nm = tr.insertCell(); const b = document.createElement('span'); b.className = 'co-name'; b.append(CO.av(w), document.createTextNode(w)); nm.append(b);
+        if (CT.isHead(w)) { const r2 = document.createElement('span'); r2.className = 'su-role'; r2.textContent = 'also design'; nm.append(' ', r2); }
+        const num = (v, cls) => { const c = CO.td(tr, CO.num(v), 'n' + (cls ? ' ' + cls : '')); return c; };
+        num(ct.open.length, ct.open.length ? 'ct-open' : '');
+        ['PENDING', 'WIP', 'CHANGES', 'INCOMPLETE BRIEF'].forEach((k) => num((ct.by[k] || []).length));
+        num((ct.by.TBP || []).length + (ct.by.TBD || []).length);
+        num(ct.client.length); num(ct.hold.length);
+        const dm = ct.doneIn(m + '-01', mEnd); num(dm.length); num(ct.doneIn(pf, pt).length);
+        ct.open.forEach((r) => total.open.add(r.uid)); dm.forEach((r) => total.done.add(r.uid));
+        tr.addEventListener('click', () => { MW.who = w === myDesigner() ? '' : w; LS.set('co.mwho2', MW.who); dash.setParams({ tab: 'mine' }); });
+      });
+      const tr = tb.insertRow(); tr.className = 'co-total';
+      CO.td(tr, 'All content tasks (each counted once)'); CO.td(tr, CO.num(total.open.size), 'n');
+      for (let i = 0; i < 7; i++) CO.td(tr, '', 'n');
+      CO.td(tr, CO.num(total.done.size), 'n'); CO.td(tr, '', 'n');
+    });
     dash.draw('team', (tb) => {
       if (CO.notReady(tb, 'table')) return;
       tb.replaceChildren();
@@ -3805,7 +3906,7 @@
         const done = rs.filter((r) => r.done && r.month === m);
         return 'open ' + open.length + ', overdue ' + rs.filter((r) => r.due === 'overdue').length + ', due today ' + open.filter((r) => r.eta === t).length + ', due tomorrow ' + open.filter((r) => r.eta === CO.addDays(t, 1)).length +
           ', WIP ' + rs.filter((r) => r.stage === 'WIP').length + ', under review ' + rs.filter((r) => r.review).length + ', shared with client ' + rs.filter((r) => r.shared).length + ', unassigned open ' + open.filter((r) => !r.list.length).length +
-          ', creatives completed this month ' + CO.sumQty(done) + '. Open (overdue) by designer: ' + [...by].sort((a, b) => b[1][0] - a[1][0]).slice(0, 14).map(([d, o]) => d + ' ' + o[0] + (o[1] ? ' (' + o[1] + ')' : '')).join(', ');
+          ', creatives completed this month ' + CO.sumQty(done) + '. Open content tasks (briefs/scripts, separate from design) by writer: ' + CT.writers().map((w) => w + ' ' + CT.of(w, rs).open.length).join(', ') + '. Open (overdue) by designer: ' + [...by].sort((a, b) => b[1][0] - a[1][0]).slice(0, 14).map(([d, o]) => d + ' ' + o[0] + (o[1] ? ' (' + o[1] + ')' : '')).join(', ');
       } catch (e) { return ''; }
     };
     const ctx = () => { const p = dash.params(); return { page: PAGE_NAME[p.tab] || 'Overview', filters: [p.src ? CO.cls(p.src) : '', p.designer, p.brand, p.type].filter(Boolean).join(', '), lang: st.lang, reply: replyName(), snap: snap() }; };
