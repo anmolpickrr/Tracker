@@ -2221,7 +2221,7 @@ function ownDataText_(user, fresh) {
     const keep = [], nums = [];
     src.rows.forEach(function (r, i) {
       const d = String(r[cols.designer] == null ? '' : r[cols.designer]).toLowerCase(), o = cols.owner >= 0 ? String(r[cols.owner] == null ? '' : r[cols.owner]).toLowerCase() : '';
-      if (keys.some(function (n) { return d.indexOf(n) >= 0; }) || (first && o.split(/[ ,]+/).indexOf(first) >= 0)) { keep.push(r); if (src.rowNums) nums.push(src.rowNums[i]); }
+      if (keys.some(function (n) { return d.indexOf(n) >= 0; }) || (first && o.split(/[\s,;&\/+|]+/).indexOf(first) >= 0)) { keep.push(r); if (src.rowNums) nums.push(src.rowNums[i]); }
     });
     src.rows = keep; if (src.rowNums) src.rowNums = nums;
   });

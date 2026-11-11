@@ -1727,8 +1727,10 @@
       ONLY.concat(ALSO).forEach((f) => { if (!seen.has(f)) out.push(f.charAt(0).toUpperCase() + f.slice(1)); }); // e.g. Gul, who is not on the team list
       return out;
     };
-    const owners = (r) => String(r.owner || '').toLowerCase().split(/\s*(?:,|&|\/|\+|\band\b)\s*/).map((x) => x.trim()).filter(Boolean);
-    const owns = (r, name) => { const f = first(name), full = String(name).toLowerCase().trim(); return owners(r).some((o) => o === full || o.split(/\s+/)[0] === f); };
+    // Every name in the Content Owner cell counts: "Client, Gul", "Gul, Client", "Client,Gul", "Client / Gul", "Client & Gul", one per line…
+    const owners = (r) => String(r.owner || '').toLowerCase().split(/\s*(?:,|;|&|\/|\+|\n|\r|\|| and )\s*/).map((x) => x.trim()).filter(Boolean);
+    // A writer is counted when their full name, or their first name as a whole word, appears in any entry ("Client Gul" from a cell with a line break; never "Gulshan").
+    const owns = (r, name) => { const f = first(name), full = String(name).toLowerCase().trim(); return owners(r).some((o) => o === full || o.split(/\s+/).includes(f)); };
     const state = (r) => {
       const cs = String(r.content_status || '').trim().toUpperCase().replace(/\s+/g, ' ');
       if (!cs) return '';
@@ -1749,7 +1751,7 @@
     };
     return { OPEN, writers, contentOnly, isHead, owns, state, cdate, of };
   })();
-  window.CO_ct = (name) => { const o = CT.of(name); return { open: o.open.length, by: Object.fromEntries(Object.entries(o.by).map(([k, v]) => [k, v.length])), client: o.client.length, hold: o.hold.length, done: o.done.length }; }; // read-only (tests)
+  window.CO_ct = (name, brand) => { const o = CT.of(name, brand ? CO.rows().filter((r) => r.brand === brand) : undefined); return { open: o.open.length, by: Object.fromEntries(Object.entries(o.by).map(([k, v]) => [k, v.length])), client: o.client.length, hold: o.hold.length, done: o.done.length }; }; // read-only (tests)
   window.CO_writers = () => CT.writers();
 
   /* ================= Team ================= */
