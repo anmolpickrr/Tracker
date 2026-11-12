@@ -1643,7 +1643,7 @@
      Each person's tasks for the day, saved by the web app at 10:00 IST (open tasks due today or overdue, and work in
      progress), plus tasks that come into scope during the day. Today's statuses are live; past days show their
      end-of-day status. Before 10:00 a preview from the live data is shown. */
-  const DP = { view: LS.get('co.suview', 'cards'), date: '', data: null, busy: false, at: 0, open: new Set() };
+  const DP = { view: LS.get('co.suview', 'cards'), date: '', data: null, busy: false, at: 0, open: new Set(), phase: '' };
   const DPG = [['done', 'Done', 'Delivered'], ['review', 'Under review', 'Under review'], ['client', 'With client', 'Shared'], ['wip', 'WIP', 'WIP'], ['changes', 'Changes', 'Changes requested'], ['tbp', 'To be planned', 'To be planned'], ['other', 'Other', '']];
   const dpGroup = (st) => st === 'Delivered' ? 'done' : st === 'Under review' ? 'review' : st === 'Shared' || st === 'No update' ? 'client' : st === 'WIP' ? 'wip' : st === 'Changes requested' ? 'changes' : st === 'To be planned' ? 'tbp' : 'other';
   function dpSetView(v) {
@@ -1665,12 +1665,15 @@
   setInterval(() => { if (DP.view === 'plan' && curTab() === 'standup' && document.visibilityState === 'visible') dpLoad(true); }, 60 * 1000);
   // Live rows for today (and the preview before 10:00): the same rule the web app uses.
   const dpPreview = () => { const t = CO.today(), out = []; (CO.rows(true) || []).forEach((r) => { if (!(r.open && ((r.eta && r.eta <= t) || r.stage === 'WIP' || r.stage === 'Changes requested'))) return; r.list.forEach((p) => out.push({ person: p, uid: r.uid, id: r.id, brand: r.brand, topic: CO.topicText(r), type: r.type, qty: r.qty || 1, cls: CO.cls(r), start: r.stage, now: r.stage, added: 'Preview' })); }); return out; };
-  /* Four phases a stand-up walks through (the user's own words: assigned, picked up, out for approval, delivered).
-     The exact sheet status stays on each task. */
-  const DPP = [['todo', 'Not started', 'Assigned, not picked up yet'], ['doing', 'In progress', 'WIP and changes'], ['review', 'In review', 'Under review or with the client'], ['done', 'Delivered', 'Done']];
+  /* Four phases a stand-up walks through (assigned, picked up, out for approval, delivered). The exact sheet status
+     stays on each task. Layout: the day at a glance (the phase steps double as filters), then one lane per person with
+     equal-size task cards that wrap, so the whole team fits on a screen or two. */
+  const DPP = [['todo', 'Not started', 'Assigned, not picked up'], ['doing', 'In progress', 'WIP and changes'], ['review', 'In review', 'Review or with client'], ['done', 'Delivered', 'Done today']];
   const dpPhase = (st) => { if (st === 'Rejected') return 'done'; const g = dpGroup(st); return g === 'done' ? 'done' : g === 'review' || g === 'client' ? 'review' : g === 'wip' || g === 'changes' ? 'doing' : g === 'tbp' ? 'todo' : 'other'; };
   const dpEl = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const dpDays = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+  const dpWords = (t, n) => { const w = String(t || '').trim().split(/\s+/).filter(Boolean); return w.length > n ? w.slice(0, n).join(' ') + '...' : w.join(' '); };
+  const DP_ORDER = { doing: 0, review: 1, todo: 2, done: 3, other: 4 };
   dash.draw('dayplan', (el) => {
     if (DP.view !== 'plan') return;
     el.replaceChildren();
@@ -1685,112 +1688,104 @@
     const active = rows.filter((x) => x.ph !== 'other');
     const cnt = (xs) => { const o = { todo: 0, doing: 0, review: 0, done: 0, other: 0 }; xs.forEach((x) => { o[x.ph]++; }); return o; };
     const tot = cnt(rows);
+    if (DP.phase && !tot[DP.phase]) DP.phase = '';
 
-    // ---- Hero: the day at a glance
+    // ---- The day at a glance
     const hero = dpEl('div', 'co-card dp-hero');
     const top = dpEl('div', 'dp-hero-top');
     const tl = dpEl('div', 'dp-title');
     tl.append(dpEl('h2', 'co-h2', isToday ? 'Today’s plan' : 'Plan for ' + CO.fmtDate(day, true)),
-      dpEl('p', 'co-note', preview ? (d && d.waiting ? 'The plan is saved at 10:00 IST. Until then this is a live preview from the sheets.' : 'Live preview from the sheets.') : isToday ? 'Saved at 10:00 IST · statuses update live · tasks added later are marked New' : 'How the day ended: the status of every planned task at close.'));
+      dpEl('p', 'co-note', preview ? (d && d.waiting ? 'Saved at 10:00 IST. Until then, a live preview from the sheets.' : 'Live preview from the sheets.') : isToday ? 'Saved at 10:00 IST · statuses update live' : 'How the day ended'));
     const sel = dpEl('select', 'co-select'); sel.setAttribute('aria-label', 'Day');
     const days = [today].concat(((d && d.days) || []).filter((x) => x !== today));
     days.forEach((x) => sel.append(new Option(x === today ? 'Today, ' + CO.fmtDate(x) : CO.fmtDate(x, true), x)));
-    sel.value = day; sel.addEventListener('change', () => { DP.date = sel.value === today ? '' : sel.value; DP.data = null; dash.draw('dayplan'); dpLoad(true); });
+    sel.value = day; sel.addEventListener('change', () => { DP.date = sel.value === today ? '' : sel.value; DP.data = null; DP.phase = ''; dash.draw('dayplan'); dpLoad(true); });
     top.append(tl, sel); hero.append(top);
     if (!d && DP.busy) hero.append(dpEl('p', 'co-note', 'Loading the day’s plan…'));
     if (!active.length && !(DP.busy && !d)) { hero.append(dpEl('p', 'dp-empty', isToday ? 'Nothing is due, overdue or in progress for anyone today.' : 'No plan was saved for this day.')); el.append(hero); return; }
     const body = dpEl('div', 'dp-hero-body');
-    const big = dpEl('div', 'dp-big'); const bn = dpEl('b', '', CO.num(tot.done)); const bs = dpEl('span', 'dp-of', '/' + CO.num(active.length));
-    const bl = dpEl('span', 'dp-big-l', (isToday ? 'delivered so far' : 'delivered') + ' · ' + Math.round(tot.done / Math.max(1, active.length) * 100) + '%');
-    const bnw = dpEl('div', 'dp-big-n'); bnw.append(bn, bs); big.append(bnw, bl);
-    const chart = dpEl('div', 'dp-chart');
-    const bar = dpEl('div', 'dp-sbar'); bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', DPP.map(([k, l]) => tot[k] + ' ' + l).join(', '));
-    DPP.forEach(([k, l]) => { if (!tot[k]) return; const s2 = dpEl('i', 'ph-' + k); s2.style.flexGrow = tot[k]; s2.title = tot[k] + ' ' + l; bar.append(s2); });
-    const leg = dpEl('div', 'dp-leg');
-    DPP.forEach(([k, l, hint], i) => { const it = dpEl('div', 'dp-leg-i ph-' + k + (tot[k] ? '' : ' zero')); const ic = dpEl('span', 'dp-step-ic'); ic.append(dpEl('i', '')); const n = dpEl('b', '', CO.num(tot[k])); const t2 = dpEl('span', '', l); const h = dpEl('small', '', hint); const tx = dpEl('div', 'dp-step-tx'); tx.append(t2, h); it.append(ic, n, tx); leg.append(it); if (i < DPP.length - 1) { const ch = dpEl('span', 'dp-chev'); ch.setAttribute('aria-hidden', 'true'); leg.append(ch); } });
-    chart.append(bar, leg); body.append(big, chart); hero.append(body);
-    // what to talk about at stand-up
+    const big = dpEl('div', 'dp-big');
+    const bnw = dpEl('div', 'dp-big-n'); bnw.append(dpEl('b', '', CO.num(tot.done)), dpEl('span', 'dp-of', '/' + CO.num(active.length)));
+    const pct = Math.round(tot.done / Math.max(1, active.length) * 100);
+    const meter = dpEl('div', 'dp-meter'); meter.setAttribute('role', 'img'); meter.setAttribute('aria-label', pct + '% delivered');
+    const fill = dpEl('i', ''); fill.style.width = Math.max(pct, 3) + '%'; const knob = dpEl('span', 'dp-knob', pct + '%'); fill.append(knob); meter.append(fill);
+    big.append(bnw, dpEl('span', 'dp-big-l', isToday ? 'delivered so far' : 'delivered'), meter);
+    // phase steps: also filters for the lanes below
+    const steps = dpEl('div', 'dp-steps'); steps.setAttribute('role', 'group'); steps.setAttribute('aria-label', 'Show tasks by phase');
+    const stepBtn = (k, label, hint, n) => {
+      const b = dpEl('button', 'dp-step' + (k ? ' ph-' + k : ' ph-all') + ((DP.phase || '') === k ? ' on' : '') + (n ? '' : ' zero')); b.type = 'button'; b.setAttribute('aria-pressed', String((DP.phase || '') === k));
+      b.append(dpEl('b', '', CO.num(n)), dpEl('span', '', label), dpEl('small', '', hint));
+      if (k) { const bar = dpEl('i', 'dp-step-bar'); bar.style.setProperty('--w', Math.round(n / Math.max(1, active.length) * 100) + '%'); b.append(bar); }
+      b.addEventListener('click', () => { DP.phase = DP.phase === k ? '' : k; dash.draw('dayplan'); });
+      steps.append(b);
+    };
+    stepBtn('', 'All tasks', 'Everyone’s day', active.length);
+    DPP.forEach(([k, l, hint]) => stepBtn(k, l, hint, tot[k]));
+    body.append(big, steps); hero.append(body);
     const flags = [];
     const late = active.filter((x) => x.late).length, chg = rows.filter((x) => x.now === 'Changes requested').length, picked = rows.filter((x) => x.picked).length, added = rows.filter((x) => x.isNew).length;
     const byP = new Map(); rows.forEach((x) => { if (!byP.has(x.person)) byP.set(x.person, []); byP.get(x.person).push(x); });
     const idle = [...byP].filter(([, xs]) => xs.some((x) => x.ph === 'todo') && !xs.some((x) => x.ph === 'doing' || x.ph === 'review' || x.ph === 'done')).map(([n]) => n.split(' ')[0]);
-    if (late) flags.push(['bad', late + (late === 1 ? ' task is' : ' tasks are') + ' past the ETA']);
+    if (late) flags.push(['bad', late + (late === 1 ? ' task' : ' tasks') + ' past the ETA']);
     if (chg) flags.push(['warn', chg + ' waiting on changes']);
-    if (idle.length) flags.push(['mute', idle.length === 1 ? idle[0] + ' hasn’t picked anything up yet' : idle.length + ' people haven’t picked anything up: ' + idle.slice(0, 4).join(', ') + (idle.length > 4 ? '…' : '')]);
+    if (idle.length) flags.push(['mute', idle.length === 1 ? idle[0] + ' hasn’t picked anything up yet' : idle.length + ' haven’t picked anything up: ' + idle.slice(0, 4).join(', ') + (idle.length > 4 ? '…' : '')]);
     if (picked && !preview) flags.push(['ok', picked + ' picked up since the morning']);
     if (added) flags.push(['info', added + ' added during the day']);
-    if (tot.other) flags.push(['mute', tot.other + ' moved off the plan (reassigned, on hold or removed)']);
+    if (tot.other) flags.push(['mute', tot.other + ' moved off the plan']);
     if (flags.length) { const fl = dpEl('div', 'dp-flags'); flags.forEach(([c, t]) => fl.append(dpEl('span', 'dp-flag f-' + c, t))); hero.append(fl); }
     el.append(hero);
 
-    // ---- Board: one row per person, one column per phase
-    const board = dpEl('div', 'co-card dp-board'); board.setAttribute('role', 'table'); board.setAttribute('aria-label', 'Tasks by person and phase');
-    const hr = dpEl('div', 'dp-row dp-hrow'); hr.setAttribute('role', 'row');
-    const h0 = dpEl('div', 'dp-hc dp-pc', 'Person'); h0.setAttribute('role', 'columnheader'); hr.append(h0);
-    DPP.forEach(([k, l]) => { const h = dpEl('div', 'dp-hc ph-' + k); h.setAttribute('role', 'columnheader'); h.append(dpEl('i', 'dp-dot'), dpEl('span', '', l), dpEl('b', '', CO.num(tot[k]))); hr.append(h); });
-    board.append(hr);
-    const MAX = 3;
-    const people = [...byP].sort((a, b) => { const ca = cnt(a[1]), cb = cnt(b[1]); return (cb.todo + cb.doing + cb.review) - (ca.todo + ca.doing + ca.review) || b[1].length - a[1].length || a[0].localeCompare(b[0]); });
-    people.forEach(([name, xs]) => {
+    // ---- Lanes: one per person, equal-size task cards
+    const board = dpEl('div', 'co-card dp-lanes');
+    const people = [...byP].map(([name, xs]) => [name, xs, xs.filter((x) => !DP.phase || x.ph === DP.phase)]).filter(([, , vis]) => vis.length)
+      .sort((a, b) => { const ca = cnt(a[1]), cb = cnt(b[1]); return (cb.todo + cb.doing + cb.review) - (ca.todo + ca.doing + ca.review) || b[1].length - a[1].length || a[0].localeCompare(b[0]); });
+    if (!people.length) board.append(dpEl('p', 'dp-empty', 'No tasks in this phase.'));
+    const MAX = 8;
+    people.forEach(([name, xs, vis]) => {
       const c = cnt(xs), act = xs.filter((x) => x.ph !== 'other'), open = DP.open.has(name);
-      const row = dpEl('div', 'dp-row'); row.setAttribute('role', 'row');
-      const pc = dpEl('div', 'dp-pc'); pc.setAttribute('role', 'rowheader');
-      const who = dpEl('div', 'dp-who'); const tm = CO.team().resolve(name);
+      const lane = dpEl('section', 'dp-lane'); lane.setAttribute('aria-label', name);
+      const who = dpEl('div', 'dp-lane-who'); const tm = CO.team().resolve(name);
       const nm = dpEl('div', 'dp-nm'); nm.append(dpEl('b', '', name), dpEl('span', '', (tm && tm.role) || 'Team'));
-      who.append(CO.av(name), nm);
-      const prog = dpEl('div', 'dp-prog'); const pb = dpEl('div', 'dp-pbar'); pb.setAttribute('role', 'img'); pb.setAttribute('aria-label', DPP.filter(([k]) => c[k]).map(([k, l]) => c[k] + ' ' + l).join(', '));
+      const stat = dpEl('div', 'dp-lane-stat'); const sn = dpEl('b', '', c.done + '/' + act.length); stat.append(sn, dpEl('span', '', 'delivered'));
+      const pb = dpEl('div', 'dp-pbar'); pb.setAttribute('role', 'img'); pb.setAttribute('aria-label', DPP.filter(([k]) => c[k]).map(([k, l]) => c[k] + ' ' + l).join(', '));
       DPP.forEach(([k]) => { if (!c[k]) return; const s2 = dpEl('i', 'ph-' + k); s2.style.flexGrow = c[k]; pb.append(s2); });
-      prog.append(pb, dpEl('span', 'dp-pl', c.done + ' of ' + act.length + ' delivered' + (c.other ? ' · ' + c.other + ' off the plan' : '')));
-      pc.append(who, prog); row.append(pc);
-      let hidden = 0;
-      DPP.forEach(([k, l]) => {
-        const cell = dpEl('div', 'dp-cell ph-' + k); cell.setAttribute('role', 'cell'); cell.dataset.label = l;
-        const list = xs.filter((x) => x.ph === k).sort((a, b) => (b.late - a.late) || String(a.brand).localeCompare(String(b.brand)));
-        if (!list.length) cell.classList.add('none');
-        const head = dpEl('div', 'dp-cl'); head.append(dpEl('i', 'dp-dot'), dpEl('span', '', l + ' · ' + list.length)); cell.append(head);
-        const cap = list.length <= MAX + 1 ? list.length : MAX; // never hide just one
-        (open ? list : list.slice(0, cap)).forEach((x) => cell.append(dpTask(x, live)));
-        if (!open && list.length > cap) hidden += list.length - cap;
-        row.append(cell);
-      });
-      if (hidden || open) {
-        const more = dpEl('button', 'dp-more', open ? 'Show less' : 'Show ' + hidden + ' more'); more.type = 'button'; more.setAttribute('aria-expanded', String(open));
+      const chips = dpEl('div', 'dp-lane-chips'); DPP.forEach(([k, l]) => { if (c[k]) { const ch = dpEl('span', 'dp-mini ph-' + k); ch.append(dpEl('i', ''), document.createTextNode(c[k] + ' ' + l)); chips.append(ch); } });
+      who.append(nm, stat, pb, chips);
+      const grid = dpEl('div', 'dp-cards');
+      const list = vis.slice().sort((a, b) => DP_ORDER[a.ph] - DP_ORDER[b.ph] || (b.late - a.late) || String(a.brand).localeCompare(String(b.brand)));
+      const cap = open || list.length <= MAX + 1 ? list.length : MAX;
+      list.slice(0, cap).forEach((x) => grid.append(dpTask(x, live)));
+      if (list.length > cap || (open && list.length > MAX + 1)) {
+        const more = dpEl('button', 'dp-card dp-morecard'); more.type = 'button'; more.setAttribute('aria-expanded', String(open));
+        more.append(dpEl('b', '', open ? 'Show less' : '+' + (list.length - cap)), dpEl('span', '', open ? '' : 'more tasks'));
         more.addEventListener('click', () => flip(() => { if (open) DP.open.delete(name); else DP.open.add(name); dash.draw('dayplan'); }));
-        pc.append(more);
+        grid.append(more);
       }
-      board.append(row);
+      lane.append(who, grid); board.append(lane);
     });
     el.append(board);
   });
-  const dpMono = (b) => { const w = String(b || '?').replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean); return ((w[0] || '?').charAt(0) + (w.length > 1 ? w[1].charAt(0) : (w[0] || '').charAt(1) || '')).toUpperCase(); };
+  const DP_FINE = { 'Changes requested': 'Changes', 'Shared': 'With client', 'No update': 'Client: no update', 'To be planned': 'To be planned', 'WIP': 'WIP', 'Under review': 'Under review', 'Delivered': 'Delivered', 'Rejected': 'Rejected' };
   function dpTask(x, live) {
     const r = live.get(x.uid), chg = x.now === 'Changes requested';
-    const t = dpEl('div', 'dp-tk ph-' + x.ph + (chg ? ' chg' : '') + (x.late ? ' is-late' : ''));
-    if (r) { t.dataset.uid = x.uid; t.tabIndex = 0; t.setAttribute('role', 'button'); t.title = 'Open ' + (x.id || 'task'); }
-    // head: brand monogram, brand, creative type
-    const hd = dpEl('div', 'dp-tk-hd');
-    const mono = dpEl('span', 'dp-mono', dpMono(x.brand)); mono.setAttribute('aria-hidden', 'true');
-    const nm = dpEl('div', 'dp-tk-nm'); nm.append(dpEl('b', '', x.brand || 'No brand'), dpEl('span', '', [x.type, x.qty > 1 ? '×' + x.qty : ''].filter(Boolean).join(' · ') || '—'));
-    hd.append(mono, nm);
-    t.append(hd);
-    if (x.topic) t.append(dpEl('p', 'dp-tk-topic', x.topic));
-    // flow track: where the task is in Not started > In progress > In review > Delivered
-    const ft = dpEl('div', 'dp-flow'); const idx = ['todo', 'doing', 'review', 'done'].indexOf(x.ph);
-    const track = dpEl('span', 'dp-track'); track.setAttribute('aria-hidden', 'true');
-    for (let i = 0; i < 4; i++) track.append(dpEl('i', i <= idx ? 'on' : ''));
-    const fine = { 'Changes requested': 'Changes', 'Shared': 'With client', 'No update': 'Client: no update', 'To be planned': 'To be planned', 'WIP': 'WIP', 'Under review': 'Under review', 'Delivered': 'Delivered' };
-    ft.append(track, dpEl('span', 'dp-flow-l', fine[x.now] || x.now));
-    if (x.late) { const l = dpEl('span', 'dp-late', x.late + 'd late'); l.title = x.late + ' days past the ETA'; ft.append(l); }
-    const tags = [];
-    if (x.picked && x.ph !== 'done') tags.push(['up', 'Picked up today']);
-    if (x.ph === 'done' && x.start !== x.now) tags.push(['ok', 'Today']);
-    if (x.isNew) tags.push(['new', 'New']);
-    if (x.cls === 'External') tags.push(['ext', 'External']);
-    tags.forEach(([c, s2]) => ft.append(dpEl('span', 'dp-tag t-' + c, s2)));
-    t.append(ft);
+    const t = dpEl('article', 'dp-card dp-tk ph-' + x.ph + (chg ? ' chg' : '') + (x.late ? ' is-late' : ''));
+    if (r) { t.dataset.uid = x.uid; t.tabIndex = 0; t.setAttribute('role', 'button'); t.setAttribute('aria-label', [x.brand, x.id, x.type, DP_FINE[x.now] || x.now].filter(Boolean).join(', ') + '. Open to edit'); }
+    const r1 = dpEl('div', 'dp-tk-r1');
+    r1.append(dpEl('b', 'dp-brand', x.brand || 'No brand'));
+    const go = dpEl('span', 'dp-go'); go.setAttribute('aria-hidden', 'true'); go.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 11.5 11.5 4.5M6 4.5h5.5V10"/></svg>'; r1.append(go);
+    const r2 = dpEl('div', 'dp-tk-r2');
+    if (x.id) r2.append(dpEl('span', 'dp-id', x.id));
+    r2.append(dpEl('span', 'dp-type', (x.type || 'Unspecified') + (x.qty > 1 ? ' ×' + x.qty : '')));
+    if (x.late) { const l = dpEl('span', 'dp-late', x.late + 'd late'); l.title = x.late + ' days past the ETA'; r2.append(l); }
+    const desc = dpEl('p', 'dp-desc', dpWords(x.topic, 4) || '—'); if (x.topic) desc.title = x.topic;
+    const r3 = dpEl('div', 'dp-tk-r3');
+    r3.append(dpEl('span', 'dp-st', DP_FINE[x.now] || x.now));
+    r3.append(dpEl('span', 'dp-src ' + (x.cls === 'External' ? 'ext' : 'int'), x.cls === 'External' ? 'External' : 'Internal'));
+    if (x.isNew) r3.append(dpEl('span', 'dp-flag2', 'New'));
+    else if (x.picked && x.ph !== 'done') r3.append(dpEl('span', 'dp-flag2', 'Picked up'));
+    t.append(r1, r2, desc, r3);
     return t;
   }
-
   setTimeout(() => dpSetView(DP.view), 0);
 
   /* ================= Brand packages (Brands page) =================
