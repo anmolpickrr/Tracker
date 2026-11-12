@@ -125,11 +125,11 @@ At 10:00 IST the web app saves each person's tasks for the day in the *Day plans
 
 Stand-up › **Day plan** shows:
 - **The day at a glance**: delivered so far out of the plan, one bar split into Not started (assigned, not picked up), In progress (WIP and changes), In review (under review or with the client) and Delivered, and the points to raise at stand-up: tasks past the ETA, tasks waiting on changes, people who haven't picked anything up, tasks picked up since the morning, tasks added during the day.
-- **The board**: one row per person, one column per phase. Each task card shows the brand, creative type, topic, exact status, how late it is, and whether it was picked up or delivered today. Click a card to edit the task. People with the most still to do come first.
+- **The board**: one row per person, one column per phase. Each task card shows a brand monogram, the brand, creative type and topic, and a four-step track of where it is in the flow (with the exact status), how late it is, and whether it was picked up or delivered today. Click a card to edit the task. People with the most still to do come first.
 
 Today's statuses are live; pick a past day from the list. Before 10:00 a preview from the live sheets is shown. Everyone sees their own day; the owner, Admins and people allowed to see others' work see everyone's.
 
-**Matching people to the team list.** Someone given access is linked to their team-list entry by, in order: their email written under "Also written as"; their Google name or a listed spelling; the name in their email address (aman@pickrr.com → Aman, abhist.dixit@… → Abhist); a first name that fits exactly one person. So people added by email, or whose Google name differs from the sheet, still see their own work. If two people share a first name, add the email under "Also written as".
+**Matching people to the team list.** Someone given access is linked to their team-list entry by, in order: their email written under "Also written as"; their Google name or a listed spelling; the name in their email address (aman@pickrr.com → Aman, abhist.dixit@… → Abhist); a first name that fits exactly one person. So people added by email, or whose Google name differs from the sheet, still see their own work, and they are shown everywhere by their team-list name (aman@pickrr.com is "Aman"), never as a second person. If two people share a first name, add the email under "Also written as".
 
 ## Changing access at any time (Access)
 

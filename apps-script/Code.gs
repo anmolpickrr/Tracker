@@ -272,6 +272,7 @@ function health_() {
 /* ================= Writes ================= */
 
 function doPost(e) {
+  TEAM_MEMO_ = null; // the team list is read fresh for every request
   let body = {};
   try { body = JSON.parse(e.postData.contents || '{}'); } catch (err) { return json_({ ok: false, error: 'bad_json' }); }
   try {
@@ -306,7 +307,7 @@ function doPost(e) {
     if (body.action === 'health') return json_(health_());
     if (body.action === 'users') { let all = null; try { all = JSON.parse(dataText_(false)); } catch (e) { all = null; } return json_({ ok: true, users: users_().list.map(function (u) { return publicUser_(u, all); }), you: user.email, owners: owners_() }); }
     if (body.action === 'audit') return json_(auditRead_(body));
-    if (body.action === 'directory') return json_({ ok: true, people: users_().list.filter(function (u) { return u.status === 'Approved'; }).map(function (u) { return { email: u.email, name: u.name || '', photo: photo_(u.photo) }; }) });
+    if (body.action === 'directory') return json_({ ok: true, people: users_().list.filter(function (u) { return u.status === 'Approved'; }).map(function (u) { return { email: u.email, name: displayName_(u), photo: photo_(u.photo) }; }) });
     if (body.action === 'notes') return json_(notesList_(user));
     if (body.action === 'signout') { audit_([{ who: user.email, role: user.role, action: 'Signed out' }]); return json_({ ok: true }); }
     // Writes: one at a time, each recorded in the audit log with before and after values.
@@ -729,7 +730,7 @@ function userByEmail_(email) {
 }
 function publicUser_(u, all) {
   const te = teamEntryOf_(u, all);
-  return { onTeam: !!te, teamName: te ? te.name : '', email: u.email, name: u.name || (te ? te.name : ''), role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), reminders: u.reminders !== false, lastActive: u.lastActive || '', owner: !!u.owner || isOwner_(u.email), perms: permsOf_(u), custom: !!(u.perms && Object.keys(u.perms).length) };
+  return { onTeam: !!te, teamName: te ? te.name : '', email: u.email, name: te ? te.name : (u.name || ''), googleName: u.name || '', role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), reminders: u.reminders !== false, lastActive: u.lastActive || '', owner: !!u.owner || isOwner_(u.email), perms: permsOf_(u), custom: !!(u.perms && Object.keys(u.perms).length) };
 }
 /* Only Google profile photos are kept and shown. */
 function photo_(url) { const s = String(url || ''); return /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\/[^\s"'<>]+$/i.test(s) ? s.slice(0, 500) : ''; }
@@ -1061,6 +1062,7 @@ function prefs_(b, u) {
 /* ================= Daily reminders (IST) ================= */
 /* Runs every 10 minutes (setup installs it). Sends the 10:00 and 18:00 IST emails once a day each, and note reminders when due. */
 function remindersTick() {
+  TEAM_MEMO_ = null;
   try { maintenance_(); } catch (e) { console.log('maintenance: ' + e); }
   if (!authOn_() || !hasAccessBook_()) return;
   const now = new Date(), day = Utilities.formatDate(now, IST, 'yyyy-MM-dd');
@@ -1114,7 +1116,7 @@ function sendDigests_(kind, onlyTo) {
   };
   const notes = allNotes_().filter(function (n) { return !n.deleted; });
   users_().list.filter(function (u) { return u.status === 'Approved' && u.reminders !== false && (!onlyTo || u.email === onlyTo); }).forEach(function (u) {
-    const me = t.resolve(u.name || '') ; const mine = me ? open.filter(function (r) { return r.list.indexOf(me.name) >= 0; }) : [];
+    const me = t.resolve(displayName_(u)) ; const mine = me ? open.filter(function (r) { return r.list.indexOf(me.name) >= 0; }) : [];
     const myActions = [];
     notes.forEach(function (n) { (n.actions || []).forEach(function (a) { if (!a.done && a.email === u.email) myActions.push({ note: n.title, text: a.text, due: a.due }); }); });
     const html = digestHtml_(kind, u, team, mine, myActions, today);
@@ -1129,7 +1131,7 @@ function digestHtml_(kind, u, team, mine, myActions, today) {
   const row = function (r) { return '<tr><td style="padding:6px 10px 6px 0;color:#111"><b>' + esc_(r.brand) + '</b> · ' + esc_(String(r.topic || '').slice(0, 70)) + '</td><td style="padding:6px 0;color:#666;white-space:nowrap;text-align:right">' + esc_(r.id || '') + ' · ' + fmt(r.eta) + '</td></tr>'; };
   const list = function (title, rs, max) { if (!rs.length) return ''; return '<h3 style="font:600 14px Arial;margin:22px 0 6px">' + esc_(title) + ' (' + rs.length + ')</h3><table style="font:13px Arial;border-collapse:collapse;width:100%">' + rs.slice(0, max || 8).map(row).join('') + '</table>' + (rs.length > (max || 8) ? '<p style="font:12px Arial;color:#666">+' + (rs.length - (max || 8)) + ' more on the dashboard</p>' : ''); };
   const stat = function (n, label, color) { return '<td style="padding:12px 14px;background:#f4f4f1;border-radius:12px;font:12px Arial;color:#555"><div style="font:600 24px Arial;color:' + (color || '#111') + '">' + n + '</div>' + label + '</td><td style="width:8px"></td>'; };
-  const first = (u.name || '').split(' ')[0];
+  const first = displayName_(u).split(' ')[0];
   const intro = kind === 'morning'
     ? 'Good morning' + (first ? ', ' + esc_(first) : '') + '. Here is what needs attention today: review your tasks, assignments and priorities.'
     : 'Good evening' + (first ? ', ' + esc_(first) : '') + '. Here is today\'s wrap-up: completed work, what is still pending, and tomorrow\'s priorities.';
@@ -1190,7 +1192,7 @@ function presenceBeat_(u, at) {
   // Client clocks can be wrong: convert their times to the server's clock using the time they sent.
   const cnow = Number(at.now), skew = isFinite(cnow) && cnow > 0 ? now - cnow : 0;
   const since = Number(at.since) + skew;
-  const rec = { email: u.email, name: u.name || u.email, photo: photo_(u.photo), at: now, page: PAGES_OK.indexOf(at.page) >= 0 ? at.page : '', task: clean_(at.task).slice(0, 40), taskLabel: clean_(at.taskLabel).slice(0, 90), doing: clean_(at.doing).slice(0, 100), idle: !!at.idle, away: !!at.away,
+  const rec = { email: u.email, name: displayName_(u) || u.email, photo: photo_(u.photo), at: now, page: PAGES_OK.indexOf(at.page) >= 0 ? at.page : '', task: clean_(at.task).slice(0, 40), taskLabel: clean_(at.taskLabel).slice(0, 90), doing: clean_(at.doing).slice(0, 100), idle: !!at.idle, away: !!at.away,
     since: isFinite(since) && since > now - 864e5 && since <= now ? since : (prev && now - prev.at < 180000 && prev.since ? prev.since : now) };
   cache.put('pres:' + u.email, JSON.stringify(rec), 180);
   const acts = (Array.isArray(at.acts) ? at.acts : []).slice(-25).map(function (a) { a = a || {}; const t = Number(a.t) + skew; return { t: isFinite(t) ? Math.min(now, Math.max(now - 600000, t)) : now, k: ACT_KINDS.indexOf(a.k) >= 0 ? a.k : 'click', x: clean_(a.x).slice(0, 110), p: PAGES_OK.indexOf(a.p) >= 0 ? a.p : '' }; }).filter(function (a) { return a.x; });
@@ -1211,7 +1213,7 @@ function presenceList_() {
   const got = CacheService.getScriptCache().getAll(keys);
   return users.map(function (u) {
     let p = null, acts = []; try { p = JSON.parse(got['pres:' + u.email] || 'null'); } catch (err) { p = null; } try { acts = JSON.parse(got['pact:' + u.email] || '[]'); } catch (err) { acts = []; }
-    return { email: u.email, name: u.name || u.email, role: u.role, online: !!p && Date.now() - p.at < 90 * 1000, at: p ? new Date(p.at).toISOString() : (u.lastActive || u.lastSignIn || ''), photo: photo_(u.photo), doing: p ? p.doing || '' : '', idle: !!(p && p.idle), away: !!(p && p.away), page: p ? p.page : '', task: p ? p.task : '', taskLabel: p ? p.taskLabel : '', since: p ? p.since || p.at : null, acts: acts.slice(-20).reverse() };
+    return { email: u.email, name: displayName_(u) || u.email, role: u.role, online: !!p && Date.now() - p.at < 90 * 1000, at: p ? new Date(p.at).toISOString() : (u.lastActive || u.lastSignIn || ''), photo: photo_(u.photo), doing: p ? p.doing || '' : '', idle: !!(p && p.idle), away: !!(p && p.away), page: p ? p.page : '', task: p ? p.task : '', taskLabel: p ? p.taskLabel : '', since: p ? p.since || p.at : null, acts: acts.slice(-20).reverse() };
   });
 }
 /* Recent changes for the notification bell: task and team changes for everyone; notes and access only for admins. */
@@ -1893,7 +1895,7 @@ function assist_(user, body) {
   const messages = assistClean_(body.messages);
   if (!messages || !messages.length) return { ok: false, error: 'Nothing to answer.' };
   const ctx = body.context || {};
-  const who = 'Signed-in person: ' + (user.name || user.email) + ' (' + user.email + '), role ' + user.role + (user.role === 'Viewer' ? ' (view only: cannot change tasks)' : user.role === 'Editor' ? ' (can edit tasks)' : ' (admin)') + '.\n' +
+  const who = 'Signed-in person: ' + (displayName_(user) || user.email) + ' (' + user.email + '), role ' + user.role + (user.role === 'Viewer' ? ' (view only: cannot change tasks)' : user.role === 'Editor' ? ' (can edit tasks)' : ' (admin)') + '.\n' +
     'Now: ' + Utilities.formatDate(new Date(), 'Asia/Kolkata', "EEEE d MMMM yyyy, h:mm a") + ' IST.\n' +
     'On screen: ' + String(ctx.page || 'overview').slice(0, 40) + (ctx.filters ? '; filters: ' + String(ctx.filters).slice(0, 200) : '') + '.' +
     (ctx.reply ? '\nReply language: ' + String(ctx.reply).replace(/[^A-Za-z ()-]/g, '').slice(0, 40) + '.' : '') +
@@ -2329,9 +2331,23 @@ function teamMatch_(user, members) {
   const any = members.filter(fit);
   return any.length === 1 ? any[0] : null;
 }
-function teamEntryOf_(user, all) {
+/* The team list, read once per request. */
+let TEAM_MEMO_ = null;
+function teamMembers_(all) {
+  if (!all && TEAM_MEMO_) return TEAM_MEMO_;
   try {
     all = all || JSON.parse(dataText_(false));
+    const team = all.sources && Object.keys(all.sources).map(function (k) { return all.sources[k]; }).filter(function (x) { return x && x.kind === 'team'; })[0];
+    TEAM_MEMO_ = team ? CODATA.parseTeam(team) : [];
+  } catch (e) { TEAM_MEMO_ = []; }
+  return TEAM_MEMO_;
+}
+/* The name a person is shown by everywhere: their team-list name when they are on it (aman@pickrr.com -> Aman), so
+   the same person never appears twice under two names; otherwise their Google name. */
+function displayName_(u) { const te = teamMatch_(u, teamMembers_()); return te ? te.name : (u.name || ''); }
+function teamEntryOf_(user, all) {
+  if (!all) return teamMatch_(user, teamMembers_());
+  try {
     const team = all.sources && Object.keys(all.sources).map(function (k) { return all.sources[k]; }).filter(function (x) { return x && x.kind === 'team'; })[0];
     if (!team) return null;
     return teamMatch_(user, CODATA.parseTeam(team));

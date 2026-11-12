@@ -1707,7 +1707,7 @@
     const bar = dpEl('div', 'dp-sbar'); bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', DPP.map(([k, l]) => tot[k] + ' ' + l).join(', '));
     DPP.forEach(([k, l]) => { if (!tot[k]) return; const s2 = dpEl('i', 'ph-' + k); s2.style.flexGrow = tot[k]; s2.title = tot[k] + ' ' + l; bar.append(s2); });
     const leg = dpEl('div', 'dp-leg');
-    DPP.forEach(([k, l, hint]) => { const it = dpEl('div', 'dp-leg-i ph-' + k + (tot[k] ? '' : ' zero')); const n = dpEl('b', '', CO.num(tot[k])); const t2 = dpEl('span', '', l); const h = dpEl('small', '', hint); it.append(n, t2, h); leg.append(it); });
+    DPP.forEach(([k, l, hint], i) => { const it = dpEl('div', 'dp-leg-i ph-' + k + (tot[k] ? '' : ' zero')); const ic = dpEl('span', 'dp-step-ic'); ic.append(dpEl('i', '')); const n = dpEl('b', '', CO.num(tot[k])); const t2 = dpEl('span', '', l); const h = dpEl('small', '', hint); const tx = dpEl('div', 'dp-step-tx'); tx.append(t2, h); it.append(ic, n, tx); leg.append(it); if (i < DPP.length - 1) { const ch = dpEl('span', 'dp-chev'); ch.setAttribute('aria-hidden', 'true'); leg.append(ch); } });
     chart.append(bar, leg); body.append(big, chart); hero.append(body);
     // what to talk about at stand-up
     const flags = [];
@@ -1762,23 +1762,35 @@
     });
     el.append(board);
   });
+  const dpMono = (b) => { const w = String(b || '?').replace(/[^A-Za-z0-9 ]+/g, ' ').trim().split(/\s+/).filter(Boolean); return ((w[0] || '?').charAt(0) + (w.length > 1 ? w[1].charAt(0) : (w[0] || '').charAt(1) || '')).toUpperCase(); };
   function dpTask(x, live) {
-    const r = live.get(x.uid), t = dpEl('div', 'dp-tk ph-' + x.ph + (x.now === 'Changes requested' ? ' chg' : ''));
+    const r = live.get(x.uid), chg = x.now === 'Changes requested';
+    const t = dpEl('div', 'dp-tk ph-' + x.ph + (chg ? ' chg' : '') + (x.late ? ' is-late' : ''));
     if (r) { t.dataset.uid = x.uid; t.tabIndex = 0; t.setAttribute('role', 'button'); t.title = 'Open ' + (x.id || 'task'); }
-    const l1 = dpEl('div', 'dp-tk1'); l1.append(dpEl('b', '', x.brand || 'No brand'), dpEl('span', '', [x.type, x.qty > 1 ? '×' + x.qty : ''].filter(Boolean).join(' ')));
-    const l2 = dpEl('div', 'dp-tk2', x.topic || x.id || '');
-    t.append(l1, l2);
+    // head: brand monogram, brand, creative type
+    const hd = dpEl('div', 'dp-tk-hd');
+    const mono = dpEl('span', 'dp-mono', dpMono(x.brand)); mono.setAttribute('aria-hidden', 'true');
+    const nm = dpEl('div', 'dp-tk-nm'); nm.append(dpEl('b', '', x.brand || 'No brand'), dpEl('span', '', [x.type, x.qty > 1 ? '×' + x.qty : ''].filter(Boolean).join(' · ') || '—'));
+    hd.append(mono, nm);
+    t.append(hd);
+    if (x.topic) t.append(dpEl('p', 'dp-tk-topic', x.topic));
+    // flow track: where the task is in Not started > In progress > In review > Delivered
+    const ft = dpEl('div', 'dp-flow'); const idx = ['todo', 'doing', 'review', 'done'].indexOf(x.ph);
+    const track = dpEl('span', 'dp-track'); track.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < 4; i++) track.append(dpEl('i', i <= idx ? 'on' : ''));
+    const fine = { 'Changes requested': 'Changes', 'Shared': 'With client', 'No update': 'Client: no update', 'To be planned': 'To be planned', 'WIP': 'WIP', 'Under review': 'Under review', 'Delivered': 'Delivered' };
+    ft.append(track, dpEl('span', 'dp-flow-l', fine[x.now] || x.now));
+    if (x.late) { const l = dpEl('span', 'dp-late', x.late + 'd late'); l.title = x.late + ' days past the ETA'; ft.append(l); }
     const tags = [];
-    const fine = { 'Changes requested': 'Changes', 'Shared': 'With client', 'No update': 'Client: no update', 'Under review': 'Under review', 'WIP': '', 'Delivered': '', 'To be planned': '' };
-    const f = fine[x.now] !== undefined ? fine[x.now] : x.now; if (f && x.ph !== 'other') tags.push(['st', f]);
-    if (x.late) tags.push(['late', x.late + 'd late']);
     if (x.picked && x.ph !== 'done') tags.push(['up', 'Picked up today']);
-    if (x.ph === 'done' && x.start !== x.now) tags.push(['ok', 'Delivered today']);
+    if (x.ph === 'done' && x.start !== x.now) tags.push(['ok', 'Today']);
     if (x.isNew) tags.push(['new', 'New']);
     if (x.cls === 'External') tags.push(['ext', 'External']);
-    if (tags.length) { const tg = dpEl('div', 'dp-tags'); tags.forEach(([c, s2]) => tg.append(dpEl('span', 't-' + c, s2))); t.append(tg); }
+    tags.forEach(([c, s2]) => ft.append(dpEl('span', 'dp-tag t-' + c, s2)));
+    t.append(ft);
     return t;
   }
+
   setTimeout(() => dpSetView(DP.view), 0);
 
   /* ================= Brand packages (Brands page) =================
