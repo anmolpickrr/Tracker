@@ -23,7 +23,7 @@
 /* Roles, lowest first. Viewer: sees everything. Editor: also edits tasks. Admin: also team list, access and the audit log. */
 const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
 /* ============================ Access model ============================
- * The OWNER (CONFIG.access.owners: the Creative Head, Admin and Team Manager) has every permission and is the only
+ * The OWNER (CONFIG.access.owners: the Creative Head, Admin) has every permission and is the only
  * person who can grant or change access, read the activity log, see live team activity and change settings.
  * Everyone else gets a role (View only / Can edit / Admin) whose defaults the owner and Admins can fine-tune per person:
  * which pages they see, and whether they can edit tasks, download data, see workload estimates and other people's
@@ -36,18 +36,19 @@ function isAdminUser_(u) { return !!u && (u.owner || isOwner_(u.email) || u.role
 function defaultPerms_(role) {
   // View only sees only their own work by default; Can edit and Admin see everyone's work (Creative Head, Nov 2026:
   // edit access means working with all tasks, brands and people, e.g. KAMs who are not on the designer team list).
-  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own' };
+  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '' };
   if (role === 'Editor') { p.edit = true; p.load = true; p.scope = 'all'; }
   if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; }
   return p;
 }
 function permsOf_(u) {
   if (!u) return defaultPerms_('Viewer');
-  if (u.owner || isOwner_(u.email)) { const all = defaultPerms_('Admin'); all.owner = true; return all; }
+  if (u.owner || isOwner_(u.email)) { const all = defaultPerms_('Admin'); all.owner = true; all.packages = 'edit'; return all; }
   const p = defaultPerms_(u.role), o = u.perms || {};
   if (Array.isArray(o.pages)) p.pages = o.pages.filter(function (k) { return PAGE_KEYS.indexOf(k) >= 0; });
   ['edit', 'export', 'load', 'team', 'fasty'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') p.scope = o.scope;
+  if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') p.packages = o.packages;
   if (p.pages.indexOf('mine') < 0) p.pages.unshift('mine'); // everyone keeps their own work page
   return p;
 }
@@ -57,6 +58,7 @@ function cleanPerms_(o) {
   if (Array.isArray(o.pages)) out.pages = o.pages.map(String).filter(function (k, i, a) { return PAGE_KEYS.indexOf(k) >= 0 && a.indexOf(k) === i; });
   ['edit', 'export', 'load', 'team', 'fasty'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') out.scope = o.scope;
+  if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') out.packages = o.packages;
   return out;
 }
 function allowed_(u, action) {
@@ -68,9 +70,12 @@ function allowed_(u, action) {
   if (action === 'setMember') return p.team;
   if (action === 'health') return p.pages.indexOf('health') >= 0;
   if (action === 'assist' || action === 'speak') return p.fasty;
+  // Brand packages: only the owner by default; the owner grants view or edit per person.
+  if (action === 'packages') return p.packages === 'view' || p.packages === 'edit';
+  if (action === 'packageSave' || action === 'packageDelete') return p.packages === 'edit';
   return true;
 }
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', presence: 'Admin', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -294,6 +299,8 @@ function doPost(e) {
     if (body.action === 'assist') { const r = assist_(user, body); if (r.ok && r.stop_reason !== 'tool_use' && body.voice) attachVoice_(user, r, body.voice); return json_(r); }
     if (body.action === 'speak') return json_(speak_(user, body));
     if (body.action === 'history') return json_({ ok: true, days: history_() });
+    if (body.action === 'dayplan') return json_(dayPlanGet_(user, body));
+    if (body.action === 'packages') return json_(pkgList_());
     if (body.action === 'settings') { const st = settings_(); return json_({ ok: true, settings: Object.assign({}, st, { chat: st.chat ? 'set' : '' }) }); }
     if (body.action === 'data') { const pm = permsOf_(user); return text_(pm.scope === 'own' ? ownDataText_(user, !!body.fresh) : dataText_(!!body.fresh)); }
     if (body.action === 'health') return json_(health_());
@@ -325,6 +332,8 @@ function write_(body, user) {
     else if (body.action === 'setAccess') out = setAccess_(body, user);
     else if (body.action === 'noteSave') out = noteSave_(body, user);
     else if (body.action === 'noteDelete') out = noteDelete_(body, user);
+    else if (body.action === 'packageSave') out = pkgSave_(body, user);
+    else if (body.action === 'packageDelete') out = pkgDelete_(body, user);
     else if (body.action === 'noteAction') out = noteAction_(body, user);
     else if (body.action === 'prefs') out = prefs_(body, user);
     else if (body.action === 'saveSettings') out = saveSettings_(body, user);
@@ -1070,6 +1079,7 @@ function remindersTick() {
     // One snapshot a day of the point-in-time numbers (open, overdue…), so later comparisons are exact.
     if (mins >= 9 * 60 && props.getProperty('SNAP_DAY') !== day) { props.setProperty('SNAP_DAY', day); snapshot_(day); }
     sendNoteReminders_(now);
+    try { dayPlanTick_(day, mins); } catch (e) { console.log('day plan: ' + e); }
   } finally { lock.releaseLock(); }
 }
 /** Run from the editor to email yourself today's morning briefing (nothing else is sent). */
@@ -1212,6 +1222,104 @@ function feed_(u) {
     return admin && /^Access requested/.test(e.action); // note activity reaches people through their own notes, never someone else's
   }).slice(0, 30).map(function (e) { return { when: e.when, who: e.who, action: e.action, record: e.record, field: e.field, before: e.before, after: e.after, sheet: e.sheet }; }) };
 }
+/* ================= Day plan =================
+ * From 10:00 IST each person's day is saved in the "Day plans" tab: their open tasks due today or earlier (overdue)
+ * and anything they are working on (WIP, Changes requested). Tasks that come into scope later in the day are added
+ * ("During the day"). Every 10-minute check updates each planned task's current status, so a past day keeps its
+ * end-of-day status. One row per person and task. */
+const DAYPLAN_HEAD = ['Date', 'Person', 'Task', 'ID', 'Brand', 'Topic', 'Type', 'Qty', 'Source', 'Start status', 'Status now', 'Added', 'Updated'];
+function dayPlanSheet_() {
+  const ss = accessBook_(); let sh = ss.getSheetByName('Day plans');
+  if (!sh) { sh = ss.insertSheet('Day plans'); sh.appendRow(DAYPLAN_HEAD); sh.setFrozenRows(1); }
+  return sh;
+}
+function inDay_(t, today) { return t.open && ((t.eta && t.eta <= today) || t.stage === 'WIP' || t.stage === 'Changes requested'); }
+function dayRows_(sh, day) {
+  const last = sh.getLastRow(); if (last < 2) return { first: 0, rows: [] };
+  const n = Math.min(last - 1, 4000), start = last - n + 1, v = sh.getRange(start, 1, n, DAYPLAN_HEAD.length).getValues();
+  const out = []; let first = 0;
+  v.forEach(function (r, i) { const d = r[0] instanceof Date ? Utilities.formatDate(r[0], IST, 'yyyy-MM-dd') : String(r[0]); if (d === day) { if (!first) first = start + i; out.push(r); } });
+  return { first: first, rows: out };
+}
+function dayPlanTick_(day, mins) {
+  if (mins < 10 * 60) return { ok: true, waiting: true };
+  const t = tasksNow_(), sh = dayPlanSheet_(), cur = dayRows_(sh, day), now = new Date();
+  const have = {}; cur.rows.forEach(function (r) { have[String(r[1]) + '|' + String(r[2])] = 1; });
+  const byUid = {}; t.tasks.forEach(function (x) { byUid[x.uid] = x; });
+  const label = cur.rows.length ? 'During the day' : 'Morning plan', add = [];
+  t.tasks.forEach(function (x) { if (!inDay_(x, day)) return; x.list.forEach(function (p) { const k = p + '|' + x.uid; if (have[k]) return; have[k] = 1;
+    add.push(["'" + day, p, x.uid, x.id, x.brand, String(x.topic || '').slice(0, 120), x.type, x.qty || 1, x.source === 'Paid' ? 'External' : 'Internal', x.stage, x.stage, label, now]); }); });
+  // current status of everything planned today (one write for the day's block)
+  if (cur.first && cur.rows.length) {
+    const upd = cur.rows.map(function (r) { const x = byUid[String(r[2])]; return [!x ? 'Removed from the sheet' : x.list.indexOf(String(r[1])) < 0 ? 'Reassigned' : x.stage]; });
+    if (upd.some(function (u, i) { return String(cur.rows[i][10]) !== u[0]; })) sh.getRange(cur.first, 11, upd.length, 1).setValues(upd);
+  }
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, DAYPLAN_HEAD.length).setValues(add);
+  return { ok: true, added: add.length };
+}
+// A day's plan. Everyone sees their own; the owner, Admins and people allowed to see others' work see everyone's.
+function dayPlanGet_(user, b) {
+  if (!hasAccessBook_()) return { ok: false, error: 'not set up' };
+  const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd');
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? String(b.date) : today;
+  const mins = Number(Utilities.formatDate(new Date(), IST, 'H')) * 60 + Number(Utilities.formatDate(new Date(), IST, 'mm'));
+  const sh = dayPlanSheet_();
+  let cur = dayRows_(sh, day);
+  if (day === today && !cur.rows.length && mins >= 10 * 60) { const lock = LockService.getScriptLock(); if (lock.tryLock(15000)) { try { dayPlanTick_(day, mins); } finally { lock.releaseLock(); } cur = dayRows_(sh, day); } }
+  const p = permsOf_(user), all = isAdminUser_(user) || (p.load && p.scope !== 'own');
+  let mine = null; if (!all) { const t = tasksNow_(); const m = t.resolve(user.name || ''); mine = m ? m.name : String(user.name || ''); }
+  const rows = cur.rows.filter(function (r) { return all || String(r[1]) === mine; }).map(function (r) { return { person: String(r[1]), uid: String(r[2]), id: String(r[3]), brand: String(r[4]), topic: String(r[5]), type: String(r[6]), qty: Number(r[7]) || 1, cls: String(r[8]), start: String(r[9]), now: String(r[10]), added: String(r[11]) }; });
+  const days = {}; const last = sh.getLastRow();
+  if (last > 1) { const n = Math.min(last - 1, 4000); sh.getRange(last - n + 1, 1, n, 1).getValues().forEach(function (r) { const d = r[0] instanceof Date ? Utilities.formatDate(r[0], IST, 'yyyy-MM-dd') : String(r[0]); if (/^\d{4}-/.test(d)) days[d] = 1; }); }
+  return { ok: true, date: day, today: today, startsAt: '10:00', waiting: day === today && mins < 10 * 60, rows: rows, days: Object.keys(days).sort().reverse().slice(0, 60), all: all };
+}
+
+/* ================= Brand packages =================
+ * A brand buys a package of creatives (e.g. 5 AI UGC, 2 AI Catalogue, 3 Static). Kept in the "Packages" tab of the
+ * access book. Delivered and remaining quantities are worked out by the dashboard from completed (DONE) tasks of that
+ * brand and creative type, from the purchase date, filling the oldest open package first. Owner only by default; the
+ * owner grants view or edit per person. */
+const PKG_HEAD = ['ID', 'Brand', 'Purchased on', 'Amount (incl. tax)', 'Count from', 'Items', 'Total creatives', 'Notes', 'Status', 'Created by', 'Created', 'Updated by', 'Updated', 'Deleted'];
+function pkgSheet_() { const ss = accessBook_(); let sh = ss.getSheetByName('Packages'); if (!sh) { sh = ss.insertSheet('Packages'); sh.appendRow(PKG_HEAD); sh.setFrozenRows(1); } return sh; }
+function pkgAll_() {
+  const sh = pkgSheet_(), last = sh.getLastRow(); if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, PKG_HEAD.length).getValues().map(function (v, i) {
+    let items = []; try { items = JSON.parse(String(v[5] || '[]')); } catch (e) { items = []; }
+    return { row: i + 2, id: String(v[0]), brand: String(v[1]), date: v[2] instanceof Date ? Utilities.formatDate(v[2], IST, 'yyyy-MM-dd') : String(v[2]), amount: Number(v[3]) || 0, from: String(v[4] || 'Both'), items: items, total: Number(v[6]) || 0, notes: String(v[7] || ''), status: String(v[8] || 'Active'), createdBy: String(v[9]), created: iso_(v[10]), updatedBy: String(v[11]), updated: iso_(v[12]), deleted: v[13] === true || String(v[13]) === 'TRUE' };
+  }).filter(function (x) { return x.id && !x.deleted; });
+}
+function pkgList_() { if (!hasAccessBook_()) return { ok: false, error: 'not set up' }; return { ok: true, packages: pkgAll_().map(function (x) { const o = Object.assign({}, x); delete o.row; delete o.deleted; return o; }) }; }
+function pkgInput_(b) {
+  const p = b.pkg || {}, brand = clean_(p.brand).slice(0, 80);
+  if (!brand || !plain_(brand)) return { error: 'Choose or type a brand.' };
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(p.date || '')) ? String(p.date) : '';
+  if (!date) return { error: 'Add the purchase date.' };
+  const items = (Array.isArray(p.items) ? p.items : []).slice(0, 30).map(function (it) { return { type: clean_(it && it.type).slice(0, 60), qty: Math.max(0, Math.min(10000, Math.round(Number(it && it.qty) || 0))) }; }).filter(function (it) { return it.type && it.qty > 0 && plain_(it.type); });
+  if (!items.length) return { error: 'Add at least one creative type with a quantity.' };
+  const amount = Math.max(0, Math.round((Number(p.amount) || 0) * 100) / 100);
+  return { brand: brand, date: date, amount: amount, from: ['Both', 'External', 'Internal'].indexOf(p.from) >= 0 ? p.from : 'Both', items: items, total: items.reduce(function (a, it) { return a + it.qty; }, 0), notes: clean_(p.notes).slice(0, 500), status: p.status === 'Closed' ? 'Closed' : 'Active' };
+}
+function pkgSave_(b, u) {
+  const x = pkgInput_(b); if (x.error) return { ok: false, error: x.error };
+  const sh = pkgSheet_(), now = new Date(), vals = function (id, createdBy, created) { return [id, safe_(x.brand), "'" + x.date, x.amount, x.from, JSON.stringify(x.items), x.total, safe_(x.notes), x.status, createdBy, created, u.email, now, false]; };
+  const desc = x.brand + ': ' + x.total + ' creatives (' + x.items.map(function (it) { return it.qty + ' ' + it.type; }).join(', ') + '), ₹' + x.amount + ', from ' + x.date;
+  if (!b.id) {
+    const id = 'P' + Utilities.formatDate(now, IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 4);
+    sh.appendRow(vals(id, u.email, now));
+    return { ok: true, id: id, changes: [{ action: 'Package added', sheet: 'Packages', record: x.brand, field: 'Package', after: desc }] };
+  }
+  const cur = pkgAll_().filter(function (p) { return p.id === String(b.id); })[0];
+  if (!cur) return { ok: false, error: 'This package no longer exists.' };
+  sh.getRange(cur.row, 1, 1, PKG_HEAD.length).setValues([vals(cur.id, cur.createdBy, cur.created ? new Date(cur.created) : now)]);
+  return { ok: true, id: cur.id, changes: [{ action: 'Package changed', sheet: 'Packages', record: x.brand, field: 'Package', before: cur.brand + ': ' + cur.total + ' creatives, ₹' + cur.amount + (cur.status === 'Closed' ? ' (closed)' : ''), after: desc + (x.status === 'Closed' ? ' (closed)' : '') }] };
+}
+function pkgDelete_(b, u) {
+  const cur = pkgAll_().filter(function (p) { return p.id === String(b.id); })[0];
+  if (!cur) return { ok: false, error: 'This package no longer exists.' };
+  pkgSheet_().getRange(cur.row, 12, 1, 3).setValues([[u.email, new Date(), true]]);
+  return { ok: true, changes: [{ action: 'Package deleted', sheet: 'Packages', record: cur.brand, field: 'Package', before: cur.total + ' creatives, ₹' + cur.amount }] };
+}
+
 /* Daily snapshots (IST), kept in the History tab: the numbers that have no history in the sheets themselves. */
 const HIST_HEAD = ['Date', 'Open', 'Overdue', 'Due today', 'Under review', 'Unassigned', 'Awaiting brief', 'Delivered this month'];
 function histSheet_() { const ss = accessBook_(); let sh = ss.getSheetByName('History'); if (!sh) { sh = ss.insertSheet('History'); sh.appendRow(HIST_HEAD); sh.setFrozenRows(1); } return sh; }
@@ -2193,7 +2301,7 @@ function removeDeliveredOn_() {
 
 /* Only the person's own tasks (permission "scope: own"): rows whose designer/editor or content owner names them. */
 function permText_(p) {
-  return 'pages: ' + p.pages.join(', ') + '; edit tasks: ' + (p.edit ? 'yes' : 'no') + '; download data: ' + (p.export ? 'yes' : 'no') + '; workload and others\' work: ' + (p.load ? 'yes' : 'no') + '; manage team list: ' + (p.team ? 'yes' : 'no') + '; Fasty: ' + (p.fasty ? 'yes' : 'no') + '; tasks: ' + (p.scope === 'own' ? 'only their own' : 'all');
+  return 'pages: ' + p.pages.join(', ') + '; edit tasks: ' + (p.edit ? 'yes' : 'no') + '; download data: ' + (p.export ? 'yes' : 'no') + '; workload and others\' work: ' + (p.load ? 'yes' : 'no') + '; manage team list: ' + (p.team ? 'yes' : 'no') + '; Fasty: ' + (p.fasty ? 'yes' : 'no') + '; tasks: ' + (p.scope === 'own' ? 'only their own' : 'all') + '; brand packages: ' + (p.packages === 'edit' ? 'view and edit' : p.packages === 'view' ? 'view' : 'no');
 }
 /* The team-list entry for a signed-in person (by name or alias), or null. "Only their own work" depends on it. */
 function teamEntryOf_(user, all) {

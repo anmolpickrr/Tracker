@@ -16,11 +16,11 @@
   const CFG = window.CO_CONFIG || {};
   const RANK = { Viewer: 1, Editor: 2, Admin: 3 };
   const ROLE_LABEL = { Viewer: 'View only', Editor: 'Can edit', Admin: 'Admin' };
-  const roleText = (u) => u && u.owner ? 'Admin · Team Manager' : (ROLE_LABEL[u && u.role] || (u && u.role) || '') + (u && u.custom ? ' (custom)' : '');
+  const roleText = (u) => u && u.owner ? 'Admin' : (ROLE_LABEL[u && u.role] || (u && u.role) || '') + (u && u.custom ? ' (custom)' : '');
   const A = { mode: null, url: '', clientId: '', domains: [], session: LS.get('co.session', ''), user: null };
   const can = (need) => A.mode === 'key' || !!(A.user && RANK[A.user.role] >= RANK[need]);
   /* Permissions come from the web app (role defaults, fine-tuned per person by the owner). The owner (the Creative Head:
-     Admin and Team Manager) has all of them and is the only one who manages access, the activity log, live activity and settings. */
+     Admin) has all of them and is the only one who manages access, the activity log, live activity and settings. */
   const isOwner = () => A.mode === 'key' || !!(A.user && A.user.owner);
   // Access management, the activity log and live team activity: the owner and everyone with the Admin role.
   const isAdmin = () => isOwner() || !!(A.user && A.user.role === 'Admin');
@@ -491,6 +491,7 @@
     document.body.dataset.admin = A.mode === 'auth' && perm('load') ? '1' : '';
     document.body.dataset.owner = admin ? '1' : '';
     document.querySelectorAll('[data-owner-only]').forEach((x) => { x.hidden = !(A.mode === 'auth' && isOwner()); });
+    { const pkc = document.querySelector('[data-draw="packages"]'); if (pkc) pkc.hidden = !pkPerm(); } // brand packages: owner, or people given view/edit
     document.body.dataset.export = perm('export') ? '1' : '';
     const axTab = document.querySelector('.co-tab[data-tab="access"]');
     axTab.hidden = !admin;
@@ -523,6 +524,7 @@
     });
     shownTab = tab;
     if (tab === 'notes') NB.open();
+    if (tab === 'brands') dash.draw('packages');
     document.querySelectorAll('.co-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     document.querySelectorAll('.bt[data-tab]').forEach((b) => { if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     document.getElementById('bt-more').toggleAttribute('aria-current', !['today', document.querySelector('.btabs .bt[data-tab="mine"]') ? 'mine' : 'standup', 'tasks', 'notes'].includes(tab));
@@ -1637,6 +1639,217 @@
     });
   })();
 
+  /* ================= Day plan (Stand-up) =================
+     Each person's tasks for the day, saved by the web app at 10:00 IST (open tasks due today or overdue, and work in
+     progress), plus tasks that come into scope during the day. Today's statuses are live; past days show their
+     end-of-day status. Before 10:00 a preview from the live data is shown. */
+  const DP = { view: LS.get('co.suview', 'cards'), date: '', data: null, busy: false, at: 0, open: new Set() };
+  const DPG = [['done', 'Done', 'Delivered'], ['review', 'Under review', 'Under review'], ['client', 'With client', 'Shared'], ['wip', 'WIP', 'WIP'], ['changes', 'Changes', 'Changes requested'], ['tbp', 'To be planned', 'To be planned'], ['other', 'Other', '']];
+  const dpGroup = (st) => st === 'Delivered' ? 'done' : st === 'Under review' ? 'review' : st === 'Shared' || st === 'No update' ? 'client' : st === 'WIP' ? 'wip' : st === 'Changes requested' ? 'changes' : st === 'To be planned' ? 'tbp' : 'other';
+  function dpSetView(v) {
+    DP.view = v; LS.set('co.suview', v);
+    document.querySelectorAll('[data-suview]').forEach((b) => { const on = b.dataset.suview === v; b.setAttribute('aria-selected', String(on)); b.classList.toggle('on', on); });
+    document.querySelector('[data-draw="standup"]').hidden = v === 'plan';
+    document.querySelector('[data-draw="su-summary"]').hidden = v === 'plan';
+    document.getElementById('su-sort').hidden = v === 'plan';
+    document.querySelector('[data-draw="dayplan"]').hidden = v !== 'plan';
+    if (v === 'plan') { dpLoad(); dash.draw('dayplan'); }
+  }
+  document.querySelectorAll('[data-suview]').forEach((b) => b.addEventListener('click', () => flip(() => dpSetView(b.dataset.suview))));
+  async function dpLoad(force) {
+    if (A.mode !== 'auth' || !A.user || DP.busy || (!force && DP.data && DP.data.date === (DP.date || DP.data.today) && Date.now() - DP.at < 60000)) return;
+    DP.busy = true;
+    try { const b = await callApi({ action: 'dayplan', date: DP.date || undefined }, true); if (b.ok) { DP.data = b; DP.at = Date.now(); } else DP.err = b.error; } catch (e) { DP.err = e.message; }
+    DP.busy = false; dash.draw('dayplan');
+  }
+  setInterval(() => { if (DP.view === 'plan' && curTab() === 'standup' && document.visibilityState === 'visible') dpLoad(true); }, 60 * 1000);
+  // Live rows for today (and the preview before 10:00): the same rule the web app uses.
+  const dpPreview = () => { const t = CO.today(), out = []; (CO.rows(true) || []).forEach((r) => { if (!(r.open && ((r.eta && r.eta <= t) || r.stage === 'WIP' || r.stage === 'Changes requested'))) return; r.list.forEach((p) => out.push({ person: p, uid: r.uid, id: r.id, brand: r.brand, topic: CO.topicText(r), type: r.type, qty: r.qty || 1, cls: CO.cls(r), start: r.stage, now: r.stage, added: 'Preview' })); }); return out; };
+  dash.draw('dayplan', (el) => {
+    if (DP.view !== 'plan') return;
+    el.replaceChildren();
+    const d = DP.data, live = new Map((CO.rows(true) || []).map((r) => [r.uid, r]));
+    const today = d ? d.today : CO.today(), day = d ? d.date : today, isToday = day === today;
+    let rows = d && d.rows ? d.rows.slice() : [];
+    const preview = isToday && (!d || d.waiting || !rows.length);
+    if (preview) rows = dpPreview();
+    if (isToday) rows = rows.map((x) => { const r = live.get(x.uid); return Object.assign({}, x, { now: !r ? 'Removed from the sheet' : r.list.includes(x.person) ? r.stage : 'Reassigned' }); });
+    const p = dash.params(); if (p.designer && p.designer !== '__none') rows = rows.filter((x) => x.person === p.designer);
+    // header: date and note
+    const head = document.createElement('div'); head.className = 'co-card dp-head';
+    const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = isToday ? 'Today’s plan' : 'Plan for ' + CO.fmtDate(day, true);
+    const note = document.createElement('p'); note.className = 'co-note';
+    note.textContent = preview ? (d && d.waiting ? 'The day’s plan is saved at 10:00 IST. Until then, this is a preview from the live sheets.' : 'Preview from the live sheets.') : isToday ? 'Saved at 10:00 IST; tasks added during the day are marked. Statuses are live.' : 'Status at the end of that day.';
+    l.append(h2, note);
+    const sel = document.createElement('select'); sel.className = 'co-select'; sel.setAttribute('aria-label', 'Day');
+    const days = [today].concat(((d && d.days) || []).filter((x) => x !== today));
+    days.forEach((x) => sel.append(new Option(x === today ? 'Today, ' + CO.fmtDate(x) : CO.fmtDate(x, true), x)));
+    sel.value = day; sel.addEventListener('change', () => { DP.date = sel.value === today ? '' : sel.value; DP.data = null; dash.draw('dayplan'); dpLoad(true); });
+    head.append(l, sel); el.append(head);
+    if (!d && DP.busy) { const pp = document.createElement('p'); pp.className = 'co-note'; pp.textContent = 'Loading the day’s plan…'; el.append(pp); }
+    // totals
+    const cnt = (list) => { const o = {}; DPG.forEach(([k]) => { o[k] = 0; }); list.forEach((x) => { o[dpGroup(x.now)]++; }); return o; };
+    const tot = cnt(rows);
+    const tiles = document.createElement('div'); tiles.className = 'dp-tiles';
+    const tile = (k, label, n) => { const t = document.createElement('div'); t.className = 'dp-tile g-' + k; const b = document.createElement('b'); b.textContent = CO.num(n); const s2 = document.createElement('span'); s2.textContent = label; t.append(b, s2); tiles.append(t); };
+    tile('all', 'Planned', rows.length); DPG.forEach(([k, label]) => { if (k !== 'other' || tot.other) tile(k, label, tot[k]); });
+    el.append(tiles);
+    if (!rows.length && !(DP.busy && !d)) { const e = document.createElement('p'); e.className = 'qn-empty'; e.textContent = isToday ? 'Nothing is due, overdue or in progress for anyone today.' : 'No plan was saved for this day.'; el.append(e); return; }
+    // people
+    const by = new Map(); rows.forEach((x) => { if (!by.has(x.person)) by.set(x.person, []); by.get(x.person).push(x); });
+    const list = document.createElement('div'); list.className = 'dp-list';
+    [...by].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])).forEach(([name, xs]) => {
+      const c = cnt(xs), card = document.createElement('article'); card.className = 'co-card dp-person';
+      const top = document.createElement('button'); top.type = 'button'; top.className = 'dp-top'; top.setAttribute('aria-expanded', String(DP.open.has(name)));
+      const who = document.createElement('span'); who.className = 'dp-who'; who.append(CO.av(name), name);
+      const n = document.createElement('span'); n.className = 'dp-n'; const nb = document.createElement('b'); nb.textContent = xs.length; n.append(nb, xs.length === 1 ? ' task' : ' tasks');
+      const pct = document.createElement('span'); pct.className = 'dp-pct'; pct.textContent = Math.round(c.done / xs.length * 100) + '% done';
+      top.append(who, n, pct);
+      const bar = document.createElement('div'); bar.className = 'dp-bar'; bar.setAttribute('role', 'img');
+      bar.setAttribute('aria-label', DPG.filter(([k]) => c[k]).map(([k, label]) => c[k] + ' ' + label).join(', '));
+      DPG.forEach(([k]) => { if (!c[k]) return; const s2 = document.createElement('i'); s2.className = 'g-' + k; s2.style.flexGrow = c[k]; bar.append(s2); });
+      const legend = document.createElement('div'); legend.className = 'dp-legend';
+      DPG.forEach(([k, label]) => { if (!c[k]) return; const s2 = document.createElement('span'); s2.className = 'g-' + k; s2.textContent = c[k] + ' ' + label; legend.append(s2); });
+      card.append(top, bar, legend);
+      const det = document.createElement('div'); det.className = 'dp-tasks'; det.hidden = !DP.open.has(name);
+      xs.slice().sort((a, b) => DPG.findIndex(([k]) => k === dpGroup(a.now)) - DPG.findIndex(([k]) => k === dpGroup(b.now))).forEach((x) => {
+        const row = document.createElement('div'); row.className = 'dp-task' + (live.has(x.uid) ? ' click' : ''); if (live.has(x.uid)) { row.dataset.uid = x.uid; row.tabIndex = 0; }
+        const t1 = document.createElement('span'); t1.className = 'dp-t'; const bb = document.createElement('b'); bb.textContent = x.brand; t1.append(bb, ' · ' + x.topic);
+        const m = document.createElement('span'); m.className = 'dp-m'; m.textContent = [x.id, x.type, x.qty > 1 ? x.qty + ' creatives' : '', x.cls, x.added === 'During the day' ? 'added during the day' : ''].filter(Boolean).join(' · ');
+        const st = document.createElement('span'); st.className = 'dp-st';
+        const chip = (s, cls) => { const e = document.createElement('span'); e.className = 'dp-chip g-' + dpGroup(s) + (cls ? ' ' + cls : ''); e.textContent = s; return e; };
+        if (x.start !== x.now) st.append(chip(x.start, 'was'), document.createTextNode(' → '));
+        st.append(chip(x.now));
+        const tx = document.createElement('div'); tx.className = 'dp-tx'; tx.append(t1, m); row.append(tx, st); det.append(row);
+      });
+      card.append(det);
+      top.addEventListener('click', () => flip(() => { if (DP.open.has(name)) DP.open.delete(name); else DP.open.add(name); dash.draw('dayplan'); }));
+      list.append(card);
+    });
+    el.append(list);
+  });
+  setTimeout(() => dpSetView(DP.view), 0);
+
+  /* ================= Brand packages (Brands page) =================
+     A brand buys a package (e.g. 5 AI UGC, 2 AI Catalogue, 3 Static). Delivered = completed (DONE) creatives of that
+     brand and creative type from the purchase date, from the sheet(s) the package counts; they fill the oldest open
+     package first, then the next. Remaining = purchased - delivered. Requests still open for the brand are shown
+     against what is left, so nothing beyond the package is picked up. Owner only, unless the owner grants view/edit. */
+  const PK = { list: null, busy: false, err: '', edit: null };
+  const pkPerm = () => (A.mode !== 'auth' || !A.user ? '' : A.user.owner ? 'edit' : (A.user.perms && A.user.perms.packages) || '');
+  const pkNorm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  async function pkLoad() {
+    if (!pkPerm() || PK.busy) return; PK.busy = true;
+    try { const b = await callApi({ action: 'packages' }, true); if (b.ok) { PK.list = b.packages; PK.err = ''; } else PK.err = b.error === 'forbidden' ? '' : (b.error || 'Packages could not load'); } catch (e) { PK.err = e.message; }
+    PK.busy = false; dash.draw('packages');
+  }
+  // Allocation of delivered creatives to packages, oldest package first.
+  function pkAlloc(pkgs) {
+    const rows = CO.rows(true) || [], out = new Map();
+    const ps = pkgs.map((p) => ({ p, items: p.items.map((it) => ({ type: it.type, key: pkNorm(it.type), qty: it.qty, used: 0, over: 0 })) })).sort((a, b) => a.p.date.localeCompare(b.p.date));
+    ps.forEach((x) => out.set(x.p.id, x));
+    const done = rows.filter((r) => r.stage === 'Delivered' && r.ddate).sort((a, b) => a.ddate.localeCompare(b.ddate));
+    done.forEach((r) => {
+      const bk = pkNorm(r.brand), tk = pkNorm(r.type), cls = r.source === 'Paid' ? 'External' : 'Internal';
+      const cands = ps.filter((x) => x.p.status !== 'Closed' && pkNorm(x.p.brand) === bk && x.p.date <= r.ddate && (x.p.from === 'Both' || x.p.from === cls));
+      let units = r.qty || 1; let lastItem = null;
+      for (const x of cands) { const it = x.items.find((i) => i.key === tk) || x.items.find((i) => i.key === 'any type'); if (!it) continue; lastItem = it; const take = Math.min(units, it.qty - it.used); if (take > 0) { it.used += take; units -= take; } if (!units) break; }
+      if (units && lastItem) lastItem.over += units; // delivered beyond what was bought
+    });
+    // requests still open for each brand and type (from the package date), against what is left
+    ps.forEach((x) => { x.items.forEach((it) => { it.open = rows.filter((r) => r.open && pkNorm(r.brand) === pkNorm(x.p.brand) && (pkNorm(r.type) === it.key || it.key === 'any type') && (r.req || '') >= x.p.date && (x.p.from === 'Both' || x.p.from === (r.source === 'Paid' ? 'External' : 'Internal'))).reduce((a, r) => a + (r.qty || 1), 0); }); });
+    return out;
+  }
+  const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  dash.draw('packages', (el) => {
+    const perm = pkPerm(); el.hidden = !perm; if (!perm) { el.replaceChildren(); return; }
+    if (PK.list === null && !PK.busy) pkLoad();
+    el.replaceChildren();
+    const head = document.createElement('div'); head.className = 'co-card-head';
+    const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Brand packages';
+    const nt = document.createElement('p'); nt.className = 'co-note'; nt.textContent = 'Creatives each brand has bought, delivered and still due. Updates automatically from the sheets.'; l.append(h2, nt); head.append(l);
+    if (perm === 'edit') { const add = document.createElement('button'); add.type = 'button'; add.className = 'co-btn primary'; add.textContent = 'Add package'; add.addEventListener('click', () => pkOpen(null)); head.append(add); }
+    el.append(head); collapser(el, 'packages', 'Brand packages');
+    if (PK.err) { const e = document.createElement('p'); e.className = 'co-note bad'; e.textContent = PK.err; el.append(e); return; }
+    if (PK.list === null) { const e = document.createElement('p'); e.className = 'co-note'; e.textContent = 'Loading packages…'; el.append(e); return; }
+    if (CO.status() !== 'ok') return;
+    const list = PK.list.slice(), al = pkAlloc(list);
+    const sum = (f) => list.reduce((a, p) => a + f(p, al.get(p.id)), 0);
+    const bought = sum((p) => p.total), deliv = sum((p, x) => x.items.reduce((a, it) => a + it.used, 0)), active = list.filter((p) => p.status !== 'Closed' && al.get(p.id).items.some((it) => it.used < it.qty)).length;
+    const tiles = document.createElement('div'); tiles.className = 'pk-tiles';
+    [['Packages', CO.num(list.length), active + ' still running'], ['Creatives bought', CO.num(bought), ''], ['Delivered', CO.num(deliv), bought ? Math.round(deliv / bought * 100) + '%' : ''], ['Remaining', CO.num(Math.max(0, bought - deliv)), ''], ['Value', inr(sum((p) => p.amount)), 'incl. tax']].forEach(([lab, v, s2]) => {
+      const t = document.createElement('div'); t.className = 'pk-tile'; const b = document.createElement('b'); b.textContent = v; const sp = document.createElement('span'); sp.textContent = lab; t.append(b, sp); if (s2) { const sm = document.createElement('small'); sm.textContent = s2; t.append(sm); } tiles.append(t);
+    });
+    el.append(tiles);
+    if (!list.length) { const e = document.createElement('p'); e.className = 'qn-empty'; e.textContent = perm === 'edit' ? 'No packages yet. Add one with Add package; deliveries are counted automatically.' : 'No packages yet.'; el.append(e); return; }
+    const wrap = document.createElement('div'); wrap.className = 'pk-list';
+    list.sort((a, b) => (a.status === 'Closed') - (b.status === 'Closed') || b.date.localeCompare(a.date)).forEach((p) => {
+      const x = al.get(p.id), used = x.items.reduce((a, it) => a + it.used, 0), over = x.items.reduce((a, it) => a + it.over, 0), left = Math.max(0, p.total - used), openReq = x.items.reduce((a, it) => a + it.open, 0);
+      const st = p.status === 'Closed' ? 'closed' : left === 0 ? 'complete' : 'running';
+      const card = document.createElement('article'); card.className = 'pk-item s-' + st + (perm === 'edit' ? ' can' : '');
+      const top = document.createElement('div'); top.className = 'pk-top';
+      const nm = document.createElement('div'); nm.className = 'pk-name'; const b = document.createElement('b'); b.textContent = p.brand; const meta = document.createElement('span'); meta.textContent = 'Bought ' + CO.fmtDate(p.date, true) + ' · ' + (p.from === 'Both' ? 'Internal + External' : p.from) + (p.amount ? ' · ' + inr(p.amount) : ''); nm.append(b, meta);
+      const chip = document.createElement('span'); chip.className = 'pk-chip s-' + st; chip.textContent = st === 'closed' ? 'Closed' : st === 'complete' ? (over ? 'Complete · ' + over + ' over' : 'Complete') : left + ' left';
+      top.append(nm, chip); card.append(top);
+      const bar = document.createElement('div'); bar.className = 'pk-bar'; const f = document.createElement('i'); f.style.width = Math.min(100, p.total ? used / p.total * 100 : 0) + '%'; bar.append(f);
+      const bl = document.createElement('div'); bl.className = 'pk-bl'; bl.textContent = used + ' of ' + p.total + ' delivered'; card.append(bar, bl);
+      const ul = document.createElement('div'); ul.className = 'pk-types';
+      x.items.forEach((it) => { const r = document.createElement('div'); r.className = 'pk-type'; const t1 = document.createElement('span'); t1.textContent = it.type; const t2 = document.createElement('span'); t2.className = 'pk-tn'; t2.textContent = it.used + ' / ' + it.qty + (it.over ? ' (+' + it.over + ' over)' : ''); const t3 = document.createElement('span'); t3.className = 'pk-tl'; const lf = Math.max(0, it.qty - it.used); t3.textContent = lf ? lf + ' left' : 'done'; if (!lf) t3.classList.add('ok'); r.append(t1, t2, t3); ul.append(r); });
+      card.append(ul);
+      if (st !== 'closed' && openReq && openReq > left) { const w = document.createElement('p'); w.className = 'pk-warn'; w.textContent = left ? openReq + ' requests are open for ' + p.brand + ' but only ' + left + ' creatives are left in this package.' : 'Package complete: ' + openReq + ' more request' + (openReq === 1 ? ' is' : 's are') + ' open for ' + p.brand + '. Don’t pick up new requests unless a new package is bought.'; card.append(w); }
+      else if (st === 'complete') { const w = document.createElement('p'); w.className = 'pk-ok'; w.textContent = 'All purchased creatives delivered.'; card.append(w); }
+      if (p.notes) { const n2 = document.createElement('p'); n2.className = 'co-note'; n2.textContent = p.notes; card.append(n2); }
+      if (perm === 'edit') { card.tabIndex = 0; card.addEventListener('click', () => pkOpen(p)); card.addEventListener('keydown', (e) => { if (e.key === 'Enter') pkOpen(p); }); }
+      wrap.append(card);
+    });
+    el.append(wrap);
+  });
+  // ---- add / edit ----
+  const $p = (id) => document.getElementById(id), pkDlg = $p('pk-dlg');
+  const pkBrands = () => { const s = new Set((CO.rows(true) || []).map((r) => r.brand).filter((b) => b && b !== 'No brand')); (PK.list || []).forEach((p) => s.add(p.brand)); return [...s].sort((a, b) => a.localeCompare(b)); };
+  const pkTypes = () => { const s = new Set((CO.rows(true) || []).map((r) => r.type).filter(Boolean)); (PK.list || []).forEach((p) => p.items.forEach((it) => s.add(it.type))); return ['Any type'].concat([...s].filter((t) => t !== 'Any type').sort((a, b) => a.localeCompare(b))); };
+  function pkItemRow(it) {
+    const row = document.createElement('div'); row.className = 'pk-irow';
+    const sel = document.createElement('select'); sel.className = 'co-select'; sel.setAttribute('aria-label', 'Creative type'); pkTypes().forEach((t) => sel.append(new Option(t, t))); sel.append(new Option('+ Other type…', '__new'));
+    const other = document.createElement('input'); other.className = 'co-input'; other.placeholder = 'Type name'; other.maxLength = 60; other.hidden = true;
+    const q = document.createElement('input'); q.className = 'co-input pk-q'; q.type = 'number'; q.min = '1'; q.step = '1'; q.setAttribute('aria-label', 'Quantity'); q.value = it ? it.qty : 1;
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'icon-btn'; x.setAttribute('aria-label', 'Remove'); x.textContent = '×';
+    if (it) { if ([...sel.options].some((o) => o.value === it.type)) sel.value = it.type; else { sel.value = '__new'; other.hidden = false; other.value = it.type; } } else sel.value = (pkTypes()[1] || 'Any type');
+    sel.addEventListener('change', () => { other.hidden = sel.value !== '__new'; if (!other.hidden) other.focus(); pkSum(); });
+    q.addEventListener('input', pkSum); x.addEventListener('click', () => { row.remove(); pkSum(); });
+    row.read = () => ({ type: sel.value === '__new' ? other.value.trim() : sel.value, qty: Math.round(Number(q.value) || 0) });
+    row.append(sel, other, q, x); return row;
+  }
+  const pkRows = () => [...$p('pk-items').children].map((r) => r.read());
+  function pkSum() { const n = pkRows().reduce((a, it) => a + (it.qty > 0 ? it.qty : 0), 0); $p('pk-total').textContent = n + (n === 1 ? ' creative' : ' creatives') + ' in total'; }
+  function pkOpen(p) {
+    PK.edit = p; $p('pk-title').textContent = p ? 'Edit package' : 'Add a package'; $p('pk-err').textContent = '';
+    const bs = $p('pk-brand'); bs.replaceChildren(new Option('Choose a brand…', '')); pkBrands().forEach((b) => bs.append(new Option(b, b))); bs.append(new Option('+ Add a new brand…', '__new'));
+    bs.value = p ? p.brand : ''; $p('pk-newbrand-l').hidden = true; $p('pk-newbrand').value = '';
+    $p('pk-date').value = p ? p.date : CO.today(); $p('pk-amount').value = p && p.amount ? p.amount : ''; $p('pk-from').value = p ? p.from : 'External'; $p('pk-notes').value = p ? p.notes : ''; $p('pk-closed').checked = !!(p && p.status === 'Closed');
+    $p('pk-items').replaceChildren(...(p ? p.items : [null]).map(pkItemRow)); pkSum(); $p('pk-del').hidden = !p;
+    if (pkDlg.showModal) pkDlg.showModal(); else pkDlg.setAttribute('open', '');
+  }
+  $p('pk-brand').addEventListener('change', (e) => { const n = e.target.value === '__new'; $p('pk-newbrand-l').hidden = !n; if (n) $p('pk-newbrand').focus(); });
+  $p('pk-add-item').addEventListener('click', () => { $p('pk-items').append(pkItemRow(null)); pkSum(); });
+  $p('pk-cancel').addEventListener('click', () => pkDlg.close());
+  $p('pk-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const brand = $p('pk-brand').value === '__new' ? $p('pk-newbrand').value.trim() : $p('pk-brand').value;
+    const items = pkRows().filter((it) => it.type && it.qty > 0);
+    const pkg = { brand, date: $p('pk-date').value, amount: Number($p('pk-amount').value) || 0, from: $p('pk-from').value, items, notes: $p('pk-notes').value.trim(), status: $p('pk-closed').checked ? 'Closed' : 'Active' };
+    const err = !brand ? 'Choose or type a brand.' : !pkg.date ? 'Add the purchase date.' : !items.length ? 'Add at least one creative type with a quantity.' : '';
+    if (err) { $p('pk-err').textContent = err; return; }
+    $p('pk-save').disabled = true;
+    try { const r = await callApi(Object.assign({ action: 'packageSave', pkg }, PK.edit ? { id: PK.edit.id } : {})); if (!r.ok) throw new Error(r.error || 'Not saved'); pkDlg.close(); toast(PK.edit ? 'Package saved' : 'Package added for ' + brand); PK.list = null; pkLoad(); }
+    catch (er) { $p('pk-err').textContent = er.message; }
+    $p('pk-save').disabled = false;
+  });
+  $p('pk-del').addEventListener('click', async () => {
+    if (!PK.edit || !confirm('Delete the ' + PK.edit.brand + ' package? Deliveries stay in the sheets; only the package is removed.')) return;
+    try { const r = await callApi({ action: 'packageDelete', id: PK.edit.id }); if (!r.ok) throw new Error(r.error || 'Not deleted'); pkDlg.close(); toast('Package deleted'); PK.list = null; pkLoad(); } catch (er) { $p('pk-err').textContent = er.message; }
+  });
+
   /* ================= All tasks ================= */
   (() => {
     let q = '', sortKey = 'eta', dir = 1, timer = null;
@@ -2306,7 +2519,7 @@
     fact('Team / role', u.team); fact('Note to admin', u.note); fact('First asked', when(u.requestedOn));
     fact('Decided by', u.decidedBy ? nameOf(u.decidedBy) + ' · ' + when(u.decidedOn) : ''); fact('Last sign-in', when(u.lastSignIn));
     const locked = u.owner || u.email === AX.you;
-    if (locked) act.append(el('p', 'co-note', u.owner ? 'The owner (Admin and Team Manager) always has every permission.' : 'You cannot change your own access.'));
+    if (locked) act.append(el('p', 'co-note', u.owner ? 'The owner (Admin) always has every permission.' : 'You cannot change your own access.'));
     else {
       const sel = roleSelect(u.role);
       const lab = el('label', 'co-field', 'Access level'); lab.append(sel);
@@ -2340,13 +2553,14 @@
       const ab = el('div', 'pm-abs');
       AB.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = !!P0[k]; const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); ab.append(lab); });
       box.append(ab);
+      const pk = el('label', 'co-field', 'Brand packages'); const pks = el('select', 'co-select'); pks.append(new Option('No access', ''), new Option('View', 'view'), new Option('View and edit', 'edit')); pks.value = P0.packages || ''; pk.append(pks);
       const sc = el('label', 'co-field', 'Tasks they can see');
       const ownWarn = el('p', 'co-note warn pm-warn', (u.name || u.email).split(' ')[0] + ' is not on the team list, so "only tasks assigned to them" would show nothing. Choose All tasks, or add them to the team list first.'); const scs = el('select', 'co-select'); scs.append(new Option('All tasks', 'all'), new Option('Only tasks assigned to them (or whose brief they own)', 'own')); scs.value = P0.scope || (u.role === 'Viewer' ? 'own' : 'all'); sc.append(scs); box.append(sc); box.append(ownWarn);
-      const paintWarn = () => { ownWarn.hidden = !(scs.value === 'own' && u.onTeam === false); }; scs.addEventListener('change', paintWarn); paintWarn();
+      const paintWarn = () => { ownWarn.hidden = !(scs.value === 'own' && u.onTeam === false); }; scs.addEventListener('change', paintWarn); paintWarn(); box.append(pk);
       box.append(el('p', 'co-note', 'Only you and Admins: giving access, the activity log and live team activity. Only you: settings.' + (u.custom ? ' This person has custom permissions.' : ' Using the defaults for ' + ROLE_LABEL[u.role] + '.')));
       const row = el('div', 'pm-act');
       const save = el('button', 'co-btn primary', 'Save permissions'); save.type = 'button';
-      save.addEventListener('click', () => { const perms = { pages: pgs.read(), scope: scs.value }; ab.querySelectorAll('input[data-k]').forEach((x) => { perms[x.dataset.k] = x.checked; }); setAccess(u.email, { perms }, 'Permissions saved for ' + (u.name || u.email)); });
+      save.addEventListener('click', () => { const perms = { pages: pgs.read(), scope: scs.value, packages: pks.value }; ab.querySelectorAll('input[data-k]').forEach((x) => { perms[x.dataset.k] = x.checked; }); setAccess(u.email, { perms }, 'Permissions saved for ' + (u.name || u.email)); });
       row.append(save);
       if (u.custom) { const rs = el('button', 'co-btn', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
       box.append(row); act.append(box);
@@ -2404,7 +2618,7 @@
       CO.td(tr, personLink(u), 'co-nowrap');
       CO.td(tr, u.email, 'co-nowrap');
       const rc = tr.insertCell();
-      if (locked || u.status !== 'Approved') rc.textContent = u.owner ? 'Admin · Team Manager (owner)' : ROLE_LABEL[u.role] + (u.custom ? ' · custom' : '');
+      if (locked || u.status !== 'Approved') rc.textContent = u.owner ? 'Admin' : ROLE_LABEL[u.role] + (u.custom ? ' · custom' : '');
       else { const s = roleSelect(u.role); s.addEventListener('change', () => setAccess(u.email, { role: s.value }, (u.name || u.email) + ': ' + ROLE_LABEL[s.value])); rc.append(s); }
       const sc = tr.insertCell(); const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : 's-mute'), STATUS_LABEL[u.status]); sc.append(chip);
       CO.td(tr, when(u.lastSignIn), 'co-nowrap');

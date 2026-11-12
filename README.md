@@ -119,6 +119,14 @@ Everyone lands on **My work** showing their own work (the owner lands on the Ove
 
 **Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) opens with how long approvals take: the typical (median) and longest wait, then bars for up to 7 days, 8–14, 15–30 and over 30 days (orange = over 14 days), each with its count and share. Click a bar (or press Enter on it) to list only those tasks; click again for all. Below that it groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
 
+## Day plan (Stand-up › Day plan)
+
+At 10:00 IST the web app saves each person's tasks for the day in the *Day plans* tab: their open tasks due today or overdue, and anything in WIP or Changes requested. Tasks that come into scope later are added ("added during the day"). Each 10-minute check records every planned task's current status, so a past day keeps its end-of-day status. Stand-up › **Day plan** shows the totals (planned, done, under review, with client, WIP, changes, to be planned) and, per person, a bar and their tasks with start → current status. Today's statuses are live; pick a past day from the list. Before 10:00 a preview from the live sheets is shown. Everyone sees their own day; the owner, Admins and people allowed to see others' work see everyone's.
+
+## Brand packages (Brands)
+
+Packages a brand has bought (for example 10 creatives: 5 AI UGC, 2 AI Catalogue, 3 Static), kept in the *Packages* tab. **Add package**: brand (from the existing brands, or a new one, which is then offered for future packages), purchase date, total amount incl. tax (₹), which sheet counts (Internal, External or both), creative types and quantities (the total is worked out), notes. **Delivered** = completed (DONE) creatives of that brand and type from the purchase date, filling the oldest open package first; **remaining** = bought - delivered. Open requests for the brand are compared with what is left, with a warning when the package is complete or the open requests exceed it. A package can be closed to stop counting. Only the owner sees packages by default; on the Access page the owner gives anyone *View* or *View and edit*. Every change is in the activity log.
+
 ## Content tasks (briefs, scripts, content)
 
 Counted separately from design and editing, never mixed with creatives. A content task belongs to everyone named in its **Content Owner** cell (shared cells such as "Anmol, Jahanvi" count for each). **Content Status** decides where it is: **open** (in the writer's bucket) = PENDING, WIP, CHANGES, INCOMPLETE BRIEF, TBP, TBD; **with the client** = SHARED; **completed** = DONE, dated by the Design ETA (else the request date, never later than today); **on hold** = HOLD. Dropped (Deprioritised) tasks are not open content work.
