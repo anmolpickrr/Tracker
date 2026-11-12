@@ -121,11 +121,21 @@ Everyone lands on **My work** showing their own work (the owner lands on the Ove
 
 ## Day plan (Stand-up › Day plan)
 
-At 10:00 IST the web app saves each person's tasks for the day in the *Day plans* tab: their open tasks due today or overdue, and anything in WIP or Changes requested. Tasks that come into scope later are added ("added during the day"). Each 10-minute check records every planned task's current status, so a past day keeps its end-of-day status. Stand-up › **Day plan** shows the totals (planned, done, under review, with client, WIP, changes, to be planned) and, per person, a bar and their tasks with start → current status. Today's statuses are live; pick a past day from the list. Before 10:00 a preview from the live sheets is shown. Everyone sees their own day; the owner, Admins and people allowed to see others' work see everyone's.
+At 10:00 IST the web app saves each person's tasks for the day in the *Day plans* tab: their open tasks due today or overdue, and anything in WIP or Changes requested. Tasks that come into scope later are added and marked **New**. Each 10-minute check records every planned task's current status, so a past day keeps its end-of-day status.
+
+Stand-up › **Day plan** shows:
+- **The day at a glance**: delivered so far out of the plan, one bar split into Not started (assigned, not picked up), In progress (WIP and changes), In review (under review or with the client) and Delivered, and the points to raise at stand-up: tasks past the ETA, tasks waiting on changes, people who haven't picked anything up, tasks picked up since the morning, tasks added during the day.
+- **The board**: one row per person, one column per phase. Each task card shows the brand, creative type, topic, exact status, how late it is, and whether it was picked up or delivered today. Click a card to edit the task. People with the most still to do come first.
+
+Today's statuses are live; pick a past day from the list. Before 10:00 a preview from the live sheets is shown. Everyone sees their own day; the owner, Admins and people allowed to see others' work see everyone's.
+
+## Changing access at any time (Access)
+
+Every person with access has a **Permissions** button on the Access page, and a one-line summary of what they can open and edit. It opens a section-by-section list: for each section choose **Hidden**, **View** or (where there is something to edit) **Edit**: Tasks (edit tasks wherever they appear), Team (manage the team list), Brand packages (add, change and close packages). Below it: which tasks they see (all, or only their own), seeing workload and others' work, downloads and Fasty. Save changes applies within 30 seconds without signing them out, can be changed again at any time, and is logged; Reset goes back to the role's defaults.
 
 ## Brand packages (Brands)
 
-Packages a brand has bought (for example 10 creatives: 5 AI UGC, 2 AI Catalogue, 3 Static), kept in the *Packages* tab. **Add package**: brand (from the existing brands, or a new one, which is then offered for future packages), purchase date, total amount incl. tax (₹), which sheet counts (Internal, External or both), creative types and quantities (the total is worked out), notes. **Delivered** = completed (DONE) creatives of that brand and type from the purchase date, filling the oldest open package first; **remaining** = bought - delivered. Open requests for the brand are compared with what is left, with a warning when the package is complete or the open requests exceed it. A package can be closed to stop counting. Only the owner sees packages by default; on the Access page the owner gives anyone *View* or *View and edit*. Every change is in the activity log.
+Packages a brand has bought (for example 10 creatives: 5 AI UGC, 2 AI Catalogue, 3 Static), kept in the *Packages* tab. **Add package**: brand (from the existing brands, or a new one, which is then offered for future packages), purchase date, total amount incl. tax (₹), which sheet counts (Internal, External or both), creative types and quantities (the total is worked out), notes. **Delivered** = completed (DONE) creatives of that brand and type from the purchase date, filling the oldest open package first; **remaining** = bought - delivered. Open requests for the brand are compared with what is left, with a warning when the package is complete or the open requests exceed it. A package can be closed to stop counting. Only the owner sees packages by default; on the Access page the owner or an Admin gives anyone *View* or *Edit*. Every change is in the activity log.
 
 ## Content tasks (briefs, scripts, content)
 

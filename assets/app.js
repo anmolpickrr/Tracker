@@ -1665,6 +1665,12 @@
   setInterval(() => { if (DP.view === 'plan' && curTab() === 'standup' && document.visibilityState === 'visible') dpLoad(true); }, 60 * 1000);
   // Live rows for today (and the preview before 10:00): the same rule the web app uses.
   const dpPreview = () => { const t = CO.today(), out = []; (CO.rows(true) || []).forEach((r) => { if (!(r.open && ((r.eta && r.eta <= t) || r.stage === 'WIP' || r.stage === 'Changes requested'))) return; r.list.forEach((p) => out.push({ person: p, uid: r.uid, id: r.id, brand: r.brand, topic: CO.topicText(r), type: r.type, qty: r.qty || 1, cls: CO.cls(r), start: r.stage, now: r.stage, added: 'Preview' })); }); return out; };
+  /* Four phases a stand-up walks through (the user's own words: assigned, picked up, out for approval, delivered).
+     The exact sheet status stays on each task. */
+  const DPP = [['todo', 'Not started', 'Assigned, not picked up yet'], ['doing', 'In progress', 'WIP and changes'], ['review', 'In review', 'Under review or with the client'], ['done', 'Delivered', 'Done']];
+  const dpPhase = (st) => { if (st === 'Rejected') return 'done'; const g = dpGroup(st); return g === 'done' ? 'done' : g === 'review' || g === 'client' ? 'review' : g === 'wip' || g === 'changes' ? 'doing' : g === 'tbp' ? 'todo' : 'other'; };
+  const dpEl = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const dpDays = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
   dash.draw('dayplan', (el) => {
     if (DP.view !== 'plan') return;
     el.replaceChildren();
@@ -1673,61 +1679,106 @@
     let rows = d && d.rows ? d.rows.slice() : [];
     const preview = isToday && (!d || d.waiting || !rows.length);
     if (preview) rows = dpPreview();
-    if (isToday) rows = rows.map((x) => { const r = live.get(x.uid); return Object.assign({}, x, { now: !r ? 'Removed from the sheet' : r.list.includes(x.person) ? r.stage : 'Reassigned' }); });
+    if (isToday) rows = rows.map((x) => { const r = live.get(x.uid); return Object.assign({}, x, { now: !r ? 'Removed from the sheet' : r.list.includes(x.person) ? r.stage : 'Reassigned', eta: r ? r.eta : '' }); });
     const p = dash.params(); if (p.designer && p.designer !== '__none') rows = rows.filter((x) => x.person === p.designer);
-    // header: date and note
-    const head = document.createElement('div'); head.className = 'co-card dp-head';
-    const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = isToday ? 'Today’s plan' : 'Plan for ' + CO.fmtDate(day, true);
-    const note = document.createElement('p'); note.className = 'co-note';
-    note.textContent = preview ? (d && d.waiting ? 'The day’s plan is saved at 10:00 IST. Until then, this is a preview from the live sheets.' : 'Preview from the live sheets.') : isToday ? 'Saved at 10:00 IST; tasks added during the day are marked. Statuses are live.' : 'Status at the end of that day.';
-    l.append(h2, note);
-    const sel = document.createElement('select'); sel.className = 'co-select'; sel.setAttribute('aria-label', 'Day');
+    rows.forEach((x) => { x.ph = dpPhase(x.now); x.late = x.ph !== 'done' && x.ph !== 'other' && x.eta && x.eta < day ? dpDays(x.eta, day) : 0; x.picked = dpPhase(x.start) === 'todo' && x.ph !== 'todo' && x.ph !== 'other'; x.isNew = x.added === 'During the day'; });
+    const active = rows.filter((x) => x.ph !== 'other');
+    const cnt = (xs) => { const o = { todo: 0, doing: 0, review: 0, done: 0, other: 0 }; xs.forEach((x) => { o[x.ph]++; }); return o; };
+    const tot = cnt(rows);
+
+    // ---- Hero: the day at a glance
+    const hero = dpEl('div', 'co-card dp-hero');
+    const top = dpEl('div', 'dp-hero-top');
+    const tl = dpEl('div', 'dp-title');
+    tl.append(dpEl('h2', 'co-h2', isToday ? 'Today’s plan' : 'Plan for ' + CO.fmtDate(day, true)),
+      dpEl('p', 'co-note', preview ? (d && d.waiting ? 'The plan is saved at 10:00 IST. Until then this is a live preview from the sheets.' : 'Live preview from the sheets.') : isToday ? 'Saved at 10:00 IST · statuses update live · tasks added later are marked New' : 'How the day ended: the status of every planned task at close.'));
+    const sel = dpEl('select', 'co-select'); sel.setAttribute('aria-label', 'Day');
     const days = [today].concat(((d && d.days) || []).filter((x) => x !== today));
     days.forEach((x) => sel.append(new Option(x === today ? 'Today, ' + CO.fmtDate(x) : CO.fmtDate(x, true), x)));
     sel.value = day; sel.addEventListener('change', () => { DP.date = sel.value === today ? '' : sel.value; DP.data = null; dash.draw('dayplan'); dpLoad(true); });
-    head.append(l, sel); el.append(head);
-    if (!d && DP.busy) { const pp = document.createElement('p'); pp.className = 'co-note'; pp.textContent = 'Loading the day’s plan…'; el.append(pp); }
-    // totals
-    const cnt = (list) => { const o = {}; DPG.forEach(([k]) => { o[k] = 0; }); list.forEach((x) => { o[dpGroup(x.now)]++; }); return o; };
-    const tot = cnt(rows);
-    const tiles = document.createElement('div'); tiles.className = 'dp-tiles';
-    const tile = (k, label, n) => { const t = document.createElement('div'); t.className = 'dp-tile g-' + k; const b = document.createElement('b'); b.textContent = CO.num(n); const s2 = document.createElement('span'); s2.textContent = label; t.append(b, s2); tiles.append(t); };
-    tile('all', 'Planned', rows.length); DPG.forEach(([k, label]) => { if (k !== 'other' || tot.other) tile(k, label, tot[k]); });
-    el.append(tiles);
-    if (!rows.length && !(DP.busy && !d)) { const e = document.createElement('p'); e.className = 'qn-empty'; e.textContent = isToday ? 'Nothing is due, overdue or in progress for anyone today.' : 'No plan was saved for this day.'; el.append(e); return; }
-    // people
-    const by = new Map(); rows.forEach((x) => { if (!by.has(x.person)) by.set(x.person, []); by.get(x.person).push(x); });
-    const list = document.createElement('div'); list.className = 'dp-list';
-    [...by].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])).forEach(([name, xs]) => {
-      const c = cnt(xs), card = document.createElement('article'); card.className = 'co-card dp-person';
-      const top = document.createElement('button'); top.type = 'button'; top.className = 'dp-top'; top.setAttribute('aria-expanded', String(DP.open.has(name)));
-      const who = document.createElement('span'); who.className = 'dp-who'; who.append(CO.av(name), name);
-      const n = document.createElement('span'); n.className = 'dp-n'; const nb = document.createElement('b'); nb.textContent = xs.length; n.append(nb, xs.length === 1 ? ' task' : ' tasks');
-      const pct = document.createElement('span'); pct.className = 'dp-pct'; pct.textContent = Math.round(c.done / xs.length * 100) + '% done';
-      top.append(who, n, pct);
-      const bar = document.createElement('div'); bar.className = 'dp-bar'; bar.setAttribute('role', 'img');
-      bar.setAttribute('aria-label', DPG.filter(([k]) => c[k]).map(([k, label]) => c[k] + ' ' + label).join(', '));
-      DPG.forEach(([k]) => { if (!c[k]) return; const s2 = document.createElement('i'); s2.className = 'g-' + k; s2.style.flexGrow = c[k]; bar.append(s2); });
-      const legend = document.createElement('div'); legend.className = 'dp-legend';
-      DPG.forEach(([k, label]) => { if (!c[k]) return; const s2 = document.createElement('span'); s2.className = 'g-' + k; s2.textContent = c[k] + ' ' + label; legend.append(s2); });
-      card.append(top, bar, legend);
-      const det = document.createElement('div'); det.className = 'dp-tasks'; det.hidden = !DP.open.has(name);
-      xs.slice().sort((a, b) => DPG.findIndex(([k]) => k === dpGroup(a.now)) - DPG.findIndex(([k]) => k === dpGroup(b.now))).forEach((x) => {
-        const row = document.createElement('div'); row.className = 'dp-task' + (live.has(x.uid) ? ' click' : ''); if (live.has(x.uid)) { row.dataset.uid = x.uid; row.tabIndex = 0; }
-        const t1 = document.createElement('span'); t1.className = 'dp-t'; const bb = document.createElement('b'); bb.textContent = x.brand; t1.append(bb, ' · ' + x.topic);
-        const m = document.createElement('span'); m.className = 'dp-m'; m.textContent = [x.id, x.type, x.qty > 1 ? x.qty + ' creatives' : '', x.cls, x.added === 'During the day' ? 'added during the day' : ''].filter(Boolean).join(' · ');
-        const st = document.createElement('span'); st.className = 'dp-st';
-        const chip = (s, cls) => { const e = document.createElement('span'); e.className = 'dp-chip g-' + dpGroup(s) + (cls ? ' ' + cls : ''); e.textContent = s; return e; };
-        if (x.start !== x.now) st.append(chip(x.start, 'was'), document.createTextNode(' → '));
-        st.append(chip(x.now));
-        const tx = document.createElement('div'); tx.className = 'dp-tx'; tx.append(t1, m); row.append(tx, st); det.append(row);
+    top.append(tl, sel); hero.append(top);
+    if (!d && DP.busy) hero.append(dpEl('p', 'co-note', 'Loading the day’s plan…'));
+    if (!active.length && !(DP.busy && !d)) { hero.append(dpEl('p', 'dp-empty', isToday ? 'Nothing is due, overdue or in progress for anyone today.' : 'No plan was saved for this day.')); el.append(hero); return; }
+    const body = dpEl('div', 'dp-hero-body');
+    const big = dpEl('div', 'dp-big'); const bn = dpEl('b', '', CO.num(tot.done)); const bs = dpEl('span', 'dp-of', '/' + CO.num(active.length));
+    const bl = dpEl('span', 'dp-big-l', (isToday ? 'delivered so far' : 'delivered') + ' · ' + Math.round(tot.done / Math.max(1, active.length) * 100) + '%');
+    const bnw = dpEl('div', 'dp-big-n'); bnw.append(bn, bs); big.append(bnw, bl);
+    const chart = dpEl('div', 'dp-chart');
+    const bar = dpEl('div', 'dp-sbar'); bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', DPP.map(([k, l]) => tot[k] + ' ' + l).join(', '));
+    DPP.forEach(([k, l]) => { if (!tot[k]) return; const s2 = dpEl('i', 'ph-' + k); s2.style.flexGrow = tot[k]; s2.title = tot[k] + ' ' + l; bar.append(s2); });
+    const leg = dpEl('div', 'dp-leg');
+    DPP.forEach(([k, l, hint]) => { const it = dpEl('div', 'dp-leg-i ph-' + k + (tot[k] ? '' : ' zero')); const n = dpEl('b', '', CO.num(tot[k])); const t2 = dpEl('span', '', l); const h = dpEl('small', '', hint); it.append(n, t2, h); leg.append(it); });
+    chart.append(bar, leg); body.append(big, chart); hero.append(body);
+    // what to talk about at stand-up
+    const flags = [];
+    const late = active.filter((x) => x.late).length, chg = rows.filter((x) => x.now === 'Changes requested').length, picked = rows.filter((x) => x.picked).length, added = rows.filter((x) => x.isNew).length;
+    const byP = new Map(); rows.forEach((x) => { if (!byP.has(x.person)) byP.set(x.person, []); byP.get(x.person).push(x); });
+    const idle = [...byP].filter(([, xs]) => xs.some((x) => x.ph === 'todo') && !xs.some((x) => x.ph === 'doing' || x.ph === 'review' || x.ph === 'done')).map(([n]) => n.split(' ')[0]);
+    if (late) flags.push(['bad', late + (late === 1 ? ' task is' : ' tasks are') + ' past the ETA']);
+    if (chg) flags.push(['warn', chg + ' waiting on changes']);
+    if (idle.length) flags.push(['mute', idle.length === 1 ? idle[0] + ' hasn’t picked anything up yet' : idle.length + ' people haven’t picked anything up: ' + idle.slice(0, 4).join(', ') + (idle.length > 4 ? '…' : '')]);
+    if (picked && !preview) flags.push(['ok', picked + ' picked up since the morning']);
+    if (added) flags.push(['info', added + ' added during the day']);
+    if (tot.other) flags.push(['mute', tot.other + ' moved off the plan (reassigned, on hold or removed)']);
+    if (flags.length) { const fl = dpEl('div', 'dp-flags'); flags.forEach(([c, t]) => fl.append(dpEl('span', 'dp-flag f-' + c, t))); hero.append(fl); }
+    el.append(hero);
+
+    // ---- Board: one row per person, one column per phase
+    const board = dpEl('div', 'co-card dp-board'); board.setAttribute('role', 'table'); board.setAttribute('aria-label', 'Tasks by person and phase');
+    const hr = dpEl('div', 'dp-row dp-hrow'); hr.setAttribute('role', 'row');
+    const h0 = dpEl('div', 'dp-hc dp-pc', 'Person'); h0.setAttribute('role', 'columnheader'); hr.append(h0);
+    DPP.forEach(([k, l]) => { const h = dpEl('div', 'dp-hc ph-' + k); h.setAttribute('role', 'columnheader'); h.append(dpEl('i', 'dp-dot'), dpEl('span', '', l), dpEl('b', '', CO.num(tot[k]))); hr.append(h); });
+    board.append(hr);
+    const MAX = 3;
+    const people = [...byP].sort((a, b) => { const ca = cnt(a[1]), cb = cnt(b[1]); return (cb.todo + cb.doing + cb.review) - (ca.todo + ca.doing + ca.review) || b[1].length - a[1].length || a[0].localeCompare(b[0]); });
+    people.forEach(([name, xs]) => {
+      const c = cnt(xs), act = xs.filter((x) => x.ph !== 'other'), open = DP.open.has(name);
+      const row = dpEl('div', 'dp-row'); row.setAttribute('role', 'row');
+      const pc = dpEl('div', 'dp-pc'); pc.setAttribute('role', 'rowheader');
+      const who = dpEl('div', 'dp-who'); const tm = CO.team().resolve(name);
+      const nm = dpEl('div', 'dp-nm'); nm.append(dpEl('b', '', name), dpEl('span', '', (tm && tm.role) || 'Team'));
+      who.append(CO.av(name), nm);
+      const prog = dpEl('div', 'dp-prog'); const pb = dpEl('div', 'dp-pbar'); pb.setAttribute('role', 'img'); pb.setAttribute('aria-label', DPP.filter(([k]) => c[k]).map(([k, l]) => c[k] + ' ' + l).join(', '));
+      DPP.forEach(([k]) => { if (!c[k]) return; const s2 = dpEl('i', 'ph-' + k); s2.style.flexGrow = c[k]; pb.append(s2); });
+      prog.append(pb, dpEl('span', 'dp-pl', c.done + ' of ' + act.length + ' delivered' + (c.other ? ' · ' + c.other + ' off the plan' : '')));
+      pc.append(who, prog); row.append(pc);
+      let hidden = 0;
+      DPP.forEach(([k, l]) => {
+        const cell = dpEl('div', 'dp-cell ph-' + k); cell.setAttribute('role', 'cell'); cell.dataset.label = l;
+        const list = xs.filter((x) => x.ph === k).sort((a, b) => (b.late - a.late) || String(a.brand).localeCompare(String(b.brand)));
+        if (!list.length) cell.classList.add('none');
+        const head = dpEl('div', 'dp-cl'); head.append(dpEl('i', 'dp-dot'), dpEl('span', '', l + ' · ' + list.length)); cell.append(head);
+        const cap = list.length <= MAX + 1 ? list.length : MAX; // never hide just one
+        (open ? list : list.slice(0, cap)).forEach((x) => cell.append(dpTask(x, live)));
+        if (!open && list.length > cap) hidden += list.length - cap;
+        row.append(cell);
       });
-      card.append(det);
-      top.addEventListener('click', () => flip(() => { if (DP.open.has(name)) DP.open.delete(name); else DP.open.add(name); dash.draw('dayplan'); }));
-      list.append(card);
+      if (hidden || open) {
+        const more = dpEl('button', 'dp-more', open ? 'Show less' : 'Show ' + hidden + ' more'); more.type = 'button'; more.setAttribute('aria-expanded', String(open));
+        more.addEventListener('click', () => flip(() => { if (open) DP.open.delete(name); else DP.open.add(name); dash.draw('dayplan'); }));
+        pc.append(more);
+      }
+      board.append(row);
     });
-    el.append(list);
+    el.append(board);
   });
+  function dpTask(x, live) {
+    const r = live.get(x.uid), t = dpEl('div', 'dp-tk ph-' + x.ph + (x.now === 'Changes requested' ? ' chg' : ''));
+    if (r) { t.dataset.uid = x.uid; t.tabIndex = 0; t.setAttribute('role', 'button'); t.title = 'Open ' + (x.id || 'task'); }
+    const l1 = dpEl('div', 'dp-tk1'); l1.append(dpEl('b', '', x.brand || 'No brand'), dpEl('span', '', [x.type, x.qty > 1 ? '×' + x.qty : ''].filter(Boolean).join(' ')));
+    const l2 = dpEl('div', 'dp-tk2', x.topic || x.id || '');
+    t.append(l1, l2);
+    const tags = [];
+    const fine = { 'Changes requested': 'Changes', 'Shared': 'With client', 'No update': 'Client: no update', 'Under review': 'Under review', 'WIP': '', 'Delivered': '', 'To be planned': '' };
+    const f = fine[x.now] !== undefined ? fine[x.now] : x.now; if (f && x.ph !== 'other') tags.push(['st', f]);
+    if (x.late) tags.push(['late', x.late + 'd late']);
+    if (x.picked && x.ph !== 'done') tags.push(['up', 'Picked up today']);
+    if (x.ph === 'done' && x.start !== x.now) tags.push(['ok', 'Delivered today']);
+    if (x.isNew) tags.push(['new', 'New']);
+    if (x.cls === 'External') tags.push(['ext', 'External']);
+    if (tags.length) { const tg = dpEl('div', 'dp-tags'); tags.forEach(([c, s2]) => tg.append(dpEl('span', 't-' + c, s2))); t.append(tg); }
+    return t;
+  }
   setTimeout(() => dpSetView(DP.view), 0);
 
   /* ================= Brand packages (Brands page) =================
@@ -2499,9 +2550,10 @@
   /* Person profile: details, access controls and their own activity. */
   const PR = { email: '', log: null, busy: false };
   const dlgP = document.getElementById('person');
-  async function openPerson(email) {
-    PR.email = email; PR.log = null; drawPerson();
+  async function openPerson(email, toPerms) {
+    PR.email = email; PR.log = null; PR.draft = null; drawPerson();
     if (dlgP.showModal && !dlgP.open) dlgP.showModal(); else dlgP.setAttribute('open', '');
+    if (toPerms) setTimeout(() => { const b = document.getElementById('pm-box'); if (b) { b.scrollIntoView({ block: 'start', behavior: 'smooth' }); b.classList.add('pm-flash'); setTimeout(() => b.classList.remove('pm-flash'), 1400); } }, 60);
     try { const b = await callApi({ action: 'audit', who: email, limit: 50 }); PR.log = b.ok ? b.entries : []; PR.total = b.ok ? b.entries.length : 0; PR.more = b.ok && !!b.next; } catch (e) { if (!(e instanceof AuthLost)) PR.log = []; }
     if (PR.email === email) drawPerson();
   }
@@ -2543,27 +2595,73 @@
         btn('Give access', 'primary', () => setAccess(u.email, withPerms({ status: 'Approved', role: sel.value }), (u.name || u.email) + ' has access: ' + ROLE_LABEL[sel.value]));
       }
     }
-    // Fine-grained access for this person (owner only): pages, abilities and which tasks they see.
+    // Section-by-section access (owner and Admins, any time after access is given): Hidden / View / Edit per section,
+    // plus which tasks they see and the extra abilities. Saved together; every change is logged.
     if (!locked && u.status === 'Approved') {
-      const P0 = u.perms || {}, box = el('fieldset', 'pm-box'); box.append(el('legend', '', 'What ' + ((u.name || u.email).split(' ')[0]) + ' can see and do'));
-      const PAGES_L = [['mine', 'My work'], ['today', 'Overview'], ['standup', 'Stand-up'], ['tasks', 'Tasks'], ['notes', 'Notes'], ['team', 'Team'], ['reports', 'Reports'], ['brands', 'Brands'], ['health', 'Data health']];
-      const pg = el('div', 'pm-pages'); pg.append(el('span', 'pm-h', 'Sections they can open'));
-      const pgs = secPicker(P0.pages || DEF_PAGES(u.role)); pg.append(pgs); box.append(pg);
-      const AB = [['edit', 'Edit tasks', 'Change status, ETA, designer and priority (written to the sheet and logged)'], ['export', 'Download data', 'CSV downloads on Tasks, Reports and Brands'], ['load', 'See workload and others\' work', 'Workload estimates and "View as" on My work'], ['team', 'Manage the team list', 'Add people and set them active or inactive'], ['fasty', 'Use Fasty', 'The voice and chat assistant']];
+      const P0 = u.perms || {}, first = (u.name || u.email).split(' ')[0];
+      const box = el('fieldset', 'pm-box'); box.id = 'pm-box'; box.append(el('legend', '', 'What ' + first + ' can see and do'));
+      const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty };
+      base.pages.add('mine');
+      const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty });
+      // unsaved changes survive the 30-second refresh of the access list
+      const st = PR.draft && PR.draft.email === u.email ? PR.draft.st : Object.assign({}, base, { pages: new Set(base.pages) });
+      const snap = () => snapOf(st), start = snapOf(base);
+      const sum = el('p', 'pm-sum');
+      // [key, label, what View means, what Edit means (or '' when there is nothing to edit)]
+      const ROWS = [['mine', 'My work', 'Their own tasks and to-dos (always on)', ''], ['today', 'Overview', 'Team numbers, Needs attention and charts', ''], ['standup', 'Stand-up', 'Stand-up cards and the Day plan', ''],
+        ['tasks', 'Tasks', 'The task list', 'Change status, ETA, designer and priority (wherever tasks appear)'], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
+        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['health', 'Data health', 'Sheet checks and fixes needed', '']];
+      const level = (k) => k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
+        : !st.pages.has(k) ? 'hidden' : (k === 'tasks' && st.edit) || (k === 'team' && st.team) ? 'edit' : 'view';
+      const setLevel = (k, v) => {
+        if (k === 'mine') return;
+        if (k === 'packages') { st.packages = v === 'hidden' ? '' : v; if (v !== 'hidden') st.pages.add('brands'); return; }
+        if (v === 'hidden') { st.pages.delete(k); if (k === 'tasks') st.edit = false; if (k === 'team') st.team = false; if (k === 'brands') st.packages = ''; return; }
+        st.pages.add(k); if (k === 'tasks') st.edit = v === 'edit'; if (k === 'team') st.team = v === 'edit';
+      };
+      const grid = el('div', 'pm-grid'); grid.setAttribute('role', 'table'); grid.setAttribute('aria-label', 'Access by section');
+      const gh = el('div', 'pm-gh'); gh.setAttribute('role', 'row'); gh.append(el('span', '', 'Section'), el('span', '', 'Access')); grid.append(gh);
+      const segs = [];
+      ROWS.forEach(([k, label, vHint, eHint]) => {
+        const r = el('div', 'pm-row' + (k === 'packages' ? ' sub' : '')); r.setAttribute('role', 'row');
+        const nm = el('div', 'pm-nm'); nm.append(el('b', '', label)); const hint = el('small', '', ''); nm.append(hint);
+        const seg = el('div', 'pm-seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', label + ' access');
+        const opts = k === 'mine' ? [['view', 'View']] : eHint ? [['hidden', 'Hidden'], ['view', 'View'], ['edit', 'Edit']] : [['hidden', 'Hidden'], ['view', 'View']];
+        const btns = opts.map(([v, t]) => { const b = el('button', 'pm-opt o-' + v, t); b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.v = v; b.addEventListener('click', () => { setLevel(k, v); paint(); }); seg.append(b); return b; });
+        segs.push({ k, btns, hint, vHint, eHint, r });
+        r.append(nm, seg); grid.append(r);
+      });
+      box.append(sum, grid);
+      // which tasks + extra abilities
+      const more = el('div', 'pm-more');
+      const sc = el('label', 'co-field', 'Tasks they can see'); const scs = el('select', 'co-select'); scs.append(new Option('All tasks', 'all'), new Option('Only tasks assigned to them (or whose brief they own)', 'own')); scs.value = st.scope; sc.append(scs);
+      const ownWarn = el('p', 'co-note warn pm-warn', first + ' is not on the team list, so "only tasks assigned to them" would show nothing. Choose All tasks, or add them to the team list first.');
+      scs.addEventListener('change', () => { st.scope = scs.value; paint(); });
+      more.append(sc, ownWarn);
+      const AB = [['load', 'See workload and others\' work', 'Workload estimates and "View as" on My work'], ['export', 'Download data', 'CSV downloads on Tasks, Reports and Brands'], ['fasty', 'Use Fasty', 'The voice and chat assistant']];
       const ab = el('div', 'pm-abs');
-      AB.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = !!P0[k]; const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); ab.append(lab); });
-      box.append(ab);
-      const pk = el('label', 'co-field', 'Brand packages'); const pks = el('select', 'co-select'); pks.append(new Option('No access', ''), new Option('View', 'view'), new Option('View and edit', 'edit')); pks.value = P0.packages || ''; pk.append(pks);
-      const sc = el('label', 'co-field', 'Tasks they can see');
-      const ownWarn = el('p', 'co-note warn pm-warn', (u.name || u.email).split(' ')[0] + ' is not on the team list, so "only tasks assigned to them" would show nothing. Choose All tasks, or add them to the team list first.'); const scs = el('select', 'co-select'); scs.append(new Option('All tasks', 'all'), new Option('Only tasks assigned to them (or whose brief they own)', 'own')); scs.value = P0.scope || (u.role === 'Viewer' ? 'own' : 'all'); sc.append(scs); box.append(sc); box.append(ownWarn);
-      const paintWarn = () => { ownWarn.hidden = !(scs.value === 'own' && u.onTeam === false); }; scs.addEventListener('change', paintWarn); paintWarn(); box.append(pk);
-      box.append(el('p', 'co-note', 'Only you and Admins: giving access, the activity log and live team activity. Only you: settings.' + (u.custom ? ' This person has custom permissions.' : ' Using the defaults for ' + ROLE_LABEL[u.role] + '.')));
+      AB.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = st[k]; cb.addEventListener('change', () => { st[k] = cb.checked; paint(); }); const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); ab.append(lab); });
+      more.append(ab); box.append(more);
+      box.append(el('p', 'co-note', 'Only you and Admins: giving access, the activity log and live team activity. Only you: settings. Changes apply within 30 seconds, without signing out.' + (u.custom ? '' : ' Now using the defaults for ' + ROLE_LABEL[u.role] + '.')));
       const row = el('div', 'pm-act');
-      const save = el('button', 'co-btn primary', 'Save permissions'); save.type = 'button';
-      save.addEventListener('click', () => { const perms = { pages: pgs.read(), scope: scs.value, packages: pks.value }; ab.querySelectorAll('input[data-k]').forEach((x) => { perms[x.dataset.k] = x.checked; }); setAccess(u.email, { perms }, 'Permissions saved for ' + (u.name || u.email)); });
-      row.append(save);
-      if (u.custom) { const rs = el('button', 'co-btn', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
+      const save = el('button', 'co-btn primary', 'Save changes'); save.type = 'button';
+      const undo = el('button', 'co-btn', 'Undo changes'); undo.type = 'button'; undo.addEventListener('click', () => { PR.draft = null; drawPerson(); });
+      save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
+      row.append(save, undo);
+      if (u.custom) { const rs = el('button', 'co-btn ghost', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
       box.append(row); act.append(box);
+      function paint() {
+        segs.forEach(({ k, btns, hint, vHint, eHint, r }) => {
+          const lv = level(k); btns.forEach((b) => { const on = b.dataset.v === lv; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+          hint.textContent = lv === 'edit' ? 'Can see and ' + eHint.charAt(0).toLowerCase() + eHint.slice(1) : lv === 'view' ? vHint + (eHint ? ' · view only' : '') : 'Not shown to ' + first;
+          r.classList.toggle('off', lv === 'hidden');
+        });
+        const n = SECTIONS.filter(([k]) => st.pages.has(k)).length, edits = [st.edit && 'tasks', st.team && 'the team list', st.packages === 'edit' && 'brand packages'].filter(Boolean);
+        sum.textContent = 'Opens ' + n + ' of ' + SECTIONS.length + ' sections · ' + (edits.length ? 'can edit ' + edits.join(', ') : 'view only') + ' · sees ' + (st.scope === 'own' ? 'only their own tasks' : 'all tasks');
+        ownWarn.hidden = !(st.scope === 'own' && u.onTeam === false);
+        const dirty = snap() !== start; PR.draft = dirty ? { email: u.email, st } : null; save.disabled = !dirty; undo.hidden = !dirty; box.classList.toggle('dirty', dirty);
+      }
+      paint();
     }
     if (!PR.log) { log.append(el('p', 'co-note', 'Loading activity…')); return; }
     if (!PR.log.length) { log.append(el('p', 'co-note', 'No activity yet.')); return; }
@@ -2582,7 +2680,7 @@
     if (PR.more) log.append(el('p', 'co-note', 'Showing the latest 50. Use "Full activity" for everything.'));
   }
   document.getElementById('pr-close').addEventListener('click', () => { dlgP.close(); });
-  dlgP.addEventListener('close', () => { PR.email = ''; });
+  dlgP.addEventListener('close', () => { PR.email = ''; PR.draft = null; });
   document.getElementById('pr-all').addEventListener('click', () => { const e = PR.email; dlgP.close(); showActivityOf(e); });
 
   dash.draw('ax-pending', (box) => {
@@ -2620,10 +2718,12 @@
       const rc = tr.insertCell();
       if (locked || u.status !== 'Approved') rc.textContent = u.owner ? 'Admin' : ROLE_LABEL[u.role] + (u.custom ? ' · custom' : '');
       else { const s = roleSelect(u.role); s.addEventListener('change', () => setAccess(u.email, { role: s.value }, (u.name || u.email) + ': ' + ROLE_LABEL[s.value])); rc.append(s); }
+      if (u.status === 'Approved' && !u.owner) { const P = u.perms || {}, n = (P.pages || []).length, ed = [P.edit && 'tasks', P.team && 'team', P.packages === 'edit' && 'packages'].filter(Boolean); rc.append(el('small', 'ax-psum', n + '/' + SECTIONS.length + ' sections · ' + (ed.length ? 'edits ' + ed.join(', ') : 'view only') + (P.packages === 'view' ? ' · sees packages' : ''))); }
       const sc = tr.insertCell(); const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : 's-mute'), STATUS_LABEL[u.status]); sc.append(chip);
       CO.td(tr, when(u.lastSignIn), 'co-nowrap');
       CO.td(tr, u.decidedBy ? nameOf(u.decidedBy) + ' · ' + when(u.decidedOn) : '—', 'co-nowrap co-muted co-hide-md');
       const ac = tr.insertCell(); ac.className = 'co-nowrap ax-acts';
+      if (!locked && u.status === 'Approved') { const pb = el('button', 'co-link ax-perm', 'Permissions'); pb.type = 'button'; pb.addEventListener('click', () => openPerson(u.email, true)); ac.append(pb); }
       const actv = el('button', 'co-link', 'Activity'); actv.type = 'button'; actv.addEventListener('click', () => showActivityOf(u.email)); ac.append(actv);
       if (!locked) {
         const b = el('button', 'co-link', u.status === 'Approved' ? 'Revoke' : 'Give access again'); b.type = 'button';
@@ -2856,7 +2956,16 @@
     const SEL = 'select.co-select, select.ash-lang';
     let cur = null;
     const menu = document.createElement('div'); menu.className = 'cs-menu'; menu.hidden = true; menu.setAttribute('role', 'listbox'); document.body.append(menu);
-    const close = (refocus) => { if (!cur) return; const s = cur.sel; menu.hidden = true; s.setAttribute('aria-expanded', 'false'); s.classList.remove('cs-open'); cur = null; if (refocus) s.focus(); };
+    // The menu goes in the browser's top layer, so it shows above open dialogs (Add package, task editor, person) too.
+    const POP = typeof menu.showPopover === 'function'; if (POP) menu.setAttribute('popover', 'manual');
+    const popShow = (s) => {
+      // inside an open dialog the rest of the page is inert (cannot be clicked), so the menu moves into that dialog
+      const host = (s && s.closest('dialog[open]')) || document.body;
+      if (menu.parentNode !== host) { popHide(); host.append(menu); }
+      if (!POP) return; try { if (menu.matches(':popover-open')) menu.hidePopover(); menu.showPopover(); } catch (e) { /* older browser: z-index */ }
+    };
+    const popHide = () => { if (POP) try { if (menu.matches(':popover-open')) menu.hidePopover(); } catch (e) { /* ignore */ } };
+    const close = (refocus) => { if (!cur) return; const s = cur.sel; menu.hidden = true; popHide(); s.setAttribute('aria-expanded', 'false'); s.classList.remove('cs-open'); cur = null; if (refocus) s.focus(); };
     const place = () => {
       if (!cur) return; const r = cur.sel.getBoundingClientRect(), vh = innerHeight, vw = document.documentElement.clientWidth;
       menu.style.minWidth = Math.max(r.width, 180) + 'px'; menu.style.maxWidth = Math.max(r.width, Math.min(360, vw - 24)) + 'px';
@@ -2887,7 +2996,7 @@
       if (cur && cur.sel === s) { close(true); return; } close(); if (s.disabled) return;
       cur = { sel: s, items: [], hi: 0 }; menu.replaceChildren(); menu.classList.toggle('cs-ash', s.matches('.ash-lang'));
       if (s.options.length > 10) { const f = document.createElement('input'); f.className = 'cs-find'; f.type = 'search'; f.placeholder = 'Search'; f.setAttribute('aria-label', 'Search options'); f.addEventListener('input', () => { build(f.value); place(); }); f.addEventListener('keydown', key); menu.append(f); setTimeout(() => f.focus(), 0); }
-      build(''); menu.hidden = false; s.setAttribute('aria-expanded', 'true'); s.classList.add('cs-open'); place();
+      build(''); menu.hidden = false; popShow(s); s.setAttribute('aria-expanded', 'true'); s.classList.add('cs-open'); place();
     }
     function key(e) {
       if (!cur) return;
