@@ -3152,7 +3152,7 @@
     clock: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', cal: 'M4 5h16v16H4zM4 10h16M9 3v4M15 3v4', plus: 'M12 5v14M5 12h14', edit: 'M4 20l4-1 11-11-3-3L5 16z', video: 'M3 7h12v10H3zM15 10l6-3v10l-6-3'
   };
   const svgIcon = (d) => { const ns = 'http://www.w3.org/2000/svg'; const s = document.createElementNS(ns, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); const p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); s.append(p); return s; };
-  const myDesigner = () => { if (!A.user || !A.user.name) return null; const r = CO.team().resolve(A.user.name); return r ? r.name : null; };
+  const myDesigner = () => { if (!A.user) return null; if (A.user.teamName && CO.team().resolve(A.user.teamName)) return CO.team().resolve(A.user.teamName).name; if (!A.user.name) return null; const r = CO.team().resolve(A.user.name); return r ? r.name : null; };
   /* The briefing: the same numbers for everyone, plus "yours" when the signed-in person is on the team list. */
   function briefing(kind) {
     const all = CO.rows(true); if (!all) return null;

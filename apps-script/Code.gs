@@ -728,7 +728,8 @@ function userByEmail_(email) {
   return users_().list.filter(function (u) { return u.email === email; })[0] || null;
 }
 function publicUser_(u, all) {
-  return { onTeam: !!teamEntryOf_(u, all), email: u.email, name: u.name || '', role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), reminders: u.reminders !== false, lastActive: u.lastActive || '', owner: !!u.owner || isOwner_(u.email), perms: permsOf_(u), custom: !!(u.perms && Object.keys(u.perms).length) };
+  const te = teamEntryOf_(u, all);
+  return { onTeam: !!te, teamName: te ? te.name : '', email: u.email, name: u.name || (te ? te.name : ''), role: u.role, status: u.status, team: u.team || '', note: u.note || '', requestedOn: u.requestedOn || '', decidedBy: u.decidedBy || '', decidedOn: u.decidedOn || '', lastSignIn: u.lastSignIn || '', photo: photo_(u.photo), reminders: u.reminders !== false, lastActive: u.lastActive || '', owner: !!u.owner || isOwner_(u.email), perms: permsOf_(u), custom: !!(u.perms && Object.keys(u.perms).length) };
 }
 /* Only Google profile photos are kept and shown. */
 function photo_(url) { const s = String(url || ''); return /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\/[^\s"'<>]+$/i.test(s) ? s.slice(0, 500) : ''; }
@@ -1267,7 +1268,7 @@ function dayPlanGet_(user, b) {
   let cur = dayRows_(sh, day);
   if (day === today && !cur.rows.length && mins >= 10 * 60) { const lock = LockService.getScriptLock(); if (lock.tryLock(15000)) { try { dayPlanTick_(day, mins); } finally { lock.releaseLock(); } cur = dayRows_(sh, day); } }
   const p = permsOf_(user), all = isAdminUser_(user) || (p.load && p.scope !== 'own');
-  let mine = null; if (!all) { const t = tasksNow_(); const m = t.resolve(user.name || ''); mine = m ? m.name : String(user.name || ''); }
+  let mine = null; if (!all) { const te = teamEntryOf_(user); if (te) mine = te.name; else { const t = tasksNow_(); const m = t.resolve(user.name || ''); mine = m ? m.name : String(user.name || ''); } }
   const rows = cur.rows.filter(function (r) { return all || String(r[1]) === mine; }).map(function (r) { return { person: String(r[1]), uid: String(r[2]), id: String(r[3]), brand: String(r[4]), topic: String(r[5]), type: String(r[6]), qty: Number(r[7]) || 1, cls: String(r[8]), start: String(r[9]), now: String(r[10]), added: String(r[11]) }; });
   const days = {}; const last = sh.getLastRow();
   if (last > 1) { const n = Math.min(last - 1, 4000); sh.getRange(last - n + 1, 1, n, 1).getValues().forEach(function (r) { const d = r[0] instanceof Date ? Utilities.formatDate(r[0], IST, 'yyyy-MM-dd') : String(r[0]); if (/^\d{4}-/.test(d)) days[d] = 1; }); }
@@ -2304,13 +2305,36 @@ function permText_(p) {
   return 'pages: ' + p.pages.join(', ') + '; edit tasks: ' + (p.edit ? 'yes' : 'no') + '; download data: ' + (p.export ? 'yes' : 'no') + '; workload and others\' work: ' + (p.load ? 'yes' : 'no') + '; manage team list: ' + (p.team ? 'yes' : 'no') + '; Fasty: ' + (p.fasty ? 'yes' : 'no') + '; tasks: ' + (p.scope === 'own' ? 'only their own' : 'all') + '; brand packages: ' + (p.packages === 'edit' ? 'view and edit' : p.packages === 'view' ? 'view' : 'no');
 }
 /* The team-list entry for a signed-in person (by name or alias), or null. "Only their own work" depends on it. */
+/* Which team-list entry a signed-in person is. In order: their email written under "Also written as"; their Google
+   name or a listed spelling; the name in their email address (aman@ -> Aman, abhist.dixit@ -> Abhist); then a
+   first-name match, only when exactly one person fits (active people first). People added by email who have not signed
+   in yet, or whose Google name differs from the sheet ("Aman Kumar" vs "Aman"), are still matched. */
+function teamMatch_(user, members) {
+  if (!members || !members.length) return null;
+  const email = String(user.email || '').toLowerCase().trim(), local = email.split('@')[0] || '';
+  const parts = local.split(/[._\-+0-9]+/).filter(Boolean);
+  const gname = String(user.name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const aliasesOf = function (m) { return String(m.aliases || '').toLowerCase().split(/\s*[,;\n]\s*/).map(function (x) { return x.trim(); }).filter(Boolean); };
+  const nm = function (m) { return String(m.name || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
+  let hit = email && members.filter(function (m) { return aliasesOf(m).indexOf(email) >= 0; })[0];
+  if (hit) return hit;
+  const tries = [gname, parts.join(' '), local].filter(function (x) { return x && x.length > 1; });
+  hit = members.filter(function (m) { const n = nm(m), al = aliasesOf(m); return tries.some(function (t) { return t === n || al.indexOf(t) >= 0; }); })[0];
+  if (hit) return hit;
+  const firsts = [gname.split(' ')[0], parts[0]].filter(function (x) { return x && x.length > 2; });
+  if (!firsts.length) return null;
+  const fit = function (m) { const f = nm(m).split(' ')[0]; return firsts.indexOf(f) >= 0 || aliasesOf(m).some(function (a) { return firsts.indexOf(a.split(' ')[0]) >= 0 && a.indexOf('@') < 0; }); };
+  const act = members.filter(function (m) { return m.status !== 'Inactive' && fit(m); });
+  if (act.length === 1) return act[0];
+  const any = members.filter(fit);
+  return any.length === 1 ? any[0] : null;
+}
 function teamEntryOf_(user, all) {
   try {
     all = all || JSON.parse(dataText_(false));
     const team = all.sources && Object.keys(all.sources).map(function (k) { return all.sources[k]; }).filter(function (x) { return x && x.kind === 'team'; })[0];
     if (!team) return null;
-    const n = String(user.name || '').toLowerCase().trim(); if (!n) return null;
-    return CODATA.parseTeam(team).filter(function (m) { return m.name.toLowerCase() === n || String(m.aliases || '').toLowerCase().split(/\s*,\s*/).indexOf(n) >= 0; })[0] || null;
+    return teamMatch_(user, CODATA.parseTeam(team));
   } catch (e) { return null; }
 }
 function ownDataText_(user, fresh) {
@@ -2318,7 +2342,7 @@ function ownDataText_(user, fresh) {
   const names = [user.name || ''];
   try {
     const team = all.sources && Object.keys(all.sources).map(function (k) { return all.sources[k]; }).filter(function (x) { return x && x.kind === 'team'; })[0];
-    if (team) { const t = CODATA.parseTeam(team); const me = t.filter(function (m) { return m.name.toLowerCase() === String(user.name || '').toLowerCase() || String(m.aliases || '').toLowerCase().split(/\s*,\s*/).indexOf(String(user.name || '').toLowerCase()) >= 0; })[0]; if (me) { names.push(me.name); String(me.aliases || '').split(',').forEach(function (a) { names.push(a); }); } }
+    if (team) { const me = teamMatch_(user, CODATA.parseTeam(team)); if (me) { names.unshift(me.name); String(me.aliases || '').split(/[,;\n]/).forEach(function (a) { if (a.indexOf('@') < 0) names.push(a); }); } }
   } catch (e) { /* names from the Google profile only */ }
   const keys = names.map(function (n) { return String(n).toLowerCase().trim(); }).filter(function (n) { return n.length > 2; });
   const first = keys.length ? keys[0].split(' ')[0] : '';

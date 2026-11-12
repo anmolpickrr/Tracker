@@ -129,6 +129,8 @@ Stand-up › **Day plan** shows:
 
 Today's statuses are live; pick a past day from the list. Before 10:00 a preview from the live sheets is shown. Everyone sees their own day; the owner, Admins and people allowed to see others' work see everyone's.
 
+**Matching people to the team list.** Someone given access is linked to their team-list entry by, in order: their email written under "Also written as"; their Google name or a listed spelling; the name in their email address (aman@pickrr.com → Aman, abhist.dixit@… → Abhist); a first name that fits exactly one person. So people added by email, or whose Google name differs from the sheet, still see their own work. If two people share a first name, add the email under "Also written as".
+
 ## Changing access at any time (Access)
 
 Every person with access has a **Permissions** button on the Access page, and a one-line summary of what they can open and edit. It opens a section-by-section list: for each section choose **Hidden**, **View** or (where there is something to edit) **Edit**: Tasks (edit tasks wherever they appear), Team (manage the team list), Brand packages (add, change and close packages). Below it: which tasks they see (all, or only their own), seeing workload and others' work, downloads and Fasty. Save changes applies within 30 seconds without signing them out, can be changed again at any time, and is logged; Reset goes back to the role's defaults.
