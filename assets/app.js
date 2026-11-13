@@ -525,6 +525,7 @@
     shownTab = tab;
     if (tab === 'notes') NB.open();
     if (tab === 'brands') dash.draw('packages');
+    if (tab === 'standup') { try { if (DP.view === 'plan') dpLoad(); } catch (e) { /* still starting up */ } }
     document.querySelectorAll('.co-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     document.querySelectorAll('.bt[data-tab]').forEach((b) => { if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     document.getElementById('bt-more').toggleAttribute('aria-current', !['today', document.querySelector('.btabs .bt[data-tab="mine"]') ? 'mine' : 'standup', 'tasks', 'notes'].includes(tab));
@@ -1673,20 +1674,30 @@
   const dpEl = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const dpDays = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
   const dpWords = (t, n) => { const w = String(t || '').trim().split(/\s+/).filter(Boolean); return w.length > n ? w.slice(0, n).join(' ') + '...' : w.join(' '); };
-  const DP_ORDER = { doing: 0, review: 1, todo: 2, done: 3, other: 4 };
+  const DP_ORDER = { doing: 0, review: 1, todo: 2, done: 3, moved: 4, other: 5 };
   dash.draw('dayplan', (el) => {
     if (DP.view !== 'plan') return;
+    if (!DP.data && !DP.busy && A.mode === 'auth' && A.user && Date.now() - (DP.tried || 0) > 15000) { DP.tried = Date.now(); setTimeout(() => dpLoad(), 0); } // signed in after the view opened (at most every 15 s if it fails)
     el.replaceChildren();
     const d = DP.data, live = new Map((CO.rows(true) || []).map((r) => [r.uid, r]));
     const today = d ? d.today : CO.today(), day = d ? d.date : today, isToday = day === today;
     let rows = d && d.rows ? d.rows.slice() : [];
     const preview = isToday && (!d || d.waiting || !rows.length);
     if (preview) rows = dpPreview();
-    if (isToday) rows = rows.map((x) => { const r = live.get(x.uid); return Object.assign({}, x, { now: !r ? 'Removed from the sheet' : r.list.includes(x.person) ? r.stage : 'Reassigned', eta: r ? r.eta : '' }); });
+    // tasks that came into today since the last save (ETA moved to today, picked up) show at once
+    if (isToday && !preview) { const have = new Set(rows.map((x) => x.person + '|' + x.uid)); dpPreview().forEach((y) => { if (!have.has(y.person + '|' + y.uid)) rows.push(Object.assign(y, { added: 'During the day', etaPlan: '' })); }); }
+    if (isToday) rows = rows.map((x) => { const r = live.get(x.uid); return Object.assign({}, x, { now: !r ? 'Removed from the sheet' : r.list.includes(x.person) ? r.stage : 'Reassigned', eta: r ? r.eta : x.etaNow || '' }); });
+    else rows = rows.map((x) => Object.assign({}, x, { eta: x.etaNow || '' }));
     const p = dash.params(); if (p.designer && p.designer !== '__none') rows = rows.filter((x) => x.person === p.designer);
-    rows.forEach((x) => { x.ph = dpPhase(x.now); x.late = x.ph !== 'done' && x.ph !== 'other' && x.eta && x.eta < day ? dpDays(x.eta, day) : 0; x.picked = dpPhase(x.start) === 'todo' && x.ph !== 'todo' && x.ph !== 'other'; x.isNew = x.added === 'During the day'; });
-    const active = rows.filter((x) => x.ph !== 'other');
-    const cnt = (xs) => { const o = { todo: 0, doing: 0, review: 0, done: 0, other: 0 }; xs.forEach((x) => { o[x.ph]++; }); return o; };
+    rows.forEach((x) => {
+      x.ph = dpPhase(x.now);
+      // ETA moved to a later day (in the sheet or here): the task has shifted out of this day's plan
+      x.moved = x.ph !== 'done' && x.ph !== 'other' && !!x.eta && x.eta > day && (x.etaPlan ? x.eta !== x.etaPlan : !['WIP', 'Changes requested'].includes(x.start));
+      if (x.moved) x.ph = 'moved';
+      x.late = x.ph !== 'done' && x.ph !== 'other' && x.ph !== 'moved' && x.eta && x.eta < day ? dpDays(x.eta, day) : 0; x.picked = dpPhase(x.start) === 'todo' && ['doing', 'review', 'done'].includes(x.ph); x.isNew = x.added === 'During the day';
+    });
+    const active = rows.filter((x) => x.ph !== 'other' && x.ph !== 'moved');
+    const cnt = (xs) => { const o = { todo: 0, doing: 0, review: 0, done: 0, other: 0, moved: 0 }; xs.forEach((x) => { o[x.ph]++; }); return o; };
     const tot = cnt(rows);
     if (DP.phase && !tot[DP.phase]) DP.phase = '';
 
@@ -1731,8 +1742,10 @@
     if (idle.length) flags.push(['mute', idle.length === 1 ? idle[0] + ' hasn’t picked anything up yet' : idle.length + ' haven’t picked anything up: ' + idle.slice(0, 4).join(', ') + (idle.length > 4 ? '…' : '')]);
     if (picked && !preview) flags.push(['ok', picked + ' picked up since the morning']);
     if (added) flags.push(['info', added + ' added during the day']);
-    if (tot.other) flags.push(['mute', tot.other + ' moved off the plan']);
-    if (flags.length) { const fl = dpEl('div', 'dp-flags'); flags.forEach(([c, t]) => fl.append(dpEl('span', 'dp-flag f-' + c, t))); hero.append(fl); }
+    if (tot.other) flags.push(['mute', tot.other + ' reassigned or removed']);
+    const fl = dpEl('div', 'dp-flags'); flags.forEach(([c, t]) => fl.append(dpEl('span', 'dp-flag f-' + c, t)));
+    if (tot.moved) { const mv = dpEl('button', 'dp-flag f-moved' + (DP.phase === 'moved' ? ' on' : ''), tot.moved + (tot.moved === 1 ? ' task' : ' tasks') + ' moved to another day'); mv.type = 'button'; mv.setAttribute('aria-pressed', String(DP.phase === 'moved')); mv.title = 'Their ETA was moved to a later day. Show them'; mv.addEventListener('click', () => { DP.phase = DP.phase === 'moved' ? '' : 'moved'; dash.draw('dayplan'); }); fl.append(mv); }
+    if (fl.children.length) hero.append(fl);
     el.append(hero);
 
     // ---- Lanes: one per person, equal-size task cards
@@ -1749,7 +1762,7 @@
       const stat = dpEl('div', 'dp-lane-stat'); const sn = dpEl('b', '', c.done + '/' + act.length); stat.append(sn, dpEl('span', '', 'delivered'));
       const pb = dpEl('div', 'dp-pbar'); pb.setAttribute('role', 'img'); pb.setAttribute('aria-label', DPP.filter(([k]) => c[k]).map(([k, l]) => c[k] + ' ' + l).join(', '));
       DPP.forEach(([k]) => { if (!c[k]) return; const s2 = dpEl('i', 'ph-' + k); s2.style.flexGrow = c[k]; pb.append(s2); });
-      const chips = dpEl('div', 'dp-lane-chips'); DPP.forEach(([k, l]) => { if (c[k]) { const ch = dpEl('span', 'dp-mini ph-' + k); ch.append(dpEl('i', ''), document.createTextNode(c[k] + ' ' + l)); chips.append(ch); } });
+      const chips = dpEl('div', 'dp-lane-chips'); DPP.concat([['moved', 'Moved']]).forEach(([k, l]) => { if (c[k]) { const ch = dpEl('span', 'dp-mini ph-' + k); ch.append(dpEl('i', ''), document.createTextNode(c[k] + ' ' + l)); chips.append(ch); } });
       who.append(nm, stat, pb, chips);
       const grid = dpEl('div', 'dp-cards');
       const list = vis.slice().sort((a, b) => DP_ORDER[a.ph] - DP_ORDER[b.ph] || (b.late - a.late) || String(a.brand).localeCompare(String(b.brand)));
@@ -1779,7 +1792,7 @@
     if (x.late) { const l = dpEl('span', 'dp-late', x.late + 'd late'); l.title = x.late + ' days past the ETA'; r2.append(l); }
     const desc = dpEl('p', 'dp-desc', dpWords(x.topic, 4) || '—'); if (x.topic) desc.title = x.topic;
     const r3 = dpEl('div', 'dp-tk-r3');
-    r3.append(dpEl('span', 'dp-st', DP_FINE[x.now] || x.now));
+    r3.append(dpEl('span', 'dp-st', x.ph === 'moved' ? 'Moved to ' + CO.fmtDate(x.eta) : DP_FINE[x.now] || x.now));
     r3.append(dpEl('span', 'dp-src ' + (x.cls === 'External' ? 'ext' : 'int'), x.cls === 'External' ? 'External' : 'Internal'));
     if (x.isNew) r3.append(dpEl('span', 'dp-flag2', 'New'));
     else if (x.picked && x.ph !== 'done') r3.append(dpEl('span', 'dp-flag2', 'Picked up'));
@@ -1801,67 +1814,218 @@
     try { const b = await callApi({ action: 'packages' }, true); if (b.ok) { PK.list = b.packages; PK.err = ''; } else PK.err = b.error === 'forbidden' ? '' : (b.error || 'Packages could not load'); } catch (e) { PK.err = e.message; }
     PK.busy = false; dash.draw('packages');
   }
-  // Allocation of delivered creatives to packages, oldest package first.
+  // Allocation of delivered creatives to packages, oldest package first. Indexed by brand, so thousands of packages
+  // and rows stay quick.
   function pkAlloc(pkgs) {
-    const rows = CO.rows(true) || [], out = new Map();
-    const ps = pkgs.map((p) => ({ p, items: p.items.map((it) => ({ type: it.type, key: pkNorm(it.type), qty: it.qty, used: 0, over: 0 })) })).sort((a, b) => a.p.date.localeCompare(b.p.date));
-    ps.forEach((x) => out.set(x.p.id, x));
-    const done = rows.filter((r) => r.stage === 'Delivered' && r.ddate).sort((a, b) => a.ddate.localeCompare(b.ddate));
-    done.forEach((r) => {
-      const bk = pkNorm(r.brand), tk = pkNorm(r.type), cls = r.source === 'Paid' ? 'External' : 'Internal';
-      const cands = ps.filter((x) => x.p.status !== 'Closed' && pkNorm(x.p.brand) === bk && x.p.date <= r.ddate && (x.p.from === 'Both' || x.p.from === cls));
+    const rows = CO.rows(true) || [], out = new Map(), byBrand = new Map();
+    const ps = pkgs.map((p) => ({ p, items: p.items.map((it) => ({ type: it.type, key: pkNorm(it.type), qty: it.qty, used: 0, over: 0, open: 0 })) })).sort((a, b) => a.p.date.localeCompare(b.p.date) || String(a.p.created || '').localeCompare(String(b.p.created || '')));
+    ps.forEach((x) => { out.set(x.p.id, x); const k = pkNorm(x.p.brand); if (!byBrand.has(k)) byBrand.set(k, []); byBrand.get(k).push(x); });
+    const clsOf = (r) => (r.source === 'Paid' ? 'External' : 'Internal');
+    rows.forEach((r) => {
+      const list = byBrand.get(pkNorm(r.brand)); if (!list) return;
+      const tk = pkNorm(r.type), cls = clsOf(r);
+      if (r.open) list.forEach((x) => { if ((r.req || '') < x.p.date || !(x.p.from === 'Both' || x.p.from === cls)) return; const it = x.items.find((i) => i.key === tk) || x.items.find((i) => i.key === 'any type'); if (it) it.open += r.qty || 1; });
+    });
+    rows.filter((r) => r.stage === 'Delivered' && r.ddate && byBrand.has(pkNorm(r.brand))).sort((a, b) => a.ddate.localeCompare(b.ddate)).forEach((r) => {
+      const tk = pkNorm(r.type), cls = clsOf(r);
+      const cands = byBrand.get(pkNorm(r.brand)).filter((x) => x.p.status !== 'Closed' && x.p.date <= r.ddate && (x.p.from === 'Both' || x.p.from === cls));
       let units = r.qty || 1; let lastItem = null;
       for (const x of cands) { const it = x.items.find((i) => i.key === tk) || x.items.find((i) => i.key === 'any type'); if (!it) continue; lastItem = it; const take = Math.min(units, it.qty - it.used); if (take > 0) { it.used += take; units -= take; } if (!units) break; }
       if (units && lastItem) lastItem.over += units; // delivered beyond what was bought
     });
-    // requests still open for each brand and type (from the package date), against what is left
-    ps.forEach((x) => { x.items.forEach((it) => { it.open = rows.filter((r) => r.open && pkNorm(r.brand) === pkNorm(x.p.brand) && (pkNorm(r.type) === it.key || it.key === 'any type') && (r.req || '') >= x.p.date && (x.p.from === 'Both' || x.p.from === (r.source === 'Paid' ? 'External' : 'Internal'))).reduce((a, r) => a + (r.qty || 1), 0); }); });
     return out;
   }
   const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  /* Orders: 1st, 2nd, 3rd… per brand, by purchase date (then when added), worked out every time, so they stay right
+     after edits and deletions. */
+  const ordinal = (n) => { const v = n % 100; return n + (v >= 11 && v <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'); };
+  function pkOrders(list) {
+    const by = new Map(), out = new Map();
+    list.slice().sort((a, b) => a.date.localeCompare(b.date) || String(a.created || '').localeCompare(String(b.created || '')) || a.id.localeCompare(b.id)).forEach((p) => { const k = pkNorm(p.brand); if (!by.has(k)) by.set(k, []); by.get(k).push(p); });
+    by.forEach((ps) => ps.forEach((p, i) => out.set(p.id, { n: i + 1, of: ps.length, all: ps })));
+    return out;
+  }
+  const PKV = Object.assign({ view: 'orders', status: '', from: '', when: '', sort: 'new', size: 20 }, (() => { try { return JSON.parse(LS.get('co.pkv', '{}')) || {}; } catch (e) { return {}; } })(), { q: '', brand: '', page: 1, open: '' });
+  const pkSaveView = () => LS.set('co.pkv', JSON.stringify({ view: PKV.view, status: PKV.status, from: PKV.from, when: PKV.when, sort: PKV.sort, size: PKV.size }));
+  const pkEl = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const PK_ST = { running: 'Running', complete: 'Complete', over: 'Over-delivered', attention: 'Requests beyond package', closed: 'Closed' };
+  function pkFacts(p, x) {
+    const used = x.items.reduce((a, it) => a + it.used, 0), over = x.items.reduce((a, it) => a + it.over, 0), left = Math.max(0, p.total - used), open = x.items.reduce((a, it) => a + it.open, 0);
+    const st = p.status === 'Closed' ? 'closed' : left === 0 ? 'complete' : 'running';
+    return { used, over, left, open, st, attention: st !== 'closed' && open > left, pct: p.total ? Math.min(100, Math.round(used / p.total * 100)) : 0 };
+  }
+  const pkWhen = (w, d) => { if (!w) return true; const t = CO.today(); if (w === 'month') return d.slice(0, 7) === t.slice(0, 7); if (w === '3m') { const x = new Date(t); x.setMonth(x.getMonth() - 3); return d >= x.toISOString().slice(0, 10); } if (w === 'year') return d.slice(0, 4) === t.slice(0, 4); if (w === 'lastyear') return d.slice(0, 4) === String(+t.slice(0, 4) - 1); return true; };
   dash.draw('packages', (el) => {
     const perm = pkPerm(); el.hidden = !perm; if (!perm) { el.replaceChildren(); return; }
     if (PK.list === null && !PK.busy) pkLoad();
+    const hadFocus = document.activeElement && document.activeElement.id === 'pk-q' ? document.activeElement.selectionStart : null;
     el.replaceChildren();
-    const head = document.createElement('div'); head.className = 'co-card-head';
-    const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Brand packages';
-    const nt = document.createElement('p'); nt.className = 'co-note'; nt.textContent = 'Creatives each brand has bought, delivered and still due. Updates automatically from the sheets.'; l.append(h2, nt); head.append(l);
-    if (perm === 'edit') { const add = document.createElement('button'); add.type = 'button'; add.className = 'co-btn primary'; add.textContent = 'Add package'; add.addEventListener('click', () => pkOpen(null)); head.append(add); }
+    const head = pkEl('div', 'co-card-head');
+    const l = pkEl('div'); l.append(pkEl('h2', 'co-h2', 'Brand packages'), pkEl('p', 'co-note', 'Orders each brand has bought, delivered and still due. Delivered counts update automatically from the sheets.')); head.append(l);
+    if (perm === 'edit') { const add = pkEl('button', 'co-btn primary', 'Add package'); add.type = 'button'; add.addEventListener('click', () => pkOpen(null)); head.append(add); }
     el.append(head); collapser(el, 'packages', 'Brand packages');
-    if (PK.err) { const e = document.createElement('p'); e.className = 'co-note bad'; e.textContent = PK.err; el.append(e); return; }
-    if (PK.list === null) { const e = document.createElement('p'); e.className = 'co-note'; e.textContent = 'Loading packages…'; el.append(e); return; }
+    if (PK.err) { el.append(pkEl('p', 'co-note bad', PK.err)); return; }
+    if (PK.list === null) { el.append(pkEl('p', 'co-note', 'Loading packages…')); return; }
     if (CO.status() !== 'ok') return;
-    const list = PK.list.slice(), al = pkAlloc(list);
-    const sum = (f) => list.reduce((a, p) => a + f(p, al.get(p.id)), 0);
-    const bought = sum((p) => p.total), deliv = sum((p, x) => x.items.reduce((a, it) => a + it.used, 0)), active = list.filter((p) => p.status !== 'Closed' && al.get(p.id).items.some((it) => it.used < it.qty)).length;
-    const tiles = document.createElement('div'); tiles.className = 'pk-tiles';
-    [['Packages', CO.num(list.length), active + ' still running'], ['Creatives bought', CO.num(bought), ''], ['Delivered', CO.num(deliv), bought ? Math.round(deliv / bought * 100) + '%' : ''], ['Remaining', CO.num(Math.max(0, bought - deliv)), ''], ['Value', inr(sum((p) => p.amount)), 'incl. tax']].forEach(([lab, v, s2]) => {
-      const t = document.createElement('div'); t.className = 'pk-tile'; const b = document.createElement('b'); b.textContent = v; const sp = document.createElement('span'); sp.textContent = lab; t.append(b, sp); if (s2) { const sm = document.createElement('small'); sm.textContent = s2; t.append(sm); } tiles.append(t);
+    const all = PK.list.slice(), al = pkAlloc(all), ord = pkOrders(all), F = new Map(all.map((p) => [p.id, pkFacts(p, al.get(p.id))]));
+    if (!all.length) { el.append(pkEl('p', 'qn-empty', perm === 'edit' ? 'No packages yet. Add one with Add package; deliveries are counted automatically.' : 'No packages yet.')); return; }
+    // brands (lifetime) and brands that need a new order
+    const brands = new Map();
+    all.forEach((p) => { const k = pkNorm(p.brand), f = F.get(p.id); if (!brands.has(k)) brands.set(k, { brand: p.brand, orders: [], bought: 0, used: 0, value: 0, left: 0, last: '', running: 0 }); const b = brands.get(k); b.orders.push(p); b.bought += p.total; b.used += Math.min(f.used, p.total); b.value += p.amount || 0; if (p.date >= b.last) { b.last = p.date; b.brand = p.brand; } if (f.st === 'running') { b.left += f.left; b.running++; } });
+    const rowsNow = CO.rows(true) || [];
+    brands.forEach((b) => {
+      const act = b.orders.filter((p) => p.status !== 'Closed'), since = (act.length ? act : b.orders).reduce((m, p) => (p.date < m ? p.date : m), '9999'), froms = new Set(b.orders.map((p) => p.from));
+      b.open = rowsNow.filter((r) => r.open && pkNorm(r.brand) === pkNorm(b.brand) && (r.req || '') >= since && (froms.has('Both') || froms.has(r.source === 'Paid' ? 'External' : 'Internal'))).reduce((a, r) => a + (r.qty || 1), 0);
+      b.need = Math.max(0, b.open - b.left);
+    });
+    // summary tiles
+    const sumOf = (ps) => ({ n: ps.length, run: ps.filter((p) => F.get(p.id).st === 'running').length, bought: ps.reduce((a, p) => a + p.total, 0), used: ps.reduce((a, p) => a + Math.min(F.get(p.id).used, p.total), 0), value: ps.reduce((a, p) => a + (p.amount || 0), 0) });
+    const S0 = sumOf(all), repeat = [...brands.values()].filter((b) => b.orders.length > 1).length;
+    const tiles = pkEl('div', 'pk-tiles');
+    [['Orders', CO.num(S0.n), S0.run + ' running · ' + brands.size + ' brands'], ['Repeat clients', CO.num(repeat), brands.size ? Math.round(repeat / brands.size * 100) + '% of brands ordered again' : ''], ['Creatives bought', CO.num(S0.bought), CO.num(S0.used) + ' delivered · ' + (S0.bought ? Math.round(S0.used / S0.bought * 100) : 0) + '%'], ['Still due', CO.num(Math.max(0, S0.bought - S0.used)), 'on running orders'], ['Value', inr(S0.value), 'incl. tax']].forEach(([lab, v, s2]) => {
+      const t = pkEl('div', 'pk-tile'); t.append(pkEl('b', '', v), pkEl('span', '', lab)); if (s2) t.append(pkEl('small', '', s2)); tiles.append(t);
     });
     el.append(tiles);
-    if (!list.length) { const e = document.createElement('p'); e.className = 'qn-empty'; e.textContent = perm === 'edit' ? 'No packages yet. Add one with Add package; deliveries are counted automatically.' : 'No packages yet.'; el.append(e); return; }
-    const wrap = document.createElement('div'); wrap.className = 'pk-list';
-    list.sort((a, b) => (a.status === 'Closed') - (b.status === 'Closed') || b.date.localeCompare(a.date)).forEach((p) => {
-      const x = al.get(p.id), used = x.items.reduce((a, it) => a + it.used, 0), over = x.items.reduce((a, it) => a + it.over, 0), left = Math.max(0, p.total - used), openReq = x.items.reduce((a, it) => a + it.open, 0);
-      const st = p.status === 'Closed' ? 'closed' : left === 0 ? 'complete' : 'running';
-      const card = document.createElement('article'); card.className = 'pk-item s-' + st + (perm === 'edit' ? ' can' : '');
-      const top = document.createElement('div'); top.className = 'pk-top';
-      const nm = document.createElement('div'); nm.className = 'pk-name'; const b = document.createElement('b'); b.textContent = p.brand; const meta = document.createElement('span'); meta.textContent = 'Bought ' + CO.fmtDate(p.date, true) + ' · ' + (p.from === 'Both' ? 'Internal + External' : p.from) + (p.amount ? ' · ' + inr(p.amount) : ''); nm.append(b, meta);
-      const chip = document.createElement('span'); chip.className = 'pk-chip s-' + st; chip.textContent = st === 'closed' ? 'Closed' : st === 'complete' ? (over ? 'Complete · ' + over + ' over' : 'Complete') : left + ' left';
-      top.append(nm, chip); card.append(top);
-      const bar = document.createElement('div'); bar.className = 'pk-bar'; const f = document.createElement('i'); f.style.width = Math.min(100, p.total ? used / p.total * 100 : 0) + '%'; bar.append(f);
-      const bl = document.createElement('div'); bl.className = 'pk-bl'; bl.textContent = used + ' of ' + p.total + ' delivered'; card.append(bar, bl);
-      const ul = document.createElement('div'); ul.className = 'pk-types';
-      x.items.forEach((it) => { const r = document.createElement('div'); r.className = 'pk-type'; const t1 = document.createElement('span'); t1.textContent = it.type; const t2 = document.createElement('span'); t2.className = 'pk-tn'; t2.textContent = it.used + ' / ' + it.qty + (it.over ? ' (+' + it.over + ' over)' : ''); const t3 = document.createElement('span'); t3.className = 'pk-tl'; const lf = Math.max(0, it.qty - it.used); t3.textContent = lf ? lf + ' left' : 'done'; if (!lf) t3.classList.add('ok'); r.append(t1, t2, t3); ul.append(r); });
-      card.append(ul);
-      if (st !== 'closed' && openReq && openReq > left) { const w = document.createElement('p'); w.className = 'pk-warn'; w.textContent = left ? openReq + ' requests are open for ' + p.brand + ' but only ' + left + ' creatives are left in this package.' : 'Package complete: ' + openReq + ' more request' + (openReq === 1 ? ' is' : 's are') + ' open for ' + p.brand + '. Don’t pick up new requests unless a new package is bought.'; card.append(w); }
-      else if (st === 'complete') { const w = document.createElement('p'); w.className = 'pk-ok'; w.textContent = 'All purchased creatives delivered.'; card.append(w); }
-      if (p.notes) { const n2 = document.createElement('p'); n2.className = 'co-note'; n2.textContent = p.notes; card.append(n2); }
-      if (perm === 'edit') { card.tabIndex = 0; card.addEventListener('click', () => pkOpen(p)); card.addEventListener('keydown', (e) => { if (e.key === 'Enter') pkOpen(p); }); }
-      wrap.append(card);
-    });
-    el.append(wrap);
+    // brands whose open requests go beyond what they have bought: a new order is probably due
+    const need = [...brands.values()].filter((b) => b.need > 0).sort((a, b) => b.need - a.need);
+    if (need.length) {
+      const box = pkEl('div', 'pk-need'); const hd = pkEl('div', 'pk-need-h'); hd.append(pkEl('b', '', need.length === 1 ? '1 brand needs a new order' : need.length + ' brands need a new order'), pkEl('span', 'co-note', 'New requests in the sheets go beyond what these brands have bought. Is this a new order?')); box.append(hd);
+      const ul = pkEl('div', 'pk-need-list');
+      need.slice(0, 4).forEach((b) => {
+        const it = pkEl('div', 'pk-need-i'); const tx = pkEl('div', 'pk-need-tx'); tx.append(pkEl('b', '', b.brand), pkEl('span', '', b.open + ' open request' + (b.open === 1 ? '' : 's') + ' · ' + (b.running ? b.left + ' left on ' + (b.running === 1 ? 'its running order' : 'its running orders') : (b.orders.length === 1 ? 'its order is complete' : 'all its orders are complete')) + ' · ' + b.orders.length + ' order' + (b.orders.length === 1 ? '' : 's') + ' so far'));
+        it.append(tx);
+        const v = pkEl('button', 'co-btn', 'History'); v.type = 'button'; v.addEventListener('click', () => { PKV.brand = b.brand; PKV.view = 'orders'; PKV.page = 1; PKV.open = ''; dash.draw('packages'); }); it.append(v);
+        if (perm === 'edit') { const n = pkEl('button', 'co-btn primary', 'Add ' + ordinal(b.orders.length + 1) + ' order'); n.type = 'button'; n.addEventListener('click', () => pkOpen(null, { brand: b.brand })); it.append(n); }
+        ul.append(it);
+      });
+      if (need.length > 4) { const m = pkEl('button', 'co-link', 'Show all ' + need.length); m.type = 'button'; m.addEventListener('click', () => { PKV.view = 'brands'; PKV.status = 'attention'; PKV.page = 1; dash.draw('packages'); }); ul.append(m); }
+      box.append(ul); el.append(box);
+    }
+    // toolbar
+    const bar = pkEl('div', 'pk-bar2');
+    const sw = pkEl('label', 'pk-search'); const q = pkEl('input', 'co-input'); q.id = 'pk-q'; q.type = 'search'; q.placeholder = PKV.view === 'brands' ? 'Search brands' : 'Search brand, order ID or notes'; q.value = PKV.q; q.setAttribute('aria-label', 'Search packages'); sw.append(q);
+    const seg = pkEl('div', 'seg pk-view'); seg.setAttribute('role', 'tablist');
+    [['orders', 'Orders'], ['brands', 'Brands']].forEach(([k, t]) => { const b = pkEl('button', PKV.view === k ? 'on' : '', t); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(PKV.view === k)); b.addEventListener('click', () => { PKV.view = k; PKV.page = 1; PKV.open = ''; pkSaveView(); dash.draw('packages'); }); seg.append(b); });
+    const mkSel = (label, key, opts) => { const s2 = pkEl('select', 'co-select'); s2.setAttribute('aria-label', label); opts.forEach(([v, t]) => s2.append(new Option(t, v))); s2.value = PKV[key]; s2.addEventListener('change', () => { PKV[key] = key === 'size' ? +s2.value : s2.value; PKV.page = 1; pkSaveView(); dash.draw('packages'); }); return s2; };
+    const stSel = mkSel('Status', 'status', PKV.view === 'brands' ? [['', 'All brands'], ['running', 'With a running order'], ['attention', 'Need a new order'], ['repeat', 'Repeat clients'], ['complete', 'All orders complete']] : [['', 'Any status'], ['running', 'Running'], ['attention', 'Requests beyond package'], ['complete', 'Complete'], ['over', 'Over-delivered'], ['closed', 'Closed']]);
+    const fromSel = mkSel('Sheet', 'from', [['', 'Any sheet'], ['External', 'External'], ['Internal', 'Internal'], ['Both', 'Internal + External']]);
+    const whenSel = mkSel('Purchased', 'when', [['', 'Any time'], ['month', 'This month'], ['3m', 'Last 3 months'], ['year', 'This year'], ['lastyear', 'Last year']]);
+    const sortSel = mkSel('Sort', 'sort', PKV.view === 'brands' ? [['new', 'Latest order first'], ['orders', 'Most orders'], ['left', 'Most still due'], ['value', 'Highest value'], ['az', 'Brand A to Z']] : [['new', 'Newest first'], ['old', 'Oldest first'], ['left', 'Most still due'], ['value', 'Highest value'], ['az', 'Brand A to Z']]);
+    if (![...stSel.options].some((o) => o.value === PKV.status)) { PKV.status = ''; stSel.value = ''; } // a filter only one view has
+    bar.append(sw, seg, stSel, fromSel, whenSel); el.append(bar); sortSel.classList.add('pk-sort');
+    const chips = pkEl('div', 'pk-chips'); el.append(chips);
+    const res = pkEl('div', 'pk-res'); el.append(res);
+    const pager = pkEl('div', 'pk-pager'); el.append(pager);
+    function results() {
+      const ql = PKV.q.toLowerCase().trim();
+      chips.replaceChildren(); res.replaceChildren(); pager.replaceChildren();
+      const active = [];
+      if (PKV.brand) active.push(['Brand: ' + PKV.brand, () => { PKV.brand = ''; }]);
+      if (PKV.status) active.push([stSel.options[stSel.selectedIndex].text, () => { PKV.status = ''; }]);
+      if (PKV.from) active.push([fromSel.options[fromSel.selectedIndex].text, () => { PKV.from = ''; }]);
+      if (PKV.when) active.push(['Purchased: ' + whenSel.options[whenSel.selectedIndex].text, () => { PKV.when = ''; }]);
+      if (ql) active.push(['“' + PKV.q.trim() + '”', () => { PKV.q = ''; }]);
+      let items;
+      if (PKV.view === 'brands') {
+        items = [...brands.values()].filter((b) => (!PKV.brand || pkNorm(b.brand) === pkNorm(PKV.brand)) && (!ql || b.brand.toLowerCase().includes(ql))
+          && (!PKV.from || b.orders.some((p) => p.from === PKV.from)) && (!PKV.when || b.orders.some((p) => pkWhen(PKV.when, p.date)))
+          && (!PKV.status || (PKV.status === 'running' ? b.running > 0 : PKV.status === 'attention' ? b.need > 0 : PKV.status === 'repeat' ? b.orders.length > 1 : b.running === 0)));
+        const so = { new: (a, b) => b.last.localeCompare(a.last), orders: (a, b) => b.orders.length - a.orders.length, left: (a, b) => b.left - a.left, value: (a, b) => b.value - a.value, az: (a, b) => a.brand.localeCompare(b.brand) }[PKV.sort] || ((a, b) => b.last.localeCompare(a.last));
+        items.sort((a, b) => so(a, b) || a.brand.localeCompare(b.brand));
+      } else {
+        items = all.filter((p) => { const f = F.get(p.id); return (!PKV.brand || pkNorm(p.brand) === pkNorm(PKV.brand)) && (!ql || (p.brand + ' ' + p.id + ' ' + (p.notes || '')).toLowerCase().includes(ql))
+          && (!PKV.from || p.from === PKV.from) && pkWhen(PKV.when, p.date)
+          && (!PKV.status || (PKV.status === 'over' ? f.over > 0 : PKV.status === 'attention' ? f.attention : f.st === PKV.status)); });
+        const so = { new: (a, b) => b.date.localeCompare(a.date), old: (a, b) => a.date.localeCompare(b.date), left: (a, b) => F.get(b.id).left - F.get(a.id).left, value: (a, b) => (b.amount || 0) - (a.amount || 0), az: (a, b) => a.brand.localeCompare(b.brand) || b.date.localeCompare(a.date) }[PKV.sort];
+        items.sort((a, b) => so(a, b) || b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+      }
+      active.forEach(([t, undo]) => { const c = pkEl('button', 'pk-chip2'); c.type = 'button'; c.append(document.createTextNode(t), pkEl('i', '', '×')); c.setAttribute('aria-label', 'Remove filter: ' + t); c.addEventListener('click', () => { undo(); PKV.page = 1; pkSaveView(); dash.draw('packages'); }); chips.append(c); });
+      if (active.length > 1) { const c = pkEl('button', 'co-link', 'Clear all'); c.type = 'button'; c.addEventListener('click', () => { PKV.brand = ''; PKV.status = ''; PKV.from = ''; PKV.when = ''; PKV.q = ''; PKV.page = 1; pkSaveView(); dash.draw('packages'); }); chips.append(c); }
+      const total = items.length, pages = Math.max(1, Math.ceil(total / PKV.size)); PKV.page = Math.min(Math.max(1, PKV.page), pages);
+      const from = (PKV.page - 1) * PKV.size, slice = items.slice(from, from + PKV.size);
+      chips.append(pkEl('span', 'pk-count', total ? 'Showing ' + CO.num(from + 1) + '–' + CO.num(from + slice.length) + ' of ' + CO.num(total) + (PKV.view === 'brands' ? ' brands' : ' orders') : '')); chips.append(sortSel);
+      if (!total) { const e = pkEl('div', 'pk-empty'); e.append(pkEl('b', '', 'Nothing matches'), pkEl('span', '', 'Try another search, or clear the filters.')); res.append(e); return; }
+      const tbl = pkEl('table', 'co-table pk-table' + (PKV.view === 'brands' ? ' is-brands' : '')); const thead = pkEl('thead'); const hr = pkEl('tr'); const tb = pkEl('tbody');
+      const cols = PKV.view === 'brands' ? ['Brand', 'Orders', 'Last order', 'Delivered', 'Still due', 'Open requests', 'Value'] : ['Order', 'Purchased', 'Sheet', 'Delivered', 'Still due', 'Value', 'Status', ''];
+      cols.forEach((c, i) => { const th = pkEl('th', i >= 4 && PKV.view === 'brands' || (PKV.view !== 'brands' && (i === 4 || i === 5)) ? 'num' : '', c); th.scope = 'col'; hr.append(th); }); thead.append(hr); tbl.append(thead, tb);
+      const td = (tr, label, cls) => { const c = pkEl('td', cls || ''); c.dataset.l = label; tr.append(c); return c; };
+      const prog = (used, tot2, st) => { const w = pkEl('div', 'pk-prog s-' + st); const b = pkEl('span', 'pk-pbar2'); const f = pkEl('i'); f.style.width = (tot2 ? Math.min(100, used / tot2 * 100) : 0) + '%'; b.append(f); w.append(b, pkEl('span', 'pk-pn', CO.num(used) + ' / ' + CO.num(tot2))); return w; };
+      if (PKV.view === 'brands') slice.forEach((b) => {
+        const tr = pkEl('tr', 'pk-row'); tr.tabIndex = 0; tr.setAttribute('role', 'button'); tr.setAttribute('aria-label', b.brand + ': show order history');
+        const c1 = td(tr, 'Brand', 'pk-brand-c'); c1.append(pkEl('b', '', b.brand)); if (b.orders.length > 1) c1.append(pkEl('span', 'pk-ord rep', 'Repeat client'));
+        td(tr, 'Orders').append(pkEl('b', 'pk-big', CO.num(b.orders.length)));
+        td(tr, 'Last order', 'pk-muted').textContent = CO.fmtDate(b.last, true);
+        td(tr, 'Delivered').append(prog(b.used, b.bought, b.running ? 'running' : 'complete'));
+        td(tr, 'Still due', 'num').textContent = b.running ? CO.num(b.left) : '—';
+        const oc = td(tr, 'Open requests', 'num'); oc.textContent = CO.num(b.open); if (b.need) oc.append(pkEl('span', 'pk-flagdot', '+' + b.need + ' beyond'));
+        td(tr, 'Value', 'num').textContent = inr(b.value);
+        const go = () => { PKV.brand = b.brand; PKV.view = 'orders'; PKV.page = 1; PKV.open = ''; pkSaveView(); dash.draw('packages'); };
+        tr.addEventListener('click', go); tr.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+        tb.append(tr);
+      });
+      else slice.forEach((p) => {
+        const f = F.get(p.id), o = ord.get(p.id), open = PKV.open === p.id;
+        const tr = pkEl('tr', 'pk-row' + (open ? ' open' : '')); tr.tabIndex = 0; tr.setAttribute('aria-expanded', String(open)); tr.setAttribute('aria-label', p.brand + ', ' + ordinal(o.n) + ' order: details');
+        const c1 = td(tr, 'Order', 'pk-brand-c'); c1.append(pkEl('b', '', p.brand)); if (o.of > 1) c1.append(pkEl('span', 'pk-ord' + (o.n > 1 ? ' rep' : ''), ordinal(o.n) + ' order')); c1.append(pkEl('small', 'pk-id', p.id));
+        td(tr, 'Purchased', 'pk-muted').textContent = CO.fmtDate(p.date, true);
+        td(tr, 'Sheet').append(pkEl('span', 'dp-src ' + (p.from === 'External' ? 'ext' : p.from === 'Internal' ? 'int' : 'both'), p.from === 'Both' ? 'Both' : p.from));
+        td(tr, 'Delivered').append(prog(Math.min(f.used, p.total), p.total, f.st));
+        td(tr, 'Still due', 'num').textContent = f.st === 'closed' ? '—' : CO.num(f.left);
+        td(tr, 'Value', 'num').textContent = p.amount ? inr(p.amount) : '—';
+        const sc = td(tr, 'Status'); sc.append(pkEl('span', 'pk-chip s-' + (f.attention ? 'attention' : f.st), f.attention ? 'Beyond package' : f.st === 'complete' ? (f.over ? 'Complete · +' + f.over : 'Complete') : f.st === 'closed' ? 'Closed' : 'Running'));
+        const cv = td(tr, '', 'pk-chev-c'); cv.append(pkEl('span', 'pk-chev'));
+        const tog = () => { PKV.open = open ? '' : p.id; results(); };
+        tr.addEventListener('click', tog); tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tog(); } });
+        tb.append(tr);
+        if (open) tb.append(pkDetail(p, f, o, al.get(p.id), perm, cols.length));
+      });
+      res.append(tbl);
+      // pager
+      if (total > 20) {
+        const nav = pkEl('nav', 'pk-pages'); nav.setAttribute('aria-label', 'Pages');
+        const btn = (t, pg, dis, cur) => { const b = pkEl('button', 'pk-pg' + (cur ? ' on' : ''), t); b.type = 'button'; b.disabled = !!dis; if (cur) b.setAttribute('aria-current', 'page'); b.addEventListener('click', () => { PKV.page = pg; PKV.open = ''; results(); el.querySelector('.pk-bar2').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }); nav.append(b); };
+        btn('‹', PKV.page - 1, PKV.page === 1); const set = new Set([1, pages, PKV.page - 1, PKV.page, PKV.page + 1].filter((x) => x >= 1 && x <= pages)); let prev = 0;
+        [...set].sort((a, b) => a - b).forEach((n) => { if (n - prev > 1) nav.append(pkEl('span', 'pk-gap', '…')); btn(String(n), n, false, n === PKV.page); prev = n; });
+        btn('›', PKV.page + 1, PKV.page === pages);
+        const sz = mkSel('Rows per page', 'size', [['20', '20 per page'], ['50', '50 per page'], ['100', '100 per page']]); sz.value = String(PKV.size);
+        pager.append(nav, sz);
+      }
+    }
+    let qt = null; q.addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(() => { PKV.q = q.value; PKV.page = 1; PKV.open = ''; results(); }, 120); });
+    results();
+    if (hadFocus !== null) { q.focus(); try { q.setSelectionRange(hadFocus, hadFocus); } catch (e) { /* ignore */ } }
   });
+  // An order's details: per creative type, warnings, notes and the brand's order history.
+  function pkDetail(p, f, o, x, perm, span) {
+    const tr = pkEl('tr', 'pk-detail'); const c = pkEl('td'); c.colSpan = span; tr.append(c);
+    const g = pkEl('div', 'pk-det');
+    const left = pkEl('div', 'pk-det-main');
+    left.append(pkEl('h3', 'pk-h3', 'Creatives in this order'));
+    const types = pkEl('div', 'pk-types2');
+    x.items.forEach((it) => { const lf = Math.max(0, it.qty - it.used); const r = pkEl('div', 'pk-type2' + (lf ? '' : ' done')); r.append(pkEl('span', 'pk-tt', it.type)); const b = pkEl('span', 'pk-pbar2'); const fi = pkEl('i'); fi.style.width = (it.qty ? Math.min(100, it.used / it.qty * 100) : 0) + '%'; b.append(fi); r.append(b, pkEl('span', 'pk-tn', it.used + ' / ' + it.qty + (it.over ? ' (+' + it.over + ')' : '')), pkEl('span', 'pk-tl' + (lf ? '' : ' ok'), lf ? lf + ' due' : 'Done')); types.append(r); });
+    left.append(types);
+    if (f.st !== 'closed' && f.open && f.open > f.left) left.append(pkEl('p', 'pk-warn', f.left ? f.open + ' requests are open for ' + p.brand + ' but only ' + f.left + ' creatives are left in this order.' : 'This order is complete and ' + f.open + ' more request' + (f.open === 1 ? ' is' : 's are') + ' open. Is this a new order? Add it before the team picks them up.'));
+    else if (f.st === 'complete') left.append(pkEl('p', 'pk-ok', 'All purchased creatives delivered.' + (f.over ? ' ' + f.over + ' delivered beyond the order.' : '')));
+    const meta = pkEl('dl', 'pk-meta');
+    const fact = (k, v) => { if (!v) return; meta.append(pkEl('dt', '', k), pkEl('dd', '', v)); };
+    fact('Order ID', p.id); fact('Amount', p.amount ? inr(p.amount) + ' incl. tax' : ''); fact('Counts from', p.from === 'Both' ? 'Internal + External sheets' : p.from + ' sheet'); fact('Notes', p.notes); fact('Added', (p.createdBy ? p.createdBy.split('@')[0] : '') + (p.created ? ' · ' + CO.fmtDate(String(p.created).slice(0, 10), true) : ''));
+    left.append(meta);
+    const side = pkEl('div', 'pk-det-side');
+    side.append(pkEl('h3', 'pk-h3', o.of > 1 ? 'Order history · ' + o.of + ' orders' : 'Order history'));
+    const hl = pkEl('ol', 'pk-hist');
+    o.all.map((q, i) => [q, i + 1]).reverse().forEach(([q, n]) => { const li = pkEl('li', q.id === p.id ? 'on' : ''); const b = pkEl('button', 'pk-hist-b'); b.type = 'button'; b.append(pkEl('span', 'pk-ord' + (n > 1 ? ' rep' : ''), ordinal(n))); const tx = pkEl('span', 'pk-hist-t'); tx.append(pkEl('b', '', CO.fmtDate(q.date, true)), pkEl('small', '', q.total + ' creatives' + (q.amount ? ' · ' + inr(q.amount) : '') + (q.status === 'Closed' ? ' · closed' : ''))); b.append(tx); b.addEventListener('click', (e) => { e.stopPropagation(); PKV.brand = q.brand; PKV.open = q.id; PKV.page = 1; dash.draw('packages'); }); li.append(b); hl.append(li); });
+    side.append(hl);
+    if (o.of > 1 && pkNorm(PKV.brand) !== pkNorm(p.brand)) { const all2 = pkEl('button', 'co-link', 'Show only ' + p.brand + '’s orders'); all2.type = 'button'; all2.addEventListener('click', (e) => { e.stopPropagation(); PKV.brand = p.brand; PKV.page = 1; dash.draw('packages'); }); side.append(all2); }
+    const acts = pkEl('div', 'pk-acts');
+    if (perm === 'edit') {
+      const ed = pkEl('button', 'co-btn', 'Edit order'); ed.type = 'button'; ed.addEventListener('click', (e) => { e.stopPropagation(); pkOpen(p); });
+      const nw = pkEl('button', 'co-btn primary', 'Add ' + ordinal(o.of + 1) + ' order'); nw.type = 'button'; nw.addEventListener('click', (e) => { e.stopPropagation(); pkOpen(null, { brand: p.brand }); });
+      acts.append(ed, nw);
+    }
+    side.append(acts);
+    g.append(left, side); c.append(g);
+    return tr;
+  }
   // ---- add / edit ----
   const $p = (id) => document.getElementById(id), pkDlg = $p('pk-dlg');
   const pkBrands = () => { const s = new Set((CO.rows(true) || []).map((r) => r.brand).filter((b) => b && b !== 'No brand')); (PK.list || []).forEach((p) => s.add(p.brand)); return [...s].sort((a, b) => a.localeCompare(b)); };
@@ -1879,16 +2043,49 @@
     row.append(sel, other, q, x); return row;
   }
   const pkRows = () => [...$p('pk-items').children].map((r) => r.read());
-  function pkSum() { const n = pkRows().reduce((a, it) => a + (it.qty > 0 ? it.qty : 0), 0); $p('pk-total').textContent = n + (n === 1 ? ' creative' : ' creatives') + ' in total'; }
-  function pkOpen(p) {
-    PK.edit = p; $p('pk-title').textContent = p ? 'Edit package' : 'Add a package'; $p('pk-err').textContent = '';
+  function pkSum() { const n = pkRows().reduce((a, it) => a + (it.qty > 0 ? it.qty : 0), 0); $p('pk-total').textContent = n + (n === 1 ? ' creative' : ' creatives') + ' in total'; pkRepeat(); }
+  const pkBrandNow = () => ($p('pk-brand').value === '__new' ? $p('pk-newbrand').value.trim() : $p('pk-brand').value);
+  /* A brand that already has orders: ask whether this is a new (repeat) order or an update to an existing one, so the
+     same order is not entered twice and repeat orders are numbered correctly. Saving waits for the answer. */
+  function pkRepeat() {
+    const box = $p('pk-repeat'), save = $p('pk-save'), brand = pkBrandNow();
+    if (PK.repeatFor !== pkNorm(brand)) { PK.repeatOk = false; PK.repeatFor = pkNorm(brand); }
+    const prior = (PK.list || []).filter((q) => brand && pkNorm(q.brand) === pkNorm(brand) && (!PK.edit || q.id !== PK.edit.id));
+    const ask = prior.length > 0 && (!PK.edit || pkNorm(PK.edit.brand) !== pkNorm(brand));
+    if (!ask) { box.hidden = true; box.replaceChildren(); save.disabled = false; save.textContent = 'Save package'; return; }
+    const ords = pkOrders(PK.list || []), al2 = pkAlloc(prior), next = prior.length + 1;
+    box.hidden = false; box.replaceChildren(); box.classList.toggle('ok', !!PK.repeatOk);
+    const h = pkEl('p', 'pk-repeat-h'); h.id = 'pk-repeat-h'; h.append(pkEl('b', '', 'An order already exists for ' + prior[0].brand + '. Is this a new order?')); box.append(h);
+    box.append(pkEl('p', 'co-note', prior.length === 1 ? 'There is 1 order so far. If the client has bought again, save this as the 2nd order. If you meant to change the existing order, update it instead.' : 'There are ' + prior.length + ' orders so far. If the client has bought again, save this as the ' + ordinal(next) + ' order. If you meant to change an existing order, update it instead.'));
+    const total = pkRows().reduce((a, it) => a + (it.qty > 0 ? it.qty : 0), 0), date = $p('pk-date').value;
+    const dup = prior.find((q) => q.date === date && q.total === total);
+    if (dup) box.append(pkEl('p', 'pk-warn', 'Possible duplicate: the ' + ordinal(ords.get(dup.id).n) + ' order has the same purchase date (' + CO.fmtDate(date, true) + ') and the same ' + total + ' creatives.'));
+    const ul = pkEl('ul', 'pk-repeat-list');
+    prior.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3).forEach((q) => {
+      const f = pkFacts(q, al2.get(q.id)), li = pkEl('li'); const tx = pkEl('span', 'pk-repeat-t');
+      tx.append(pkEl('span', 'pk-ord' + (ords.get(q.id).n > 1 ? ' rep' : ''), ordinal(ords.get(q.id).n) + ' order'), pkEl('b', '', CO.fmtDate(q.date, true)), pkEl('small', '', q.total + ' creatives · ' + f.used + ' delivered' + (f.st === 'closed' ? ' · closed' : f.left ? ' · ' + f.left + ' due' : ' · complete')));
+      const up = pkEl('button', 'co-link', 'Update this order'); up.type = 'button'; up.addEventListener('click', () => pkOpen(q));
+      li.append(tx, up); ul.append(li);
+    });
+    if (prior.length > 3) ul.append(pkEl('li', 'co-note', '+ ' + (prior.length - 3) + ' older'));
+    box.append(ul);
+    const yes = pkEl('button', 'pk-yes' + (PK.repeatOk ? ' on' : ''), PK.repeatOk ? '✓ Yes, this is the ' + ordinal(next) + ' order' : 'Yes, it’s a new order (' + ordinal(next) + ')'); yes.type = 'button'; yes.setAttribute('aria-pressed', String(!!PK.repeatOk));
+    yes.addEventListener('click', () => { PK.repeatOk = !PK.repeatOk; pkRepeat(); });
+    box.append(yes);
+    save.disabled = !PK.repeatOk; save.textContent = PK.repeatOk ? 'Save as ' + ordinal(next) + ' order' : 'Save package';
+  }
+  function pkOpen(p, preset) {
+    PK.edit = p; PK.repeatOk = false; PK.repeatFor = null; $p('pk-title').textContent = p ? 'Edit package' : 'Add a package'; $p('pk-err').textContent = '';
     const bs = $p('pk-brand'); bs.replaceChildren(new Option('Choose a brand…', '')); pkBrands().forEach((b) => bs.append(new Option(b, b))); bs.append(new Option('+ Add a new brand…', '__new'));
-    bs.value = p ? p.brand : ''; $p('pk-newbrand-l').hidden = true; $p('pk-newbrand').value = '';
+    const want = p ? p.brand : preset && preset.brand ? preset.brand : ''; $p('pk-newbrand-l').hidden = true; $p('pk-newbrand').value = '';
+    if (want && ![...bs.options].some((o) => o.value === want)) { bs.value = '__new'; $p('pk-newbrand-l').hidden = false; $p('pk-newbrand').value = want; } else bs.value = want;
     $p('pk-date').value = p ? p.date : CO.today(); $p('pk-amount').value = p && p.amount ? p.amount : ''; $p('pk-from').value = p ? p.from : 'External'; $p('pk-notes').value = p ? p.notes : ''; $p('pk-closed').checked = !!(p && p.status === 'Closed');
     $p('pk-items').replaceChildren(...(p ? p.items : [null]).map(pkItemRow)); pkSum(); $p('pk-del').hidden = !p;
+    if (pkDlg.open) pkDlg.scrollTop = 0;
     if (pkDlg.showModal) pkDlg.showModal(); else pkDlg.setAttribute('open', '');
   }
-  $p('pk-brand').addEventListener('change', (e) => { const n = e.target.value === '__new'; $p('pk-newbrand-l').hidden = !n; if (n) $p('pk-newbrand').focus(); });
+  $p('pk-brand').addEventListener('change', (e) => { const n = e.target.value === '__new'; $p('pk-newbrand-l').hidden = !n; if (n) $p('pk-newbrand').focus(); pkRepeat(); });
+  $p('pk-newbrand').addEventListener('input', pkRepeat); $p('pk-date').addEventListener('change', pkRepeat);
   $p('pk-add-item').addEventListener('click', () => { $p('pk-items').append(pkItemRow(null)); pkSum(); });
   $p('pk-cancel').addEventListener('click', () => pkDlg.close());
   $p('pk-form').addEventListener('submit', async (e) => {
@@ -1899,9 +2096,15 @@
     const err = !brand ? 'Choose or type a brand.' : !pkg.date ? 'Add the purchase date.' : !items.length ? 'Add at least one creative type with a quantity.' : '';
     if (err) { $p('pk-err').textContent = err; return; }
     $p('pk-save').disabled = true;
-    try { const r = await callApi(Object.assign({ action: 'packageSave', pkg }, PK.edit ? { id: PK.edit.id } : {})); if (!r.ok) throw new Error(r.error || 'Not saved'); pkDlg.close(); toast(PK.edit ? 'Package saved' : 'Package added for ' + brand); PK.list = null; pkLoad(); }
-    catch (er) { $p('pk-err').textContent = er.message; }
-    $p('pk-save').disabled = false;
+    let repeatAgain = false;
+    try {
+      const r = await callApi(Object.assign({ action: 'packageSave', pkg, repeatOk: !!PK.repeatOk }, PK.edit ? { id: PK.edit.id } : {}));
+      if (!r.ok && r.error === 'repeat') { repeatAgain = true; const b2 = await callApi({ action: 'packages' }, true); if (b2.ok) PK.list = b2.packages; PK.repeatOk = false; pkRepeat(); throw new Error('Someone else has added an order for ' + brand + '. Check the orders above, then confirm.'); }
+      if (!r.ok) throw new Error(r.error || 'Not saved');
+      const nth = !PK.edit && PK.repeatOk ? ' (' + ordinal((PK.list || []).filter((q) => pkNorm(q.brand) === pkNorm(brand)).length + 1) + ' order)' : '';
+      pkDlg.close(); toast(PK.edit ? 'Package saved' : 'Package added for ' + brand + nth); PK.list = null; pkLoad();
+    } catch (er) { $p('pk-err').textContent = er.message; }
+    if (!repeatAgain) $p('pk-save').disabled = false; pkRepeat();
   });
   $p('pk-del').addEventListener('click', async () => {
     if (!PK.edit || !confirm('Delete the ' + PK.edit.brand + ' package? Deliveries stay in the sheets; only the package is removed.')) return;

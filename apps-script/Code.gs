@@ -1230,12 +1230,14 @@ function feed_(u) {
  * and anything they are working on (WIP, Changes requested). Tasks that come into scope later in the day are added
  * ("During the day"). Every 10-minute check updates each planned task's current status, so a past day keeps its
  * end-of-day status. One row per person and task. */
-const DAYPLAN_HEAD = ['Date', 'Person', 'Task', 'ID', 'Brand', 'Topic', 'Type', 'Qty', 'Source', 'Start status', 'Status now', 'Added', 'Updated'];
+const DAYPLAN_HEAD = ['Date', 'Person', 'Task', 'ID', 'Brand', 'Topic', 'Type', 'Qty', 'Source', 'Start status', 'Status now', 'Added', 'Updated', 'Planned ETA', 'ETA now'];
 function dayPlanSheet_() {
   const ss = accessBook_(); let sh = ss.getSheetByName('Day plans');
   if (!sh) { sh = ss.insertSheet('Day plans'); sh.appendRow(DAYPLAN_HEAD); sh.setFrozenRows(1); }
+  else if (String(sh.getRange(1, 14).getValue()) !== 'Planned ETA') sh.getRange(1, 14, 1, 2).setValues([['Planned ETA', 'ETA now']]); // tabs made before ETAs were kept
   return sh;
 }
+function dvd_(v) { return v instanceof Date ? Utilities.formatDate(v, IST, 'yyyy-MM-dd') : String(v == null ? '' : v).replace(/^'/, ''); }
 function inDay_(t, today) { return t.open && ((t.eta && t.eta <= today) || t.stage === 'WIP' || t.stage === 'Changes requested'); }
 function dayRows_(sh, day) {
   const last = sh.getLastRow(); if (last < 2) return { first: 0, rows: [] };
@@ -1251,11 +1253,14 @@ function dayPlanTick_(day, mins) {
   const byUid = {}; t.tasks.forEach(function (x) { byUid[x.uid] = x; });
   const label = cur.rows.length ? 'During the day' : 'Morning plan', add = [];
   t.tasks.forEach(function (x) { if (!inDay_(x, day)) return; x.list.forEach(function (p) { const k = p + '|' + x.uid; if (have[k]) return; have[k] = 1;
-    add.push(["'" + day, p, x.uid, x.id, x.brand, String(x.topic || '').slice(0, 120), x.type, x.qty || 1, x.source === 'Paid' ? 'External' : 'Internal', x.stage, x.stage, label, now]); }); });
+    add.push(["'" + day, p, x.uid, x.id, x.brand, String(x.topic || '').slice(0, 120), x.type, x.qty || 1, x.source === 'Paid' ? 'External' : 'Internal', x.stage, x.stage, label, now, "'" + (x.eta || ''), "'" + (x.eta || '')]); }); });
   // current status of everything planned today (one write for the day's block)
   if (cur.first && cur.rows.length) {
     const upd = cur.rows.map(function (r) { const x = byUid[String(r[2])]; return [!x ? 'Removed from the sheet' : x.list.indexOf(String(r[1])) < 0 ? 'Reassigned' : x.stage]; });
     if (upd.some(function (u, i) { return String(cur.rows[i][10]) !== u[0]; })) sh.getRange(cur.first, 11, upd.length, 1).setValues(upd);
+    // the ETA now: a task whose ETA was moved to a later day has shifted out of this day's plan
+    const etas = cur.rows.map(function (r) { const x = byUid[String(r[2])]; return [x ? "'" + (x.eta || '') : "'" + dvd_(r[14])]; });
+    if (etas.some(function (u, i) { return u[0].slice(1) !== dvd_(cur.rows[i][14]); })) sh.getRange(cur.first, 15, etas.length, 1).setValues(etas);
   }
   if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, DAYPLAN_HEAD.length).setValues(add);
   return { ok: true, added: add.length };
@@ -1271,7 +1276,7 @@ function dayPlanGet_(user, b) {
   if (day === today && !cur.rows.length && mins >= 10 * 60) { const lock = LockService.getScriptLock(); if (lock.tryLock(15000)) { try { dayPlanTick_(day, mins); } finally { lock.releaseLock(); } cur = dayRows_(sh, day); } }
   const p = permsOf_(user), all = isAdminUser_(user) || (p.load && p.scope !== 'own');
   let mine = null; if (!all) { const te = teamEntryOf_(user); if (te) mine = te.name; else { const t = tasksNow_(); const m = t.resolve(user.name || ''); mine = m ? m.name : String(user.name || ''); } }
-  const rows = cur.rows.filter(function (r) { return all || String(r[1]) === mine; }).map(function (r) { return { person: String(r[1]), uid: String(r[2]), id: String(r[3]), brand: String(r[4]), topic: String(r[5]), type: String(r[6]), qty: Number(r[7]) || 1, cls: String(r[8]), start: String(r[9]), now: String(r[10]), added: String(r[11]) }; });
+  const rows = cur.rows.filter(function (r) { return all || String(r[1]) === mine; }).map(function (r) { return { person: String(r[1]), uid: String(r[2]), id: String(r[3]), brand: String(r[4]), topic: String(r[5]), type: String(r[6]), qty: Number(r[7]) || 1, cls: String(r[8]), start: String(r[9]), now: String(r[10]), added: String(r[11]), etaPlan: dvd_(r[13]), etaNow: dvd_(r[14]) }; });
   const days = {}; const last = sh.getLastRow();
   if (last > 1) { const n = Math.min(last - 1, 4000); sh.getRange(last - n + 1, 1, n, 1).getValues().forEach(function (r) { const d = r[0] instanceof Date ? Utilities.formatDate(r[0], IST, 'yyyy-MM-dd') : String(r[0]); if (/^\d{4}-/.test(d)) days[d] = 1; }); }
   return { ok: true, date: day, today: today, startsAt: '10:00', waiting: day === today && mins < 10 * 60, rows: rows, days: Object.keys(days).sort().reverse().slice(0, 60), all: all };
@@ -1306,6 +1311,15 @@ function pkgSave_(b, u) {
   const x = pkgInput_(b); if (x.error) return { ok: false, error: x.error };
   const sh = pkgSheet_(), now = new Date(), vals = function (id, createdBy, created) { return [id, safe_(x.brand), "'" + x.date, x.amount, x.from, JSON.stringify(x.items), x.total, safe_(x.notes), x.status, createdBy, created, u.email, now, false]; };
   const desc = x.brand + ': ' + x.total + ' creatives (' + x.items.map(function (it) { return it.qty + ' ' + it.type; }).join(', ') + '), ₹' + x.amount + ', from ' + x.date;
+  // A brand that already has orders: the person confirms this is a new (repeat) order, so an existing order is not
+  // entered twice by mistake. Order numbers (1st, 2nd, 3rd…) follow from the purchase dates.
+  const bkey = function (t) { return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+  const prior = pkgAll_().filter(function (p) { return bkey(p.brand) === bkey(x.brand) && p.id !== String(b.id || ''); });
+  const curBrand = b.id ? (pkgAll_().filter(function (p) { return p.id === String(b.id); })[0] || {}).brand : '';
+  if (prior.length && !b.repeatOk && (!b.id || bkey(curBrand) !== bkey(x.brand))) {
+    const last = prior.slice().sort(function (a, c) { return String(c.date).localeCompare(String(a.date)); })[0];
+    return { ok: false, error: 'repeat', orders: prior.length, latest: { id: last.id, date: last.date, total: last.total } };
+  }
   if (!b.id) {
     const id = 'P' + Utilities.formatDate(now, IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 4);
     sh.appendRow(vals(id, u.email, now));

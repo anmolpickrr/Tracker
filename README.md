@@ -127,7 +127,7 @@ Stand-up › **Day plan** shows:
 - **The day at a glance**: delivered so far out of the plan with a progress meter, and five steps (All tasks, Not started, In progress, In review, Delivered) that also filter the lanes below. Under them, the points to raise at stand-up: tasks past the ETA, tasks waiting on changes, people who haven't picked anything up, tasks picked up since the morning, tasks added during the day.
 - **One lane per person**: name, role, delivered out of planned and a bar by phase, then their tasks as equal-size cards (four per row on a laptop; a swipeable row on phones). Each card shows the brand, creative ID, creative type, how late it is, the first four words of the topic, the exact status and Internal or External. Click a card to edit the task. Work in progress comes first; people with the most still to do come first.
 
-Today's statuses are live; pick a past day from the list. Before 10:00 a preview from the live sheets is shown. Everyone sees their own day; the owner, Admins and people allowed to see others' work see everyone's.
+A task whose ETA is moved to a later day (in the sheet or from the dashboard) is marked *Moved to <date>*, no longer counts in the day, and can be listed with the *moved to another day* flag; a task whose ETA moves to today joins the day at once. Today's statuses are live; pick a past day from the list. Before 10:00 a preview from the live sheets is shown. Everyone sees their own day; the owner, Admins and people allowed to see others' work see everyone's.
 
 **Matching people to the team list.** Someone given access is linked to their team-list entry by, in order: their email written under "Also written as"; their Google name or a listed spelling; the name in their email address (aman@pickrr.com → Aman, abhist.dixit@… → Abhist); a first name that fits exactly one person. So people added by email, or whose Google name differs from the sheet, still see their own work, and they are shown everywhere by their team-list name (aman@pickrr.com is "Aman"), never as a second person. If two people share a first name, add the email under "Also written as".
 
@@ -137,7 +137,17 @@ Every person with access has a **Permissions** button on the Access page, and a 
 
 ## Brand packages (Brands)
 
-Packages a brand has bought (for example 10 creatives: 5 AI UGC, 2 AI Catalogue, 3 Static), kept in the *Packages* tab. **Add package**: brand (from the existing brands, or a new one, which is then offered for future packages), purchase date, total amount incl. tax (₹), which sheet counts (Internal, External or both), creative types and quantities (the total is worked out), notes. **Delivered** = completed (DONE) creatives of that brand and type from the purchase date, filling the oldest open package first; **remaining** = bought - delivered. Open requests for the brand are compared with what is left, with a warning when the package is complete or the open requests exceed it. A package can be closed to stop counting. Only the owner sees packages by default; on the Access page the owner or an Admin gives anyone *View* or *Edit*. Every change is in the activity log.
+Orders of creatives that brands buy (for example 10 creatives: 5 AI UGC, 2 AI Catalogue, 3 Static), kept in the *Packages* tab. Built to stay quick with thousands of orders:
+
+- **Summary**: orders (running, brands), repeat clients, creatives bought and delivered, still due, value incl. tax.
+- **Brands that need a new order**: brands whose open requests in the sheets go beyond what they have bought, with *Add 2nd/3rd… order* and *History*.
+- **Search** by brand, order ID or notes (e.g. an invoice number); **filters** for status (running, requests beyond package, complete, over-delivered, closed), sheet and purchase date; **sort**; every active filter shows as a chip you can remove; **20, 50 or 100 per page**.
+- **Orders / Brands** views: one row per order, or one row per brand with lifetime orders, delivered, still due, open requests and value. Clicking a brand shows its orders.
+- **Order numbers**: each brand's orders are numbered *1st order, 2nd order, 3rd order…* by purchase date, worked out every time (so edits and deletions renumber correctly).
+- **Order details** (click a row): creatives per type delivered and due, warnings, order ID, amount, notes, who added it, and the brand's **order history**, with *Edit order* and *Add next order*.
+- **Repeat orders**: adding an order for a brand that already has one asks *"An order already exists for this brand. Is this a new order?"*, lists its latest orders with *Update this order*, flags a possible duplicate (same date and quantity), and saves only after *Yes, it's a new order*. The web app checks this too.
+
+**Delivered** = completed (DONE) creatives of that brand and type from the purchase date, filling the oldest open order first; **still due** = bought - delivered. A package can be closed to stop counting. Only the owner sees packages by default; on the Access page the owner or an Admin gives anyone *View* or *Edit*. Every change is in the activity log.
 
 ## Content tasks (briefs, scripts, content)
 
