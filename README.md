@@ -137,17 +137,29 @@ Every person with access has a **Permissions** button on the Access page, and a 
 
 ## Brand packages (Brands)
 
-Orders of creatives that brands buy (for example 10 creatives: 5 AI UGC, 2 AI Catalogue, 3 Static), kept in the *Packages* tab. Built to stay quick with thousands of orders:
+What brands buy, kept in the *Packages* tab. Three **package types**:
 
-- **Summary**: orders (running, brands), repeat clients, creatives bought and delivered, still due, value incl. tax.
-- **Brands that need a new order**: brands whose open requests in the sheets go beyond what they have bought, with *Add 2nd/3rd… order* and *History*.
-- **Search** by brand, order ID or notes (e.g. an invoice number); **filters** for status (running, requests beyond package, complete, over-delivered, closed), sheet and purchase date; **sort**; every active filter shows as a chip you can remove; **20, 50 or 100 per page**.
-- **Orders / Brands** views: one row per order, or one row per brand with lifetime orders, delivered, still due, open requests and value. Clicking a brand shows its orders.
-- **Order numbers**: each brand's orders are numbered *1st order, 2nd order, 3rd order…* by purchase date, worked out every time (so edits and deletions renumber correctly).
-- **Order details** (click a row): creatives per type delivered and due, warnings, order ID, amount, notes, who added it, and the brand's **order history**, with *Edit order* and *Add next order*.
-- **Repeat orders**: adding an order for a brand that already has one asks *"An order already exists for this brand. Is this a new order?"*, lists its latest orders with *Update this order*, flags a possible duplicate (same date and quantity), and saves only after *Yes, it's a new order*. The web app checks this too.
+- **Fixed package**: a set number of creatives per type, bought once (for example 20 Static and 5 Videos).
+- **Monthly plan**: creatives per type every month, billed every month from the start date, with an optional end date. Each billing month is counted on its own (unused creatives do not carry over); the order shows this month's progress, the next bill date, what has been billed so far and a month-by-month list.
+- **Custom package**: either a number of creatives (per type, or *Any type*), or an **amount** spent at a rate per creative type (for example ₹10,000 at ₹1,000 a Static and ₹3,000 a Video).
 
-**Delivered** = completed (DONE) creatives of that brand and type from the purchase date, filling the oldest open order first; **still due** = bought - delivered. A package can be closed to stop counting. Only the owner sees packages by default; on the Access page the owner or an Admin gives anyone *View* or *Edit*. Every change is in the activity log.
+**Delivered** = completed (DONE) creatives of that brand from the purchase date (for a monthly plan, within each billing month), counted per creative type: monthly plans first, then fixed and custom packages, oldest first. **Still due** and **extra** are worked out per type and highlighted: with 20 Static and 5 Videos bought and 19 Static and 6 Videos delivered, the order shows *1 Static still due* and *1 Video extra* (in orange, on the row, the type and the *Extra delivered* summary, which lists the orders with extra when clicked). A creative type the package does not include is shown as *not in this package* and counted as extra.
+
+Built to stay quick with thousands of orders:
+
+- **Summary**: orders, repeat clients, creatives delivered of bought, still due, extra delivered, value (with the monthly total from running plans).
+- **Brands that need a new order**: brands whose open requests go beyond what they have bought, with *Add 2nd/3rd… order* and *History*.
+- **Search** by brand, order ID or notes; **filters** for package type, status (running, requests beyond package, extra delivered, complete or ended, closed), sheet and purchase date; **sort**; removable filter chips; **20, 50 or 100 per page**.
+- **Orders / Brands** views; clicking a brand shows its orders.
+- **Order numbers**: *1st order, 2nd order…* per brand by purchase date, worked out every time.
+- **Order details**: creatives per type (delivered, due, extra), billing, notes, who added it, the brand's order history, *Edit order* and *Add next order*.
+- **Repeat orders**: adding an order for a brand that already has one asks *"An order already exists for this brand. Is this a new order?"*, lists its latest orders with *Update this order*, flags a possible duplicate, and saves only after *Yes, it's a new order*. The web app checks this too.
+
+A package can be closed to stop counting. Only the owner sees packages by default; on the Access page the owner or an Admin gives anyone *View* or *Edit*. Every change is in the activity log.
+
+## Rescheduling and reassigning (Admins only)
+
+Changing a task's **ETA** or **who it is assigned to** is for Admins (and the owner) only, from any screen; the web app refuses it for everyone else, and the task editor shows those fields locked with a note. Editors can still change status, priority and quantity. In the editor, Admins have quick buttons: *Today*, *Tomorrow*, *Next working day* (Monday to Friday) and *+1 week*. A rescheduled or reassigned task moves at once: it leaves the day it was planned for (*Moved to 16 Nov*, or *Now with Yashika*), joins the new person's list, and shows in the Day plan's *Coming up* preview for its new day. The sheets themselves are shared in Google Sheets, so who can edit the ETA and designer columns there is set with the sheet's own sharing and protected ranges.
 
 ## Content tasks (briefs, scripts, content)
 

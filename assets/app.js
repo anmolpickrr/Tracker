@@ -1680,13 +1680,15 @@
     if (!DP.data && !DP.busy && A.mode === 'auth' && A.user && Date.now() - (DP.tried || 0) > 15000) { DP.tried = Date.now(); setTimeout(() => dpLoad(), 0); } // signed in after the view opened (at most every 15 s if it fails)
     el.replaceChildren();
     const d = DP.data, live = new Map((CO.rows(true) || []).map((r) => [r.uid, r]));
-    const today = d ? d.today : CO.today(), day = d ? d.date : today, isToday = day === today;
-    let rows = d && d.rows ? d.rows.slice() : [];
-    const preview = isToday && (!d || d.waiting || !rows.length);
-    if (preview) rows = dpPreview();
+    const today = d ? d.today : CO.today(), future = !!DP.date && DP.date > today, day = future ? DP.date : d ? d.date : today, isToday = day === today;
+    let rows = d && d.rows && !future ? d.rows.slice() : [];
+    const preview = future || (isToday && (!d || d.waiting || !rows.length));
+    // an upcoming day: the tasks due that day as the sheets stand now (rescheduled and reassigned work shows at once)
+    if (future) rows = (CO.rows(true) || []).filter((r) => r.open && r.eta === day).flatMap((r) => r.list.map((p) => ({ person: p, uid: r.uid, id: r.id, brand: r.brand, topic: CO.topicText(r), type: r.type, qty: r.qty || 1, cls: CO.cls(r), start: r.stage, now: r.stage, added: 'Preview', eta: r.eta })));
+    else if (preview) rows = dpPreview();
     // tasks that came into today since the last save (ETA moved to today, picked up) show at once
     if (isToday && !preview) { const have = new Set(rows.map((x) => x.person + '|' + x.uid)); dpPreview().forEach((y) => { if (!have.has(y.person + '|' + y.uid)) rows.push(Object.assign(y, { added: 'During the day', etaPlan: '' })); }); }
-    if (isToday) rows = rows.map((x) => { const r = live.get(x.uid); return Object.assign({}, x, { now: !r ? 'Removed from the sheet' : r.list.includes(x.person) ? r.stage : 'Reassigned', eta: r ? r.eta : x.etaNow || '' }); });
+    if (isToday) rows = rows.map((x) => { const r = live.get(x.uid); return Object.assign({}, x, { now: !r ? 'Removed from the sheet' : r.list.includes(x.person) ? r.stage : 'Reassigned', to: r && !r.list.includes(x.person) ? r.list.join(', ') : '', eta: r ? r.eta : x.etaNow || '' }); });
     else rows = rows.map((x) => Object.assign({}, x, { eta: x.etaNow || '' }));
     const p = dash.params(); if (p.designer && p.designer !== '__none') rows = rows.filter((x) => x.person === p.designer);
     rows.forEach((x) => {
@@ -1705,12 +1707,14 @@
     const hero = dpEl('div', 'co-card dp-hero');
     const top = dpEl('div', 'dp-hero-top');
     const tl = dpEl('div', 'dp-title');
-    tl.append(dpEl('h2', 'co-h2', isToday ? 'Today’s plan' : 'Plan for ' + CO.fmtDate(day, true)),
-      dpEl('p', 'co-note', preview ? (d && d.waiting ? 'Saved at 10:00 IST. Until then, a live preview from the sheets.' : 'Live preview from the sheets.') : isToday ? 'Saved at 10:00 IST · statuses update live' : 'How the day ended'));
+    tl.append(dpEl('h2', 'co-h2', isToday ? 'Today’s plan' : future ? 'Coming up: ' + CO.fmtDate(day, true) : 'Plan for ' + CO.fmtDate(day, true)),
+      dpEl('p', 'co-note', future ? 'Preview: the tasks due that day as the sheets stand now. The plan is saved at 10:00 IST on the day.' : preview ? (d && d.waiting ? 'Saved at 10:00 IST. Until then, a live preview from the sheets.' : 'Live preview from the sheets.') : isToday ? 'Saved at 10:00 IST · statuses update live' : 'How the day ended'));
     const sel = dpEl('select', 'co-select'); sel.setAttribute('aria-label', 'Day');
-    const days = [today].concat(((d && d.days) || []).filter((x) => x !== today));
+    const nextDays = []; { let x = today; while (nextDays.length < 2) { x = new Date(Date.parse(x) + 864e5).toISOString().slice(0, 10); if (![0, 6].includes(new Date(x + 'T00:00:00Z').getUTCDay())) nextDays.push(x); } }
+    nextDays.slice().reverse().forEach((x) => sel.append(new Option('Coming up: ' + CO.fmtDate(x, true) + ' (preview)', x)));
+    const days = [today].concat(((d && d.days) || []).filter((x) => x !== today && x < today));
     days.forEach((x) => sel.append(new Option(x === today ? 'Today, ' + CO.fmtDate(x) : CO.fmtDate(x, true), x)));
-    sel.value = day; sel.addEventListener('change', () => { DP.date = sel.value === today ? '' : sel.value; DP.data = null; DP.phase = ''; dash.draw('dayplan'); dpLoad(true); });
+    sel.value = day; sel.addEventListener('change', () => { const v = sel.value; DP.date = v === today ? '' : v; DP.phase = ''; if (v > today) { dash.draw('dayplan'); return; } DP.data = null; dash.draw('dayplan'); dpLoad(true); });
     top.append(tl, sel); hero.append(top);
     if (!d && DP.busy) hero.append(dpEl('p', 'co-note', 'Loading the day’s plan…'));
     if (!active.length && !(DP.busy && !d)) { hero.append(dpEl('p', 'dp-empty', isToday ? 'Nothing is due, overdue or in progress for anyone today.' : 'No plan was saved for this day.')); el.append(hero); return; }
@@ -1792,7 +1796,7 @@
     if (x.late) { const l = dpEl('span', 'dp-late', x.late + 'd late'); l.title = x.late + ' days past the ETA'; r2.append(l); }
     const desc = dpEl('p', 'dp-desc', dpWords(x.topic, 4) || '—'); if (x.topic) desc.title = x.topic;
     const r3 = dpEl('div', 'dp-tk-r3');
-    r3.append(dpEl('span', 'dp-st', x.ph === 'moved' ? 'Moved to ' + CO.fmtDate(x.eta) : DP_FINE[x.now] || x.now));
+    r3.append(dpEl('span', 'dp-st', x.ph === 'moved' ? 'Moved to ' + CO.fmtDate(x.eta) : x.now === 'Reassigned' && x.to ? 'Now with ' + x.to.split(',')[0].split(' ')[0] : DP_FINE[x.now] || x.now));
     r3.append(dpEl('span', 'dp-src ' + (x.cls === 'External' ? 'ext' : 'int'), x.cls === 'External' ? 'External' : 'Internal'));
     if (x.isNew) r3.append(dpEl('span', 'dp-flag2', 'New'));
     else if (x.picked && x.ph !== 'done') r3.append(dpEl('span', 'dp-flag2', 'Picked up'));
@@ -1806,7 +1810,7 @@
      brand and creative type from the purchase date, from the sheet(s) the package counts; they fill the oldest open
      package first, then the next. Remaining = purchased - delivered. Requests still open for the brand are shown
      against what is left, so nothing beyond the package is picked up. Owner only, unless the owner grants view/edit. */
-  const PK = { list: null, busy: false, err: '', edit: null };
+  const PK = { list: null, busy: false, err: '', edit: null, form: { kind: 'Fixed', basis: 'creatives' } };
   const pkPerm = () => (A.mode !== 'auth' || !A.user ? '' : A.user.owner ? 'edit' : (A.user.perms && A.user.perms.packages) || '');
   const pkNorm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   async function pkLoad() {
@@ -1814,24 +1818,61 @@
     try { const b = await callApi({ action: 'packages' }, true); if (b.ok) { PK.list = b.packages; PK.err = ''; } else PK.err = b.error === 'forbidden' ? '' : (b.error || 'Packages could not load'); } catch (e) { PK.err = e.message; }
     PK.busy = false; dash.draw('packages');
   }
-  // Allocation of delivered creatives to packages, oldest package first. Indexed by brand, so thousands of packages
-  // and rows stay quick.
+  /* Package types. Fixed: creatives per type, bought once. Monthly plan: creatives per type each month, billed every
+     month from the start date (a month that is not used up does not roll over). Custom: a number of creatives (any
+     type, or per type) or an amount spent at a rate per creative type. */
+  const PK_KIND = { Fixed: 'Fixed package', Monthly: 'Monthly plan', Custom: 'Custom package' };
+  const pkKind = (p) => (p.kind === 'Monthly' || p.kind === 'Custom' ? p.kind : 'Fixed');
+  const pkByAmount = (p) => pkKind(p) === 'Custom' && p.basis === 'amount';
+  const pkAddMonths = (d, n) => { const [y, m, dd] = d.split('-').map(Number), t = new Date(Date.UTC(y, m - 1 + n, 1)), last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate(); t.setUTCDate(Math.min(dd, last)); return t.toISOString().slice(0, 10); };
+  const pkPrevDay = (d) => new Date(Date.parse(d) - 864e5).toISOString().slice(0, 10);
+  // A monthly plan's billing months, from the start date up to today (or the end date).
+  function pkCycles(p) {
+    const out = [], stop = p.end && p.end < CO.today() ? p.end : CO.today();
+    for (let i = 0; i < 600; i++) { const from = pkAddMonths(p.date, i); if (from > stop) break; out.push({ n: i + 1, from, to: pkPrevDay(pkAddMonths(p.date, i + 1)) }); }
+    return out;
+  }
+  const pkItems = (p) => p.items.map((it) => ({ type: it.type, key: pkNorm(it.type), qty: it.qty || 0, rate: it.rate || 0, used: 0, over: 0, open: 0 }));
+  /* Delivered creatives (DONE, from the sheets) counted against a brand's packages: monthly plans first (that month's
+     allowance), then fixed and custom packages, oldest first. What is delivered beyond a type's quantity is recorded as
+     extra on that type; a creative type the package does not include is recorded as "not in the package". */
   function pkAlloc(pkgs) {
     const rows = CO.rows(true) || [], out = new Map(), byBrand = new Map();
-    const ps = pkgs.map((p) => ({ p, items: p.items.map((it) => ({ type: it.type, key: pkNorm(it.type), qty: it.qty, used: 0, over: 0, open: 0 })) })).sort((a, b) => a.p.date.localeCompare(b.p.date) || String(a.p.created || '').localeCompare(String(b.p.created || '')));
+    const ps = pkgs.map((p) => {
+      const x = { p, kind: pkKind(p), amount: pkByAmount(p), items: pkItems(p), outside: new Map(), value: 0, overValue: 0, cycles: null };
+      if (x.kind === 'Monthly') x.cycles = pkCycles(p).map((c) => Object.assign(c, { items: pkItems(p), outside: new Map() }));
+      return x;
+    }).sort((a, b) => (a.kind === 'Monthly' ? 0 : 1) - (b.kind === 'Monthly' ? 0 : 1) || a.p.date.localeCompare(b.p.date) || String(a.p.created || '').localeCompare(String(b.p.created || '')));
     ps.forEach((x) => { out.set(x.p.id, x); const k = pkNorm(x.p.brand); if (!byBrand.has(k)) byBrand.set(k, []); byBrand.get(k).push(x); });
     const clsOf = (r) => (r.source === 'Paid' ? 'External' : 'Internal');
+    const itemFor = (items, tk) => items.find((i) => i.key === tk) || items.find((i) => i.key === 'any type');
+    const cycleOf = (x, d) => x.cycles && x.cycles.find((c) => c.from <= d && d <= c.to);
     rows.forEach((r) => {
-      const list = byBrand.get(pkNorm(r.brand)); if (!list) return;
+      if (!r.open) return; const list = byBrand.get(pkNorm(r.brand)); if (!list) return;
       const tk = pkNorm(r.type), cls = clsOf(r);
-      if (r.open) list.forEach((x) => { if ((r.req || '') < x.p.date || !(x.p.from === 'Both' || x.p.from === cls)) return; const it = x.items.find((i) => i.key === tk) || x.items.find((i) => i.key === 'any type'); if (it) it.open += r.qty || 1; });
+      list.forEach((x) => {
+        if (!(x.p.from === 'Both' || x.p.from === cls)) return;
+        let items = x.items;
+        if (x.kind === 'Monthly') { const c = x.cycles[x.cycles.length - 1]; if (!c || (r.req || '') < c.from) return; items = c.items; } else if ((r.req || '') < x.p.date) return;
+        const it = itemFor(items, tk); if (it) it.open += r.qty || 1;
+      });
     });
     rows.filter((r) => r.stage === 'Delivered' && r.ddate && byBrand.has(pkNorm(r.brand))).sort((a, b) => a.ddate.localeCompare(b.ddate)).forEach((r) => {
-      const tk = pkNorm(r.type), cls = clsOf(r);
-      const cands = byBrand.get(pkNorm(r.brand)).filter((x) => x.p.status !== 'Closed' && x.p.date <= r.ddate && (x.p.from === 'Both' || x.p.from === cls));
-      let units = r.qty || 1; let lastItem = null;
-      for (const x of cands) { const it = x.items.find((i) => i.key === tk) || x.items.find((i) => i.key === 'any type'); if (!it) continue; lastItem = it; const take = Math.min(units, it.qty - it.used); if (take > 0) { it.used += take; units -= take; } if (!units) break; }
-      if (units && lastItem) lastItem.over += units; // delivered beyond what was bought
+      const D = r.ddate, tk = pkNorm(r.type), cls = clsOf(r);
+      const cands = byBrand.get(pkNorm(r.brand)).filter((x) => x.p.status !== 'Closed' && x.p.date <= D && (!x.p.end || D <= x.p.end) && (x.p.from === 'Both' || x.p.from === cls));
+      let units = r.qty || 1, last = null;
+      for (const x of cands) {
+        const cyc = x.kind === 'Monthly' ? cycleOf(x, D) : null; if (x.kind === 'Monthly' && !cyc) continue;
+        const it = itemFor(cyc ? cyc.items : x.items, tk); if (!it) continue; last = { x, it };
+        let take;
+        if (x.amount) { take = it.rate ? Math.min(units, Math.max(0, Math.floor((x.p.amount - x.value) / it.rate + 1e-9))) : 0; x.value += take * it.rate; }
+        else take = Math.min(units, it.qty - it.used);
+        if (take > 0) { it.used += take; units -= take; }
+        if (!units) break;
+      }
+      if (!units) return;
+      if (last) { last.it.over += units; if (last.x.amount) last.x.overValue += units * last.it.rate; } // delivered beyond what was bought
+      else if (cands.length) { const x = cands[cands.length - 1], cyc = x.kind === 'Monthly' ? cycleOf(x, D) : null, m = cyc ? cyc.outside : x.outside; m.set(r.type || 'Unspecified', (m.get(r.type || 'Unspecified') || 0) + units); } // a type the package does not include
     });
     return out;
   }
@@ -1845,15 +1886,38 @@
     by.forEach((ps) => ps.forEach((p, i) => out.set(p.id, { n: i + 1, of: ps.length, all: ps })));
     return out;
   }
-  const PKV = Object.assign({ view: 'orders', status: '', from: '', when: '', sort: 'new', size: 20 }, (() => { try { return JSON.parse(LS.get('co.pkv', '{}')) || {}; } catch (e) { return {}; } })(), { q: '', brand: '', page: 1, open: '' });
-  const pkSaveView = () => LS.set('co.pkv', JSON.stringify({ view: PKV.view, status: PKV.status, from: PKV.from, when: PKV.when, sort: PKV.sort, size: PKV.size }));
+  const PKV = Object.assign({ view: 'orders', status: '', from: '', when: '', kind: '', sort: 'new', size: 20 }, (() => { try { return JSON.parse(LS.get('co.pkv', '{}')) || {}; } catch (e) { return {}; } })(), { q: '', brand: '', page: 1, open: '' });
+  const pkSaveView = () => LS.set('co.pkv', JSON.stringify({ view: PKV.view, status: PKV.status, from: PKV.from, when: PKV.when, kind: PKV.kind, sort: PKV.sort, size: PKV.size }));
   const pkEl = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const PK_ST = { running: 'Running', complete: 'Complete', over: 'Over-delivered', attention: 'Requests beyond package', closed: 'Closed' };
+  /* One order's numbers. For a monthly plan: this month's allowance (and the whole plan so far); for an amount-based
+     custom package: rupees spent of the amount; otherwise creatives delivered of those bought. Extra = delivered beyond a
+     type's quantity, plus creative types the package does not include. */
   function pkFacts(p, x) {
-    const used = x.items.reduce((a, it) => a + it.used, 0), over = x.items.reduce((a, it) => a + it.over, 0), left = Math.max(0, p.total - used), open = x.items.reduce((a, it) => a + it.open, 0);
-    const st = p.status === 'Closed' ? 'closed' : left === 0 ? 'complete' : 'running';
-    return { used, over, left, open, st, attention: st !== 'closed' && open > left, pct: p.total ? Math.min(100, Math.round(used / p.total * 100)) : 0 };
+    const today = CO.today(), kind = pkKind(p), sumUsed = (its) => its.reduce((a, it) => a + Math.min(it.used, it.qty), 0), sumQty = (its) => its.reduce((a, it) => a + it.qty, 0);
+    const outN = (m) => [...m.values()].reduce((a, n) => a + n, 0);
+    let items = x.items, outside = x.outside, total, used, left, overUnits, unit = 'cr', cycle = null, lifeTotal, lifeUsed, billed = p.amount || 0, next = '', ended = false;
+    if (kind === 'Monthly') {
+      cycle = x.cycles[x.cycles.length - 1] || null; items = cycle ? cycle.items : x.items; outside = cycle ? cycle.outside : x.outside;
+      ended = !!(p.end && p.end < today); billed = x.cycles.length * (p.amount || 0); next = ended || !cycle ? '' : pkAddMonths(p.date, cycle.n);
+      if (next && p.end && next > p.end) next = '';
+      lifeTotal = x.cycles.reduce((a, c) => a + sumQty(c.items), 0); lifeUsed = x.cycles.reduce((a, c) => a + sumUsed(c.items), 0);
+    }
+    if (x.amount) {
+      unit = '₹'; total = p.amount || 0; used = Math.min(x.value, total); left = Math.max(0, total - x.value);
+      overUnits = items.reduce((a, it) => a + it.over, 0) + outN(outside); lifeTotal = 0; lifeUsed = 0;
+    } else {
+      total = sumQty(items); used = sumUsed(items); left = Math.max(0, total - used); overUnits = items.reduce((a, it) => a + it.over, 0) + outN(outside);
+      if (kind !== 'Monthly') { lifeTotal = total; lifeUsed = used; }
+    }
+    const open = items.reduce((a, it) => a + it.open, 0), minRate = x.amount ? Math.min(...items.map((it) => it.rate).filter(Boolean), Infinity) : 0;
+    const done = x.amount ? left < minRate : left === 0;
+    const st = p.status === 'Closed' ? 'closed' : kind === 'Monthly' ? (ended ? 'ended' : 'running') : done ? 'complete' : 'running';
+    const due = items.filter((it) => !x.amount && it.qty > it.used).map((it) => ({ type: it.type, n: it.qty - it.used }));
+    const extra = items.filter((it) => it.over).map((it) => ({ type: it.type, n: it.over })).concat([...outside].map(([t, n]) => ({ type: t, n, outside: true })));
+    const attention = st === 'running' && (x.amount ? open > 0 && left < minRate * open : kind !== 'Monthly' && open > left);
+    return { kind, unit, total, used, left, overUnits, over: overUnits, open, st, attention, pct: total ? Math.min(100, Math.round(used / total * 100)) : 0, items, outside, cycle, lifeTotal, lifeUsed, billed, next, ended, due, extra, value: x.value, overValue: x.overValue };
   }
+  const pkNum = (f, n) => (f.unit === '₹' ? inr(n) : CO.num(n));
   const pkWhen = (w, d) => { if (!w) return true; const t = CO.today(); if (w === 'month') return d.slice(0, 7) === t.slice(0, 7); if (w === '3m') { const x = new Date(t); x.setMonth(x.getMonth() - 3); return d >= x.toISOString().slice(0, 10); } if (w === 'year') return d.slice(0, 4) === t.slice(0, 4); if (w === 'lastyear') return d.slice(0, 4) === String(+t.slice(0, 4) - 1); return true; };
   dash.draw('packages', (el) => {
     const perm = pkPerm(); el.hidden = !perm; if (!perm) { el.replaceChildren(); return; }
@@ -1861,7 +1925,7 @@
     const hadFocus = document.activeElement && document.activeElement.id === 'pk-q' ? document.activeElement.selectionStart : null;
     el.replaceChildren();
     const head = pkEl('div', 'co-card-head');
-    const l = pkEl('div'); l.append(pkEl('h2', 'co-h2', 'Brand packages'), pkEl('p', 'co-note', 'Orders each brand has bought, delivered and still due. Delivered counts update automatically from the sheets.')); head.append(l);
+    const l = pkEl('div'); l.append(pkEl('h2', 'co-h2', 'Brand packages'), pkEl('p', 'co-note', 'Fixed packages, monthly plans and custom packages: what each brand has bought, delivered, still due and any extra. Delivered counts update automatically from the sheets.')); head.append(l);
     if (perm === 'edit') { const add = pkEl('button', 'co-btn primary', 'Add package'); add.type = 'button'; add.addEventListener('click', () => pkOpen(null)); head.append(add); }
     el.append(head); collapser(el, 'packages', 'Brand packages');
     if (PK.err) { el.append(pkEl('p', 'co-note bad', PK.err)); return; }
@@ -1871,22 +1935,33 @@
     if (!all.length) { el.append(pkEl('p', 'qn-empty', perm === 'edit' ? 'No packages yet. Add one with Add package; deliveries are counted automatically.' : 'No packages yet.')); return; }
     // brands (lifetime) and brands that need a new order
     const brands = new Map();
-    all.forEach((p) => { const k = pkNorm(p.brand), f = F.get(p.id); if (!brands.has(k)) brands.set(k, { brand: p.brand, orders: [], bought: 0, used: 0, value: 0, left: 0, last: '', running: 0 }); const b = brands.get(k); b.orders.push(p); b.bought += p.total; b.used += Math.min(f.used, p.total); b.value += p.amount || 0; if (p.date >= b.last) { b.last = p.date; b.brand = p.brand; } if (f.st === 'running') { b.left += f.left; b.running++; } });
+    all.forEach((p) => {
+      const k = pkNorm(p.brand), f = F.get(p.id);
+      if (!brands.has(k)) brands.set(k, { brand: p.brand, orders: [], bought: 0, used: 0, value: 0, left: 0, last: '', running: 0, renews: false, extra: 0 });
+      const b = brands.get(k); b.orders.push(p); b.bought += f.lifeTotal; b.used += f.lifeUsed; b.value += f.billed; b.extra += f.overUnits;
+      if (p.date >= b.last) { b.last = p.date; b.brand = p.brand; }
+      if (f.st === 'running') { b.running++; if (f.kind === 'Monthly' || (f.unit === '₹' && !f.attention)) b.renews = true; else b.left += f.left; }
+    });
     const rowsNow = CO.rows(true) || [];
     brands.forEach((b) => {
       const act = b.orders.filter((p) => p.status !== 'Closed'), since = (act.length ? act : b.orders).reduce((m, p) => (p.date < m ? p.date : m), '9999'), froms = new Set(b.orders.map((p) => p.from));
       b.open = rowsNow.filter((r) => r.open && pkNorm(r.brand) === pkNorm(b.brand) && (r.req || '') >= since && (froms.has('Both') || froms.has(r.source === 'Paid' ? 'External' : 'Internal'))).reduce((a, r) => a + (r.qty || 1), 0);
-      b.need = Math.max(0, b.open - b.left);
+      b.need = b.renews ? 0 : Math.max(0, b.open - b.left); // a running monthly plan renews every month
     });
     // summary tiles
-    const sumOf = (ps) => ({ n: ps.length, run: ps.filter((p) => F.get(p.id).st === 'running').length, bought: ps.reduce((a, p) => a + p.total, 0), used: ps.reduce((a, p) => a + Math.min(F.get(p.id).used, p.total), 0), value: ps.reduce((a, p) => a + (p.amount || 0), 0) });
-    const S0 = sumOf(all), repeat = [...brands.values()].filter((b) => b.orders.length > 1).length;
+    const runningP = all.filter((p) => F.get(p.id).st === 'running'), monthly = runningP.filter((p) => pkKind(p) === 'Monthly');
+    const bought = all.reduce((a, p) => a + F.get(p.id).lifeTotal, 0), deliv = all.reduce((a, p) => a + F.get(p.id).lifeUsed, 0);
+    const due = runningP.reduce((a, p) => a + (F.get(p.id).unit === '₹' ? 0 : F.get(p.id).left), 0), extra = all.reduce((a, p) => a + F.get(p.id).overUnits, 0);
+    const value = all.reduce((a, p) => a + F.get(p.id).billed, 0), perMonth = monthly.reduce((a, p) => a + (p.amount || 0), 0), repeat = [...brands.values()].filter((b) => b.orders.length > 1).length;
     const tiles = pkEl('div', 'pk-tiles');
-    [['Orders', CO.num(S0.n), S0.run + ' running · ' + brands.size + ' brands'], ['Repeat clients', CO.num(repeat), brands.size ? Math.round(repeat / brands.size * 100) + '% of brands ordered again' : ''], ['Creatives bought', CO.num(S0.bought), CO.num(S0.used) + ' delivered · ' + (S0.bought ? Math.round(S0.used / S0.bought * 100) : 0) + '%'], ['Still due', CO.num(Math.max(0, S0.bought - S0.used)), 'on running orders'], ['Value', inr(S0.value), 'incl. tax']].forEach(([lab, v, s2]) => {
-      const t = pkEl('div', 'pk-tile'); t.append(pkEl('b', '', v), pkEl('span', '', lab)); if (s2) t.append(pkEl('small', '', s2)); tiles.append(t);
+    [['Orders', CO.num(all.length), runningP.length + ' running · ' + brands.size + ' brands', ''], ['Repeat clients', CO.num(repeat), brands.size ? Math.round(repeat / brands.size * 100) + '% of brands ordered again' : '', ''],
+      ['Creatives delivered', CO.num(deliv) + ' / ' + CO.num(bought), bought ? Math.round(deliv / bought * 100) + '% of creatives bought' : '', ''], ['Still due', CO.num(due), 'on running orders (this month for plans)', ''],
+      ['Extra delivered', CO.num(extra), extra ? 'beyond what was bought: check the orders' : 'nothing beyond what was bought', extra ? 'warn' : ''], ['Value', inr(value), perMonth ? inr(perMonth) + ' a month from ' + monthly.length + ' monthly plan' + (monthly.length === 1 ? '' : 's') : 'incl. tax', '']].forEach(([lab, v, s2, cls]) => {
+      const t = pkEl('div', 'pk-tile' + (cls ? ' ' + cls : '')); t.append(pkEl('b', '', v), pkEl('span', '', lab)); if (s2) t.append(pkEl('small', '', s2));
+      if (lab === 'Extra delivered' && extra) { t.tabIndex = 0; t.setAttribute('role', 'button'); t.title = 'Show orders with extra creatives'; const go = () => { PKV.view = 'orders'; PKV.status = 'over'; PKV.page = 1; pkSaveView(); dash.draw('packages'); }; t.addEventListener('click', go); t.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); }); }
+      tiles.append(t);
     });
     el.append(tiles);
-    // brands whose open requests go beyond what they have bought: a new order is probably due
     const need = [...brands.values()].filter((b) => b.need > 0).sort((a, b) => b.need - a.need);
     if (need.length) {
       const box = pkEl('div', 'pk-need'); const hd = pkEl('div', 'pk-need-h'); hd.append(pkEl('b', '', need.length === 1 ? '1 brand needs a new order' : need.length + ' brands need a new order'), pkEl('span', 'co-note', 'New requests in the sheets go beyond what these brands have bought. Is this a new order?')); box.append(hd);
@@ -1905,22 +1980,26 @@
     const bar = pkEl('div', 'pk-bar2');
     const sw = pkEl('label', 'pk-search'); const q = pkEl('input', 'co-input'); q.id = 'pk-q'; q.type = 'search'; q.placeholder = PKV.view === 'brands' ? 'Search brands' : 'Search brand, order ID or notes'; q.value = PKV.q; q.setAttribute('aria-label', 'Search packages'); sw.append(q);
     const seg = pkEl('div', 'seg pk-view'); seg.setAttribute('role', 'tablist');
-    [['orders', 'Orders'], ['brands', 'Brands']].forEach(([k, t]) => { const b = pkEl('button', PKV.view === k ? 'on' : '', t); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(PKV.view === k)); b.addEventListener('click', () => { PKV.view = k; PKV.page = 1; PKV.open = ''; pkSaveView(); dash.draw('packages'); }); seg.append(b); });
-    const mkSel = (label, key, opts) => { const s2 = pkEl('select', 'co-select'); s2.setAttribute('aria-label', label); opts.forEach(([v, t]) => s2.append(new Option(t, v))); s2.value = PKV[key]; s2.addEventListener('change', () => { PKV[key] = key === 'size' ? +s2.value : s2.value; PKV.page = 1; pkSaveView(); dash.draw('packages'); }); return s2; };
-    const stSel = mkSel('Status', 'status', PKV.view === 'brands' ? [['', 'All brands'], ['running', 'With a running order'], ['attention', 'Need a new order'], ['repeat', 'Repeat clients'], ['complete', 'All orders complete']] : [['', 'Any status'], ['running', 'Running'], ['attention', 'Requests beyond package'], ['complete', 'Complete'], ['over', 'Over-delivered'], ['closed', 'Closed']]);
+    [['orders', 'Orders'], ['brands', 'Brands']].forEach(([k, t]) => { const b = pkEl('button', PKV.view === k ? 'on' : '', t); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(PKV.view === k)); b.addEventListener('click', () => { PKV.q = q.value; PKV.view = k; PKV.page = 1; PKV.open = ''; pkSaveView(); dash.draw('packages'); }); seg.append(b); });
+    const mkSel = (label, key, opts) => { const s2 = pkEl('select', 'co-select'); s2.setAttribute('aria-label', label); opts.forEach(([v, t]) => s2.append(new Option(t, v))); s2.value = String(PKV[key]); s2.addEventListener('change', () => { PKV.q = q.value; PKV[key] = key === 'size' ? +s2.value : s2.value; PKV.page = 1; pkSaveView(); dash.draw('packages'); }); return s2; };
+    const kindSel = mkSel('Package type', 'kind', [['', 'All packages'], ['Fixed', 'Fixed packages'], ['Monthly', 'Monthly plans'], ['Custom', 'Custom packages']]);
+    const stSel = mkSel('Status', 'status', PKV.view === 'brands' ? [['', 'All brands'], ['running', 'With a running order'], ['attention', 'Need a new order'], ['repeat', 'Repeat clients'], ['over', 'With extra delivered'], ['complete', 'All orders complete']] : [['', 'Any status'], ['running', 'Running'], ['attention', 'Requests beyond package'], ['over', 'Extra delivered'], ['complete', 'Complete or ended'], ['closed', 'Closed']]);
     const fromSel = mkSel('Sheet', 'from', [['', 'Any sheet'], ['External', 'External'], ['Internal', 'Internal'], ['Both', 'Internal + External']]);
     const whenSel = mkSel('Purchased', 'when', [['', 'Any time'], ['month', 'This month'], ['3m', 'Last 3 months'], ['year', 'This year'], ['lastyear', 'Last year']]);
-    const sortSel = mkSel('Sort', 'sort', PKV.view === 'brands' ? [['new', 'Latest order first'], ['orders', 'Most orders'], ['left', 'Most still due'], ['value', 'Highest value'], ['az', 'Brand A to Z']] : [['new', 'Newest first'], ['old', 'Oldest first'], ['left', 'Most still due'], ['value', 'Highest value'], ['az', 'Brand A to Z']]);
+    const sortSel = mkSel('Sort', 'sort', PKV.view === 'brands' ? [['new', 'Latest order first'], ['orders', 'Most orders'], ['left', 'Most still due'], ['extra', 'Most extra'], ['value', 'Highest value'], ['az', 'Brand A to Z']] : [['new', 'Newest first'], ['old', 'Oldest first'], ['left', 'Most still due'], ['extra', 'Most extra'], ['value', 'Highest value'], ['az', 'Brand A to Z']]);
     if (![...stSel.options].some((o) => o.value === PKV.status)) { PKV.status = ''; stSel.value = ''; } // a filter only one view has
-    bar.append(sw, seg, stSel, fromSel, whenSel); el.append(bar); sortSel.classList.add('pk-sort');
+    if (![...sortSel.options].some((o) => o.value === PKV.sort)) { PKV.sort = 'new'; sortSel.value = 'new'; }
+    bar.append(sw, seg, kindSel, stSel, fromSel, whenSel); el.append(bar); sortSel.classList.add('pk-sort');
     const chips = pkEl('div', 'pk-chips'); el.append(chips);
     const res = pkEl('div', 'pk-res'); el.append(res);
     const pager = pkEl('div', 'pk-pager'); el.append(pager);
+    const isDone = (st) => st === 'complete' || st === 'ended';
     function results() {
       const ql = PKV.q.toLowerCase().trim();
       chips.replaceChildren(); res.replaceChildren(); pager.replaceChildren();
       const active = [];
       if (PKV.brand) active.push(['Brand: ' + PKV.brand, () => { PKV.brand = ''; }]);
+      if (PKV.kind) active.push([kindSel.options[kindSel.selectedIndex].text, () => { PKV.kind = ''; }]);
       if (PKV.status) active.push([stSel.options[stSel.selectedIndex].text, () => { PKV.status = ''; }]);
       if (PKV.from) active.push([fromSel.options[fromSel.selectedIndex].text, () => { PKV.from = ''; }]);
       if (PKV.when) active.push(['Purchased: ' + whenSel.options[whenSel.selectedIndex].text, () => { PKV.when = ''; }]);
@@ -1928,35 +2007,37 @@
       let items;
       if (PKV.view === 'brands') {
         items = [...brands.values()].filter((b) => (!PKV.brand || pkNorm(b.brand) === pkNorm(PKV.brand)) && (!ql || b.brand.toLowerCase().includes(ql))
-          && (!PKV.from || b.orders.some((p) => p.from === PKV.from)) && (!PKV.when || b.orders.some((p) => pkWhen(PKV.when, p.date)))
-          && (!PKV.status || (PKV.status === 'running' ? b.running > 0 : PKV.status === 'attention' ? b.need > 0 : PKV.status === 'repeat' ? b.orders.length > 1 : b.running === 0)));
-        const so = { new: (a, b) => b.last.localeCompare(a.last), orders: (a, b) => b.orders.length - a.orders.length, left: (a, b) => b.left - a.left, value: (a, b) => b.value - a.value, az: (a, b) => a.brand.localeCompare(b.brand) }[PKV.sort] || ((a, b) => b.last.localeCompare(a.last));
+          && (!PKV.kind || b.orders.some((p) => pkKind(p) === PKV.kind)) && (!PKV.from || b.orders.some((p) => p.from === PKV.from)) && (!PKV.when || b.orders.some((p) => pkWhen(PKV.when, p.date)))
+          && (!PKV.status || (PKV.status === 'running' ? b.running > 0 : PKV.status === 'attention' ? b.need > 0 : PKV.status === 'repeat' ? b.orders.length > 1 : PKV.status === 'over' ? b.extra > 0 : b.running === 0)));
+        const so = { new: (a, b) => b.last.localeCompare(a.last), orders: (a, b) => b.orders.length - a.orders.length, left: (a, b) => b.left - a.left, extra: (a, b) => b.extra - a.extra, value: (a, b) => b.value - a.value, az: (a, b) => a.brand.localeCompare(b.brand) }[PKV.sort] || ((a, b) => b.last.localeCompare(a.last));
         items.sort((a, b) => so(a, b) || a.brand.localeCompare(b.brand));
       } else {
         items = all.filter((p) => { const f = F.get(p.id); return (!PKV.brand || pkNorm(p.brand) === pkNorm(PKV.brand)) && (!ql || (p.brand + ' ' + p.id + ' ' + (p.notes || '')).toLowerCase().includes(ql))
-          && (!PKV.from || p.from === PKV.from) && pkWhen(PKV.when, p.date)
-          && (!PKV.status || (PKV.status === 'over' ? f.over > 0 : PKV.status === 'attention' ? f.attention : f.st === PKV.status)); });
-        const so = { new: (a, b) => b.date.localeCompare(a.date), old: (a, b) => a.date.localeCompare(b.date), left: (a, b) => F.get(b.id).left - F.get(a.id).left, value: (a, b) => (b.amount || 0) - (a.amount || 0), az: (a, b) => a.brand.localeCompare(b.brand) || b.date.localeCompare(a.date) }[PKV.sort];
+          && (!PKV.kind || pkKind(p) === PKV.kind) && (!PKV.from || p.from === PKV.from) && pkWhen(PKV.when, p.date)
+          && (!PKV.status || (PKV.status === 'over' ? f.overUnits > 0 : PKV.status === 'attention' ? f.attention : PKV.status === 'complete' ? isDone(f.st) : f.st === PKV.status)); });
+        const so = { new: (a, b) => b.date.localeCompare(a.date), old: (a, b) => a.date.localeCompare(b.date), left: (a, b) => F.get(b.id).left - F.get(a.id).left, extra: (a, b) => F.get(b.id).overUnits - F.get(a.id).overUnits, value: (a, b) => F.get(b.id).billed - F.get(a.id).billed, az: (a, b) => a.brand.localeCompare(b.brand) || b.date.localeCompare(a.date) }[PKV.sort];
         items.sort((a, b) => so(a, b) || b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
       }
       active.forEach(([t, undo]) => { const c = pkEl('button', 'pk-chip2'); c.type = 'button'; c.append(document.createTextNode(t), pkEl('i', '', '×')); c.setAttribute('aria-label', 'Remove filter: ' + t); c.addEventListener('click', () => { undo(); PKV.page = 1; pkSaveView(); dash.draw('packages'); }); chips.append(c); });
-      if (active.length > 1) { const c = pkEl('button', 'co-link', 'Clear all'); c.type = 'button'; c.addEventListener('click', () => { PKV.brand = ''; PKV.status = ''; PKV.from = ''; PKV.when = ''; PKV.q = ''; PKV.page = 1; pkSaveView(); dash.draw('packages'); }); chips.append(c); }
+      if (active.length > 1) { const c = pkEl('button', 'co-link', 'Clear all'); c.type = 'button'; c.addEventListener('click', () => { PKV.brand = ''; PKV.kind = ''; PKV.status = ''; PKV.from = ''; PKV.when = ''; PKV.q = ''; PKV.page = 1; pkSaveView(); dash.draw('packages'); }); chips.append(c); }
       const total = items.length, pages = Math.max(1, Math.ceil(total / PKV.size)); PKV.page = Math.min(Math.max(1, PKV.page), pages);
       const from = (PKV.page - 1) * PKV.size, slice = items.slice(from, from + PKV.size);
-      chips.append(pkEl('span', 'pk-count', total ? 'Showing ' + CO.num(from + 1) + '–' + CO.num(from + slice.length) + ' of ' + CO.num(total) + (PKV.view === 'brands' ? ' brands' : ' orders') : '')); chips.append(sortSel);
+      chips.append(pkEl('span', 'pk-count', total ? 'Showing ' + CO.num(from + 1) + '–' + CO.num(from + slice.length) + ' of ' + CO.num(total) + (PKV.view === 'brands' ? (total === 1 ? ' brand' : ' brands') : total === 1 ? ' order' : ' orders') : '')); chips.append(sortSel);
       if (!total) { const e = pkEl('div', 'pk-empty'); e.append(pkEl('b', '', 'Nothing matches'), pkEl('span', '', 'Try another search, or clear the filters.')); res.append(e); return; }
       const tbl = pkEl('table', 'co-table pk-table' + (PKV.view === 'brands' ? ' is-brands' : '')); const thead = pkEl('thead'); const hr = pkEl('tr'); const tb = pkEl('tbody');
-      const cols = PKV.view === 'brands' ? ['Brand', 'Orders', 'Last order', 'Delivered', 'Still due', 'Open requests', 'Value'] : ['Order', 'Purchased', 'Sheet', 'Delivered', 'Still due', 'Value', 'Status', ''];
-      cols.forEach((c, i) => { const th = pkEl('th', i >= 4 && PKV.view === 'brands' || (PKV.view !== 'brands' && (i === 4 || i === 5)) ? 'num' : '', c); th.scope = 'col'; hr.append(th); }); thead.append(hr); tbl.append(thead, tb);
+      const cols = PKV.view === 'brands' ? [['Brand'], ['Orders'], ['Last order'], ['Delivered'], ['Still due', 'num'], ['Open requests', 'num'], ['Value', 'num']] : [['Order'], ['Type'], ['Purchased'], ['Delivered'], ['Still due', 'num'], ['Value', 'num'], ['Status'], ['']];
+      cols.forEach(([c, cls]) => { const th = pkEl('th', cls || '', c); th.scope = 'col'; hr.append(th); }); thead.append(hr); tbl.append(thead, tb);
       const td = (tr, label, cls) => { const c = pkEl('td', cls || ''); c.dataset.l = label; tr.append(c); return c; };
-      const prog = (used, tot2, st) => { const w = pkEl('div', 'pk-prog s-' + st); const b = pkEl('span', 'pk-pbar2'); const f = pkEl('i'); f.style.width = (tot2 ? Math.min(100, used / tot2 * 100) : 0) + '%'; b.append(f); w.append(b, pkEl('span', 'pk-pn', CO.num(used) + ' / ' + CO.num(tot2))); return w; };
+      const extraPill = (n, title) => { const x = pkEl('span', 'pk-extra', '+' + CO.num(n) + ' extra'); if (title) x.title = title; return x; };
+      const prog = (f, used, tot2, st, label) => { const w = pkEl('div', 'pk-prog s-' + st + (f && f.overUnits ? ' has-extra' : '')); const b = pkEl('span', 'pk-pbar2'); const fi = pkEl('i'); fi.style.width = (tot2 ? Math.min(100, used / tot2 * 100) : 0) + '%'; b.append(fi); const t = pkEl('span', 'pk-pn'); if (label) t.append(pkEl('small', '', label + ' ')); t.append(document.createTextNode((f ? pkNum(f, used) : CO.num(used)) + ' / ' + (f ? pkNum(f, tot2) : CO.num(tot2)))); w.append(b, t); if (f && f.overUnits) w.append(extraPill(f.overUnits, f.extra.map((e) => e.n + ' ' + e.type + (e.outside ? ' (not in the package)' : '')).join(', '))); return w; };
       if (PKV.view === 'brands') slice.forEach((b) => {
         const tr = pkEl('tr', 'pk-row'); tr.tabIndex = 0; tr.setAttribute('role', 'button'); tr.setAttribute('aria-label', b.brand + ': show order history');
         const c1 = td(tr, 'Brand', 'pk-brand-c'); c1.append(pkEl('b', '', b.brand)); if (b.orders.length > 1) c1.append(pkEl('span', 'pk-ord rep', 'Repeat client'));
+        const kinds = [...new Set(b.orders.map(pkKind))]; c1.append(pkEl('small', 'pk-id', kinds.map((k) => PK_KIND[k]).join(' · ')));
         td(tr, 'Orders').append(pkEl('b', 'pk-big', CO.num(b.orders.length)));
         td(tr, 'Last order', 'pk-muted').textContent = CO.fmtDate(b.last, true);
-        td(tr, 'Delivered').append(prog(b.used, b.bought, b.running ? 'running' : 'complete'));
-        td(tr, 'Still due', 'num').textContent = b.running ? CO.num(b.left) : '—';
+        const dc = td(tr, 'Delivered'); dc.append(prog(null, b.used, b.bought, b.running ? 'running' : 'complete')); if (b.extra) dc.firstChild.append(extraPill(b.extra));
+        td(tr, 'Still due', 'num').textContent = b.running ? (b.renews && !b.left ? 'Monthly' : CO.num(b.left)) : '—';
         const oc = td(tr, 'Open requests', 'num'); oc.textContent = CO.num(b.open); if (b.need) oc.append(pkEl('span', 'pk-flagdot', '+' + b.need + ' beyond'));
         td(tr, 'Value', 'num').textContent = inr(b.value);
         const go = () => { PKV.brand = b.brand; PKV.view = 'orders'; PKV.page = 1; PKV.open = ''; pkSaveView(); dash.draw('packages'); };
@@ -1964,15 +2045,15 @@
         tb.append(tr);
       });
       else slice.forEach((p) => {
-        const f = F.get(p.id), o = ord.get(p.id), open = PKV.open === p.id;
-        const tr = pkEl('tr', 'pk-row' + (open ? ' open' : '')); tr.tabIndex = 0; tr.setAttribute('aria-expanded', String(open)); tr.setAttribute('aria-label', p.brand + ', ' + ordinal(o.n) + ' order: details');
+        const f = F.get(p.id), o = ord.get(p.id), open = PKV.open === p.id, kind = pkKind(p);
+        const tr = pkEl('tr', 'pk-row' + (open ? ' open' : '') + (f.overUnits ? ' has-extra' : '')); tr.tabIndex = 0; tr.setAttribute('aria-expanded', String(open)); tr.setAttribute('aria-label', p.brand + ', ' + ordinal(o.n) + ' order: details');
         const c1 = td(tr, 'Order', 'pk-brand-c'); c1.append(pkEl('b', '', p.brand)); if (o.of > 1) c1.append(pkEl('span', 'pk-ord' + (o.n > 1 ? ' rep' : ''), ordinal(o.n) + ' order')); c1.append(pkEl('small', 'pk-id', p.id));
-        td(tr, 'Purchased', 'pk-muted').textContent = CO.fmtDate(p.date, true);
-        td(tr, 'Sheet').append(pkEl('span', 'dp-src ' + (p.from === 'External' ? 'ext' : p.from === 'Internal' ? 'int' : 'both'), p.from === 'Both' ? 'Both' : p.from));
-        td(tr, 'Delivered').append(prog(Math.min(f.used, p.total), p.total, f.st));
-        td(tr, 'Still due', 'num').textContent = f.st === 'closed' ? '—' : CO.num(f.left);
-        td(tr, 'Value', 'num').textContent = p.amount ? inr(p.amount) : '—';
-        const sc = td(tr, 'Status'); sc.append(pkEl('span', 'pk-chip s-' + (f.attention ? 'attention' : f.st), f.attention ? 'Beyond package' : f.st === 'complete' ? (f.over ? 'Complete · +' + f.over : 'Complete') : f.st === 'closed' ? 'Closed' : 'Running'));
+        const kc = td(tr, 'Type'); kc.append(pkEl('span', 'pk-kind k-' + kind.toLowerCase(), kind === 'Custom' ? (pkByAmount(p) ? 'Custom · ₹' : 'Custom') : kind === 'Monthly' ? 'Monthly' : 'Fixed')); kc.append(pkEl('small', 'pk-id', p.from === 'Both' ? 'Int + Ext' : p.from));
+        td(tr, kind === 'Monthly' ? 'Started' : 'Purchased', 'pk-muted').textContent = CO.fmtDate(p.date, true) + (kind === 'Monthly' && p.end ? ' – ' + CO.fmtDate(p.end, true) : '');
+        td(tr, kind === 'Monthly' ? 'Delivered this month' : 'Delivered').append(prog(f, f.used, f.total, f.st, kind === 'Monthly' && f.cycle ? 'Month ' + f.cycle.n + ':' : ''));
+        td(tr, 'Still due', 'num').textContent = f.st === 'closed' || f.st === 'ended' ? '—' : pkNum(f, f.left);
+        td(tr, 'Value', 'num').textContent = kind === 'Monthly' ? inr(p.amount) + ' /mo' : p.amount ? inr(p.amount) : '—';
+        const sc = td(tr, 'Status'); sc.append(pkEl('span', 'pk-chip s-' + (f.attention ? 'attention' : f.st), f.attention ? 'Beyond package' : f.st === 'complete' ? 'Complete' : f.st === 'ended' ? 'Ended' : f.st === 'closed' ? 'Closed' : kind === 'Monthly' && f.next ? 'Bills ' + CO.fmtDate(f.next) : 'Running'));
         const cv = td(tr, '', 'pk-chev-c'); cv.append(pkEl('span', 'pk-chev'));
         const tog = () => { PKV.open = open ? '' : p.id; results(); };
         tr.addEventListener('click', tog); tr.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tog(); } });
@@ -1980,7 +2061,6 @@
         if (open) tb.append(pkDetail(p, f, o, al.get(p.id), perm, cols.length));
       });
       res.append(tbl);
-      // pager
       if (total > 20) {
         const nav = pkEl('nav', 'pk-pages'); nav.setAttribute('aria-label', 'Pages');
         const btn = (t, pg, dis, cur) => { const b = pkEl('button', 'pk-pg' + (cur ? ' on' : ''), t); b.type = 'button'; b.disabled = !!dis; if (cur) b.setAttribute('aria-current', 'page'); b.addEventListener('click', () => { PKV.page = pg; PKV.open = ''; results(); el.querySelector('.pk-bar2').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }); nav.append(b); };
@@ -1991,29 +2071,54 @@
         pager.append(nav, sz);
       }
     }
-    let qt = null; q.addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(() => { PKV.q = q.value; PKV.page = 1; PKV.open = ''; results(); }, 120); });
+    clearTimeout(PKV.qt); q.addEventListener('input', () => { clearTimeout(PKV.qt); PKV.qt = setTimeout(() => { if (!q.isConnected) return; PKV.q = q.value; PKV.page = 1; PKV.open = ''; results(); }, 120); });
     results();
     if (hadFocus !== null) { q.focus(); try { q.setSelectionRange(hadFocus, hadFocus); } catch (e) { /* ignore */ } }
   });
-  // An order's details: per creative type, warnings, notes and the brand's order history.
+  // An order's details: per creative type (delivered, still due, extra), billing, notes and the brand's order history.
   function pkDetail(p, f, o, x, perm, span) {
     const tr = pkEl('tr', 'pk-detail'); const c = pkEl('td'); c.colSpan = span; tr.append(c);
     const g = pkEl('div', 'pk-det');
     const left = pkEl('div', 'pk-det-main');
-    left.append(pkEl('h3', 'pk-h3', 'Creatives in this order'));
+    const kind = pkKind(p);
+    // the headline: what is still due and what is extra, by type
+    const sumLine = pkEl('div', 'pk-sumline');
+    const dueTxt = f.due.length ? f.due.map((d) => d.n + ' ' + d.type).join(', ') + ' still due' : f.unit === '₹' ? inr(f.left) + ' of ' + inr(f.total) + ' left' : 'Nothing due';
+    sumLine.append(pkEl('span', 'pk-sum-due' + (f.due.length || f.unit === '₹' ? '' : ' ok'), dueTxt));
+    if (f.extra.length) sumLine.append(pkEl('span', 'pk-sum-extra', f.extra.map((e) => e.n + ' ' + e.type + (e.outside ? ' (not in the package)' : '')).join(', ') + ' extra'));
+    left.append(pkEl('h3', 'pk-h3', kind === 'Monthly' ? (f.cycle ? 'Month ' + f.cycle.n + ': ' + CO.fmtDate(f.cycle.from, true) + ' – ' + CO.fmtDate(f.cycle.to, true) : 'Starts ' + CO.fmtDate(p.date, true)) : f.unit === '₹' ? 'Spent by creative type' : 'Creatives in this order'), sumLine);
     const types = pkEl('div', 'pk-types2');
-    x.items.forEach((it) => { const lf = Math.max(0, it.qty - it.used); const r = pkEl('div', 'pk-type2' + (lf ? '' : ' done')); r.append(pkEl('span', 'pk-tt', it.type)); const b = pkEl('span', 'pk-pbar2'); const fi = pkEl('i'); fi.style.width = (it.qty ? Math.min(100, it.used / it.qty * 100) : 0) + '%'; b.append(fi); r.append(b, pkEl('span', 'pk-tn', it.used + ' / ' + it.qty + (it.over ? ' (+' + it.over + ')' : '')), pkEl('span', 'pk-tl' + (lf ? '' : ' ok'), lf ? lf + ' due' : 'Done')); types.append(r); });
+    f.items.forEach((it) => {
+      const lf = Math.max(0, it.qty - it.used), r = pkEl('div', 'pk-type2' + (it.over ? ' over' : f.unit !== '₹' && !lf ? ' done' : ''));
+      r.append(pkEl('span', 'pk-tt', it.type));
+      const b = pkEl('span', 'pk-pbar2'); const fi = pkEl('i');
+      if (f.unit === '₹') { fi.style.width = (f.total ? Math.min(100, it.used * it.rate / f.total * 100) : 0) + '%'; b.append(fi); r.append(b, pkEl('span', 'pk-tn', it.used + ' × ' + inr(it.rate) + ' = ' + inr(it.used * it.rate))); }
+      else { fi.style.width = (it.qty ? Math.min(100, it.used / it.qty * 100) : 0) + '%'; b.append(fi); r.append(b, pkEl('span', 'pk-tn', Math.min(it.used, it.qty) + ' / ' + it.qty)); }
+      const tl = pkEl('span', 'pk-tl'); if (it.over) tl.append(pkEl('span', 'pk-extra', '+' + it.over + ' extra')); else tl.textContent = f.unit === '₹' ? '' : lf ? lf + ' due' : 'Done'; if (!it.over && !lf && f.unit !== '₹') tl.classList.add('ok');
+      r.append(tl); types.append(r);
+    });
+    (f.extra.filter((e) => e.outside)).forEach((e) => { const r = pkEl('div', 'pk-type2 over outside'); r.append(pkEl('span', 'pk-tt', e.type), pkEl('span', 'pk-note2', 'Not in this package'), pkEl('span', 'pk-tn', e.n + ' delivered'), (() => { const t = pkEl('span', 'pk-tl'); t.append(pkEl('span', 'pk-extra', '+' + e.n + ' extra')); return t; })()); types.append(r); });
     left.append(types);
-    if (f.st !== 'closed' && f.open && f.open > f.left) left.append(pkEl('p', 'pk-warn', f.left ? f.open + ' requests are open for ' + p.brand + ' but only ' + f.left + ' creatives are left in this order.' : 'This order is complete and ' + f.open + ' more request' + (f.open === 1 ? ' is' : 's are') + ' open. Is this a new order? Add it before the team picks them up.'));
-    else if (f.st === 'complete') left.append(pkEl('p', 'pk-ok', 'All purchased creatives delivered.' + (f.over ? ' ' + f.over + ' delivered beyond the order.' : '')));
+    if (f.attention) left.append(pkEl('p', 'pk-warn', f.unit === '₹' ? f.open + ' requests are open for ' + p.brand + ' and only ' + inr(f.left) + ' is left in this package.' : f.left ? f.open + ' requests are open for ' + p.brand + ' but only ' + f.left + ' creatives are left in this order.' : 'This order is complete and ' + f.open + ' more request' + (f.open === 1 ? ' is' : 's are') + ' open. Is this a new order? Add it before the team picks them up.'));
+    else if (f.st === 'complete' && !f.extra.length) left.append(pkEl('p', 'pk-ok', 'All purchased creatives delivered.'));
+    if (kind === 'Monthly' && x.cycles && x.cycles.length) {
+      const mh = pkEl('div', 'pk-months'); mh.append(pkEl('h3', 'pk-h3', 'Month by month'));
+      const ml = pkEl('ol', 'pk-mlist');
+      x.cycles.slice().reverse().slice(0, 12).forEach((cy) => { const q2 = cy.items.reduce((a, it) => a + it.qty, 0), u2 = cy.items.reduce((a, it) => a + Math.min(it.used, it.qty), 0), ov = cy.items.reduce((a, it) => a + it.over, 0) + [...cy.outside.values()].reduce((a, n) => a + n, 0); const li = pkEl('li'); li.append(pkEl('span', 'pk-m-n', 'Month ' + cy.n), pkEl('span', 'pk-m-d', CO.fmtDate(cy.from) + ' – ' + CO.fmtDate(cy.to)), pkEl('b', '', u2 + ' / ' + q2)); if (ov) li.append(pkEl('span', 'pk-extra', '+' + ov + ' extra')); else if (u2 < q2 && cy !== f.cycle) li.append(pkEl('span', 'pk-m-short', (q2 - u2) + ' not used')); ml.append(li); });
+      mh.append(ml); if (x.cycles.length > 12) mh.append(pkEl('p', 'co-note', 'Latest 12 of ' + x.cycles.length + ' months.')); left.append(mh);
+    }
     const meta = pkEl('dl', 'pk-meta');
     const fact = (k, v) => { if (!v) return; meta.append(pkEl('dt', '', k), pkEl('dd', '', v)); };
-    fact('Order ID', p.id); fact('Amount', p.amount ? inr(p.amount) + ' incl. tax' : ''); fact('Counts from', p.from === 'Both' ? 'Internal + External sheets' : p.from + ' sheet'); fact('Notes', p.notes); fact('Added', (p.createdBy ? p.createdBy.split('@')[0] : '') + (p.created ? ' · ' + CO.fmtDate(String(p.created).slice(0, 10), true) : ''));
+    fact('Package type', PK_KIND[kind] + (kind === 'Custom' ? (pkByAmount(p) ? ', by amount' : ', by number of creatives') : ''));
+    fact('Order ID', p.id);
+    if (kind === 'Monthly') { fact('Billing', inr(p.amount) + ' a month, from ' + CO.fmtDate(p.date, true) + (p.end ? ' to ' + CO.fmtDate(p.end, true) : ' (no end date)')); fact('Billed so far', inr(f.billed) + ' for ' + (x.cycles ? x.cycles.length : 0) + ' month' + ((x.cycles || []).length === 1 ? '' : 's')); fact('Next bill', f.next ? CO.fmtDate(f.next, true) : f.ended ? 'Plan ended' : ''); fact('Unused creatives', 'Do not carry over to the next month'); }
+    else fact('Amount', p.amount ? inr(p.amount) + ' incl. tax' : '');
+    fact('Counts from', p.from === 'Both' ? 'Internal + External sheets' : p.from + ' sheet'); fact('Notes', p.notes); fact('Added', (p.createdBy ? p.createdBy.split('@')[0] : '') + (p.created ? ' · ' + CO.fmtDate(String(p.created).slice(0, 10), true) : ''));
     left.append(meta);
     const side = pkEl('div', 'pk-det-side');
     side.append(pkEl('h3', 'pk-h3', o.of > 1 ? 'Order history · ' + o.of + ' orders' : 'Order history'));
     const hl = pkEl('ol', 'pk-hist');
-    o.all.map((q, i) => [q, i + 1]).reverse().forEach(([q, n]) => { const li = pkEl('li', q.id === p.id ? 'on' : ''); const b = pkEl('button', 'pk-hist-b'); b.type = 'button'; b.append(pkEl('span', 'pk-ord' + (n > 1 ? ' rep' : ''), ordinal(n))); const tx = pkEl('span', 'pk-hist-t'); tx.append(pkEl('b', '', CO.fmtDate(q.date, true)), pkEl('small', '', q.total + ' creatives' + (q.amount ? ' · ' + inr(q.amount) : '') + (q.status === 'Closed' ? ' · closed' : ''))); b.append(tx); b.addEventListener('click', (e) => { e.stopPropagation(); PKV.brand = q.brand; PKV.open = q.id; PKV.page = 1; dash.draw('packages'); }); li.append(b); hl.append(li); });
+    o.all.map((q, i) => [q, i + 1]).reverse().forEach(([q, n]) => { const li = pkEl('li', q.id === p.id ? 'on' : ''); const b = pkEl('button', 'pk-hist-b'); b.type = 'button'; b.append(pkEl('span', 'pk-ord' + (n > 1 ? ' rep' : ''), ordinal(n))); const tx = pkEl('span', 'pk-hist-t'); const k2 = pkKind(q); tx.append(pkEl('b', '', CO.fmtDate(q.date, true)), pkEl('small', '', PK_KIND[k2] + ' · ' + (pkByAmount(q) ? inr(q.amount) : q.total + ' creatives' + (k2 === 'Monthly' ? ' a month' : '')) + (q.amount && !pkByAmount(q) ? ' · ' + inr(q.amount) + (k2 === 'Monthly' ? '/mo' : '') : '') + (q.status === 'Closed' ? ' · closed' : ''))); b.append(tx); b.addEventListener('click', (e) => { e.stopPropagation(); PKV.brand = q.brand; PKV.open = q.id; PKV.page = 1; dash.draw('packages'); }); li.append(b); hl.append(li); });
     side.append(hl);
     if (o.of > 1 && pkNorm(PKV.brand) !== pkNorm(p.brand)) { const all2 = pkEl('button', 'co-link', 'Show only ' + p.brand + '’s orders'); all2.type = 'button'; all2.addEventListener('click', (e) => { e.stopPropagation(); PKV.brand = p.brand; PKV.page = 1; dash.draw('packages'); }); side.append(all2); }
     const acts = pkEl('div', 'pk-acts');
@@ -2034,16 +2139,40 @@
     const row = document.createElement('div'); row.className = 'pk-irow';
     const sel = document.createElement('select'); sel.className = 'co-select'; sel.setAttribute('aria-label', 'Creative type'); pkTypes().forEach((t) => sel.append(new Option(t, t))); sel.append(new Option('+ Other type…', '__new'));
     const other = document.createElement('input'); other.className = 'co-input'; other.placeholder = 'Type name'; other.maxLength = 60; other.hidden = true;
-    const q = document.createElement('input'); q.className = 'co-input pk-q'; q.type = 'number'; q.min = '1'; q.step = '1'; q.setAttribute('aria-label', 'Quantity'); q.value = it ? it.qty : 1;
+    const byAmt = PK.form && PK.form.basis === 'amount' && PK.form.kind === 'Custom';
+    const q = document.createElement('input'); q.className = 'co-input pk-q'; q.type = 'number'; q.min = '1'; q.step = byAmt ? '1' : '1'; q.setAttribute('aria-label', byAmt ? 'Rate per creative (₹)' : 'Quantity'); q.placeholder = byAmt ? '₹ each' : ''; q.value = it ? (byAmt ? it.rate || '' : it.qty || 1) : byAmt ? '' : 1;
     const x = document.createElement('button'); x.type = 'button'; x.className = 'icon-btn'; x.setAttribute('aria-label', 'Remove'); x.textContent = '×';
     if (it) { if ([...sel.options].some((o) => o.value === it.type)) sel.value = it.type; else { sel.value = '__new'; other.hidden = false; other.value = it.type; } } else sel.value = (pkTypes()[1] || 'Any type');
     sel.addEventListener('change', () => { other.hidden = sel.value !== '__new'; if (!other.hidden) other.focus(); pkSum(); });
     q.addEventListener('input', pkSum); x.addEventListener('click', () => { row.remove(); pkSum(); });
-    row.read = () => ({ type: sel.value === '__new' ? other.value.trim() : sel.value, qty: Math.round(Number(q.value) || 0) });
+    row.read = () => { const t = sel.value === '__new' ? other.value.trim() : sel.value, v = Number(q.value) || 0; return PK.form.kind === 'Custom' && PK.form.basis === 'amount' ? { type: t, rate: Math.round(v * 100) / 100, qty: 0 } : { type: t, qty: Math.round(v) }; };
     row.append(sel, other, q, x); return row;
   }
   const pkRows = () => [...$p('pk-items').children].map((r) => r.read());
-  function pkSum() { const n = pkRows().reduce((a, it) => a + (it.qty > 0 ? it.qty : 0), 0); $p('pk-total').textContent = n + (n === 1 ? ' creative' : ' creatives') + ' in total'; pkRepeat(); }
+  function pkSum() {
+    const rows = pkRows(), n = rows.reduce((a, it) => a + (it.qty > 0 ? it.qty : 0), 0), F2 = PK.form;
+    $p('pk-total').textContent = F2.kind === 'Custom' && F2.basis === 'amount' ? rows.filter((it) => it.rate > 0).length + ' rate' + (rows.filter((it) => it.rate > 0).length === 1 ? '' : 's') + (Number($p('pk-amount').value) ? ' · ' + inr(Number($p('pk-amount').value)) + ' to spend' : '') : n + (n === 1 ? ' creative' : ' creatives') + (F2.kind === 'Monthly' ? ' a month' : ' in total');
+    pkRepeat();
+  }
+  /* The package type changes the labels and fields: a monthly plan has a monthly amount, an optional end date and
+     creatives per month; a custom package is by number of creatives or by amount (a rate per creative type). */
+  function pkSetKind(kind, basis, keep) {
+    const before = PK.form ? PK.form.kind + PK.form.basis : '';
+    PK.form = { kind, basis: kind === 'Custom' ? basis || 'creatives' : 'creatives' };
+    $p('pk-kind').querySelectorAll('[data-k]').forEach((b) => { const on = b.dataset.k === kind; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+    $p('pk-basis-row').hidden = kind !== 'Custom';
+    $p('pk-basis').querySelectorAll('[data-b]').forEach((b) => { const on = b.dataset.b === PK.form.basis; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+    $p('pk-date-t').textContent = kind === 'Monthly' ? 'Starts on (billed every month from this date)' : 'Purchased on';
+    $p('pk-end-l').hidden = kind !== 'Monthly'; if (kind !== 'Monthly') $p('pk-end').value = '';
+    $p('pk-amount-t').textContent = kind === 'Monthly' ? 'Monthly amount (₹, incl. tax)' : PK.form.basis === 'amount' ? 'Package amount (₹, incl. tax)' : 'Total amount (₹, incl. tax)';
+    $p('pk-amount').required = kind === 'Monthly' || PK.form.basis === 'amount';
+    $p('pk-items-t').textContent = kind === 'Monthly' ? 'Creatives every month' : PK.form.basis === 'amount' ? 'Rate per creative type' : 'Creatives in the package';
+    if (!keep && before && before !== PK.form.kind + PK.form.basis && (before.endsWith('amount') !== (PK.form.basis === 'amount'))) $p('pk-items').replaceChildren(pkItemRow(null)); // switching between rates and quantities
+    pkSum();
+  }
+  $p('pk-kind').addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) pkSetKind(b.dataset.k, PK.form && PK.form.basis); });
+  $p('pk-basis').addEventListener('click', (e) => { const b = e.target.closest('[data-b]'); if (b) pkSetKind('Custom', b.dataset.b); });
+  $p('pk-amount').addEventListener('input', () => { if (PK.form && PK.form.basis === 'amount') pkSum(); });
   const pkBrandNow = () => ($p('pk-brand').value === '__new' ? $p('pk-newbrand').value.trim() : $p('pk-brand').value);
   /* A brand that already has orders: ask whether this is a new (repeat) order or an update to an existing one, so the
      same order is not entered twice and repeat orders are numbered correctly. Saving waits for the answer. */
@@ -2075,12 +2204,13 @@
     save.disabled = !PK.repeatOk; save.textContent = PK.repeatOk ? 'Save as ' + ordinal(next) + ' order' : 'Save package';
   }
   function pkOpen(p, preset) {
-    PK.edit = p; PK.repeatOk = false; PK.repeatFor = null; $p('pk-title').textContent = p ? 'Edit package' : 'Add a package'; $p('pk-err').textContent = '';
+    PK.edit = p; PK.repeatOk = false; PK.repeatFor = null; PK.form = { kind: p ? pkKind(p) : 'Fixed', basis: p && p.basis === 'amount' ? 'amount' : 'creatives' }; $p('pk-title').textContent = p ? 'Edit package' : 'Add a package'; $p('pk-err').textContent = '';
     const bs = $p('pk-brand'); bs.replaceChildren(new Option('Choose a brand…', '')); pkBrands().forEach((b) => bs.append(new Option(b, b))); bs.append(new Option('+ Add a new brand…', '__new'));
     const want = p ? p.brand : preset && preset.brand ? preset.brand : ''; $p('pk-newbrand-l').hidden = true; $p('pk-newbrand').value = '';
     if (want && ![...bs.options].some((o) => o.value === want)) { bs.value = '__new'; $p('pk-newbrand-l').hidden = false; $p('pk-newbrand').value = want; } else bs.value = want;
     $p('pk-date').value = p ? p.date : CO.today(); $p('pk-amount').value = p && p.amount ? p.amount : ''; $p('pk-from').value = p ? p.from : 'External'; $p('pk-notes').value = p ? p.notes : ''; $p('pk-closed').checked = !!(p && p.status === 'Closed');
-    $p('pk-items').replaceChildren(...(p ? p.items : [null]).map(pkItemRow)); pkSum(); $p('pk-del').hidden = !p;
+    $p('pk-end').value = p && p.end ? p.end : '';
+    $p('pk-items').replaceChildren(...(p ? p.items : [null]).map(pkItemRow)); pkSetKind(PK.form.kind, PK.form.basis, true); $p('pk-del').hidden = !p;
     if (pkDlg.open) pkDlg.scrollTop = 0;
     if (pkDlg.showModal) pkDlg.showModal(); else pkDlg.setAttribute('open', '');
   }
@@ -2091,9 +2221,10 @@
   $p('pk-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const brand = $p('pk-brand').value === '__new' ? $p('pk-newbrand').value.trim() : $p('pk-brand').value;
-    const items = pkRows().filter((it) => it.type && it.qty > 0);
-    const pkg = { brand, date: $p('pk-date').value, amount: Number($p('pk-amount').value) || 0, from: $p('pk-from').value, items, notes: $p('pk-notes').value.trim(), status: $p('pk-closed').checked ? 'Closed' : 'Active' };
-    const err = !brand ? 'Choose or type a brand.' : !pkg.date ? 'Add the purchase date.' : !items.length ? 'Add at least one creative type with a quantity.' : '';
+    const byAmt = PK.form.kind === 'Custom' && PK.form.basis === 'amount';
+    const items = pkRows().filter((it) => it.type && (byAmt ? it.rate > 0 : it.qty > 0));
+    const pkg = { brand, kind: PK.form.kind, basis: PK.form.basis, date: $p('pk-date').value, end: PK.form.kind === 'Monthly' ? $p('pk-end').value : '', amount: Number($p('pk-amount').value) || 0, from: $p('pk-from').value, items, notes: $p('pk-notes').value.trim(), status: $p('pk-closed').checked ? 'Closed' : 'Active' };
+    const err = !brand ? 'Choose or type a brand.' : !pkg.date ? (PK.form.kind === 'Monthly' ? 'Add the start date.' : 'Add the purchase date.') : (byAmt || PK.form.kind === 'Monthly') && !pkg.amount ? (PK.form.kind === 'Monthly' ? 'Add the monthly amount.' : 'Add the package amount.') : pkg.end && pkg.end < pkg.date ? 'The end date is before the start date.' : !items.length ? (byAmt ? 'Add at least one creative type with its rate.' : 'Add at least one creative type with a quantity.') : '';
     if (err) { $p('pk-err').textContent = err; return; }
     $p('pk-save').disabled = true;
     let repeatAgain = false;
@@ -2609,7 +2740,7 @@
       const dStage = r.awaiting ? 'To be planned' : r.stage;
       if (![...st.options].some((o) => o.value === dStage)) { const o = new Option(dStage + ' (as in the sheet)', dStage); o.dataset.extra = '1'; o.disabled = true; st.append(o); }
       st.value = dStage;
-      $('ed-eta').value = r.eta || '';
+      $('ed-eta').value = r.eta || ''; $('ed-quick').querySelectorAll('[data-d]').forEach((b) => b.classList.remove('on'));
       $('ed-designer').value = before.designer;
       const names = new Set(); (S.team || []).forEach((m) => { if (m.status !== 'Inactive') names.add(m.name); }); S.tasks.forEach((t) => t.designers && t.designers.split(' + ').forEach((d) => names.add(CO.canon(d))));
       $('ed-people').replaceChildren(...[...names].sort().map((n) => new Option(n)));
@@ -2623,6 +2754,10 @@
       $('ed-save').disabled = !r.id; $('ed-save').textContent = 'Save to sheet';
       const edit = perm('edit');
       ['ed-status', 'ed-eta', 'ed-designer', 'ed-qty'].forEach((id) => { $(id).disabled = !edit; });
+      // Rescheduling and reassigning are for Admins only (the web app checks this too).
+      const resch = edit && A.mode === 'auth' && isAdmin();
+      ['ed-eta', 'ed-designer'].forEach((id) => { $(id).disabled = !resch; $(id).title = resch ? '' : 'Only Admins can reschedule or reassign a task'; });
+      $('ed-quick').hidden = !resch; $('ed-lock').hidden = resch || !edit;
       if (!edit) $('ed-priority').disabled = true;
       $('ed-save').hidden = !edit;
       if (!edit) $('ed-msg').textContent = 'View only. Ask the admin for Editor access to change tasks.';
@@ -2641,6 +2776,14 @@
   document.addEventListener('co-open-editor', (e) => openEditor(e.detail));
     document.querySelector('.co').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-uid][tabindex]')) openEditor(e.target.dataset.uid); });
     $('ed-cancel').addEventListener('click', () => dlgE.close());
+    // Admins: one-click rescheduling (Monday to Friday are working days, as everywhere on the dashboard)
+    $('ed-quick').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-d]'); if (!b) return;
+      const add = (iso, n) => new Date(Date.parse(iso) + n * 864e5).toISOString().slice(0, 10), t = CO.today();
+      let d = b.dataset.d === 'w' ? add(t, 1) : add(t, +b.dataset.d);
+      if (b.dataset.d === 'w') while ([0, 6].includes(new Date(d + 'T00:00:00Z').getUTCDay())) d = add(d, 1);
+      $('ed-eta').value = d; $('ed-quick').querySelectorAll('[data-d]').forEach((x) => x.classList.toggle('on', x === b));
+    });
     dlgE.addEventListener('close', () => { EDITING.uid = ''; EDITING.label = ''; });
     $('ed-history').addEventListener('click', () => { if (!current) return; dlgE.close(); AX.q = current.id; AX.kind = ''; document.getElementById('ax-q').value = current.id; document.getElementById('ax-kind').value = ''; dash.setParams({ tab: 'access' }); });
     $('editor-form').addEventListener('submit', async (e) => {
@@ -3525,7 +3668,8 @@
       const k = briefKind(), key = k && 'brief-' + k + '-' + CO.today();
       if (k && istMins() < REMIND_AT[k] + 180 && alertOnce(key, k === 'morning' ? 'Morning briefing' : 'Evening wrap-up', k === 'morning' ? 'Review today\'s tasks, assignments and priorities.' : 'Review completed work, pending tasks and tomorrow\'s priorities.', () => openBriefing(k))) {
         toast(k === 'morning' ? 'Good morning. Your 10:00 briefing is ready.' : 'Your 18:00 wrap-up is ready.');
-        if (document.visibilityState === 'visible') openBriefing(k);
+        // never on top of something the person is working in (a task, a package, a person): the bell keeps it
+        if (document.visibilityState === 'visible' && !document.querySelector('dialog[open]')) openBriefing(k);
       }
       items().filter((i) => /^(rem|mtg)-/.test(i.id)).forEach((i) => { if (alertOnce(i.id, i.t, i.s, i.go)) toast(i.t); });
       syncControls(); dash.draw('brief-card');

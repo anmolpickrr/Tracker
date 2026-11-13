@@ -329,7 +329,11 @@ function write_(body, user) {
   try {
     let out;
     if (body.action === 'setMember') out = setMember_(body);
-    else if (body.action === 'updateTask') out = updateTask_(body);
+    else if (body.action === 'updateTask') {
+      // Rescheduling (ETA) and reassigning (designer) are for Admins only; status, priority and quantity follow Edit.
+      const ff = body.fields || {};
+      out = (ff.eta != null || ff.designer != null) && !isAdminUser_(user) ? { ok: false, error: 'Only Admins can change a task\'s ETA or who it is assigned to.' } : updateTask_(body);
+    }
     else if (body.action === 'setAccess') out = setAccess_(body, user);
     else if (body.action === 'noteSave') out = noteSave_(body, user);
     else if (body.action === 'noteDelete') out = noteDelete_(body, user);
@@ -1287,13 +1291,13 @@ function dayPlanGet_(user, b) {
  * access book. Delivered and remaining quantities are worked out by the dashboard from completed (DONE) tasks of that
  * brand and creative type, from the purchase date, filling the oldest open package first. Owner only by default; the
  * owner grants view or edit per person. */
-const PKG_HEAD = ['ID', 'Brand', 'Purchased on', 'Amount (incl. tax)', 'Count from', 'Items', 'Total creatives', 'Notes', 'Status', 'Created by', 'Created', 'Updated by', 'Updated', 'Deleted'];
-function pkgSheet_() { const ss = accessBook_(); let sh = ss.getSheetByName('Packages'); if (!sh) { sh = ss.insertSheet('Packages'); sh.appendRow(PKG_HEAD); sh.setFrozenRows(1); } return sh; }
+const PKG_HEAD = ['ID', 'Brand', 'Purchased on', 'Amount (incl. tax)', 'Count from', 'Items', 'Total creatives', 'Notes', 'Status', 'Created by', 'Created', 'Updated by', 'Updated', 'Deleted', 'Package type', 'Ends on', 'Based on'];
+function pkgSheet_() { const ss = accessBook_(); let sh = ss.getSheetByName('Packages'); if (!sh) { sh = ss.insertSheet('Packages'); sh.appendRow(PKG_HEAD); sh.setFrozenRows(1); } else if (String(sh.getRange(1, 15).getValue()) !== 'Package type') sh.getRange(1, 15, 1, 3).setValues([['Package type', 'Ends on', 'Based on']]); return sh; }
 function pkgAll_() {
   const sh = pkgSheet_(), last = sh.getLastRow(); if (last < 2) return [];
   return sh.getRange(2, 1, last - 1, PKG_HEAD.length).getValues().map(function (v, i) {
     let items = []; try { items = JSON.parse(String(v[5] || '[]')); } catch (e) { items = []; }
-    return { row: i + 2, id: String(v[0]), brand: String(v[1]), date: v[2] instanceof Date ? Utilities.formatDate(v[2], IST, 'yyyy-MM-dd') : String(v[2]), amount: Number(v[3]) || 0, from: String(v[4] || 'Both'), items: items, total: Number(v[6]) || 0, notes: String(v[7] || ''), status: String(v[8] || 'Active'), createdBy: String(v[9]), created: iso_(v[10]), updatedBy: String(v[11]), updated: iso_(v[12]), deleted: v[13] === true || String(v[13]) === 'TRUE' };
+    return { row: i + 2, id: String(v[0]), brand: String(v[1]), date: v[2] instanceof Date ? Utilities.formatDate(v[2], IST, 'yyyy-MM-dd') : String(v[2]), amount: Number(v[3]) || 0, from: String(v[4] || 'Both'), items: items, total: Number(v[6]) || 0, notes: String(v[7] || ''), status: String(v[8] || 'Active'), createdBy: String(v[9]), created: iso_(v[10]), updatedBy: String(v[11]), updated: iso_(v[12]), deleted: v[13] === true || String(v[13]) === 'TRUE', kind: ['Monthly', 'Custom'].indexOf(String(v[14])) >= 0 ? String(v[14]) : 'Fixed', end: dvd_(v[15]), basis: String(v[16]) === 'amount' ? 'amount' : 'creatives' };
   }).filter(function (x) { return x.id && !x.deleted; });
 }
 function pkgList_() { if (!hasAccessBook_()) return { ok: false, error: 'not set up' }; return { ok: true, packages: pkgAll_().map(function (x) { const o = Object.assign({}, x); delete o.row; delete o.deleted; return o; }) }; }
@@ -1302,15 +1306,25 @@ function pkgInput_(b) {
   if (!brand || !plain_(brand)) return { error: 'Choose or type a brand.' };
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(p.date || '')) ? String(p.date) : '';
   if (!date) return { error: 'Add the purchase date.' };
-  const items = (Array.isArray(p.items) ? p.items : []).slice(0, 30).map(function (it) { return { type: clean_(it && it.type).slice(0, 60), qty: Math.max(0, Math.min(10000, Math.round(Number(it && it.qty) || 0))) }; }).filter(function (it) { return it.type && it.qty > 0 && plain_(it.type); });
-  if (!items.length) return { error: 'Add at least one creative type with a quantity.' };
+  // Fixed package: creatives per type. Monthly plan: creatives per type each month, billed monthly from the start date
+  // (optional end date). Custom: a number of creatives, or an amount (budget) spent at a rate per creative type.
+  const kind = ['Monthly', 'Custom'].indexOf(String(p.kind)) >= 0 ? String(p.kind) : 'Fixed';
+  const basis = kind === 'Custom' && p.basis === 'amount' ? 'amount' : 'creatives';
+  const items = (Array.isArray(p.items) ? p.items : []).slice(0, 30).map(function (it) { return { type: clean_(it && it.type).slice(0, 60), qty: Math.max(0, Math.min(10000, Math.round(Number(it && it.qty) || 0))), rate: Math.max(0, Math.min(10000000, Math.round((Number(it && it.rate) || 0) * 100) / 100)) }; })
+    .filter(function (it) { return it.type && plain_(it.type) && (basis === 'amount' ? it.rate > 0 : it.qty > 0); })
+    .map(function (it) { return basis === 'amount' ? { type: it.type, rate: it.rate } : { type: it.type, qty: it.qty }; });
+  if (!items.length) return { error: basis === 'amount' ? 'Add at least one creative type with its rate.' : 'Add at least one creative type with a quantity.' };
   const amount = Math.max(0, Math.round((Number(p.amount) || 0) * 100) / 100);
-  return { brand: brand, date: date, amount: amount, from: ['Both', 'External', 'Internal'].indexOf(p.from) >= 0 ? p.from : 'Both', items: items, total: items.reduce(function (a, it) { return a + it.qty; }, 0), notes: clean_(p.notes).slice(0, 500), status: p.status === 'Closed' ? 'Closed' : 'Active' };
+  if (basis === 'amount' && !amount) return { error: 'Add the package amount.' };
+  if (kind === 'Monthly' && !amount) return { error: 'Add the monthly amount.' };
+  const end = kind === 'Monthly' && /^\d{4}-\d{2}-\d{2}$/.test(String(p.end || '')) ? String(p.end) : '';
+  if (end && end < date) return { error: 'The end date is before the start date.' };
+  return { brand: brand, date: date, amount: amount, from: ['Both', 'External', 'Internal'].indexOf(p.from) >= 0 ? p.from : 'Both', items: items, total: items.reduce(function (a, it) { return a + (it.qty || 0); }, 0), notes: clean_(p.notes).slice(0, 500), status: p.status === 'Closed' ? 'Closed' : 'Active', kind: kind, end: end, basis: basis };
 }
 function pkgSave_(b, u) {
   const x = pkgInput_(b); if (x.error) return { ok: false, error: x.error };
-  const sh = pkgSheet_(), now = new Date(), vals = function (id, createdBy, created) { return [id, safe_(x.brand), "'" + x.date, x.amount, x.from, JSON.stringify(x.items), x.total, safe_(x.notes), x.status, createdBy, created, u.email, now, false]; };
-  const desc = x.brand + ': ' + x.total + ' creatives (' + x.items.map(function (it) { return it.qty + ' ' + it.type; }).join(', ') + '), ₹' + x.amount + ', from ' + x.date;
+  const sh = pkgSheet_(), now = new Date(), vals = function (id, createdBy, created) { return [id, safe_(x.brand), "'" + x.date, x.amount, x.from, JSON.stringify(x.items), x.total, safe_(x.notes), x.status, createdBy, created, u.email, now, false, x.kind, x.end ? "'" + x.end : '', x.basis]; };
+  const desc = x.brand + ' (' + (x.kind === 'Monthly' ? 'monthly plan' : x.kind === 'Custom' ? 'custom package' : 'fixed package') + '): ' + (x.basis === 'amount' ? '₹' + x.amount + ' at ' + x.items.map(function (it) { return it.type + ' ₹' + it.rate; }).join(', ') : x.total + ' creatives' + (x.kind === 'Monthly' ? ' a month' : '') + ' (' + x.items.map(function (it) { return it.qty + ' ' + it.type; }).join(', ') + '), ₹' + x.amount + (x.kind === 'Monthly' ? ' a month' : '')) + ', from ' + x.date + (x.end ? ' to ' + x.end : '');
   // A brand that already has orders: the person confirms this is a new (repeat) order, so an existing order is not
   // entered twice by mistake. Order numbers (1st, 2nd, 3rd…) follow from the purchase dates.
   const bkey = function (t) { return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
