@@ -3734,7 +3734,7 @@
       st.at = Date.now();
       st.loading = false;
       if (!st.editing) dash.draw('qn-board');
-      dash.draw('qn-tabs'); syncControls(); dash.draw('np-list');
+      dash.draw('qn-tabs'); dash.draw('qn-filters'); dash.draw('qn-hero'); syncControls(); dash.draw('np-list');
     }
     const open = () => { if (!$n('qn-new').firstChild) mountComposer(); if (!st.loaded || Date.now() - (st.at || 0) > 20000) load(st.loaded); };
     // Others' changes show up while Notes is open (every 30 s) and in the background (every 2 min).
@@ -3758,16 +3758,160 @@
     };
     const ago = (iso) => { if (!iso) return ''; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : CO.fmtDate(new Date(new Date(iso).getTime() + 5.5 * 3600e3).toISOString().slice(0, 10)); };
 
+    /* ---- look and feel: colours, stickers, rich text ---- */
+    const COLOURS = [['lemon', 'Lemon'], ['peach', 'Peach'], ['pink', 'Bubblegum'], ['lilac', 'Lilac'], ['sky', 'Sky'], ['mint', 'Mint'], ['sand', 'Sand'], ['paper', 'Paper']];
+    const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // Original stickers (inline SVG). "a" = animated: twinkle, beat, float, wiggle, spin, glow, flicker, look.
+    const STK = {
+      star: ['Star', 'twinkle', '<svg viewBox="0 0 48 48"><path d="M24 4l5.6 12.6 13.4 1.3-10.1 9 3 13.3L24 33.4 12.1 40.2l3-13.3-10.1-9 13.4-1.3z" fill="#ffd43b" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><circle cx="19" cy="23" r="1.8" fill="#1e1e1e"/><circle cx="29" cy="23" r="1.8" fill="#1e1e1e"/><path d="M20.5 28c2 2 5 2 7 0" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round"/></svg>'],
+      heart: ['Heart', 'beat', '<svg viewBox="0 0 48 48"><path d="M24 41S6 30.5 6 17.8C6 11.5 10.6 7 16.2 7c3.6 0 6.3 2 7.8 4.6C25.5 9 28.2 7 31.8 7 37.4 7 42 11.5 42 17.8 42 30.5 24 41 24 41z" fill="#ff8fab" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><path d="M13 16c.5-2.5 2.4-4 4.6-4" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>'],
+      sun: ['Sunny', 'spin', '<svg viewBox="0 0 48 48"><g stroke="#1e1e1e" stroke-width="2.5" stroke-linecap="round"><path d="M24 3v6M24 39v6M3 24h6M39 24h6M9 9l4 4M35 35l4 4M9 39l4-4M35 13l4-4"/></g><circle cx="24" cy="24" r="11" fill="#ffc94d" stroke="#1e1e1e" stroke-width="2.5"/><circle cx="20" cy="23" r="1.6" fill="#1e1e1e"/><circle cx="28" cy="23" r="1.6" fill="#1e1e1e"/><path d="M20.5 27.5c2 1.8 5 1.8 7 0" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round"/></svg>'],
+      flower: ['Flower', 'spin', '<svg viewBox="0 0 48 48"><g fill="#c7b8ff" stroke="#1e1e1e" stroke-width="2.3"><circle cx="24" cy="11" r="7"/><circle cx="36" cy="20" r="7"/><circle cx="31" cy="35" r="7"/><circle cx="17" cy="35" r="7"/><circle cx="12" cy="20" r="7"/></g><circle cx="24" cy="24" r="6" fill="#ffd43b" stroke="#1e1e1e" stroke-width="2.3"/></svg>'],
+      bolt: ['Zap', 'wiggle', '<svg viewBox="0 0 48 48"><path d="M27 3L9 27h13l-3 18 20-26H26z" fill="#ddff00" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/></svg>'],
+      check: ['Done', 'pop', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="19" fill="#7ee2a8" stroke="#1e1e1e" stroke-width="2.5"/><path d="M15 24.5l6 6 12-13" fill="none" stroke="#1e1e1e" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'],
+      sparkle: ['Sparkle', 'twinkle', '<svg viewBox="0 0 48 48"><path d="M22 4c1.5 9 4 12 14 14-10 2-12.5 5-14 14-1.5-9-4-12-14-14 10-2 12.5-5 14-14z" fill="#b8a4ff" stroke="#1e1e1e" stroke-width="2.3" stroke-linejoin="round"/><path d="M38 30c.7 4 1.8 5.3 6 6-4.2.7-5.3 2-6 6-.7-4-1.8-5.3-6-6 4.2-.7 5.3-2 6-6z" fill="#ffd43b" stroke="#1e1e1e" stroke-width="2" stroke-linejoin="round"/></svg>'],
+      coffee: ['Coffee', 'float', '<svg viewBox="0 0 48 48"><path d="M17 5c-2 3 2 4 0 7M24 5c-2 3 2 4 0 7M31 5c-2 3 2 4 0 7" fill="none" stroke="#1e1e1e" stroke-width="2.2" stroke-linecap="round"/><path d="M8 17h28v12a12 12 0 0 1-12 12h-4A12 12 0 0 1 8 29z" fill="#ffb38a" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><path d="M36 20h3a5 5 0 0 1 0 10h-3" fill="none" stroke="#1e1e1e" stroke-width="2.5"/><circle cx="17" cy="27" r="1.6" fill="#1e1e1e"/><circle cx="27" cy="27" r="1.6" fill="#1e1e1e"/><path d="M19.5 31.5c1.5 1.3 3.5 1.3 5 0" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round"/></svg>'],
+      rocket: ['Launch', 'float', '<svg viewBox="0 0 48 48"><path d="M30 6c7 1 11 5 12 12L26 34l-12-12z" fill="#8ec5ff" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><circle cx="32" cy="16" r="4" fill="#fff" stroke="#1e1e1e" stroke-width="2.3"/><path d="M14 22l-7 1-3 6 9-1M26 34l-1 7-6 3 1-9" fill="#ff8fab" stroke="#1e1e1e" stroke-width="2.3" stroke-linejoin="round"/><path d="M15 33c-3 1-5 4-6 9 5-1 8-3 9-6" fill="#ffd43b" stroke="#1e1e1e" stroke-width="2.3" stroke-linejoin="round"/></svg>'],
+      eyes: ['Eyes', 'look', '<svg viewBox="0 0 48 48"><ellipse cx="15" cy="24" rx="10" ry="13" fill="#fff" stroke="#1e1e1e" stroke-width="2.5"/><ellipse cx="33" cy="24" rx="10" ry="13" fill="#fff" stroke="#1e1e1e" stroke-width="2.5"/><g class="stk-pupil"><circle cx="17" cy="26" r="4.5" fill="#1e1e1e"/><circle cx="35" cy="26" r="4.5" fill="#1e1e1e"/></g></svg>'],
+      bulb: ['Idea', 'glow', '<svg viewBox="0 0 48 48"><path d="M24 5a13 13 0 0 0-7.5 23.6c1.5 1.1 2.5 2.8 2.5 4.7V35h10v-1.7c0-1.9 1-3.6 2.5-4.7A13 13 0 0 0 24 5z" fill="#fff27a" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><path d="M19 39h10M20.5 43h7" stroke="#1e1e1e" stroke-width="2.5" stroke-linecap="round"/><path d="M20 21l4 5 4-5" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'],
+      fire: ['On fire', 'flicker', '<svg viewBox="0 0 48 48"><path d="M24 44c-9 0-15-6-15-14 0-7 5-11 7-17 2 4 4 6 6 6 0-6 3-11 8-15 0 8 9 13 9 26 0 8-6 14-15 14z" fill="#ff9b54" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><path d="M24 44c-4 0-7-3-7-7 0-4 3-6 5-9 1 3 3 4 4 4 1 2 5 3 5 6 0 3-3 6-7 6z" fill="#ffd43b" stroke="#1e1e1e" stroke-width="2" stroke-linejoin="round"/></svg>'],
+      wow: ['Wow!', 'pop', '<svg viewBox="0 0 48 48"><path d="M24 2l4.6 5.2 6.8-1.6 1.4 6.8 6.6 2.4-2.6 6.4 4 5.8-6 3.6.2 7-7-.6-3.4 6.1L24 40.8l-4.6 2.5-3.4-6.1-7 .6.2-7-6-3.6 4-5.8-2.6-6.4 6.6-2.4 1.4-6.8 6.8 1.6z" fill="#ff8fab" stroke="#1e1e1e" stroke-width="2.2" stroke-linejoin="round"/><text x="24" y="28.5" text-anchor="middle" font-family="Fredoka, sans-serif" font-weight="700" font-size="12" fill="#1e1e1e">WOW</text></svg>'],
+      nice: ['Nice!', 'wiggle', '<svg viewBox="0 0 60 36"><rect x="3" y="4" width="54" height="28" rx="14" fill="#7ee2a8" stroke="#1e1e1e" stroke-width="2.5"/><text x="30" y="23.5" text-anchor="middle" font-family="Fredoka, sans-serif" font-weight="700" font-size="14" fill="#1e1e1e">nice!</text></svg>'],
+      pin: ['Push pin', 'wiggle', '<svg viewBox="0 0 48 48"><circle cx="24" cy="16" r="11" fill="#ff6b6b" stroke="#1e1e1e" stroke-width="2.5"/><path d="M24 27v16" stroke="#1e1e1e" stroke-width="3" stroke-linecap="round"/><circle cx="20" cy="12" r="3" fill="#fff" opacity=".8"/></svg>'],
+      cloud: ['Dreamy', 'float', '<svg viewBox="0 0 56 40"><path d="M14 34a10 10 0 0 1-1-20 13 13 0 0 1 25-3 10 10 0 1 1 5 23z" fill="#dff1ff" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><circle cx="23" cy="23" r="1.6" fill="#1e1e1e"/><circle cx="33" cy="23" r="1.6" fill="#1e1e1e"/><path d="M25 27c1.6 1.4 4.4 1.4 6 0" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round"/></svg>']
+    };
+    const stickerEl = (k, cls) => { const d = STK[k]; if (!d) return null; const s = mk('span', 'stk stk-' + d[1] + (cls ? ' ' + cls : '')); s.innerHTML = d[2]; s.title = d[0]; s.setAttribute('role', 'img'); s.setAttribute('aria-label', d[0] + ' sticker'); return s; };
+    // ==highlight== and **bold**, @people and #tags shown as soft pills
+    const rich = (txt) => {
+      const frag = document.createDocumentFragment();
+      String(txt).split(/(==[^=\n]{1,300}==|\*\*[^*\n]{1,300}\*\*|@[A-Z][\w.]*(?: [A-Z][\w.]*)?|#[\p{L}\p{N}_-]{1,30})/gu).forEach((s) => {
+        if (/^==.*==$/.test(s)) frag.append(mk('mark', 'qn-hl', s.slice(2, -2)));
+        else if (/^\*\*.*\*\*$/.test(s)) frag.append(mk('b', '', s.slice(2, -2)));
+        else if (/^@/.test(s)) frag.append(mk('span', 'qn-tag', s));
+        else if (/^#/.test(s)) frag.append(mk('span', 'qn-ht t' + tagHue(s.slice(1)), s));
+        else if (s) frag.append(document.createTextNode(s));
+      });
+      return frag;
+    };
+    const tagHue = (t) => { let h = 0; for (const c of String(t).toLowerCase()) h = (h * 31 + c.charCodeAt(0)) % 8; return h; };
+    const hashtags = (txt) => [...new Set((String(txt).match(/#[\p{L}\p{N}_-]{1,30}/gu) || []).map((x) => x.slice(1).toLowerCase()))].slice(0, 15);
+    const sizeText = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+    const fileKind = (t) => (/^image\//.test(t) ? 'img' : t === 'application/pdf' ? 'pdf' : /^video\//.test(t) ? 'video' : /^audio\//.test(t) ? 'audio' : /sheet|excel|csv/.test(t) ? 'sheet' : /presentation|powerpoint/.test(t) ? 'slides' : /word|document|text/.test(t) ? 'doc' : 'file');
+    const FILE_ICON = { pdf: 'PDF', video: 'VID', audio: 'AUD', sheet: 'XLS', slides: 'PPT', doc: 'DOC', file: 'FILE', img: 'IMG' };
+    const sparkle = (el) => {
+      if (REDUCE || !el || !el.animate) return; const r = el.getBoundingClientRect();
+      for (let i = 0; i < 10; i++) { const d = mk('i', 'qn-spark'); d.style.left = (r.left + r.width / 2) + 'px'; d.style.top = (r.top + r.height / 2) + 'px'; d.style.background = ['#ffd43b', '#ff8fab', '#b8a4ff', '#7ee2a8', '#8ec5ff'][i % 5]; document.body.append(d); const a = (i / 10) * Math.PI * 2, dist = 36 + Math.random() * 30; d.animate([{ transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }, { transform: `translate(calc(-50% + ${Math.cos(a) * dist}px), calc(-50% + ${Math.sin(a) * dist}px)) scale(.2)`, opacity: 0 }], { duration: 650, easing: 'cubic-bezier(.2,.8,.2,1)' }).onfinish = () => d.remove(); }
+    };
+
+    /* ---- files: upload (paste, drop or pick), cached previews, a preview dialog ---- */
+    const FILES = new Map(); // id -> { url, type, name } (object URLs, this session only)
+    const b64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('The file could not be read.')); r.readAsDataURL(blob); });
+    async function shrink(file) {
+      // Large photos are resized (longest side 2400 px) so they upload fast; SVG, GIF and small images are kept as they are.
+      if (!/^image\/(png|jpe?g|webp)$/.test(file.type) || file.size < 1.5 * 1048576) return file;
+      try { const bmp = await createImageBitmap(file); const k = Math.min(1, 2400 / Math.max(bmp.width, bmp.height)); const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k); c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); const out = await new Promise((r) => c.toBlob(r, file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.86)); return out && out.size < file.size ? new File([out], file.name, { type: out.type }) : file; } catch (e) { return file; }
+    }
+    async function upload(file) {
+      if (file.size > 10 * 1048576) throw new Error(file.name + ' is over 10 MB.');
+      const f2 = await shrink(file); const type = f2.type || 'application/octet-stream';
+      const r = await callApi({ action: 'noteFileUpload', name: file.name, type, data: await b64(f2) });
+      if (!r.ok) throw new Error(r.error || 'Upload failed');
+      FILES.set(r.file.id, { url: URL.createObjectURL(f2), type, name: r.file.name });
+      return r.file;
+    }
+    async function fileUrl(f) {
+      if (FILES.has(f.id)) return FILES.get(f.id).url;
+      const r = await callApi({ action: 'noteFile', id: f.id }, true); if (!r.ok) throw new Error(r.error || 'File not available');
+      const bin = atob(r.data), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([u8], { type: r.type })); FILES.set(f.id, { url, type: r.type, name: r.name }); return url;
+    }
+    const fdlg = $n('qn-file-dlg');
+    async function preview(f) {
+      $n('qn-file-t').textContent = f.name; const body = $n('qn-file-body'); body.replaceChildren(mk('p', 'co-note', 'Opening…')); const dl = $n('qn-file-dl'); dl.removeAttribute('href');
+      if (!fdlg.open) fdlg.showModal();
+      try {
+        const url = await fileUrl(f), k = fileKind(f.type); dl.href = url; dl.download = f.name; body.replaceChildren();
+        if (k === 'img') { const i = mk('img', 'qn-pv-img'); i.src = url; i.alt = f.name; body.append(i); }
+        else if (k === 'pdf') { const fr = mk('iframe', 'qn-pv-pdf'); fr.src = url; fr.title = f.name; body.append(fr); }
+        else if (k === 'video') { const v = mk('video', 'qn-pv-img'); v.src = url; v.controls = true; body.append(v); }
+        else if (k === 'audio') { const v = mk('audio'); v.src = url; v.controls = true; body.append(v); }
+        else if (/^text\//.test(f.type)) { const t = await (await fetch(url)).text(); body.append(mk('pre', 'qn-pv-txt', t.slice(0, 200000))); }
+        else { const box = mk('div', 'qn-pv-none'); box.append(mk('b', 'qn-fi k-' + k, FILE_ICON[k]), mk('p', '', f.name + ' · ' + sizeText(f.size)), mk('p', 'co-note', 'No preview for this kind of file. Download it to open it.')); body.append(box); }
+      } catch (e) { body.replaceChildren(mk('p', 'co-note bad', e.message)); }
+    }
+    $n('qn-file-x').addEventListener('click', () => fdlg.close());
+    // A file tile: a lazily loaded thumbnail for images, an icon for everything else.
+    const thumbIO = 'IntersectionObserver' in window ? new IntersectionObserver((es) => es.forEach((e) => { if (!e.isIntersecting) return; thumbIO.unobserve(e.target); const f = e.target._f; fileUrl(f).then((u) => { e.target.style.backgroundImage = 'url("' + u + '")'; e.target.classList.add('ld'); }).catch(() => e.target.classList.add('err')); }), { rootMargin: '200px' }) : null;
+    function fileTile(f, onRemove) {
+      const k = fileKind(f.type), t = mk('button', 'qn-file k-' + k); t.type = 'button'; t.title = f.name + ' · ' + sizeText(f.size); t.setAttribute('aria-label', 'Open ' + f.name);
+      if (k === 'img') { const th = mk('span', 'qn-thumb'); th._f = f; if (FILES.has(f.id)) { th.style.backgroundImage = 'url("' + FILES.get(f.id).url + '")'; th.classList.add('ld'); } else if (thumbIO) thumbIO.observe(th); t.append(th); }
+      else t.append(mk('b', 'qn-fi k-' + k, FILE_ICON[k]));
+      t.append(mk('span', 'qn-fn', f.name));
+      t.addEventListener('click', (e) => { e.stopPropagation(); preview(f); });
+      if (onRemove) { const x = mk('span', 'qn-fx', '×'); x.setAttribute('role', 'button'); x.setAttribute('aria-label', 'Remove ' + f.name); x.tabIndex = 0; x.addEventListener('click', (e) => { e.stopPropagation(); onRemove(); }); t.append(x); }
+      return t;
+    }
+
+    /* ---- doodles: a drawing pad (pens, highlighter, eraser by undo), saved as smooth SVG paths ---- */
+    const PENS = [['#1e1e1e', 'Ink'], ['#6f50f0', 'Violet'], ['#2f6bff', 'Blue'], ['#ff5d8f', 'Pink'], ['#22a06b', 'Green'], ['#ff9b54', 'Orange']];
+    const pad = { strokes: [], cur: null, pen: PENS[0][0], w: 4, hl: false, done: null };
+    const cv = $n('qn-pad'), ctx2 = cv.getContext('2d'), ddlg = $n('qn-doodle-dlg');
+    const pathOf = (pts) => { if (!pts.length) return ''; let d = 'M' + pts[0][0] + ' ' + pts[0][1]; for (let i = 1; i < pts.length - 1; i++) { const mx = ((pts[i][0] + pts[i + 1][0]) / 2).toFixed(1), my = ((pts[i][1] + pts[i + 1][1]) / 2).toFixed(1); d += ' Q' + pts[i][0] + ' ' + pts[i][1] + ' ' + mx + ' ' + my; } const l = pts[pts.length - 1]; d += ' L' + l[0] + ' ' + l[1]; return d; };
+    const redraw = () => { ctx2.clearRect(0, 0, cv.width, cv.height); pad.strokes.concat(pad.cur ? [pad.cur] : []).forEach((s) => { const p = new Path2D(s.d || pathOf(s.pts)); ctx2.lineCap = 'round'; ctx2.lineJoin = 'round'; ctx2.strokeStyle = s.c; ctx2.globalAlpha = s.hl ? 0.35 : 1; ctx2.lineWidth = s.w * 2; ctx2.stroke(p); }); ctx2.globalAlpha = 1; };
+    const ptOf = (e) => { const r = cv.getBoundingClientRect(); return [Math.round((e.clientX - r.left) / r.width * 600 * 10) / 10, Math.round((e.clientY - r.top) / r.height * 360 * 10) / 10]; };
+    ctx2.setTransform(2, 0, 0, 2, 0, 0);
+    cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); pad.cur = { c: pad.pen, w: pad.hl ? 10 : pad.w, hl: pad.hl, pts: [ptOf(e)] }; redraw(); });
+    cv.addEventListener('pointermove', (e) => { if (!pad.cur) return; const p = ptOf(e), l = pad.cur.pts[pad.cur.pts.length - 1]; if (Math.hypot(p[0] - l[0], p[1] - l[1]) > 1.5) { pad.cur.pts.push(p); redraw(); } });
+    const end = () => { if (!pad.cur) return; if (pad.cur.pts.length === 1) pad.cur.pts.push([pad.cur.pts[0][0] + 0.1, pad.cur.pts[0][1]]); pad.strokes.push({ c: pad.cur.c, w: pad.cur.w, hl: pad.cur.hl, d: pathOf(pad.cur.pts) }); pad.cur = null; redraw(); };
+    cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+    function padTools() {
+      const t = $n('qn-pad-tools'); t.replaceChildren();
+      PENS.forEach(([c, l]) => { const b = mk('button', 'qn-pen' + (pad.pen === c && !pad.hl ? ' on' : '')); b.type = 'button'; b.style.setProperty('--c', c); b.title = l; b.setAttribute('aria-label', l + ' pen'); b.addEventListener('click', () => { pad.pen = c; pad.hl = false; padTools(); }); t.append(b); });
+      const hl = mk('button', 'qn-tool' + (pad.hl ? ' on' : ''), 'Highlighter'); hl.type = 'button'; hl.addEventListener('click', () => { pad.hl = !pad.hl; if (pad.hl && pad.pen === '#1e1e1e') pad.pen = '#ffd43b'; padTools(); }); t.append(hl);
+      [[2, 'Fine'], [4, 'Medium'], [8, 'Bold']].forEach(([w, l]) => { const b = mk('button', 'qn-tool' + (pad.w === w ? ' on' : ''), l); b.type = 'button'; b.addEventListener('click', () => { pad.w = w; padTools(); }); t.append(b); });
+      const u = mk('button', 'qn-tool', 'Undo'); u.type = 'button'; u.addEventListener('click', () => { pad.strokes.pop(); redraw(); }); t.append(u);
+    }
+    function openPad(doodle, done) { pad.strokes = doodle ? doodle.strokes.slice() : []; pad.done = done; padTools(); redraw(); ddlg.showModal(); }
+    $n('qn-pad-clear').addEventListener('click', () => { pad.strokes = []; redraw(); });
+    $n('qn-pad-cancel').addEventListener('click', () => ddlg.close());
+    $n('qn-pad-save').addEventListener('click', () => { const d = pad.strokes.length ? { w: 600, h: 360, strokes: pad.strokes.slice() } : null; ddlg.close(); if (pad.done) pad.done(d); });
+    document.addEventListener('keydown', (e) => { if (ddlg.open && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); pad.strokes.pop(); redraw(); } });
+    const doodleSvg = (d) => { const NS = 'http://www.w3.org/2000/svg', s = document.createElementNS(NS, 'svg'); s.setAttribute('viewBox', '0 0 ' + d.w + ' ' + d.h); s.setAttribute('class', 'qn-doodle'); s.setAttribute('role', 'img'); s.setAttribute('aria-label', 'Doodle'); d.strokes.forEach((st2) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', st2.d); p.setAttribute('stroke', st2.c); p.setAttribute('stroke-width', st2.w); p.setAttribute('fill', 'none'); p.setAttribute('stroke-linecap', 'round'); p.setAttribute('stroke-linejoin', 'round'); if (st2.hl) p.setAttribute('opacity', '0.35'); s.append(p); }); return s; };
+
+    /* ---- drafts: what you are writing is kept in this browser until it is saved, so nothing is lost on a refresh ---- */
+    const draftKey = (id) => 'co.qn.draft.' + me() + '.' + (id || 'new');
+    const draftGet = (id) => { try { return JSON.parse(localStorage.getItem(draftKey(id)) || 'null'); } catch (e) { return null; } };
+    const draftSet = (id, v) => { try { if (v) localStorage.setItem(draftKey(id), JSON.stringify(v)); else localStorage.removeItem(draftKey(id)); } catch (e) { /* storage full or blocked */ } };
+
     /* ---- the composer (new note and editing) ---- */
     function editor(n, done) {
       const f = mk('form', 'qn-ed'); f.autocomplete = 'off';
-      const ta = mk('textarea', 'qn-ta'); ta.rows = n ? 4 : 2; ta.maxLength = 4000; ta.placeholder = 'Write a note… type @ to tag someone'; ta.setAttribute('aria-label', 'Note'); ta.value = n ? textOf(n) : '';
+      const dr = draftGet(n && n.id);
+      const S2 = { assign: n ? assignees(n).map((a) => ({ name: a.assignee || nameOf2(a.email), email: a.email, done: a.done, id: a.id, doneBy: a.doneBy, doneAt: a.doneAt })) : [], reminder: n ? n.reminder || '' : '', team: n ? n.visibility === 'team' : false,
+        colour: n ? n.colour || '' : 'lemon', stickers: n ? (n.stickers || []).slice() : [], files: n ? (n.files || []).slice() : [], doodle: n ? n.doodle || null : null, uploading: 0 };
+      if (dr && (!n || dr.from === n.updatedAt)) Object.assign(S2, dr.s);
+      f.classList.add('c-' + (S2.colour || 'paper'));
+      const ta = mk('textarea', 'qn-ta'); ta.rows = n ? 4 : 2; ta.maxLength = 45000; ta.placeholder = 'Write a note… first line is the title · @ to tag · #tag · ==highlight== · paste or drop files'; ta.setAttribute('aria-label', 'Note'); ta.value = dr && (!n || dr.from === n.updatedAt) ? dr.text : n ? textOf(n) : '';
       const pop = mk('div', 'qn-pop'); pop.hidden = true; pop.setAttribute('role', 'listbox');
       const field = mk('div', 'qn-field'); field.append(ta, pop);
-      const S2 = { assign: n ? assignees(n).map((a) => ({ name: a.assignee || nameOf2(a.email), email: a.email, done: a.done, id: a.id, doneBy: a.doneBy, doneAt: a.doneAt })) : [], reminder: n ? n.reminder || '' : '', team: n ? n.visibility === 'team' : false };
+      const colours = mk('div', 'qn-colours'); colours.setAttribute('role', 'radiogroup'); colours.setAttribute('aria-label', 'Note colour');
+      COLOURS.forEach(([k, l]) => { const b = mk('button', 'qn-cdot c-' + k); b.type = 'button'; b.setAttribute('role', 'radio'); b.title = l; b.setAttribute('aria-label', l); b.addEventListener('click', () => { S2.colour = k; paint(); }); colours.append(b); });
+      const tools = mk('div', 'qn-tools');
+      const tool = (label, svg, fn, key) => { const b = mk('button', 'qn-tb'); b.type = 'button'; b.title = label + (key ? ' (' + key + ')' : ''); b.setAttribute('aria-label', label); b.innerHTML = svg; b.addEventListener('click', fn); tools.append(b); return b; };
+      const wrap = (a, z) => { const s0 = ta.selectionStart, e0 = ta.selectionEnd, v = ta.value, sel2 = v.slice(s0, e0) || 'text'; ta.value = v.slice(0, s0) + a + sel2 + z + v.slice(e0); ta.focus(); ta.setSelectionRange(s0 + a.length, s0 + a.length + sel2.length); ta.dispatchEvent(new Event('input')); };
+      tool('Highlight', '<svg viewBox="0 0 24 24"><path d="M14 4l6 6-8.5 8.5H6v-5.5z"/><path d="M3 21h8" stroke-width="3" stroke="#ffd43b"/></svg>', () => wrap('==', '=='), 'Ctrl+Shift+H');
+      tool('Bold', '<svg viewBox="0 0 24 24"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg>', () => wrap('**', '**'), 'Ctrl+B');
+      tool('Add a #tag', '<svg viewBox="0 0 24 24"><path d="M9 4L7 20M17 4l-2 16M4 9h16M3 15h16"/></svg>', () => { const p = ta.selectionStart, v = ta.value, pre = p && !/\s/.test(v[p - 1]) ? ' #' : '#'; ta.value = v.slice(0, p) + pre + v.slice(p); ta.focus(); ta.setSelectionRange(p + pre.length, p + pre.length); ta.dispatchEvent(new Event('input')); });
+      const stkBtn = tool('Stickers', '<svg viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4z"/><path d="M16 4v4h4"/><circle cx="9.5" cy="11" r="1"/><circle cx="14.5" cy="11" r="1"/><path d="M9 15c1.7 1.5 4.3 1.5 6 0"/></svg>', () => { tray.hidden = !tray.hidden; stkBtn.setAttribute('aria-expanded', String(!tray.hidden)); });
+      tool('Doodle', '<svg viewBox="0 0 24 24"><path d="M3 17c3-6 5 3 8-3s4-7 7-2 1 6 3 5"/></svg>', () => openPad(S2.doodle, (d) => { S2.doodle = d; paint(); }));
+      const fileIn = mk('input'); fileIn.type = 'file'; fileIn.multiple = true; fileIn.hidden = true; fileIn.accept = 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,video/mp4,video/quicktime,video/webm,audio/*';
+      tool('Attach files', '<svg viewBox="0 0 24 24"><path d="M20 11l-8.5 8.5a5 5 0 0 1-7-7L13 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L14 7"/></svg>', () => fileIn.click());
+      fileIn.addEventListener('change', () => { addFiles([...fileIn.files]); fileIn.value = ''; });
+      const tray = mk('div', 'qn-tray'); tray.hidden = true; tray.setAttribute('aria-label', 'Stickers');
+      Object.keys(STK).forEach((k) => { const b = mk('button', 'qn-tray-b'); b.type = 'button'; b.append(stickerEl(k)); b.setAttribute('aria-label', 'Add ' + STK[k][0] + ' sticker'); b.addEventListener('click', () => { if (S2.stickers.includes(k)) S2.stickers = S2.stickers.filter((x) => x !== k); else if (S2.stickers.length < 4) S2.stickers.push(k); else toast('Up to 4 stickers a note.'); paint(); if (b.animate && !REDUCE) b.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.25) rotate(-8deg)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'cubic-bezier(.3,1.6,.5,1)' }); }); tray.append(b); });
+      const extras = mk('div', 'qn-extras');
       const chips = mk('div', 'qn-chips');
       const row = mk('div', 'qn-row');
-      // dropdown helper: a button with a chevron and a small panel
       const dd = (label, icon, build) => {
         const w = mk('div', 'qn-dd'), b = mk('button', 'qn-dd-btn'); b.type = 'button'; b.setAttribute('aria-haspopup', 'true'); b.setAttribute('aria-expanded', 'false');
         b.innerHTML = icon; b.append(mk('span', 'qn-dd-l', label)); const pan = mk('div', 'qn-dd-pan'); pan.hidden = true;
@@ -3794,33 +3938,57 @@
       const acts = mk('div', 'qn-acts');
       const save = mk('button', 'co-btn primary qn-save', n ? 'Save' : 'Add note'); save.type = 'submit';
       if (n) {
-        const cancel = mk('button', 'co-btn', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', () => done(null));
-        const del = mk('button', 'icon-btn qn-del'); del.type = 'button'; del.setAttribute('aria-label', 'Delete note'); del.title = 'Delete note'; del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
-        del.addEventListener('click', async () => { if (!confirm('Delete this note? It disappears for everyone it was shared with.')) return; st.busy = true; try { const r = await callApi({ action: 'noteDelete', id: n.id }); if (!r.ok) throw new Error(r.error || 'Not deleted'); st.notes = st.notes.filter((x) => x.id !== n.id); toast('Note deleted'); done(null); } catch (e) { toast(e.message, true); } st.busy = false; });
+        const cancel = mk('button', 'co-btn', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', () => { draftSet(n.id, null); done(null); });
+        const del = mk('button', 'icon-btn qn-del'); del.type = 'button'; del.setAttribute('aria-label', 'Move to trash'); del.title = 'Move to trash (restore within 30 days)'; del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+        del.addEventListener('click', async () => { if (!confirm('Move this note to the trash? It disappears for everyone it was shared with; you can restore it from Trash for 30 days.')) return; st.busy = true; try { const r = await callApi({ action: 'noteDelete', id: n.id }); if (!r.ok) throw new Error(r.error || 'Not deleted'); st.notes = st.notes.filter((x) => x.id !== n.id); st.trash = null; draftSet(n.id, null); toast('Moved to trash · restore it from Trash'); done(null); } catch (e) { toast(e.message, true); } st.busy = false; });
         acts.append(del, cancel);
       }
       acts.append(save);
       row.append(assignDd, remindDd, share, vis, acts);
-      f.append(field, chips, row);
-      // who it is tagged with, from the text
+      const bar = mk('div', 'qn-edbar'); bar.append(colours, tools);
+      f.append(bar, field, tray, extras, chips, row, fileIn);
+      // files: pick, paste (Ctrl/Cmd+V) or drop
+      async function addFiles(list) {
+        list = list.filter(Boolean); if (!list.length) return;
+        if (S2.files.length + list.length > 12) { toast('Up to 12 files a note.', true); list = list.slice(0, Math.max(0, 12 - S2.files.length)); }
+        for (const file of list) {
+          S2.uploading++; paint();
+          try { const meta = await upload(file); S2.files.push(meta); toast('Attached ' + meta.name); } catch (e) { toast(e.message, true); }
+          S2.uploading--; paint();
+        }
+      }
+      ta.addEventListener('paste', (e) => { const fl = [...((e.clipboardData && e.clipboardData.files) || [])]; if (fl.length) { e.preventDefault(); addFiles(fl); } });
+      f.addEventListener('dragover', (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); f.classList.add('drop'); } });
+      f.addEventListener('dragleave', (e) => { if (!f.contains(e.relatedTarget)) f.classList.remove('drop'); });
+      f.addEventListener('drop', (e) => { if (!e.dataTransfer || !e.dataTransfer.files.length) return; e.preventDefault(); f.classList.remove('drop'); addFiles([...e.dataTransfer.files]); });
       const tagged = () => {
         const txt = ta.value, out = [], seen = new Set(), ps = people();
         ps.forEach((p) => { const full = new RegExp('@' + p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w])', 'i'); const f1 = first(p.name); const uniq = ps.filter((x) => first(x.name).toLowerCase() === f1.toLowerCase()).length === 1;
           if ((full.test(txt) || (uniq && new RegExp('@' + f1 + '(?![\\w])', 'i').test(txt))) && !seen.has(p.email)) { seen.add(p.email); out.push({ name: p.name, email: p.email }); } });
         return out;
       };
+      let dT = 0;
       function paint() {
+        f.className = 'qn-ed c-' + (S2.colour || 'paper') + (f.classList.contains('drop') ? ' drop' : '');
+        colours.querySelectorAll('.qn-cdot').forEach((b, i) => { const on = COLOURS[i][0] === S2.colour; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+        tray.querySelectorAll('.qn-tray-b').forEach((b, i) => b.classList.toggle('on', S2.stickers.includes(Object.keys(STK)[i])));
+        extras.replaceChildren();
+        if (S2.stickers.length) { const s2 = mk('div', 'qn-stk-row'); S2.stickers.forEach((k) => { const e2 = stickerEl(k, 'sm'); if (e2) s2.append(e2); }); extras.append(s2); }
+        const tg = hashtags(ta.value); if (tg.length) { const r2 = mk('div', 'qn-tags'); tg.forEach((t) => r2.append(mk('span', 'qn-ht t' + tagHue(t), '#' + t))); extras.append(r2); }
+        if (S2.files.length || S2.uploading) { const fr = mk('div', 'qn-files'); S2.files.forEach((fl, i) => fr.append(fileTile(fl, () => { S2.files.splice(i, 1); paint(); }))); if (S2.uploading) { const u = mk('span', 'qn-file up'); u.append(mk('i', 'qn-spin'), mk('span', 'qn-fn', 'Uploading ' + S2.uploading + '…')); fr.append(u); } extras.append(fr); }
+        if (S2.doodle) { const dw = mk('div', 'qn-dwrap'); dw.append(doodleSvg(S2.doodle)); const ed2 = mk('button', 'qn-mini', 'Edit doodle'); ed2.type = 'button'; ed2.addEventListener('click', () => openPad(S2.doodle, (d) => { S2.doodle = d; paint(); })); const rm = mk('button', 'qn-mini', 'Remove'); rm.type = 'button'; rm.addEventListener('click', () => { S2.doodle = null; paint(); }); dw.append(ed2, rm); extras.append(dw); }
+        extras.hidden = !extras.childElementCount;
         chips.replaceChildren();
         S2.assign.forEach((a) => { const c = mk('span', 'qn-chip as'); c.append(CO.av(a.name), mk('span', '', a.name)); const x = mk('button', 'qn-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Remove ' + a.name); x.addEventListener('click', () => { S2.assign = S2.assign.filter((y) => y.email !== a.email); paint(); }); c.append(x); chips.append(c); });
         if (S2.reminder) { const c = mk('span', 'qn-chip rm'); c.innerHTML = ICON_BELL; c.append(mk('span', '', remindText(S2.reminder))); const x = mk('button', 'qn-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Remove reminder'); x.addEventListener('click', () => { S2.reminder = ''; paint(); }); c.append(x); chips.append(c); }
         chips.hidden = !chips.childElementCount;
         assignDd.btn.querySelector('.qn-dd-l').textContent = S2.assign.length ? 'Assigned · ' + S2.assign.length : 'Assign';
         remindDd.btn.querySelector('.qn-dd-l').textContent = S2.reminder ? 'Reminder set' : 'Remind';
-        const tg = tagged(), who = new Set([...tg.map((p) => p.email), ...S2.assign.map((a) => a.email)]);
+        const tg2 = tagged(), who = new Set([...tg2.map((p) => p.email), ...S2.assign.map((a) => a.email)]);
         vis.textContent = S2.team ? 'Everyone with access can see this' : who.size ? 'Visible to you, ' + [...who].map((e) => first(nameOf2(e))).slice(0, 3).join(', ') + (who.size > 3 ? ' +' + (who.size - 3) : '') + ' and Admins' : 'Only you and Admins can see this';
-        save.disabled = !ta.value.trim();
+        save.disabled = (!ta.value.trim() && !S2.files.length && !S2.doodle) || S2.uploading > 0;
+        clearTimeout(dT); dT = setTimeout(() => { const empty = !ta.value.trim() && !S2.files.length && !S2.doodle; draftSet(n && n.id, empty && !n ? null : { from: n ? n.updatedAt : '', text: ta.value, s: { colour: S2.colour, stickers: S2.stickers, files: S2.files, doodle: S2.doodle, reminder: S2.reminder, team: S2.team, assign: S2.assign } }); }, 400);
       }
-      // @ autocomplete
       let sel = 0, match = null;
       const closePop = () => { pop.hidden = true; match = null; };
       const showPop = () => {
@@ -3832,70 +4000,114 @@
         pop.replaceChildren(); list.forEach((p, i) => { const o = mk('button', 'qn-pop-o' + (i === sel ? ' on' : '')); o.type = 'button'; o.setAttribute('role', 'option'); o.append(CO.av(p.name), mk('span', '', p.name)); o.addEventListener('mousedown', (e) => { e.preventDefault(); pick(i); }); pop.append(o); });
         pop.hidden = false;
       };
-      const pick = (i) => { const p = match.list[i], v = ta.value, end = ta.selectionStart; ta.value = v.slice(0, match.start) + '@' + p.name + ' ' + v.slice(end); const c = match.start + p.name.length + 2; ta.setSelectionRange(c, c); closePop(); paint(); ta.focus(); };
-      ta.addEventListener('input', () => { sel = 0; showPop(); paint(); ta.style.height = 'auto'; ta.style.height = Math.min(320, ta.scrollHeight + 2) + 'px'; });
+      const pick = (i) => { const p = match.list[i], v = ta.value, end2 = ta.selectionStart; ta.value = v.slice(0, match.start) + '@' + p.name + ' ' + v.slice(end2); const c = match.start + p.name.length + 2; ta.setSelectionRange(c, c); closePop(); paint(); ta.focus(); };
+      const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(420, ta.scrollHeight + 2) + 'px'; };
+      ta.addEventListener('input', () => { sel = 0; showPop(); paint(); grow(); });
       ta.addEventListener('keydown', (e) => {
         if (match && !pop.hidden) {
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + match.list.length) % match.list.length; showPop(); return; }
           if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(sel); return; }
           if (e.key === 'Escape') { closePop(); return; }
         }
-        if (e.key === 'Enter' && !e.shiftKey && !n) { e.preventDefault(); f.requestSubmit(); }
-        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); f.requestSubmit(); }
+        const mod = e.metaKey || e.ctrlKey;
+        if (mod && e.shiftKey && e.key.toLowerCase() === 'h') { e.preventDefault(); wrap('==', '=='); return; }
+        if (mod && !e.shiftKey && e.key.toLowerCase() === 'b') { e.preventDefault(); wrap('**', '**'); return; }
+        if (e.key === 'Enter' && mod) { e.preventDefault(); f.requestSubmit(); return; }
         if (e.key === 'Escape' && n) done(null);
       });
       ta.addEventListener('blur', () => setTimeout(closePop, 150));
       f.addEventListener('submit', async (e) => {
-        e.preventDefault(); const txt = ta.value.trim(); if (!txt || st.busy) return;
-        const lines = txt.split('\n'), title = lines[0].trim().slice(0, 160), body = lines.slice(1).join('\n').trim();
+        e.preventDefault(); const txt = ta.value.trim(); if ((!txt && !S2.files.length && !S2.doodle) || st.busy || S2.uploading) return;
+        const lines = txt.split('\n'), title = (lines[0] || '').trim().slice(0, 160) || (S2.files.length ? S2.files[0].name : 'Doodle'), body = lines.slice(1).join('\n').trim();
         const mentions = tagged();
         const keep = n ? (n.actions || []).filter((a) => !isAssign(a)) : [];
         const actions = keep.concat(S2.assign.map((a) => ({ id: a.id || ('as-' + a.email.split('@')[0]).slice(0, 40), text: title, assignee: a.name, email: a.email, done: !!a.done, doneBy: a.doneBy || '', doneAt: a.doneAt || '' })));
         const visibility = S2.team ? 'team' : (mentions.length || S2.assign.length || (n && (n.sharedWith || []).length)) ? 'people' : 'private';
-        const note = { title, body, mentions, actions, visibility, reminder: S2.reminder, sharedWith: n ? n.sharedWith || [] : [], type: n ? n.type : 'Discussion', date: n ? n.date : CO.today(), brand: n ? n.brand : '', category: n ? n.category : '', followUps: n ? n.followUps : '', pinned: n ? !!n.pinned : false };
+        const note = { title, body, mentions, actions, visibility, reminder: S2.reminder, sharedWith: n ? n.sharedWith || [] : [], type: n ? n.type : 'Discussion', date: n ? n.date : CO.today(), brand: n ? n.brand : '', category: n ? n.category : '', followUps: n ? n.followUps : '', pinned: n ? !!n.pinned : false,
+          tags: hashtags(txt), colour: S2.colour, stickers: S2.stickers, files: S2.files, doodle: S2.doodle };
         st.busy = true; save.disabled = true; save.textContent = 'Saving…';
         try {
           const r = await callApi(Object.assign({ action: 'noteSave', note }, n ? { id: n.id, updatedAt: n.updatedAt } : {}));
-          if (!r.ok) { if (r.error === 'stale') { toast('Someone changed this note meanwhile. Showing the latest version.', true); await load(true); done(null); st.busy = false; return; } throw new Error(r.error || 'Not saved'); }
+          if (!r.ok) { if (r.error === 'stale') { toast('Someone changed this note meanwhile. Your text is kept as a draft; showing the latest version.', true); await load(true); done(null); st.busy = false; return; } throw new Error(r.error || 'Not saved'); }
           const saved = r.note || Object.assign({ id: r.id, createdBy: me(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), canEdit: true }, note);
           st.notes = [saved].concat(st.notes.filter((x) => x.id !== saved.id));
+          clearTimeout(dT); draftSet(n && n.id, null); sparkle(save);
           const shared = new Set([...mentions.map((m) => m.email), ...S2.assign.map((a) => a.email)]);
           toast(n ? 'Note saved' : shared.size ? 'Note added and shared with ' + [...shared].map((x) => first(nameOf2(x))).join(', ') : 'Note added');
-          if (!n) { ta.value = ''; S2.assign = []; S2.reminder = ''; S2.team = false; scb.checked = false; ta.style.height = ''; paint(); }
+          if (!n) { ta.value = ''; Object.assign(S2, { assign: [], reminder: '', team: false, stickers: [], files: [], doodle: null }); scb.checked = false; ta.style.height = ''; paint(); clearTimeout(dT); draftSet(null, null); }
           done(saved);
-        } catch (err) { toast('Not saved: ' + err.message, true); }
+        } catch (err) { toast('Not saved: ' + err.message + ' Your text is kept as a draft in this browser.', true); }
         st.busy = false; save.textContent = n ? 'Save' : 'Add note'; paint();
       });
-      paint();
+      paint(); if (ta.value) setTimeout(grow, 0);
+      if (dr && (!n || dr.from === n.updatedAt) && dr.text) setTimeout(() => toast(n ? 'Unsaved changes restored' : 'Your unsaved note was restored'), 300);
       f.focusText = () => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); };
       f.setText = (v) => { ta.value = v; ta.dispatchEvent(new Event('input')); };
       return f;
     }
     let composer = null;
-    function mountComposer() { const host = $n('qn-new'); composer = editor(null, () => { flip(() => dash.draw('qn-board')); dash.draw('qn-tabs'); dash.draw('np-list'); }); host.replaceChildren(composer); }
+    function mountComposer() { const host = $n('qn-new'); composer = editor(null, () => { flip(() => dash.draw('qn-board')); dash.draw('qn-tabs'); dash.draw('qn-filters'); dash.draw('qn-hero'); dash.draw('np-list'); }); host.replaceChildren(composer); }
     document.addEventListener('click', (e) => { if (!e.target.closest('.qn-dd')) document.querySelectorAll('.qn-dd-pan').forEach((p) => { p.hidden = true; p.previousSibling.setAttribute('aria-expanded', 'false'); }); });
 
-    /* ---- the board ---- */
+    /* ---- hero, tabs, filters ---- */
+    const F = Object.assign({ colour: '', tag: '', files: false, doodle: false, pinned: false, author: '', when: '', sort: 'edited', trash: false }, (() => { try { return Object.assign(JSON.parse(LS.get('co.qnF', '{}')) || {}, { trash: false }); } catch (e) { return {}; } })());
+    const saveF = () => LS.set('co.qnF', JSON.stringify(Object.assign({}, F, { trash: false })));
+    const redrawAll = () => { saveF(); dash.draw('qn-filters'); flip(() => dash.draw('qn-board')); };
+    dash.draw('qn-hero', (el) => {
+      el.replaceChildren();
+      const h = mk('div', 'qn-hero-t'); const ttl = mk('h2', 'qn-h'); ttl.append(document.createTextNode('Notes')); const s1 = stickerEl('sparkle', 'qn-h-stk'); if (s1) ttl.append(s1);
+      h.append(ttl, mk('p', 'qn-sub', 'Your space to think out loud: jot ideas, tag the team, doodle, drop files. Everything saves to the team sheet; drafts are kept in this browser until you save.'));
+      const mine = st.notes.filter((n) => n.createdBy === me()).length, shared = st.notes.filter((n) => n.createdBy !== me() && !n.viaAdmin).length, files = st.notes.reduce((a, n) => a + (n.files || []).length, 0), todo = myActions().filter((a) => !a.done).length;
+      const stats = mk('div', 'qn-stats');
+      [[mine, 'your notes', 'lemon'], [shared, 'shared with you', 'sky'], [todo, 'to-dos for you', 'pink'], [files, 'files', 'mint']].forEach(([v, l, c]) => { const s2 = mk('div', 'qn-stat c-' + c); s2.append(mk('b', '', CO.num(v)), mk('span', '', l)); stats.append(s2); });
+      const deco = mk('div', 'qn-deco'); ['star', 'heart', 'bolt'].forEach((k, i) => { const s3 = stickerEl(k, 'fl fl' + i); if (s3) deco.append(s3); });
+      el.append(h, stats, deco);
+    });
     const TABS = [['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me'], ['assigned', 'Assigned to me'], ['reminders', 'Reminders'], ['team', 'Team notes']];
     const inTab = (n, t) => t === 'all' || (t === 'mine' ? n.createdBy === me() : t === 'shared' ? n.createdBy !== me() && !n.viaAdmin : t === 'assigned' ? assignees(n).some((a) => a.email === me()) : t === 'team' ? n.createdBy !== me() : !!n.reminder);
-    const matches = (n) => { const q = norm(st.q); if (!q) return true; return norm([n.title, n.body, nameOf2(n.createdBy), ...(n.mentions || []).map((m) => m.name), ...assignees(n).map((a) => a.assignee)].join(' ')).includes(q); };
+    const matches = (n) => { const q = norm(st.q); if (!q) return true; return norm([n.title, n.body, nameOf2(n.createdBy), ...(n.mentions || []).map((m) => m.name), ...assignees(n).map((a) => a.assignee), ...(n.tags || []).map((t) => '#' + t), ...(n.files || []).map((x) => x.name)].join(' ')).includes(q.replace(/^#/, '#')) || (q.startsWith('#') && (n.tags || []).some((t) => t.startsWith(q.slice(1)))); };
+    const whenOk = (n) => { if (!F.when) return true; const d = String(n.updatedAt || n.createdAt).slice(0, 10), t = CO.today(); if (F.when === 'today') return d === t; if (F.when === 'week') return d >= CO.addDays(t, -6); if (F.when === 'month') return d.slice(0, 7) === t.slice(0, 7); return true; };
+    const filtered = () => st.notes.filter((n) => inTab(n, st.f) && matches(n) && (!F.colour || (n.colour || 'paper') === F.colour) && (!F.tag || (n.tags || []).includes(F.tag)) && (!F.files || (n.files || []).length) && (!F.doodle || n.doodle) && (!F.pinned || n.pinned) && (!F.author || n.createdBy === F.author) && whenOk(n));
     dash.draw('qn-tabs', (el) => {
       el.replaceChildren();
       if (st.f === 'team' && !isAdmin()) st.f = 'all';
       TABS.filter(([k]) => k !== 'team' || isAdmin()).forEach(([k, l]) => {
-        const n = st.notes.filter((x) => inTab(x, k)).length, b = mk('button', 'qn-tab' + (st.f === k ? ' on' : '')); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(st.f === k));
+        const n = st.notes.filter((x) => inTab(x, k)).length, b = mk('button', 'qn-tab' + (st.f === k && !F.trash ? ' on' : '')); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(st.f === k && !F.trash));
         b.append(mk('span', '', l)); if (k !== 'all' && n) b.append(mk('span', 'qn-n', String(n)));
-        b.addEventListener('click', () => { st.f = k; LS.set('co.qnf', k); dash.draw('qn-tabs'); flip(() => dash.draw('qn-board')); }); el.append(b);
+        b.addEventListener('click', () => { st.f = k; F.trash = false; LS.set('co.qnf', k); dash.draw('qn-tabs'); redrawAll(); }); el.append(b);
       });
     });
-    function card(n) {
-      const c = mk('article', 'qn-note k-' + kindOf(n)); c.dataset.id = n.id;
-      if (st.editing === n.id) { c.classList.add('editing'); const ed = editor(n, (saved) => { st.editing = ''; flip(() => dash.draw('qn-board')); dash.draw('qn-tabs'); dash.draw('np-list'); }); c.append(ed); setTimeout(() => ed.focusText(), 30); return c; }
-      const t = mk('div', 'qn-text'); const ttl = mk('b', 'qn-title', n.title && n.title !== 'Untitled note' ? n.title : ''); if (ttl.textContent) t.append(ttl);
-      if (n.body) { const bd = mk('p', 'qn-body', n.body.length > 600 ? n.body.slice(0, 600) + '…' : n.body); t.append(bd); }
-      // highlight @tags
-      t.querySelectorAll('b, p').forEach((x) => { const parts = x.textContent.split(/(@[A-Z][\w.]*(?: [A-Z][\w.]*)?)/g); if (parts.length > 1) { x.replaceChildren(...parts.map((s) => (/^@/.test(s) ? mk('span', 'qn-tag', s) : document.createTextNode(s)))); } });
+    dash.draw('qn-filters', (el) => {
+      el.replaceChildren(); if (!st.loaded) return;
+      const row1 = mk('div', 'qn-frow');
+      const cl = mk('div', 'qn-fcolours'); cl.setAttribute('role', 'group'); cl.setAttribute('aria-label', 'Colour');
+      COLOURS.forEach(([k, l]) => { const b = mk('button', 'qn-cdot sm c-' + k + (F.colour === k ? ' on' : '')); b.type = 'button'; b.title = l + ' notes'; b.setAttribute('aria-pressed', String(F.colour === k)); b.setAttribute('aria-label', l + ' notes'); b.addEventListener('click', () => { F.colour = F.colour === k ? '' : k; redrawAll(); }); cl.append(b); });
+      const tog = (k, label) => { const b = mk('button', 'qn-fchip' + (F[k] ? ' on' : ''), label); b.type = 'button'; b.setAttribute('aria-pressed', String(!!F[k])); b.addEventListener('click', () => { F[k] = !F[k]; redrawAll(); }); return b; };
+      const sel = (key, label, opts) => { const s = mk('select', 'co-select qn-fsel'); s.setAttribute('aria-label', label); opts.forEach(([v, t]) => s.append(new Option(t, v))); s.value = F[key]; s.addEventListener('change', () => { F[key] = s.value; redrawAll(); }); return s; };
+      const authors = [...new Set(st.notes.map((n) => n.createdBy))].map((e) => [e, e === me() ? 'You' : nameOf2(e)]).sort((a, b) => a[1].localeCompare(b[1]));
+      row1.append(cl, tog('pinned', '📌 Pinned'), tog('files', '📎 With files'), tog('doodle', '✏️ With doodles'),
+        sel('author', 'Written by', [['', 'Anyone']].concat(authors)), sel('when', 'Edited', [['', 'Any time'], ['today', 'Today'], ['week', 'Last 7 days'], ['month', 'This month']]), sel('sort', 'Sort', [['edited', 'Recently edited'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'A to Z']]));
+      const tr = mk('button', 'qn-fchip trash' + (F.trash ? ' on' : ''), '🗑 Trash'); tr.type = 'button'; tr.setAttribute('aria-pressed', String(F.trash)); tr.addEventListener('click', () => { F.trash = !F.trash; dash.draw('qn-tabs'); redrawAll(); if (F.trash) loadTrash(); }); row1.append(tr);
+      el.append(row1);
+      const tags = new Map(); st.notes.forEach((n) => (n.tags || []).forEach((t) => tags.set(t, (tags.get(t) || 0) + 1)));
+      if (tags.size) { const row2 = mk('div', 'qn-frow tags'); row2.append(mk('span', 'qn-flab', 'Tags')); [...tags].sort((a, b) => b[1] - a[1]).slice(0, 24).forEach(([t, c]) => { const b = mk('button', 'qn-ht t' + tagHue(t) + (F.tag === t ? ' on' : '')); b.type = 'button'; b.append(document.createTextNode('#' + t), mk('small', '', String(c))); b.setAttribute('aria-pressed', String(F.tag === t)); b.addEventListener('click', () => { F.tag = F.tag === t ? '' : t; redrawAll(); }); row2.append(b); }); el.append(row2); }
+      const on = ['colour', 'tag', 'files', 'doodle', 'pinned', 'author', 'when'].filter((k) => F[k]).length;
+      if (on) { const c = mk('button', 'co-link qn-fclear', 'Clear filters (' + on + ')'); c.type = 'button'; c.addEventListener('click', () => { Object.assign(F, { colour: '', tag: '', files: false, doodle: false, pinned: false, author: '', when: '' }); redrawAll(); }); el.append(c); }
+    });
+    async function loadTrash() { try { const r = await callApi({ action: 'noteTrash' }, true); st.trash = r.ok ? r.notes : []; } catch (e) { st.trash = []; } dash.draw('qn-board'); }
+
+    /* ---- the board ---- */
+    function card(n, i) {
+      const c = mk('article', 'qn-note c-' + (n.colour || 'paper') + ' k-' + kindOf(n) + (n.pinned ? ' pinned' : '')); c.dataset.id = n.id; c.style.setProperty('--tilt', ((tagHue(n.id) - 3.5) * 0.35).toFixed(2) + 'deg');
+      if (st.editing === n.id) { c.classList.add('editing'); const ed = editor(n, () => { st.editing = ''; flip(() => dash.draw('qn-board')); dash.draw('qn-tabs'); dash.draw('qn-filters'); dash.draw('qn-hero'); dash.draw('np-list'); }); c.append(ed); setTimeout(() => ed.focusText(), 30); return c; }
+      (n.stickers || []).slice(0, 4).forEach((k, j) => { const s = stickerEl(k, 'on-card p' + j); if (s) c.append(s); });
+      if (n.pinned) c.append(mk('span', 'qn-pinmark', '📌'));
+      const t = mk('div', 'qn-text'); if (n.title && n.title !== 'Untitled note') { const tt = mk('h3', 'qn-title'); tt.append(rich(n.title)); t.append(tt); }
+      if (n.body) { const bd = mk('p', 'qn-body'); bd.append(rich(n.body.length > 700 ? n.body.slice(0, 700) + '…' : n.body)); t.append(bd); }
       c.append(t);
+      if (n.doodle) c.append(doodleSvg(n.doodle));
+      if ((n.files || []).length) { const fr = mk('div', 'qn-files'); n.files.forEach((fl) => fr.append(fileTile(fl))); c.append(fr); }
+      if ((n.tags || []).length) { const tg = mk('div', 'qn-tags'); n.tags.forEach((x) => { const b = mk('button', 'qn-ht t' + tagHue(x), '#' + x); b.type = 'button'; b.title = 'Show notes tagged #' + x; b.addEventListener('click', (e) => { e.stopPropagation(); F.tag = x; redrawAll(); }); tg.append(b); }); c.append(tg); }
       const as = assignees(n), other = (n.actions || []).filter((a) => !isAssign(a));
       if (as.length || other.length) {
         const ul = mk('ul', 'qn-todo');
@@ -3903,7 +4115,7 @@
           const li = mk('li', a.done ? 'done' : ''), can = n.createdBy === me() || a.email === me();
           const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!a.done; cb.disabled = !can; cb.setAttribute('aria-label', (isAssign(a) ? a.assignee : a.text) + (a.done ? ': done' : ': open'));
           cb.addEventListener('click', (e) => e.stopPropagation());
-          cb.addEventListener('change', async () => { const was = a.done; a.done = cb.checked; li.classList.toggle('done', a.done); try { const r = await callApi({ action: 'noteAction', id: n.id, actionId: a.id, done: a.done }); if (!r.ok) throw new Error(r.error || 'Not saved'); n.actions = r.actions; dash.draw('np-list'); } catch (e) { a.done = was; cb.checked = was; li.classList.toggle('done', was); toast(e.message, true); } });
+          cb.addEventListener('change', async () => { const was = a.done; a.done = cb.checked; li.classList.toggle('done', a.done); if (a.done) sparkle(cb); try { const r = await callApi({ action: 'noteAction', id: n.id, actionId: a.id, done: a.done }); if (!r.ok) throw new Error(r.error || 'Not saved'); n.actions = r.actions; dash.draw('np-list'); dash.draw('qn-hero'); } catch (e) { a.done = was; cb.checked = was; li.classList.toggle('done', was); toast(e.message, true); } });
           li.append(cb); if (isAssign(a)) { li.append(CO.av(a.assignee || nameOf2(a.email)), mk('span', '', (a.email === me() ? 'You' : a.assignee || nameOf2(a.email)) + (a.done ? ' · done' : ''))); } else li.append(mk('span', '', a.text + (a.assignee ? ' · ' + a.assignee : '')));
           ul.append(li);
         });
@@ -3915,19 +4127,34 @@
       if (n.viaAdmin) meta.append(mk('span', 'qn-pill adm', 'Visible to you as Admin'));
       c.append(meta);
       const ft = mk('footer', 'qn-foot'); ft.append(CO.av(nameOf2(n.createdBy)), mk('span', '', (n.createdBy === me() ? 'You' : first(nameOf2(n.createdBy))) + ' · ' + ago(n.updatedAt || n.createdAt)));
-      if (n.createdBy === me()) { const e2 = mk('button', 'qn-edit', 'Edit'); e2.type = 'button'; ft.append(e2); }
+      if (n.createdBy === me()) {
+        const pb = mk('button', 'qn-pinb' + (n.pinned ? ' on' : ''), n.pinned ? 'Unpin' : 'Pin'); pb.type = 'button'; pb.setAttribute('aria-pressed', String(!!n.pinned));
+        pb.addEventListener('click', async (e) => { e.stopPropagation(); const note = Object.assign({}, n, { pinned: !n.pinned }); try { const r = await callApi({ action: 'noteSave', id: n.id, updatedAt: n.updatedAt, note }); if (!r.ok) throw new Error(r.error === 'stale' ? 'Someone changed this note; refresh and try again.' : r.error || 'Not saved'); const sv = r.note || note; st.notes = st.notes.map((x) => (x.id === n.id ? sv : x)); flip(() => dash.draw('qn-board')); } catch (er) { toast(er.message, true); } });
+        const e2 = mk('button', 'qn-edit', 'Edit'); e2.type = 'button'; ft.append(pb, e2);
+      }
       c.append(ft);
-      if (n.createdBy === me() || n.canEdit) { c.tabIndex = 0; c.classList.add('can'); const go = () => { st.editing = n.id; flip(() => dash.draw('qn-board')); }; c.addEventListener('click', (e) => { if (e.target.closest('input, a')) return; go(); }); c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) go(); }); }
+      if (n.createdBy === me() || n.canEdit) { c.tabIndex = 0; c.classList.add('can'); const go = () => { st.editing = n.id; flip(() => dash.draw('qn-board')); }; c.addEventListener('click', (e) => { if (e.target.closest('input, a, button')) { if (e.target.closest('.qn-edit')) go(); return; } go(); }); c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) go(); }); }
+      if (!REDUCE && c.animate && i < 24 && !st.seen.has(n.id)) { st.seen.add(n.id); c.animate([{ opacity: 0, transform: 'translateY(14px) scale(.97) rotate(var(--tilt))' }, { opacity: 1, transform: 'translateY(0) scale(1) rotate(var(--tilt))' }], { duration: 420, delay: i * 35, easing: 'cubic-bezier(.2,.9,.3,1.2)', fill: 'backwards' }); }
       return c;
     }
+    st.seen = new Set(); st.show = 60;
     dash.draw('qn-board', (el) => {
       el.replaceChildren();
       if (!st.loaded) { el.append(mk('p', 'qn-empty', A.mode === 'auth' ? 'Loading notes…' : 'Sign in to use notes.')); return; }
-      const list = st.notes.filter((n) => inTab(n, st.f) && matches(n)).sort((a, b) => (b.pinned - a.pinned) || String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
-      if (!list.length) { el.append(mk('p', 'qn-empty', st.q ? 'No notes match “' + st.q + '”.' : st.f === 'all' ? 'No notes yet. Write one above; tag someone with @ to share it with them.' : st.f === 'assigned' ? 'Nothing assigned to you.' : st.f === 'reminders' ? 'No reminders set.' : st.f === 'shared' ? 'Nobody has shared a note with you yet.' : st.f === 'team' ? 'No notes from the team yet.' : 'You have not written a note yet.')); return; }
-      list.slice(0, 120).forEach((n) => el.append(card(n)));
+      if (F.trash) {
+        const head = mk('div', 'qn-trash-h'); head.append(mk('b', '', 'Trash'), mk('span', 'co-note', 'Your deleted notes stay here for 30 days. Restore brings a note back for everyone it was shared with.')); el.append(head);
+        if (!st.trash) { el.append(mk('p', 'qn-empty', 'Loading…')); return; }
+        if (!st.trash.length) { el.append(mk('p', 'qn-empty', 'Trash is empty.')); return; }
+        const g = mk('div', 'qn-grid'); st.trash.forEach((n) => { const c = mk('article', 'qn-note trashed c-' + (n.colour || 'paper')); c.append(mk('h3', 'qn-title', n.title || 'Untitled note')); if (n.body) c.append(mk('p', 'qn-body', n.body.slice(0, 200))); const ft = mk('footer', 'qn-foot'); ft.append(mk('span', '', 'Deleted ' + ago(n.deletedOn || n.updatedAt))); const rb = mk('button', 'co-btn primary', 'Restore'); rb.type = 'button'; rb.addEventListener('click', async () => { try { const r = await callApi({ action: 'noteRestore', id: n.id }); if (!r.ok) throw new Error(r.error || 'Not restored'); st.trash = st.trash.filter((x) => x.id !== n.id); if (r.note) st.notes = [r.note].concat(st.notes); toast('Note restored'); dash.draw('qn-board'); dash.draw('qn-hero'); } catch (e) { toast(e.message, true); } }); ft.append(rb); c.append(ft); g.append(c); }); el.append(g); return;
+      }
+      const so = { edited: (a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)), new: (a, b) => String(b.createdAt).localeCompare(String(a.createdAt)), old: (a, b) => String(a.createdAt).localeCompare(String(b.createdAt)), az: (a, b) => String(a.title).localeCompare(String(b.title)) }[F.sort] || ((a, b) => 0);
+      const list = filtered().sort((a, b) => (b.pinned - a.pinned) || so(a, b));
+      if (!list.length) { const e = mk('div', 'qn-emptybox'); const s = stickerEl('cloud', 'big'); if (s) e.append(s); e.append(mk('p', 'qn-empty', st.q || F.tag || F.colour ? 'No notes match these filters.' : st.f === 'all' ? 'No notes yet. Write one above: tag someone with @ to share it, add #tags, stickers, a doodle or files.' : st.f === 'assigned' ? 'Nothing assigned to you.' : st.f === 'reminders' ? 'No reminders set.' : st.f === 'shared' ? 'Nobody has shared a note with you yet.' : st.f === 'team' ? 'No notes from the team yet.' : 'You have not written a note yet.')); el.append(e); return; }
+      const g = mk('div', 'qn-grid'); list.slice(0, st.show).forEach((n, i) => g.append(card(n, i))); el.append(g);
+      el.append(mk('p', 'qn-count', 'Showing ' + Math.min(st.show, list.length) + ' of ' + list.length + ' notes'));
+      if (list.length > st.show) { const m = mk('button', 'co-btn qn-more', 'Show 60 more'); m.type = 'button'; m.addEventListener('click', () => { st.show += 60; dash.draw('qn-board'); }); el.append(m); }
     });
-    let qT = 0; $n('qn-q').addEventListener('input', (e) => { clearTimeout(qT); qT = setTimeout(() => { st.q = e.target.value.trim(); dash.draw('qn-board'); }, 200); });
+    let qT = 0; $n('qn-q').addEventListener('input', (e) => { clearTimeout(qT); qT = setTimeout(() => { st.q = e.target.value.trim(); st.show = 60; dash.draw('qn-board'); }, 200); });
 
     /* Start a note from elsewhere (Meetings "Take notes"): opens Notes with the composer filled in. */
     function startNew(kind, preset) {

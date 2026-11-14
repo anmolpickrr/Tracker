@@ -75,7 +75,7 @@ function allowed_(u, action) {
   if (action === 'packageSave' || action === 'packageDelete') return p.packages === 'edit';
   return true;
 }
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -295,6 +295,8 @@ function doPost(e) {
       return json_(out);
     }
     if (body.action === 'feed') return json_(feed_(user));
+    if (body.action === 'noteTrash') return json_(noteTrash_(user));
+    if (body.action === 'noteFile') return json_(noteFile_(body, user));
     if (body.action === 'meetings') return json_(meetings_(user));
     if (body.action === 'daily') return json_(daily_());
     if (body.action === 'assist') { const r = assist_(user, body); if (r.ok && r.stop_reason !== 'tool_use' && body.voice) attachVoice_(user, r, body.voice); return json_(r); }
@@ -337,6 +339,8 @@ function write_(body, user) {
     else if (body.action === 'setAccess') out = setAccess_(body, user);
     else if (body.action === 'noteSave') out = noteSave_(body, user);
     else if (body.action === 'noteDelete') out = noteDelete_(body, user);
+    else if (body.action === 'noteRestore') out = noteRestore_(body, user);
+    else if (body.action === 'noteFileUpload') out = noteFileUpload_(body, user);
     else if (body.action === 'packageSave') out = pkgSave_(body, user);
     else if (body.action === 'packageDelete') out = pkgDelete_(body, user);
     else if (body.action === 'noteAction') out = noteAction_(body, user);
@@ -940,12 +944,14 @@ function iso_(v) { return v instanceof Date && !isNaN(v) ? v.toISOString() : (v 
  * Who changes it: its author or an admin. Anyone with an action item can tick that item.
  * Every create, edit and delete is in the audit log; deleted notes are kept, marked deleted.
  */
-const NOTE_HEAD = ['ID', 'Created', 'Created by', 'Updated', 'Updated by', 'Title', 'Meeting date', 'Type', 'Brand', 'Category', 'Visibility', 'Shared with', 'Mentions', 'Body', 'Action items', 'Reminder', 'Follow-ups', 'Reminder sent', 'Deleted', 'Deleted by', 'Pinned'];
+const NOTE_HEAD = ['ID', 'Created', 'Created by', 'Updated', 'Updated by', 'Title', 'Meeting date', 'Type', 'Brand', 'Category', 'Visibility', 'Shared with', 'Mentions', 'Body', 'Action items', 'Reminder', 'Follow-ups', 'Reminder sent', 'Deleted', 'Deleted by', 'Pinned', 'Tags', 'Colour', 'Stickers', 'Files', 'Doodle', 'Deleted on'];
+const NOTE_COLOURS = ['lemon', 'peach', 'pink', 'lilac', 'sky', 'mint', 'sand', 'paper'];
 const NOTE_TYPES = ['Meeting', 'Discussion', 'Personal'];
 function notesSheet_() {
   const ss = accessBook_();
   let sh = ss.getSheetByName('Notes');
   if (!sh) { sh = ss.insertSheet('Notes'); sh.appendRow(NOTE_HEAD); sh.setFrozenRows(1); }
+  else if (String(sh.getRange(1, 22).getValue()) !== 'Tags') sh.getRange(1, 22, 1, 6).setValues([NOTE_HEAD.slice(21)]); // tabs made before tags, colours, stickers, files and doodles
   return sh;
 }
 function parseJson_(s, d) { try { const v = JSON.parse(String(s || '')); return v == null ? d : v; } catch (err) { return d; } }
@@ -954,7 +960,8 @@ function noteFromRow_(v, row) {
     row: row, id: String(v[0]), createdAt: iso_(v[1]), createdBy: clean_(v[2]).toLowerCase(), updatedAt: iso_(v[3]), updatedBy: clean_(v[4]).toLowerCase(),
     title: String(v[5] || ''), date: v[6] instanceof Date ? Utilities.formatDate(v[6], IST, 'yyyy-MM-dd') : clean_(v[6]), type: clean_(v[7]) || 'Meeting', brand: clean_(v[8]), category: clean_(v[9]),
     visibility: ['private', 'team', 'people'].indexOf(clean_(v[10])) >= 0 ? clean_(v[10]) : 'private', sharedWith: parseJson_(v[11], []), mentions: parseJson_(v[12], []),
-    body: String(v[13] || ''), actions: parseJson_(v[14], []), reminder: clean_(v[15]), followUps: String(v[16] || ''), reminderSent: clean_(v[17]), deleted: v[18] === true || clean_(v[18]) === 'TRUE', pinned: v[20] === true || clean_(v[20]) === 'TRUE'
+    body: String(v[13] || ''), actions: parseJson_(v[14], []), reminder: clean_(v[15]), followUps: String(v[16] || ''), reminderSent: clean_(v[17]), deleted: v[18] === true || clean_(v[18]) === 'TRUE', deletedBy: clean_(v[19]).toLowerCase(), pinned: v[20] === true || clean_(v[20]) === 'TRUE',
+    tags: parseJson_(v[21], []), colour: NOTE_COLOURS.indexOf(clean_(v[22])) >= 0 ? clean_(v[22]) : '', stickers: parseJson_(v[23], []), files: parseJson_(v[24], []), doodle: parseJson_(v[25], null), deletedOn: iso_(v[26])
   };
 }
 function noteReaders_(n) {
@@ -1010,11 +1017,24 @@ function noteInput_(b) {
     title: clean_(b.title).slice(0, 160) || 'Untitled note', date: date, type: NOTE_TYPES.indexOf(b.type) >= 0 ? b.type : 'Meeting',
     brand: clean_(b.brand).slice(0, 80), category: clean_(b.category).slice(0, 60), visibility: ['private', 'team', 'people'].indexOf(b.visibility) >= 0 ? b.visibility : 'private',
     sharedWith: (Array.isArray(b.sharedWith) ? b.sharedWith : []).map(emailOk).filter(String).slice(0, 50), mentions: mentions,
-    body: String(b.body == null ? '' : b.body).slice(0, 40000), actions: actions, reminder: reminder, followUps: String(b.followUps == null ? '' : b.followUps).slice(0, 4000), pinned: !!b.pinned
+    body: String(b.body == null ? '' : b.body).slice(0, 45000), actions: actions, reminder: reminder, followUps: String(b.followUps == null ? '' : b.followUps).slice(0, 4000), pinned: !!b.pinned,
+    tags: (Array.isArray(b.tags) ? b.tags : []).map(function (t) { return clean_(t).toLowerCase().replace(/^#+/, '').replace(/[^\p{L}\p{N}_-]+/gu, '').slice(0, 30); }).filter(function (t, i, a) { return t && a.indexOf(t) === i; }).slice(0, 15),
+    colour: NOTE_COLOURS.indexOf(String(b.colour)) >= 0 ? String(b.colour) : '',
+    stickers: (Array.isArray(b.stickers) ? b.stickers : []).slice(0, 6).map(function (k) { return clean_(k).slice(0, 20); }).filter(function (k) { return /^[a-z0-9-]+$/.test(k); }),
+    files: (Array.isArray(b.files) ? b.files : []).slice(0, 12).map(function (f) { return { id: clean_(f && f.id).slice(0, 40), name: clean_(f && f.name).slice(0, 120), type: clean_(f && f.type).slice(0, 80), size: Math.max(0, Number(f && f.size) || 0) }; }).filter(function (f) { return /^F[0-9a-z-]+$/i.test(f.id); }),
+    doodle: noteDoodle_(b.doodle)
   };
 }
+/* A doodle: up to 300 strokes of simplified points, kept as SVG path data (well under a cell's 50,000 characters). */
+function noteDoodle_(d) {
+  if (!d || !Array.isArray(d.strokes) || !d.strokes.length) return null;
+  const strokes = d.strokes.slice(0, 300).map(function (s) { return { c: /^#[0-9a-f]{6}$/i.test(String(s.c)) ? String(s.c) : '#1e1e1e', w: Math.max(1, Math.min(24, Number(s.w) || 3)), hl: !!s.hl, d: String(s.d || '').replace(/[^MLQ0-9., -]/g, '').slice(0, 4000) }; }).filter(function (s) { return s.d; });
+  const out = { w: Math.max(100, Math.min(2000, Number(d.w) || 600)), h: Math.max(100, Math.min(2000, Number(d.h) || 360)), strokes: strokes };
+  while (JSON.stringify(out).length > 45000 && out.strokes.length) out.strokes.pop();
+  return out.strokes.length ? out : null;
+}
 function noteRowValues_(id, created, createdBy, n, now, by, reminderSent) {
-  return [id, created, createdBy, now, by, n.title, n.date, n.type, n.brand, n.category, n.visibility, JSON.stringify(n.sharedWith), JSON.stringify(n.mentions), n.body, JSON.stringify(n.actions), n.reminder, n.followUps, reminderSent || '', false, '', n.pinned]
+  return [id, created, createdBy, now, by, n.title, n.date, n.type, n.brand, n.category, n.visibility, JSON.stringify(n.sharedWith), JSON.stringify(n.mentions), n.body, JSON.stringify(n.actions), n.reminder, n.followUps, reminderSent || '', false, '', n.pinned, JSON.stringify(n.tags || []), n.colour || '', JSON.stringify(n.stickers || []), JSON.stringify(n.files || []), n.doodle ? JSON.stringify(n.doodle) : '', '']
     // Dates and times are kept as plain text (IST), so Sheets never turns them into another time zone.
     .map(function (v, i) { return i === 1 || i === 3 || typeof v === 'boolean' ? v : (i === 6 || i === 15 || i === 17) && v ? "'" + v : safe_(v); });
 }
@@ -1022,6 +1042,8 @@ function noteRowValues_(id, created, createdBy, n, now, by, reminderSent) {
 function savedNote_(id, u) { try { SpreadsheetApp.flush(); const n = allNotes_().filter(function (x) { return x.id === id; })[0]; return n ? publicNote_(n, u) : null; } catch (e) { return null; } }
 function noteSave_(b, u) {
   const n = noteInput_(b.note || {}), now = new Date(), sh = notesSheet_();
+  const prevFiles = b.id ? ((allNotes_().filter(function (x) { return x.id === String(b.id); })[0] || {}).files || []) : [];
+  const mine = noteFilesMeta_(); n.files = n.files.filter(function (f) { const m = mine[f.id]; return m && (m.by === u.email || prevFiles.some(function (p) { return p.id === f.id; })); }).map(function (f) { const m = mine[f.id]; return { id: f.id, name: m.name, type: m.type, size: m.size }; });
   if (!b.id) {
     const id = 'N' + Utilities.formatDate(now, IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 6);
     sh.appendRow(noteRowValues_(id, now, u.email, n, now, u.email, ''));
@@ -1045,8 +1067,57 @@ function noteDelete_(b, u) {
   if (!canEditNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note (or the owner, if it is shared with them) can delete it.' };
   const sh = notesSheet_();
   sh.getRange(cur.row, 19, 1, 2).setValues([[true, u.email]]);
-  sh.getRange(cur.row, 4, 1, 2).setValues([[new Date(), u.email]]);
-  return { ok: true, changes: [{ action: 'Note deleted', sheet: 'Notes', record: cur.title, details: cur.createdBy === u.email ? '' : 'Note by ' + cur.createdBy }] };
+  sh.getRange(cur.row, 27).setValue(new Date());
+  return { ok: true, changes: [{ action: 'Note moved to trash', sheet: 'Notes', record: cur.title, details: cur.createdBy === u.email ? '' : 'Note by ' + cur.createdBy }] };
+}
+/* Trash: the author's deleted notes stay for 30 days and can be restored (nothing is ever erased from the sheet). */
+function noteTrash_(u) {
+  const cut = Date.now() - 30 * 864e5;
+  return { ok: true, notes: allNotes_().filter(function (n) { return n.deleted && n.createdBy === u.email && (!n.deletedOn || new Date(n.deletedOn).getTime() > cut); }).map(function (n) { const o = publicNote_(n, u); o.deletedOn = n.deletedOn; return o; }) };
+}
+function noteRestore_(b, u) {
+  const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
+  if (!cur || !cur.deleted || cur.createdBy !== u.email) return { ok: false, error: 'Only your own notes in the trash can be restored.' };
+  const sh = notesSheet_(); sh.getRange(cur.row, 19, 1, 2).setValues([[false, '']]); sh.getRange(cur.row, 27).setValue('');
+  return { ok: true, note: savedNote_(cur.id, u), changes: [{ action: 'Note restored', sheet: 'Notes', record: cur.title }] };
+}
+
+/* Files on notes (images, PDFs, documents…), kept in the private access spreadsheet: each file is split into
+   45,000-character pieces of base64 (a cell holds up to 50,000), one piece per row. Up to 10 MB a file. Only people
+   who can see the note (and whoever uploaded it) can open a file. Nothing needs extra Google permissions. */
+const NFILE_HEAD = ['File', 'Note', 'Name', 'Type', 'Size', 'Piece', 'Pieces', 'Data', 'Uploaded by', 'Uploaded'];
+function noteFilesSheet_() { const ss = accessBook_(); let sh = ss.getSheetByName('Note files'); if (!sh) { sh = ss.insertSheet('Note files'); sh.appendRow(NFILE_HEAD); sh.setFrozenRows(1); sh.hideSheet(); } return sh; }
+function noteFilesMeta_() {
+  const sh = noteFilesSheet_(), last = sh.getLastRow(), out = {}; if (last < 2) return out;
+  sh.getRange(2, 1, last - 1, 7).getValues().forEach(function (r, i) { if (String(r[5]) === '1' || r[5] === 1) out[String(r[0])] = { name: String(r[2]), type: String(r[3]), size: Number(r[4]) || 0, pieces: Number(r[6]) || 1, row: i + 2 }; });
+  const by = sh.getRange(2, 9, last - 1, 1).getValues(); Object.keys(out).forEach(function (k) { out[k].by = String(by[out[k].row - 2][0]).toLowerCase(); });
+  return out;
+}
+const NFILE_OK = /^(image\/(png|jpe?g|gif|webp|svg\+xml|heic|avif)|application\/(pdf|zip|json|msword|vnd\.openxmlformats-officedocument\.[a-z.]+|vnd\.ms-(excel|powerpoint))|text\/(plain|csv|markdown)|video\/(mp4|quicktime|webm)|audio\/(mpeg|wav|mp4|webm))$/;
+function noteFileUpload_(b, u) {
+  const name = clean_(b.name).slice(0, 120) || 'file', type = clean_(b.type).toLowerCase().slice(0, 80), data = String(b.data || '');
+  if (!NFILE_OK.test(type)) return { ok: false, error: 'This kind of file can’t be attached (' + (type || 'unknown') + '). Images, PDFs, Office files, text, CSV, ZIP, short videos and audio are fine.' };
+  if (!/^[A-Za-z0-9+/=]+$/.test(data)) return { ok: false, error: 'The file could not be read.' };
+  const size = Math.floor(data.length * 3 / 4);
+  if (size > 10 * 1024 * 1024) return { ok: false, error: 'Files can be up to 10 MB.' };
+  const id = 'F' + Utilities.formatDate(new Date(), IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 8), now = new Date(), P = 45000, n = Math.max(1, Math.ceil(data.length / P)), rows = [];
+  for (let i = 0; i < n; i++) rows.push([id, '', safe_(name), type, size, i + 1, n, data.slice(i * P, (i + 1) * P), u.email, now]);
+  const sh = noteFilesSheet_(); sh.getRange(sh.getLastRow() + 1, 1, rows.length, NFILE_HEAD.length).setValues(rows);
+  return { ok: true, file: { id: id, name: name, type: type, size: size }, changes: [{ action: 'File added to notes', sheet: 'Note files', record: name, details: Math.round(size / 1024) + ' KB' }] };
+}
+function noteFile_(b, u) {
+  const id = String(b.id || ''); if (!/^F[0-9a-z-]+$/i.test(id)) return { ok: false, error: 'not found' };
+  const meta = noteFilesMeta_()[id]; if (!meta) return { ok: false, error: 'This file is no longer there.' };
+  const can = meta.by === u.email || allNotes_().some(function (n) { return canSeeNote_(n, u) && (n.files || []).some(function (f) { return f.id === id; }); });
+  if (!can) return { ok: false, error: 'forbidden' };
+  const v = noteFilesSheet_().getRange(meta.row, 8, meta.pieces, 1).getValues().map(function (r) { return String(r[0]); }).join('');
+  return { ok: true, id: id, name: meta.name, type: meta.type, size: meta.size, data: v };
+}
+/* A daily copy of the Notes tab (values only) in a hidden "Notes backup" tab, so notes can always be recovered. */
+function notesBackup_() {
+  const ss = accessBook_(), src = notesSheet_(), last = src.getLastRow(), cols = NOTE_HEAD.length; if (last < 2) return;
+  let bk = ss.getSheetByName('Notes backup'); if (!bk) { bk = ss.insertSheet('Notes backup'); bk.hideSheet(); }
+  const v = src.getRange(1, 1, last, cols).getValues(); bk.clear(); bk.getRange(1, 1, v.length, cols).setValues(v); bk.getRange(1, cols + 1).setValue('Copied ' + Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd HH:mm') + ' IST');
 }
 function noteAction_(b, u) {
   const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
@@ -2157,6 +2228,7 @@ function maintenance_() {
     let tune = {}; try { tune = JSON.parse(p.getProperty('GEMINI_TUNE') || '{}'); } catch (e) { tune = {}; }
     if (!tune.model || !tune.at || Date.now() - tune.at > 7 * 864e5) tuneGemini_(false);
   }
+  if (p.getProperty('NOTES_BACKUP_DAY') !== Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd') && hasAccessBook_()) { try { notesBackup_(); p.setProperty('NOTES_BACKUP_DAY', Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd')); } catch (e) { console.log('notes backup: ' + e); } }
   autoUpdate_(false);
 }
 

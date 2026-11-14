@@ -135,6 +135,20 @@ A task whose ETA is moved to a later day (in the sheet or from the dashboard) is
 
 Every person with access has a **Permissions** button on the Access page, and a one-line summary of what they can open and edit. It opens a section-by-section list: for each section choose **Hidden**, **View** or (where there is something to edit) **Edit**: Tasks (edit tasks wherever they appear), Team (manage the team list), Brand packages (add, change and close packages). Below it: which tasks they see (all, or only their own), seeing workload and others' work, downloads and Fasty. Save changes applies within 30 seconds without signing them out, can be changed again at any time, and is logged; Reset goes back to the role's defaults.
 
+## Notes
+
+A playful, colourful space for everyone (designers, editors, writers). Soft floating shapes behind the page, pastel sticky notes, stickers, rounded and handwritten type; motion stops for people who turn on "reduce motion".
+
+- **Write**: the first line is the title. Type **@** to tag someone (shares the note with them), **#word** for tags, wrap text in `==…==` (Ctrl/Cmd+Shift+H) to highlight it, `**…**` (Ctrl/Cmd+B) for bold. Ctrl/Cmd+Enter saves.
+- **Colours**: 8 pastel note colours (lemon, peach, bubblegum, lilac, sky, mint, sand, paper), with a night-theme version of each.
+- **Stickers**: 16 original stickers, many animated (twinkle, heartbeat, float, wiggle, spin, glow, flicker, look-around); up to 4 per note.
+- **Doodles**: a drawing pad with 6 pens, a highlighter, 3 sizes and undo; saved as smooth vector paths.
+- **Files**: paste (Ctrl/Cmd+V), drag and drop, or attach images (PNG, JPEG, SVG, GIF, WebP), PDFs, Word, Excel, PowerPoint, text, CSV, ZIP, short videos and audio, up to 10 MB each and 12 per note. Big photos are resized before upload. Images show as thumbnails; images, PDFs, video, audio and text open in a preview; everything can be downloaded. A file can only be opened by people who can see its note.
+- **Find**: tabs (all, mine, shared, assigned, reminders, team), search across text, #tags, people and file names, and filters for colour, tag, pinned, with files, with doodles, author and date, plus sort. Pin notes to keep them on top.
+- **Safe**: notes are saved in the team's private access spreadsheet (files in a hidden *Note files* tab, split into pieces, so no extra Google permissions are needed). What you are writing is kept as a draft in your browser until it is saved, so a refresh or a failed save loses nothing. Deleting moves a note to **Trash**, where you can restore it for 30 days. A copy of the whole Notes tab is made every day in a hidden *Notes backup* tab. Edits by two people at once never overwrite each other.
+
+Design and motion references are kept in `docs/design-references.md`.
+
 ## How numbers are counted
 
 Everywhere on the dashboard: each **Creative ID is one creative** (the No. of Creatives column is not multiplied in). **Completed / delivered = DONE only**; Rejected, Shared, No update and Under review are counted separately, never as completed. A completed creative counts on its **completion date**, its Design ETA (or today, if the ETA is still ahead). Reports cover whatever period you pick (a day, week, month, quarter, year or a custom range) and every filter at the top applies. A creative done by two designers counts for each of them in the Designer table (a note says how many), while the total counts it once.
