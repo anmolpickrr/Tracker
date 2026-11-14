@@ -7,13 +7,13 @@
 <meta name="description" content="Creative Ops: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
 <meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/ https://www.googleapis.com; frame-src https://accounts.google.com/gsi/ blob:; media-src data: blob:; form-action 'none'; base-uri 'none'; object-src 'none'">
-<link rel="icon" href="assets/favicon.svg?v=20261114c" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.svg?v=20261114e" type="image/svg+xml">
 <meta name="theme-color" content="#0f0f0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Fredoka:wght@400;500;600;700&family=Gochi+Hand&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=20261114c">
-<script src="assets/theme.js?v=20261114c"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
+<link rel="stylesheet" href="assets/style.css?v=20261114e">
+<script src="assets/theme.js?v=20261114e"></script>
 </head>
 <body>
 <div class="boot" id="boot" aria-hidden="true"><div class="boot-lock"><svg class="logo mark boot-mark" viewBox="30 140 452 212" aria-hidden="true"><defs><clipPath id="mk-c-boot"><path d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></clipPath><linearGradient id="mk-t-boot" x1="0" x2="1"><stop offset="0" class="mk-s0"/><stop offset="1" class="mk-s1"/></linearGradient><linearGradient id="mk-h-boot" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect class="sl sl1" x="-170" y="160" width="300" height="9" rx="4.5" fill="url(#mk-t-boot)"/><rect class="sl sl2" x="-230" y="244" width="360" height="7" rx="3.5" fill="url(#mk-t-boot)"/><rect class="sl sl3 lime" x="-120" y="214" width="220" height="6" rx="3" /><rect class="sl sl4" x="-260" y="350" width="330" height="8" rx="4" fill="url(#mk-t-boot)"/><rect class="lt lt1" x="20" y="176" width="190" height="24" rx="12" fill="url(#mk-t-boot)"/><rect class="lt lt2" x="-150" y="292" width="200" height="24" rx="12" fill="url(#mk-t-boot)"/><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/><g clip-path="url(#mk-c-boot)"><rect class="mk-shine" x="0" y="140" width="130" height="212" fill="url(#mk-h-boot)"/></g></svg></div></div>
@@ -419,10 +419,10 @@
       <div class="qn-file-body" id="qn-file-body"></div>
     </dialog>
     <dialog class="co-dialog qn-doodle-dlg" id="qn-doodle-dlg" aria-labelledby="qn-doodle-t">
-      <h2 class="co-h2" id="qn-doodle-t">Doodle</h2>
+      <h2 class="co-h2" id="qn-doodle-t">Sketch</h2>
       <div class="qn-pad-tools" id="qn-pad-tools"></div>
       <div class="qn-pad-wrap"><canvas id="qn-pad" width="1200" height="720" aria-label="Drawing area"></canvas></div>
-      <div class="co-dialog-actions"><button class="co-link" type="button" id="qn-pad-clear">Clear</button><button class="co-btn" type="button" id="qn-pad-cancel">Cancel</button><button class="co-btn primary" type="button" id="qn-pad-save">Add doodle</button></div>
+      <div class="co-dialog-actions"><button class="co-link" type="button" id="qn-pad-clear">Clear</button><button class="co-btn" type="button" id="qn-pad-cancel">Cancel</button><button class="co-btn primary" type="button" id="qn-pad-save">Add sketch</button></div>
     </dialog>
   </section>
 
@@ -651,8 +651,10 @@
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-<script src="assets/config.js?v=20261114c"></script>
-<script src="assets/data.js?v=20261114c"></script>
-<script src="assets/app.js?v=20261114c"></script>
+<script src="https://cdn.jsdelivr.net/npm/motion@11.11.17/dist/motion.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.min.js" defer></script>
+<script src="assets/config.js?v=20261114e"></script>
+<script src="assets/data.js?v=20261114e"></script>
+<script src="assets/app.js?v=20261114e"></script>
 </body>
 </html>

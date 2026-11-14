@@ -3759,28 +3759,34 @@
     const ago = (iso) => { if (!iso) return ''; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : CO.fmtDate(new Date(new Date(iso).getTime() + 5.5 * 3600e3).toISOString().slice(0, 10)); };
 
     /* ---- look and feel: colours, stickers, rich text ---- */
-    const COLOURS = [['lemon', 'Lemon'], ['peach', 'Peach'], ['pink', 'Bubblegum'], ['lilac', 'Lilac'], ['sky', 'Sky'], ['mint', 'Mint'], ['sand', 'Sand'], ['paper', 'Paper']];
+    // Neutral, editorial palette (keys unchanged so existing notes keep their colour)
+    const COLOURS = [['paper', 'White'], ['lemon', 'Lime'], ['mint', 'Sage'], ['sand', 'Stone'], ['sky', 'Blue'], ['peach', 'Orange'], ['pink', 'Graphite'], ['lilac', 'Ink']];
     const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    // Original stickers (inline SVG). "a" = animated: twinkle, beat, float, wiggle, spin, glow, flicker, look.
+    // Motion (springs) and Anime.js (path drawing), loaded from jsdelivr; the browser's own animations if they are missing.
+    const enter = (el, i) => { if (REDUCE) return; const M = window.Motion; if (M && M.animate) { el.style.opacity = '0'; M.animate(el, { opacity: [0, 1], y: [16, 0], scale: [0.97, 1] }, { type: 'spring', stiffness: 260, damping: 22, delay: i * 0.035 }); } else if (el.animate) el.animate([{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'none' }], { duration: 380, delay: i * 35, easing: 'cubic-bezier(.2,.9,.3,1.1)', fill: 'backwards' }); };
+    const drawOn = (svg) => { if (REDUCE || !window.anime) return; const ps = svg.querySelectorAll('path'); ps.forEach((p) => { try { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; } catch (e) { /* not rendered yet */ } }); window.anime({ targets: ps, strokeDashoffset: [window.anime.setDashoffset, 0], easing: 'easeInOutSine', duration: 900, delay: window.anime.stagger(120) }); };
+    const press = (el) => { if (REDUCE) return; const M = window.Motion; if (M && M.animate) M.animate(el, { scale: [1, 0.94, 1] }, { type: 'spring', stiffness: 500, damping: 15 }); };
+    // Geometric icon stickers and status labels (no faces). "a" = subtle motion: spin, pulse, nudge, float, none.
+    const L = (txt, bg, fg) => '<svg viewBox="0 0 84 32"><rect x="1.5" y="1.5" width="81" height="29" rx="14.5" fill="' + bg + '" stroke="#141414" stroke-width="2"/><text x="42" y="21" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-weight="700" font-size="13" fill="' + fg + '">' + txt + '</text></svg>';
     const STK = {
-      star: ['Star', 'twinkle', '<svg viewBox="0 0 48 48"><path d="M24 4l5.6 12.6 13.4 1.3-10.1 9 3 13.3L24 33.4 12.1 40.2l3-13.3-10.1-9 13.4-1.3z" fill="#ffd43b" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><circle cx="19" cy="23" r="1.8" fill="#1e1e1e"/><circle cx="29" cy="23" r="1.8" fill="#1e1e1e"/><path d="M20.5 28c2 2 5 2 7 0" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round"/></svg>'],
-      heart: ['Heart', 'beat', '<svg viewBox="0 0 48 48"><path d="M24 41S6 30.5 6 17.8C6 11.5 10.6 7 16.2 7c3.6 0 6.3 2 7.8 4.6C25.5 9 28.2 7 31.8 7 37.4 7 42 11.5 42 17.8 42 30.5 24 41 24 41z" fill="#ff8fab" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><path d="M13 16c.5-2.5 2.4-4 4.6-4" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>'],
-      sun: ['Sunny', 'spin', '<svg viewBox="0 0 48 48"><g stroke="#1e1e1e" stroke-width="2.5" stroke-linecap="round"><path d="M24 3v6M24 39v6M3 24h6M39 24h6M9 9l4 4M35 35l4 4M9 39l4-4M35 13l4-4"/></g><circle cx="24" cy="24" r="11" fill="#ffc94d" stroke="#1e1e1e" stroke-width="2.5"/><circle cx="20" cy="23" r="1.6" fill="#1e1e1e"/><circle cx="28" cy="23" r="1.6" fill="#1e1e1e"/><path d="M20.5 27.5c2 1.8 5 1.8 7 0" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round"/></svg>'],
-      flower: ['Flower', 'spin', '<svg viewBox="0 0 48 48"><g fill="#c7b8ff" stroke="#1e1e1e" stroke-width="2.3"><circle cx="24" cy="11" r="7"/><circle cx="36" cy="20" r="7"/><circle cx="31" cy="35" r="7"/><circle cx="17" cy="35" r="7"/><circle cx="12" cy="20" r="7"/></g><circle cx="24" cy="24" r="6" fill="#ffd43b" stroke="#1e1e1e" stroke-width="2.3"/></svg>'],
-      bolt: ['Zap', 'wiggle', '<svg viewBox="0 0 48 48"><path d="M27 3L9 27h13l-3 18 20-26H26z" fill="#ddff00" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/></svg>'],
-      check: ['Done', 'pop', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="19" fill="#7ee2a8" stroke="#1e1e1e" stroke-width="2.5"/><path d="M15 24.5l6 6 12-13" fill="none" stroke="#1e1e1e" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'],
-      sparkle: ['Sparkle', 'twinkle', '<svg viewBox="0 0 48 48"><path d="M22 4c1.5 9 4 12 14 14-10 2-12.5 5-14 14-1.5-9-4-12-14-14 10-2 12.5-5 14-14z" fill="#b8a4ff" stroke="#1e1e1e" stroke-width="2.3" stroke-linejoin="round"/><path d="M38 30c.7 4 1.8 5.3 6 6-4.2.7-5.3 2-6 6-.7-4-1.8-5.3-6-6 4.2-.7 5.3-2 6-6z" fill="#ffd43b" stroke="#1e1e1e" stroke-width="2" stroke-linejoin="round"/></svg>'],
-      coffee: ['Coffee', 'float', '<svg viewBox="0 0 48 48"><path d="M17 5c-2 3 2 4 0 7M24 5c-2 3 2 4 0 7M31 5c-2 3 2 4 0 7" fill="none" stroke="#1e1e1e" stroke-width="2.2" stroke-linecap="round"/><path d="M8 17h28v12a12 12 0 0 1-12 12h-4A12 12 0 0 1 8 29z" fill="#ffb38a" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><path d="M36 20h3a5 5 0 0 1 0 10h-3" fill="none" stroke="#1e1e1e" stroke-width="2.5"/><circle cx="17" cy="27" r="1.6" fill="#1e1e1e"/><circle cx="27" cy="27" r="1.6" fill="#1e1e1e"/><path d="M19.5 31.5c1.5 1.3 3.5 1.3 5 0" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round"/></svg>'],
-      rocket: ['Launch', 'float', '<svg viewBox="0 0 48 48"><path d="M30 6c7 1 11 5 12 12L26 34l-12-12z" fill="#8ec5ff" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><circle cx="32" cy="16" r="4" fill="#fff" stroke="#1e1e1e" stroke-width="2.3"/><path d="M14 22l-7 1-3 6 9-1M26 34l-1 7-6 3 1-9" fill="#ff8fab" stroke="#1e1e1e" stroke-width="2.3" stroke-linejoin="round"/><path d="M15 33c-3 1-5 4-6 9 5-1 8-3 9-6" fill="#ffd43b" stroke="#1e1e1e" stroke-width="2.3" stroke-linejoin="round"/></svg>'],
-      eyes: ['Eyes', 'look', '<svg viewBox="0 0 48 48"><ellipse cx="15" cy="24" rx="10" ry="13" fill="#fff" stroke="#1e1e1e" stroke-width="2.5"/><ellipse cx="33" cy="24" rx="10" ry="13" fill="#fff" stroke="#1e1e1e" stroke-width="2.5"/><g class="stk-pupil"><circle cx="17" cy="26" r="4.5" fill="#1e1e1e"/><circle cx="35" cy="26" r="4.5" fill="#1e1e1e"/></g></svg>'],
-      bulb: ['Idea', 'glow', '<svg viewBox="0 0 48 48"><path d="M24 5a13 13 0 0 0-7.5 23.6c1.5 1.1 2.5 2.8 2.5 4.7V35h10v-1.7c0-1.9 1-3.6 2.5-4.7A13 13 0 0 0 24 5z" fill="#fff27a" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><path d="M19 39h10M20.5 43h7" stroke="#1e1e1e" stroke-width="2.5" stroke-linecap="round"/><path d="M20 21l4 5 4-5" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'],
-      fire: ['On fire', 'flicker', '<svg viewBox="0 0 48 48"><path d="M24 44c-9 0-15-6-15-14 0-7 5-11 7-17 2 4 4 6 6 6 0-6 3-11 8-15 0 8 9 13 9 26 0 8-6 14-15 14z" fill="#ff9b54" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><path d="M24 44c-4 0-7-3-7-7 0-4 3-6 5-9 1 3 3 4 4 4 1 2 5 3 5 6 0 3-3 6-7 6z" fill="#ffd43b" stroke="#1e1e1e" stroke-width="2" stroke-linejoin="round"/></svg>'],
-      wow: ['Wow!', 'pop', '<svg viewBox="0 0 48 48"><path d="M24 2l4.6 5.2 6.8-1.6 1.4 6.8 6.6 2.4-2.6 6.4 4 5.8-6 3.6.2 7-7-.6-3.4 6.1L24 40.8l-4.6 2.5-3.4-6.1-7 .6.2-7-6-3.6 4-5.8-2.6-6.4 6.6-2.4 1.4-6.8 6.8 1.6z" fill="#ff8fab" stroke="#1e1e1e" stroke-width="2.2" stroke-linejoin="round"/><text x="24" y="28.5" text-anchor="middle" font-family="Fredoka, sans-serif" font-weight="700" font-size="12" fill="#1e1e1e">WOW</text></svg>'],
-      nice: ['Nice!', 'wiggle', '<svg viewBox="0 0 60 36"><rect x="3" y="4" width="54" height="28" rx="14" fill="#7ee2a8" stroke="#1e1e1e" stroke-width="2.5"/><text x="30" y="23.5" text-anchor="middle" font-family="Fredoka, sans-serif" font-weight="700" font-size="14" fill="#1e1e1e">nice!</text></svg>'],
-      pin: ['Push pin', 'wiggle', '<svg viewBox="0 0 48 48"><circle cx="24" cy="16" r="11" fill="#ff6b6b" stroke="#1e1e1e" stroke-width="2.5"/><path d="M24 27v16" stroke="#1e1e1e" stroke-width="3" stroke-linecap="round"/><circle cx="20" cy="12" r="3" fill="#fff" opacity=".8"/></svg>'],
-      cloud: ['Dreamy', 'float', '<svg viewBox="0 0 56 40"><path d="M14 34a10 10 0 0 1-1-20 13 13 0 0 1 25-3 10 10 0 1 1 5 23z" fill="#dff1ff" stroke="#1e1e1e" stroke-width="2.5" stroke-linejoin="round"/><circle cx="23" cy="23" r="1.6" fill="#1e1e1e"/><circle cx="33" cy="23" r="1.6" fill="#1e1e1e"/><path d="M25 27c1.6 1.4 4.4 1.4 6 0" fill="none" stroke="#1e1e1e" stroke-width="2" stroke-linecap="round"/></svg>']
+      flower: ['Asterisk', 'spin', '<svg viewBox="0 0 48 48"><rect x="3" y="3" width="42" height="42" rx="11" fill="#ddff00" stroke="#141414" stroke-width="2"/><path d="M24 11v26M11 24h26M15 15l18 18M33 15L15 33" stroke="#141414" stroke-width="5" stroke-linecap="round"/></svg>'],
+      star: ['Burst', 'spin', '<svg viewBox="0 0 48 48"><path d="M24 2l4.3 9.6 10.2-3.4-3.4 10.2L44.7 22.7 35.1 27l3.4 10.2-10.2-3.4L24 43.4l-4.3-9.6-10.2 3.4 3.4-10.2L3.3 22.7l9.6-4.3L9.5 8.2l10.2 3.4z" fill="#ff6b2c" stroke="#141414" stroke-width="2" stroke-linejoin="round"/></svg>'],
+      rocket: ['Ship it', 'nudge', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="#ddff00" stroke="#141414" stroke-width="2"/><path d="M16 32L32 16M19 16h13v13" fill="none" stroke="#141414" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'],
+      check: ['Approved', 'none', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="#141414"/><path d="M14 24.5l7 7 13-15" fill="none" stroke="#ddff00" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>'],
+      bolt: ['Quick', 'pulse', '<svg viewBox="0 0 48 48"><rect x="3" y="3" width="42" height="42" rx="11" fill="#2f6bff" stroke="#141414" stroke-width="2"/><path d="M27 9L14 27h10l-3 12 13-18H24z" fill="#fff" stroke="#141414" stroke-width="1.5" stroke-linejoin="round"/></svg>'],
+      heart: ['+1', 'pulse', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="#2f6bff" stroke="#141414" stroke-width="2"/><text x="24" y="30.5" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="17" fill="#fff">+1</text></svg>'],
+      sparkle: ['Spark', 'pulse', '<svg viewBox="0 0 48 48"><path d="M24 3c2 11 5 15 18 21-13 6-16 10-18 21-2-11-5-15-18-21 13-6 16-10 18-21z" fill="#fff" stroke="#141414" stroke-width="2" stroke-linejoin="round"/></svg>'],
+      eyes: ['Look here', 'nudge', '<svg viewBox="0 0 48 48"><path d="M10 6l28 15-12 3.5 8 14-5.5 3-8-14L12 37z" fill="#fff" stroke="#141414" stroke-width="2.5" stroke-linejoin="round"/></svg>'],
+      bulb: ['Idea', 'none', '<svg viewBox="0 0 48 48"><rect x="3" y="3" width="42" height="42" rx="11" fill="#fff" stroke="#141414" stroke-width="2"/><path d="M24 11a9 9 0 0 0-5 16.5V31h10v-3.5A9 9 0 0 0 24 11zM20 35h8" fill="#ddff00" stroke="#141414" stroke-width="2.3" stroke-linejoin="round" stroke-linecap="round"/></svg>'],
+      coffee: ['Break', 'none', '<svg viewBox="0 0 48 48"><rect x="3" y="3" width="42" height="42" rx="11" fill="#e9e7e1" stroke="#141414" stroke-width="2"/><path d="M13 18h18v8a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8zM31 21h3a3.5 3.5 0 0 1 0 7h-3" fill="none" stroke="#141414" stroke-width="2.4" stroke-linejoin="round"/></svg>'],
+      sun: ['Ring', 'spin', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="19" fill="none" stroke="#2f6bff" stroke-width="7" stroke-dasharray="70 50" stroke-linecap="round"/><circle cx="24" cy="24" r="8" fill="#141414"/></svg>'],
+      pin: ['Pin', 'none', '<svg viewBox="0 0 48 48"><path d="M18 5h12l-2 12 6 7H14l6-7zM24 24v19" fill="#141414" stroke="#141414" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></svg>'],
+      fire: ['Urgent', 'pulse', L('URGENT', '#ff6b2c', '#141414')],
+      wow: ['New', 'none', L('NEW', '#ddff00', '#141414')],
+      nice: ['Done', 'none', L('DONE', '#141414', '#ddff00')],
+      cloud: ['Draft', 'none', L('DRAFT', '#e9e7e1', '#141414')]
     };
-    const stickerEl = (k, cls) => { const d = STK[k]; if (!d) return null; const s = mk('span', 'stk stk-' + d[1] + (cls ? ' ' + cls : '')); s.innerHTML = d[2]; s.title = d[0]; s.setAttribute('role', 'img'); s.setAttribute('aria-label', d[0] + ' sticker'); return s; };
+    const stickerEl = (k, cls) => { const d = STK[k]; if (!d) return null; const s = mk('span', 'stk stk-' + d[1] + (/^<svg viewBox="0 0 84/.test(d[2]) ? ' stk-label' : '') + (cls ? ' ' + cls : '')); s.innerHTML = d[2]; s.title = d[0]; s.setAttribute('role', 'img'); s.setAttribute('aria-label', d[0] + ' sticker'); return s; };
     // ==highlight== and **bold**, @people and #tags shown as soft pills
     const rich = (txt) => {
       const frag = document.createDocumentFragment();
@@ -3888,7 +3894,7 @@
       const f = mk('form', 'qn-ed'); f.autocomplete = 'off';
       const dr = draftGet(n && n.id);
       const S2 = { assign: n ? assignees(n).map((a) => ({ name: a.assignee || nameOf2(a.email), email: a.email, done: a.done, id: a.id, doneBy: a.doneBy, doneAt: a.doneAt })) : [], reminder: n ? n.reminder || '' : '', team: n ? n.visibility === 'team' : false,
-        colour: n ? n.colour || '' : 'lemon', stickers: n ? (n.stickers || []).slice() : [], files: n ? (n.files || []).slice() : [], doodle: n ? n.doodle || null : null, uploading: 0 };
+        colour: n ? n.colour || '' : 'paper', stickers: n ? (n.stickers || []).slice() : [], files: n ? (n.files || []).slice() : [], doodle: n ? n.doodle || null : null, uploading: 0 };
       if (dr && (!n || dr.from === n.updatedAt)) Object.assign(S2, dr.s);
       f.classList.add('c-' + (S2.colour || 'paper'));
       const ta = mk('textarea', 'qn-ta'); ta.rows = n ? 4 : 2; ta.maxLength = 45000; ta.placeholder = 'Write a note… first line is the title · @ to tag · #tag · ==highlight== · paste or drop files'; ta.setAttribute('aria-label', 'Note'); ta.value = dr && (!n || dr.from === n.updatedAt) ? dr.text : n ? textOf(n) : '';
@@ -3903,7 +3909,7 @@
       tool('Bold', '<svg viewBox="0 0 24 24"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg>', () => wrap('**', '**'), 'Ctrl+B');
       tool('Add a #tag', '<svg viewBox="0 0 24 24"><path d="M9 4L7 20M17 4l-2 16M4 9h16M3 15h16"/></svg>', () => { const p = ta.selectionStart, v = ta.value, pre = p && !/\s/.test(v[p - 1]) ? ' #' : '#'; ta.value = v.slice(0, p) + pre + v.slice(p); ta.focus(); ta.setSelectionRange(p + pre.length, p + pre.length); ta.dispatchEvent(new Event('input')); });
       const stkBtn = tool('Stickers', '<svg viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4z"/><path d="M16 4v4h4"/><circle cx="9.5" cy="11" r="1"/><circle cx="14.5" cy="11" r="1"/><path d="M9 15c1.7 1.5 4.3 1.5 6 0"/></svg>', () => { tray.hidden = !tray.hidden; stkBtn.setAttribute('aria-expanded', String(!tray.hidden)); });
-      tool('Doodle', '<svg viewBox="0 0 24 24"><path d="M3 17c3-6 5 3 8-3s4-7 7-2 1 6 3 5"/></svg>', () => openPad(S2.doodle, (d) => { S2.doodle = d; paint(); }));
+      tool('Sketch', '<svg viewBox="0 0 24 24"><path d="M3 17c3-6 5 3 8-3s4-7 7-2 1 6 3 5"/></svg>', () => openPad(S2.doodle, (d) => { S2.doodle = d; paint(); }));
       const fileIn = mk('input'); fileIn.type = 'file'; fileIn.multiple = true; fileIn.hidden = true; fileIn.accept = 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip,video/mp4,video/quicktime,video/webm,audio/*';
       tool('Attach files', '<svg viewBox="0 0 24 24"><path d="M20 11l-8.5 8.5a5 5 0 0 1-7-7L13 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L14 7"/></svg>', () => fileIn.click());
       fileIn.addEventListener('change', () => { addFiles([...fileIn.files]); fileIn.value = ''; });
@@ -4031,7 +4037,7 @@
           if (!r.ok) { if (r.error === 'stale') { toast('Someone changed this note meanwhile. Your text is kept as a draft; showing the latest version.', true); await load(true); done(null); st.busy = false; return; } throw new Error(r.error || 'Not saved'); }
           const saved = r.note || Object.assign({ id: r.id, createdBy: me(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), canEdit: true }, note);
           st.notes = [saved].concat(st.notes.filter((x) => x.id !== saved.id));
-          clearTimeout(dT); draftSet(n && n.id, null); sparkle(save);
+          clearTimeout(dT); draftSet(n && n.id, null); press(save);
           const shared = new Set([...mentions.map((m) => m.email), ...S2.assign.map((a) => a.email)]);
           toast(n ? 'Note saved' : shared.size ? 'Note added and shared with ' + [...shared].map((x) => first(nameOf2(x))).join(', ') : 'Note added');
           if (!n) { ta.value = ''; Object.assign(S2, { assign: [], reminder: '', team: false, stickers: [], files: [], doodle: null }); scb.checked = false; ta.style.height = ''; paint(); clearTimeout(dT); draftSet(null, null); }
@@ -4055,13 +4061,12 @@
     const redrawAll = () => { saveF(); dash.draw('qn-filters'); flip(() => dash.draw('qn-board')); };
     dash.draw('qn-hero', (el) => {
       el.replaceChildren();
-      const h = mk('div', 'qn-hero-t'); const ttl = mk('h2', 'qn-h'); ttl.append(document.createTextNode('Notes')); const s1 = stickerEl('sparkle', 'qn-h-stk'); if (s1) ttl.append(s1);
-      h.append(ttl, mk('p', 'qn-sub', 'Your space to think out loud: jot ideas, tag the team, doodle, drop files. Everything saves to the team sheet; drafts are kept in this browser until you save.'));
+      const h = mk('div', 'qn-hero-t'); const ttl = mk('h2', 'qn-h'); ttl.append(document.createTextNode('Notes'));
+      h.append(ttl, mk('p', 'qn-sub', 'Ideas, briefs, references and to-dos in one place. Tag the team, sketch, drop files. Saved to the team sheet; drafts stay in this browser until you save.'));
       const mine = st.notes.filter((n) => n.createdBy === me()).length, shared = st.notes.filter((n) => n.createdBy !== me() && !n.viaAdmin).length, files = st.notes.reduce((a, n) => a + (n.files || []).length, 0), todo = myActions().filter((a) => !a.done).length;
       const stats = mk('div', 'qn-stats');
-      [[mine, 'your notes', 'lemon'], [shared, 'shared with you', 'sky'], [todo, 'to-dos for you', 'pink'], [files, 'files', 'mint']].forEach(([v, l, c]) => { const s2 = mk('div', 'qn-stat c-' + c); s2.append(mk('b', '', CO.num(v)), mk('span', '', l)); stats.append(s2); });
-      const deco = mk('div', 'qn-deco'); ['star', 'heart', 'bolt'].forEach((k, i) => { const s3 = stickerEl(k, 'fl fl' + i); if (s3) deco.append(s3); });
-      el.append(h, stats, deco);
+      [[mine, 'Your notes', 'lemon'], [shared, 'Shared with you', 'paper'], [todo, 'To-dos for you', 'ink'], [files, 'Files', 'sky']].forEach(([v, l, c]) => { const s2 = mk('div', 'qn-stat c-' + c); s2.append(mk('b', '', CO.num(v)), mk('span', '', l)); stats.append(s2); });
+      el.append(h, stats);
     });
     const TABS = [['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me'], ['assigned', 'Assigned to me'], ['reminders', 'Reminders'], ['team', 'Team notes']];
     const inTab = (n, t) => t === 'all' || (t === 'mine' ? n.createdBy === me() : t === 'shared' ? n.createdBy !== me() && !n.viaAdmin : t === 'assigned' ? assignees(n).some((a) => a.email === me()) : t === 'team' ? n.createdBy !== me() : !!n.reminder);
@@ -4085,9 +4090,9 @@
       const tog = (k, label) => { const b = mk('button', 'qn-fchip' + (F[k] ? ' on' : ''), label); b.type = 'button'; b.setAttribute('aria-pressed', String(!!F[k])); b.addEventListener('click', () => { F[k] = !F[k]; redrawAll(); }); return b; };
       const sel = (key, label, opts) => { const s = mk('select', 'co-select qn-fsel'); s.setAttribute('aria-label', label); opts.forEach(([v, t]) => s.append(new Option(t, v))); s.value = F[key]; s.addEventListener('change', () => { F[key] = s.value; redrawAll(); }); return s; };
       const authors = [...new Set(st.notes.map((n) => n.createdBy))].map((e) => [e, e === me() ? 'You' : nameOf2(e)]).sort((a, b) => a[1].localeCompare(b[1]));
-      row1.append(cl, tog('pinned', '📌 Pinned'), tog('files', '📎 With files'), tog('doodle', '✏️ With doodles'),
+      row1.append(cl, tog('pinned', 'Pinned'), tog('files', 'With files'), tog('doodle', 'With sketches'),
         sel('author', 'Written by', [['', 'Anyone']].concat(authors)), sel('when', 'Edited', [['', 'Any time'], ['today', 'Today'], ['week', 'Last 7 days'], ['month', 'This month']]), sel('sort', 'Sort', [['edited', 'Recently edited'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'A to Z']]));
-      const tr = mk('button', 'qn-fchip trash' + (F.trash ? ' on' : ''), '🗑 Trash'); tr.type = 'button'; tr.setAttribute('aria-pressed', String(F.trash)); tr.addEventListener('click', () => { F.trash = !F.trash; dash.draw('qn-tabs'); redrawAll(); if (F.trash) loadTrash(); }); row1.append(tr);
+      const tr = mk('button', 'qn-fchip trash' + (F.trash ? ' on' : ''), 'Trash'); tr.type = 'button'; tr.setAttribute('aria-pressed', String(F.trash)); tr.addEventListener('click', () => { F.trash = !F.trash; dash.draw('qn-tabs'); redrawAll(); if (F.trash) loadTrash(); }); row1.append(tr);
       el.append(row1);
       const tags = new Map(); st.notes.forEach((n) => (n.tags || []).forEach((t) => tags.set(t, (tags.get(t) || 0) + 1)));
       if (tags.size) { const row2 = mk('div', 'qn-frow tags'); row2.append(mk('span', 'qn-flab', 'Tags')); [...tags].sort((a, b) => b[1] - a[1]).slice(0, 24).forEach(([t, c]) => { const b = mk('button', 'qn-ht t' + tagHue(t) + (F.tag === t ? ' on' : '')); b.type = 'button'; b.append(document.createTextNode('#' + t), mk('small', '', String(c))); b.setAttribute('aria-pressed', String(F.tag === t)); b.addEventListener('click', () => { F.tag = F.tag === t ? '' : t; redrawAll(); }); row2.append(b); }); el.append(row2); }
@@ -4101,7 +4106,7 @@
       const c = mk('article', 'qn-note c-' + (n.colour || 'paper') + ' k-' + kindOf(n) + (n.pinned ? ' pinned' : '')); c.dataset.id = n.id; c.style.setProperty('--tilt', ((tagHue(n.id) - 3.5) * 0.35).toFixed(2) + 'deg');
       if (st.editing === n.id) { c.classList.add('editing'); const ed = editor(n, () => { st.editing = ''; flip(() => dash.draw('qn-board')); dash.draw('qn-tabs'); dash.draw('qn-filters'); dash.draw('qn-hero'); dash.draw('np-list'); }); c.append(ed); setTimeout(() => ed.focusText(), 30); return c; }
       (n.stickers || []).slice(0, 4).forEach((k, j) => { const s = stickerEl(k, 'on-card p' + j); if (s) c.append(s); });
-      if (n.pinned) c.append(mk('span', 'qn-pinmark', '📌'));
+      if (n.pinned) c.append(mk('span', 'qn-pinmark', 'Pinned'));
       const t = mk('div', 'qn-text'); if (n.title && n.title !== 'Untitled note') { const tt = mk('h3', 'qn-title'); tt.append(rich(n.title)); t.append(tt); }
       if (n.body) { const bd = mk('p', 'qn-body'); bd.append(rich(n.body.length > 700 ? n.body.slice(0, 700) + '…' : n.body)); t.append(bd); }
       c.append(t);
@@ -4115,7 +4120,7 @@
           const li = mk('li', a.done ? 'done' : ''), can = n.createdBy === me() || a.email === me();
           const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!a.done; cb.disabled = !can; cb.setAttribute('aria-label', (isAssign(a) ? a.assignee : a.text) + (a.done ? ': done' : ': open'));
           cb.addEventListener('click', (e) => e.stopPropagation());
-          cb.addEventListener('change', async () => { const was = a.done; a.done = cb.checked; li.classList.toggle('done', a.done); if (a.done) sparkle(cb); try { const r = await callApi({ action: 'noteAction', id: n.id, actionId: a.id, done: a.done }); if (!r.ok) throw new Error(r.error || 'Not saved'); n.actions = r.actions; dash.draw('np-list'); dash.draw('qn-hero'); } catch (e) { a.done = was; cb.checked = was; li.classList.toggle('done', was); toast(e.message, true); } });
+          cb.addEventListener('change', async () => { const was = a.done; a.done = cb.checked; li.classList.toggle('done', a.done); if (a.done) press(li); try { const r = await callApi({ action: 'noteAction', id: n.id, actionId: a.id, done: a.done }); if (!r.ok) throw new Error(r.error || 'Not saved'); n.actions = r.actions; dash.draw('np-list'); dash.draw('qn-hero'); } catch (e) { a.done = was; cb.checked = was; li.classList.toggle('done', was); toast(e.message, true); } });
           li.append(cb); if (isAssign(a)) { li.append(CO.av(a.assignee || nameOf2(a.email)), mk('span', '', (a.email === me() ? 'You' : a.assignee || nameOf2(a.email)) + (a.done ? ' · done' : ''))); } else li.append(mk('span', '', a.text + (a.assignee ? ' · ' + a.assignee : '')));
           ul.append(li);
         });
@@ -4134,7 +4139,7 @@
       }
       c.append(ft);
       if (n.createdBy === me() || n.canEdit) { c.tabIndex = 0; c.classList.add('can'); const go = () => { st.editing = n.id; flip(() => dash.draw('qn-board')); }; c.addEventListener('click', (e) => { if (e.target.closest('input, a, button')) { if (e.target.closest('.qn-edit')) go(); return; } go(); }); c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) go(); }); }
-      if (!REDUCE && c.animate && i < 24 && !st.seen.has(n.id)) { st.seen.add(n.id); c.animate([{ opacity: 0, transform: 'translateY(14px) scale(.97) rotate(var(--tilt))' }, { opacity: 1, transform: 'translateY(0) scale(1) rotate(var(--tilt))' }], { duration: 420, delay: i * 35, easing: 'cubic-bezier(.2,.9,.3,1.2)', fill: 'backwards' }); }
+      if (i < 24 && !st.seen.has(n.id)) { st.seen.add(n.id); requestAnimationFrame(() => { enter(c, i); const dv = c.querySelector('.qn-doodle'); if (dv) drawOn(dv); }); }
       return c;
     }
     st.seen = new Set(); st.show = 60;
@@ -4149,7 +4154,7 @@
       }
       const so = { edited: (a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)), new: (a, b) => String(b.createdAt).localeCompare(String(a.createdAt)), old: (a, b) => String(a.createdAt).localeCompare(String(b.createdAt)), az: (a, b) => String(a.title).localeCompare(String(b.title)) }[F.sort] || ((a, b) => 0);
       const list = filtered().sort((a, b) => (b.pinned - a.pinned) || so(a, b));
-      if (!list.length) { const e = mk('div', 'qn-emptybox'); const s = stickerEl('cloud', 'big'); if (s) e.append(s); e.append(mk('p', 'qn-empty', st.q || F.tag || F.colour ? 'No notes match these filters.' : st.f === 'all' ? 'No notes yet. Write one above: tag someone with @ to share it, add #tags, stickers, a doodle or files.' : st.f === 'assigned' ? 'Nothing assigned to you.' : st.f === 'reminders' ? 'No reminders set.' : st.f === 'shared' ? 'Nobody has shared a note with you yet.' : st.f === 'team' ? 'No notes from the team yet.' : 'You have not written a note yet.')); el.append(e); return; }
+      if (!list.length) { const e = mk('div', 'qn-emptybox'); const s = stickerEl('flower', 'big'); if (s) e.append(s); e.append(mk('p', 'qn-empty', st.q || F.tag || F.colour ? 'No notes match these filters.' : st.f === 'all' ? 'No notes yet. Write one above: tag someone with @ to share it, add #tags, stickers, a doodle or files.' : st.f === 'assigned' ? 'Nothing assigned to you.' : st.f === 'reminders' ? 'No reminders set.' : st.f === 'shared' ? 'Nobody has shared a note with you yet.' : st.f === 'team' ? 'No notes from the team yet.' : 'You have not written a note yet.')); el.append(e); return; }
       const g = mk('div', 'qn-grid'); list.slice(0, st.show).forEach((n, i) => g.append(card(n, i))); el.append(g);
       el.append(mk('p', 'qn-count', 'Showing ' + Math.min(st.show, list.length) + ' of ' + list.length + ' notes'));
       if (list.length > st.show) { const m = mk('button', 'co-btn qn-more', 'Show 60 more'); m.type = 'button'; m.addEventListener('click', () => { st.show += 60; dash.draw('qn-board'); }); el.append(m); }

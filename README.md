@@ -137,12 +137,12 @@ Every person with access has a **Permissions** button on the Access page, and a 
 
 ## Notes
 
-A playful, colourful space for everyone (designers, editors, writers). Soft floating shapes behind the page, pastel sticky notes, stickers, rounded and handwritten type; motion stops for people who turn on "reduce motion".
+A clean, editorial space for everyone (designers, editors, writers): neutral greys with lime, black and blue, bold sans-serif type, bento-style tiles, geometric icon stickers and status labels; motion stops for people who turn on "reduce motion".
 
 - **Write**: the first line is the title. Type **@** to tag someone (shares the note with them), **#word** for tags, wrap text in `==…==` (Ctrl/Cmd+Shift+H) to highlight it, `**…**` (Ctrl/Cmd+B) for bold. Ctrl/Cmd+Enter saves.
-- **Colours**: 8 pastel note colours (lemon, peach, bubblegum, lilac, sky, mint, sand, paper), with a night-theme version of each.
-- **Stickers**: 16 original stickers, many animated (twinkle, heartbeat, float, wiggle, spin, glow, flicker, look-around); up to 4 per note.
-- **Doodles**: a drawing pad with 6 pens, a highlighter, 3 sizes and undo; saved as smooth vector paths.
+- **Colours**: 8 note colours (white, lime, sage, stone, blue, orange, graphite, ink), with a night-theme version of each.
+- **Stickers**: 16 geometric icons and labels (asterisk, burst, ship it, approved, quick, +1, spark, look here, idea, break, ring, pin, URGENT, NEW, DONE, DRAFT), some with subtle motion; up to 4 per note.
+- **Sketches**: a drawing pad with 6 pens, a highlighter, 3 sizes and undo; saved as smooth vector paths.
 - **Files**: paste (Ctrl/Cmd+V), drag and drop, or attach images (PNG, JPEG, SVG, GIF, WebP), PDFs, Word, Excel, PowerPoint, text, CSV, ZIP, short videos and audio, up to 10 MB each and 12 per note. Big photos are resized before upload. Images show as thumbnails; images, PDFs, video, audio and text open in a preview; everything can be downloaded. A file can only be opened by people who can see its note.
 - **Find**: tabs (all, mine, shared, assigned, reminders, team), search across text, #tags, people and file names, and filters for colour, tag, pinned, with files, with doodles, author and date, plus sort. Pin notes to keep them on top.
 - **Safe**: notes are saved in the team's private access spreadsheet (files in a hidden *Note files* tab, split into pieces, so no extra Google permissions are needed). What you are writing is kept as a draft in your browser until it is saved, so a refresh or a failed save loses nothing. Deleting moves a note to **Trash**, where you can restore it for 30 days. A copy of the whole Notes tab is made every day in a hidden *Notes backup* tab. Edits by two people at once never overwrite each other.
