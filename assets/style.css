@@ -3160,3 +3160,30 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
 :root[data-theme="dark"] .qn-ht.t4 { background: #2a3d73; color: #dfe8ff; } :root[data-theme="dark"] .qn-ht.t5, :root[data-theme="dark"] .qn-ht.t7 { background: #4a4a4e; color: #f4f4f2; }
 .qn-play .qn-dd-btn { background: var(--panel); color: var(--fg); border-color: color-mix(in srgb, var(--fg) 14%, transparent); }
 .qn-play .c-lilac .qn-pinb, .qn-play .c-lilac .qn-edit { background: transparent; color: #f4f4f2; border-color: rgba(244, 244, 242, .35); }
+
+/* ================= Pricing and budget packages ================= */
+.prc-card { display: grid !important; gap: 14px; }
+.prc-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.prc-gst { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.prc-gst .co-input { width: 5.5rem; border-radius: 999px; }
+.prc-top .pk-search { flex: 1 1 14rem; }
+.prc-table th, .prc-table td { padding: 8px 10px; font-size: 13px; }
+.prc-table th.num, .prc-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.prc-in { width: 8rem; text-align: right; border-radius: 10px; padding: 6px 10px; }
+.prc-table tr.noprice td:first-child::after { content: "No price"; margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; background: color-mix(in srgb, #ff6b2c 22%, transparent); }
+.pk-gst { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pk-money { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.pk-money th { padding: 6px 8px; font-size: 11px; font-weight: 600; color: var(--muted); text-align: right; border-bottom: 1px solid var(--line); } .pk-money th:first-child { text-align: left; }
+.pk-money td { padding: 7px 8px; border-bottom: 1px solid var(--line-2); } .pk-money td.num { text-align: right; }
+.pk-money tr.bal td { font-weight: 700; } .pk-money tr.ext td { font-weight: 700; color: #c2410c; background: color-mix(in srgb, #ff6b2c 10%, transparent); }
+:root[data-theme="dark"] .pk-money tr.ext td { color: #ff9a6b; }
+.pk-money tr.carry td { background: color-mix(in srgb, #ddff00 18%, transparent); }
+.pk-type2.unpriced { background: color-mix(in srgb, #ff6b2c 8%, transparent); }
+.pk-noprice { padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; background: #ff6b2c; color: #141414; }
+.pk-can { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pk-can-i { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: color-mix(in srgb, #2f6bff 12%, transparent); }
+@media (max-width: 700px) {
+  .prc-table th:nth-child(3), .prc-table td:nth-child(3), .prc-table th:nth-child(5), .prc-table td:nth-child(5), .prc-table th:nth-child(6), .prc-table td:nth-child(6) { display: none; }
+  .prc-table { table-layout: fixed; width: 100%; } .prc-table td:first-child { overflow-wrap: anywhere; } .prc-in { width: 100%; min-width: 0; }
+  .pk-money { font-size: 11.5px; } .pk-money th, .pk-money td { padding: 6px 4px; }
+}

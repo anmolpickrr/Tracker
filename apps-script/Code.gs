@@ -36,17 +36,17 @@ function isAdminUser_(u) { return !!u && (u.owner || isOwner_(u.email) || u.role
 function defaultPerms_(role) {
   // View only sees only their own work by default; Can edit and Admin see everyone's work (Creative Head, Nov 2026:
   // edit access means working with all tasks, brands and people, e.g. KAMs who are not on the designer team list).
-  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '' };
+  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '', pricing: false };
   if (role === 'Editor') { p.edit = true; p.load = true; p.scope = 'all'; }
-  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; }
+  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; p.pricing = true; }
   return p;
 }
 function permsOf_(u) {
   if (!u) return defaultPerms_('Viewer');
-  if (u.owner || isOwner_(u.email)) { const all = defaultPerms_('Admin'); all.owner = true; all.packages = 'edit'; return all; }
+  if (u.owner || isOwner_(u.email)) { const all = defaultPerms_('Admin'); all.owner = true; all.packages = 'edit'; all.pricing = true; return all; }
   const p = defaultPerms_(u.role), o = u.perms || {};
   if (Array.isArray(o.pages)) p.pages = o.pages.filter(function (k) { return PAGE_KEYS.indexOf(k) >= 0; });
-  ['edit', 'export', 'load', 'team', 'fasty'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
+  ['edit', 'export', 'load', 'team', 'fasty', 'pricing'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') p.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') p.packages = o.packages;
   if (p.pages.indexOf('mine') < 0) p.pages.unshift('mine'); // everyone keeps their own work page
@@ -56,7 +56,7 @@ function cleanPerms_(o) {
   if (!o || typeof o !== 'object') return null;
   const out = {};
   if (Array.isArray(o.pages)) out.pages = o.pages.map(String).filter(function (k, i, a) { return PAGE_KEYS.indexOf(k) >= 0 && a.indexOf(k) === i; });
-  ['edit', 'export', 'load', 'team', 'fasty'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
+  ['edit', 'export', 'load', 'team', 'fasty', 'pricing'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') out.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') out.packages = o.packages;
   return out;
@@ -72,10 +72,12 @@ function allowed_(u, action) {
   if (action === 'assist' || action === 'speak') return p.fasty;
   // Brand packages: only the owner by default; the owner grants view or edit per person.
   if (action === 'packages') return p.packages === 'view' || p.packages === 'edit';
+  if (action === 'pricing') return p.packages === 'view' || p.packages === 'edit' || !!p.pricing;
+  if (action === 'pricingSave') return !!p.pricing;
   if (action === 'packageSave' || action === 'packageDelete') return p.packages === 'edit';
   return true;
 }
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -304,6 +306,7 @@ function doPost(e) {
     if (body.action === 'history') return json_({ ok: true, days: history_() });
     if (body.action === 'dayplan') return json_(dayPlanGet_(user, body));
     if (body.action === 'packages') return json_(pkgList_());
+    if (body.action === 'pricing') return json_(pricingGet_());
     if (body.action === 'settings') { const st = settings_(); return json_({ ok: true, settings: Object.assign({}, st, { chat: st.chat ? 'set' : '' }) }); }
     if (body.action === 'data') { const pm = permsOf_(user); return text_(pm.scope === 'own' ? ownDataText_(user, !!body.fresh) : dataText_(!!body.fresh)); }
     if (body.action === 'health') return json_(health_());
@@ -342,6 +345,7 @@ function write_(body, user) {
     else if (body.action === 'noteRestore') out = noteRestore_(body, user);
     else if (body.action === 'noteFileUpload') out = noteFileUpload_(body, user);
     else if (body.action === 'packageSave') out = pkgSave_(body, user);
+    else if (body.action === 'pricingSave') out = pricingSave_(body, user);
     else if (body.action === 'packageDelete') out = pkgDelete_(body, user);
     else if (body.action === 'noteAction') out = noteAction_(body, user);
     else if (body.action === 'prefs') out = prefs_(body, user);
@@ -1380,11 +1384,11 @@ function pkgInput_(b) {
   // Fixed package: creatives per type. Monthly plan: creatives per type each month, billed monthly from the start date
   // (optional end date). Custom: a number of creatives, or an amount (budget) spent at a rate per creative type.
   const kind = ['Monthly', 'Custom'].indexOf(String(p.kind)) >= 0 ? String(p.kind) : 'Fixed';
-  const basis = kind === 'Custom' && p.basis === 'amount' ? 'amount' : 'creatives';
+  const basis = (kind === 'Custom' || kind === 'Monthly') && p.basis === 'amount' ? 'amount' : 'creatives'; // amount = a budget spent at the price list (or the package's own rates)
   const items = (Array.isArray(p.items) ? p.items : []).slice(0, 30).map(function (it) { return { type: clean_(it && it.type).slice(0, 60), qty: Math.max(0, Math.min(10000, Math.round(Number(it && it.qty) || 0))), rate: Math.max(0, Math.min(10000000, Math.round((Number(it && it.rate) || 0) * 100) / 100)) }; })
     .filter(function (it) { return it.type && plain_(it.type) && (basis === 'amount' ? it.rate > 0 : it.qty > 0); })
     .map(function (it) { return basis === 'amount' ? { type: it.type, rate: it.rate } : { type: it.type, qty: it.qty }; });
-  if (!items.length) return { error: basis === 'amount' ? 'Add at least one creative type with its rate.' : 'Add at least one creative type with a quantity.' };
+  if (!items.length && basis !== 'amount') return { error: 'Add at least one creative type with a quantity.' };
   const amount = Math.max(0, Math.round((Number(p.amount) || 0) * 100) / 100);
   if (basis === 'amount' && !amount) return { error: 'Add the package amount.' };
   if (kind === 'Monthly' && !amount) return { error: 'Add the monthly amount.' };
@@ -1392,10 +1396,37 @@ function pkgInput_(b) {
   if (end && end < date) return { error: 'The end date is before the start date.' };
   return { brand: brand, date: date, amount: amount, from: ['Both', 'External', 'Internal'].indexOf(p.from) >= 0 ? p.from : 'Both', items: items, total: items.reduce(function (a, it) { return a + (it.qty || 0); }, 0), notes: clean_(p.notes).slice(0, 500), status: p.status === 'Closed' ? 'Closed' : 'Active', kind: kind, end: end, basis: basis };
 }
+/* Pricing: one price per creative type, in ₹ excluding GST, and the GST rate (18% unless changed). Kept in the
+   "Pricing" tab of the access spreadsheet; every change is in the activity log. */
+const PRICE_HEAD = ['Creative type', 'Price (₹, excl. GST)', 'Updated by', 'Updated'];
+function pricingSheet_() { const ss = accessBook_(); let sh = ss.getSheetByName('Pricing'); if (!sh) { sh = ss.insertSheet('Pricing'); sh.appendRow(PRICE_HEAD); sh.setFrozenRows(1); } return sh; }
+function gstRate_() { const v = Number(PropertiesService.getScriptProperties().getProperty('GST_RATE')); return isFinite(v) && v >= 0 && v <= 50 && PropertiesService.getScriptProperties().getProperty('GST_RATE') !== null ? v : 18; }
+function pricingGet_() {
+  if (!hasAccessBook_()) return { ok: false, error: 'not set up' };
+  const sh = pricingSheet_(), last = sh.getLastRow();
+  const prices = last < 2 ? [] : sh.getRange(2, 1, last - 1, 4).getValues().filter(function (r) { return clean_(r[0]); }).map(function (r) { return { type: clean_(r[0]), price: Number(r[1]) || 0, updatedBy: String(r[2] || ''), updated: iso_(r[3]) }; });
+  return { ok: true, gst: gstRate_(), prices: prices };
+}
+function pricingSave_(b, u) {
+  const before = pricingGet_(), old = {}; (before.prices || []).forEach(function (p) { old[p.type.toLowerCase()] = p; });
+  const seen = {}, rows = [], changes = [], now = new Date();
+  (Array.isArray(b.prices) ? b.prices : []).slice(0, 300).forEach(function (p) {
+    const t = clean_(p && p.type).slice(0, 60), price = Math.round(Math.max(0, Math.min(10000000, Number(p && p.price) || 0)) * 100) / 100, k = t.toLowerCase();
+    if (!t || !plain_(t) || seen[k]) return; seen[k] = 1;
+    const o = old[k], same = o && o.price === price;
+    rows.push([safe_(t), price, same ? o.updatedBy : u.email, same && o.updated ? new Date(o.updated) : now]);
+    if (!same) changes.push({ action: 'Price changed', sheet: 'Pricing', record: t, field: 'Price (excl. GST)', before: o ? '₹' + o.price : '(none)', after: '₹' + price });
+  });
+  Object.keys(old).forEach(function (k) { if (!seen[k]) changes.push({ action: 'Price removed', sheet: 'Pricing', record: old[k].type, field: 'Price (excl. GST)', before: '₹' + old[k].price, after: '(none)' }); });
+  const sh = pricingSheet_(), last = sh.getLastRow(); if (last > 1) sh.getRange(2, 1, last - 1, 4).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, 4).setValues(rows);
+  if (b.gst != null) { const g = Math.round(Number(b.gst) * 100) / 100; if (!(g >= 0 && g <= 50)) return { ok: false, error: 'GST must be between 0 and 50%.' }; if (g !== before.gst) { PropertiesService.getScriptProperties().setProperty('GST_RATE', String(g)); changes.push({ action: 'GST rate changed', sheet: 'Pricing', record: 'GST', field: 'Rate', before: before.gst + '%', after: g + '%' }); } }
+  return Object.assign(pricingGet_(), { changes: changes });
+}
 function pkgSave_(b, u) {
   const x = pkgInput_(b); if (x.error) return { ok: false, error: x.error };
   const sh = pkgSheet_(), now = new Date(), vals = function (id, createdBy, created) { return [id, safe_(x.brand), "'" + x.date, x.amount, x.from, JSON.stringify(x.items), x.total, safe_(x.notes), x.status, createdBy, created, u.email, now, false, x.kind, x.end ? "'" + x.end : '', x.basis]; };
-  const desc = x.brand + ' (' + (x.kind === 'Monthly' ? 'monthly plan' : x.kind === 'Custom' ? 'custom package' : 'fixed package') + '): ' + (x.basis === 'amount' ? '₹' + x.amount + ' at ' + x.items.map(function (it) { return it.type + ' ₹' + it.rate; }).join(', ') : x.total + ' creatives' + (x.kind === 'Monthly' ? ' a month' : '') + ' (' + x.items.map(function (it) { return it.qty + ' ' + it.type; }).join(', ') + '), ₹' + x.amount + (x.kind === 'Monthly' ? ' a month' : '')) + ', from ' + x.date + (x.end ? ' to ' + x.end : '');
+  const desc = x.brand + ' (' + (x.kind === 'Monthly' ? 'monthly plan' : x.kind === 'Custom' ? 'custom package' : 'fixed package') + '): ' + (x.basis === 'amount' ? 'budget ₹' + x.amount + ' excl. GST' + (x.kind === 'Monthly' ? ' a month' : '') + ', ' + (x.items.length ? 'own rates: ' + x.items.map(function (it) { return it.type + ' ₹' + it.rate; }).join(', ') + ', others at the price list' : 'creatives at the price list') : x.total + ' creatives' + (x.kind === 'Monthly' ? ' a month' : '') + ' (' + x.items.map(function (it) { return it.qty + ' ' + it.type; }).join(', ') + '), ₹' + x.amount + ' excl. GST' + (x.kind === 'Monthly' ? ' a month' : '')) + ', from ' + x.date + (x.end ? ' to ' + x.end : '');
   // A brand that already has orders: the person confirms this is a new (repeat) order, so an existing order is not
   // entered twice by mistake. Order numbers (1st, 2nd, 3rd…) follow from the purchase dates.
   const bkey = function (t) { return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };

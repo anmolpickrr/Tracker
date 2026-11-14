@@ -491,7 +491,8 @@
     document.body.dataset.admin = A.mode === 'auth' && perm('load') ? '1' : '';
     document.body.dataset.owner = admin ? '1' : '';
     document.querySelectorAll('[data-owner-only]').forEach((x) => { x.hidden = !(A.mode === 'auth' && isOwner()); });
-    { const pkc = document.querySelector('[data-draw="packages"]'); if (pkc) pkc.hidden = !pkPerm(); } // brand packages: owner, or people given view/edit
+    { const pkc = document.querySelector('[data-draw="packages"]'); if (pkc) pkc.hidden = !pkPerm(); }
+    { const can = A.mode === 'auth' && A.user && (A.user.owner || (A.user.perms && A.user.perms.pricing)); document.querySelectorAll('[data-draw="pricing"]').forEach((e) => { e.hidden = !can || (e.dataset.where === 'brands' && isAdmin()); }); } // brand packages: owner, or people given view/edit
     document.body.dataset.export = perm('export') ? '1' : '';
     const axTab = document.querySelector('.co-tab[data-tab="access"]');
     axTab.hidden = !admin;
@@ -1813,9 +1814,14 @@
   const PK = { list: null, busy: false, err: '', edit: null, form: { kind: 'Fixed', basis: 'creatives' } };
   const pkPerm = () => (A.mode !== 'auth' || !A.user ? '' : A.user.owner ? 'edit' : (A.user.perms && A.user.perms.packages) || '');
   const pkNorm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  function pkSetPrices(pr) { PK.priceList = pr.prices || []; PK.gst = pr.gst; PK.prices = {}; PK.priceList.forEach((x) => { PK.prices[pkNorm(x.type)] = x.price; }); }
   async function pkLoad() {
     if (!pkPerm() || PK.busy) return; PK.busy = true;
-    try { const b = await callApi({ action: 'packages' }, true); if (b.ok) { PK.list = b.packages; PK.err = ''; } else PK.err = b.error === 'forbidden' ? '' : (b.error || 'Packages could not load'); } catch (e) { PK.err = e.message; }
+    try {
+      const [b, pr] = await Promise.all([callApi({ action: 'packages' }, true), callApi({ action: 'pricing' }, true).catch(() => ({ ok: false }))]);
+      if (pr && pr.ok) pkSetPrices(pr);
+      if (b.ok) { PK.list = b.packages; PK.err = ''; } else PK.err = b.error === 'forbidden' ? '' : (b.error || 'Packages could not load');
+    } catch (e) { PK.err = e.message; }
     PK.busy = false; dash.draw('packages');
   }
   /* Package types. Fixed: creatives per type, bought once. Monthly plan: creatives per type each month, billed every
@@ -1823,7 +1829,7 @@
      type, or per type) or an amount spent at a rate per creative type. */
   const PK_KIND = { Fixed: 'Fixed package', Monthly: 'Monthly plan', Custom: 'Custom package' };
   const pkKind = (p) => (p.kind === 'Monthly' || p.kind === 'Custom' ? p.kind : 'Fixed');
-  const pkByAmount = (p) => pkKind(p) === 'Custom' && p.basis === 'amount';
+  const pkByAmount = (p) => (pkKind(p) === 'Custom' || pkKind(p) === 'Monthly') && p.basis === 'amount';
   const pkAddMonths = (d, n) => { const [y, m, dd] = d.split('-').map(Number), t = new Date(Date.UTC(y, m - 1 + n, 1)), last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate(); t.setUTCDate(Math.min(dd, last)); return t.toISOString().slice(0, 10); };
   const pkPrevDay = (d) => new Date(Date.parse(d) - 864e5).toISOString().slice(0, 10);
   // A monthly plan's billing months, from the start date up to today (or the end date).
@@ -1836,22 +1842,40 @@
   /* Delivered creatives (DONE, from the sheets) counted against a brand's packages: monthly plans first (that month's
      allowance), then fixed and custom packages, oldest first. What is delivered beyond a type's quantity is recorded as
      extra on that type; a creative type the package does not include is recorded as "not in the package". */
+  // Price list (₹, excluding GST) and GST rate, from Access › Pricing.
+  const pkPrice = (type) => { const m = PK.prices || {}; const v = m[pkNorm(type)]; return v == null ? null : v; };
+  const pkGst = () => (PK.gst == null ? 18 : PK.gst);
+  // What one creative costs in a budget package: the package's own rate for that type, else its "any type" rate, else the price list.
+  const pkRateOf = (x, type) => { const k = pkNorm(type), it = x.items.find((i) => i.key === k && i.rate) || x.items.find((i) => i.key === 'any type' && i.rate); return it ? it.rate : pkPrice(type); };
+  /* A budget ledger: the creatives delivered in order, each at its price. What goes past the budget is extra: in a
+     monthly plan it counts toward the next month (value and creatives), otherwise it stays as extra. */
+  function pkSettle(ledger, budget, inV, inN) {
+    let run = inV, extraN = 0, unpriced = 0; const byType = new Map();
+    ledger.sort((a, b) => a.date.localeCompare(b.date)).forEach((e) => {
+      const b2 = byType.get(e.type) || { type: e.type, n: 0, cost: 0, unpriced: 0, extra: 0 }; byType.set(e.type, b2); b2.n++;
+      if (e.cost == null) { unpriced++; b2.unpriced++; return; }
+      b2.cost += e.cost; const before = run; run += e.cost; if (run > budget + 0.001) { extraN++; b2.extra++; if (before < budget) { /* the creative that crosses the line counts as extra */ } }
+    });
+    const spent = run, excess = Math.max(0, spent - budget);
+    return { spent, used: Math.min(spent, budget), left: Math.max(0, budget - spent), excess, extraN: excess > 0 ? Math.max(1, extraN) : 0, inV, inN, unpriced, byType: [...byType.values()].sort((a, b) => b.cost - a.cost) };
+  }
   function pkAlloc(pkgs) {
     const rows = CO.rows(true) || [], out = new Map(), byBrand = new Map();
     const ps = pkgs.map((p) => {
-      const x = { p, kind: pkKind(p), amount: pkByAmount(p), items: pkItems(p), outside: new Map(), value: 0, overValue: 0, cycles: null, shared: 0, rejected: 0 };
-      if (x.kind === 'Monthly') x.cycles = pkCycles(p).map((c) => Object.assign(c, { items: pkItems(p), outside: new Map() }));
+      const x = { p, kind: pkKind(p), amount: pkByAmount(p), items: pkItems(p), outside: new Map(), value: 0, overValue: 0, cycles: null, shared: 0, rejected: 0, ledger: [], openN: 0, openCost: 0 };
+      if (x.kind === 'Monthly') x.cycles = pkCycles(p).map((c) => Object.assign(c, { items: pkItems(p), outside: new Map(), ledger: [] }));
       return x;
     }).sort((a, b) => (a.kind === 'Monthly' ? 0 : 1) - (b.kind === 'Monthly' ? 0 : 1) || a.p.date.localeCompare(b.p.date) || String(a.p.created || '').localeCompare(String(b.p.created || '')));
     ps.forEach((x) => { out.set(x.p.id, x); const k = pkNorm(x.p.brand); if (!byBrand.has(k)) byBrand.set(k, []); byBrand.get(k).push(x); });
     const clsOf = (r) => (r.source === 'Paid' ? 'External' : 'Internal');
     const itemFor = (items, tk) => items.find((i) => i.key === tk) || items.find((i) => i.key === 'any type');
+    const fits = (x, tk) => x.amount || !!itemFor(x.items, tk); // a budget package takes any creative type
     const cycleOf = (x, d) => x.cycles && x.cycles.find((c) => c.from <= d && d <= c.to);
     // Shared with the client (awaiting approval) and rejected by the client, counted separately from delivered
     rows.forEach((r) => {
       const sh = r.stage === 'Shared' || r.stage === 'No update', rj = r.stage === 'Rejected'; if (!sh && !rj) return;
       const list = byBrand.get(pkNorm(r.brand)); if (!list) return; const d = r.eta || r.req || '', cls = clsOf(r), tk = pkNorm(r.type);
-      list.forEach((x) => { if (x.p.status === 'Closed' || !(x.p.from === 'Both' || x.p.from === cls) || d < x.p.date || (x.p.end && d > x.p.end)) return; if (!itemFor(x.items, tk)) return; if (x.kind === 'Monthly') { const c = x.cycles[x.cycles.length - 1]; if (!c || d < c.from) return; } if (sh) x.shared++; else x.rejected++; });
+      list.forEach((x) => { if (x.p.status === 'Closed' || !(x.p.from === 'Both' || x.p.from === cls) || d < x.p.date || (x.p.end && d > x.p.end)) return; if (!fits(x, tk)) return; if (x.kind === 'Monthly') { const c = x.cycles[x.cycles.length - 1]; if (!c || d < c.from) return; } if (sh) x.shared++; else x.rejected++; });
     });
     rows.forEach((r) => {
       if (!r.open) return; const list = byBrand.get(pkNorm(r.brand)); if (!list) return;
@@ -1860,6 +1884,7 @@
         if (!(x.p.from === 'Both' || x.p.from === cls)) return;
         let items = x.items;
         if (x.kind === 'Monthly') { const c = x.cycles[x.cycles.length - 1]; if (!c || (r.req || '') < c.from) return; items = c.items; } else if ((r.req || '') < x.p.date) return;
+        if (x.amount) { x.openN++; x.openCost += pkRateOf(x, r.type) || 0; return; }
         const it = itemFor(items, tk); if (it) it.open += r.qty || 1;
       });
     });
@@ -1869,22 +1894,28 @@
       let units = r.qty || 1, last = null;
       for (const x of cands) {
         const cyc = x.kind === 'Monthly' ? cycleOf(x, D) : null; if (x.kind === 'Monthly' && !cyc) continue;
+        if (x.amount) { for (let i = 0; i < units; i++) (cyc ? cyc.ledger : x.ledger).push({ type: r.type || 'Unspecified', cost: pkRateOf(x, r.type), date: D, id: r.id }); units = 0; last = null; break; }
         const it = itemFor(cyc ? cyc.items : x.items, tk); if (!it) continue; last = { x, it };
-        let take;
         if (x.kind === 'Monthly') { it.raw += units; units = 0; break; } // a plan's extra carries to the next month (worked out below)
-        if (x.amount) { take = it.rate ? Math.min(units, Math.max(0, Math.floor((x.p.amount - x.value) / it.rate + 1e-9))) : 0; x.value += take * it.rate; }
-        else take = Math.min(units, it.qty - it.used);
+        const take = Math.min(units, it.qty - it.used);
         if (take > 0) { it.used += take; units -= take; }
         if (!units) break;
       }
       if (!units) return;
-      if (last) { last.it.over += units; if (last.x.amount) last.x.overValue += units * last.it.rate; } // delivered beyond what was bought
+      if (last) last.it.over += units; // delivered beyond what was bought
       else if (cands.length) { const x = cands[cands.length - 1], cyc = x.kind === 'Monthly' ? cycleOf(x, D) : null, m = cyc ? cyc.outside : x.outside; m.set(r.type || 'Unspecified', (m.get(r.type || 'Unspecified') || 0) + units); } // a type the package does not include
     });
-    // Monthly plans: what is delivered beyond a month's quantity counts toward the next month; only the current
-    // month's excess stays as extra (it will count toward next month).
-    ps.forEach((x) => { if (x.kind !== 'Monthly' || !x.cycles) return; const carry = new Map();
-      x.cycles.forEach((c, i) => c.items.forEach((it) => { it.carryIn = carry.get(it.key) || 0; const tot = it.raw + it.carryIn; it.used = Math.min(tot, it.qty); const ex = Math.max(0, tot - it.qty); it.carryOut = ex; if (i < x.cycles.length - 1) carry.set(it.key, ex); else it.over = ex; })); });
+    ps.forEach((x) => {
+      if (x.amount) {
+        const budget = x.p.amount || 0;
+        if (x.cycles) { let inV = 0, inN = 0; x.cycles.forEach((c, i) => { c.money = pkSettle(c.ledger, budget, inV, inN); const last2 = i === x.cycles.length - 1; c.money.carryV = last2 ? 0 : c.money.excess; c.money.carryN = last2 ? 0 : c.money.extraN; inV = c.money.carryV; inN = c.money.carryN; }); x.money = x.cycles.length ? x.cycles[x.cycles.length - 1].money : pkSettle([], budget, 0, 0); }
+        else x.money = pkSettle(x.ledger, budget, 0, 0);
+        return;
+      }
+      // Monthly plans by quantity: what is delivered beyond a month's quantity counts toward the next month.
+      if (x.kind !== 'Monthly' || !x.cycles) return; const carry = new Map();
+      x.cycles.forEach((c, i) => c.items.forEach((it) => { it.carryIn = carry.get(it.key) || 0; const tot = it.raw + it.carryIn; it.used = Math.min(tot, it.qty); const ex = Math.max(0, tot - it.qty); it.carryOut = ex; if (i < x.cycles.length - 1) carry.set(it.key, ex); else it.over = ex; }));
+    });
     return out;
   }
   const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
@@ -1914,19 +1945,22 @@
       lifeTotal = x.cycles.reduce((a, c) => a + sumQty(c.items), 0); lifeUsed = x.cycles.reduce((a, c) => a + sumUsed(c.items), 0);
     }
     if (x.amount) {
-      unit = '₹'; total = p.amount || 0; used = Math.min(x.value, total); left = Math.max(0, total - x.value);
-      overUnits = items.reduce((a, it) => a + it.over, 0) + outN(outside); lifeTotal = 0; lifeUsed = 0;
+      const m = x.money || pkSettle([], p.amount || 0, 0, 0);
+      unit = '₹'; total = p.amount || 0; used = m.used; left = m.left; overUnits = m.extraN; lifeTotal = 0; lifeUsed = 0;
+      x.value = m.spent; x.overValue = m.excess;
     } else {
       total = sumQty(items); used = sumUsed(items); left = Math.max(0, total - used); overUnits = items.reduce((a, it) => a + it.over, 0) + outN(outside);
       if (kind !== 'Monthly') { lifeTotal = total; lifeUsed = used; }
     }
-    const open = items.reduce((a, it) => a + it.open, 0), minRate = x.amount ? Math.min(...items.map((it) => it.rate).filter(Boolean), Infinity) : 0;
+    const open = x.amount ? x.openN : items.reduce((a, it) => a + it.open, 0);
+    const priced = (PK.priceList || []).map((pp) => pp.price).filter((v) => v > 0).concat(x.items.map((it) => it.rate).filter(Boolean)), minRate = x.amount ? (priced.length ? Math.min(...priced) : Infinity) : 0;
     const done = x.amount ? left < minRate : left === 0;
     const st = p.status === 'Closed' ? 'closed' : kind === 'Monthly' ? (ended ? 'ended' : 'running') : done ? 'complete' : 'running';
     const due = items.filter((it) => !x.amount && it.qty > it.used).map((it) => ({ type: it.type, n: it.qty - it.used }));
-    const extra = items.filter((it) => it.over).map((it) => ({ type: it.type, n: it.over })).concat([...outside].map(([t, n]) => ({ type: t, n, outside: true })));
-    const attention = st === 'running' && (x.amount ? open > 0 && left < minRate * open : kind !== 'Monthly' && open > left);
-    return { shared: x.shared, rejected: x.rejected, kind, unit, total, used, left, overUnits, over: overUnits, open, st, attention, pct: total ? Math.min(100, Math.round(used / total * 100)) : 0, items, outside, cycle, lifeTotal, lifeUsed, billed, next, ended, due, extra, value: x.value, overValue: x.overValue };
+    const extra = x.amount ? (x.money && x.money.excess > 0 ? [{ type: x.money.extraN === 1 ? 'creative' : 'creatives', n: x.money.extraN, amount: x.money.excess }] : []) : items.filter((it) => it.over).map((it) => ({ type: it.type, n: it.over })).concat([...outside].map(([t, n]) => ({ type: t, n, outside: true })));
+    const attention = st === 'running' && (x.amount ? open > 0 && x.openCost > left : kind !== 'Monthly' && open > left);
+    const gst = pkGst();
+    return { money: x.money, gst, gstOf: (v) => Math.round(v * gst) / 100, openCost: x.openCost, shared: x.shared, rejected: x.rejected, kind, unit, total, used, left, overUnits, over: overUnits, open, st, attention, pct: total ? Math.min(100, Math.round(used / total * 100)) : 0, items, outside, cycle, lifeTotal, lifeUsed, billed, next, ended, due, extra, value: x.value, overValue: x.overValue };
   }
   const pkNum = (f, n) => (f.unit === '₹' ? inr(n) : CO.num(n));
   const pkWhen = (w, d) => { if (!w) return true; const t = CO.today(); if (w === 'month') return d.slice(0, 7) === t.slice(0, 7); if (w === '3m') { const x = new Date(t); x.setMonth(x.getMonth() - 3); return d >= x.toISOString().slice(0, 10); } if (w === 'year') return d.slice(0, 4) === t.slice(0, 4); if (w === 'lastyear') return d.slice(0, 4) === String(+t.slice(0, 4) - 1); return true; };
@@ -1967,7 +2001,7 @@
     const tiles = pkEl('div', 'pk-tiles');
     [['Orders', CO.num(all.length), runningP.length + ' running · ' + brands.size + ' brands', ''], ['Repeat clients', CO.num(repeat), brands.size ? Math.round(repeat / brands.size * 100) + '% of brands ordered again' : '', ''],
       ['Creatives delivered', CO.num(deliv) + ' / ' + CO.num(bought), bought ? Math.round(deliv / bought * 100) + '% of creatives bought' : '', ''], ['Still due', CO.num(due), 'on running orders (this month for plans)', ''],
-      ['Extra delivered', CO.num(extra), extra ? 'beyond what was bought: check the orders' : 'nothing beyond what was bought', extra ? 'warn' : ''], ['Value', inr(value), perMonth ? inr(perMonth) + ' a month from ' + monthly.length + ' monthly plan' + (monthly.length === 1 ? '' : 's') : 'incl. tax', '']].forEach(([lab, v, s2, cls]) => {
+      ['Extra delivered', CO.num(extra), extra ? 'beyond what was bought: check the orders' : 'nothing beyond what was bought', extra ? 'warn' : ''], ['Value (excl. GST)', inr(value), '+ GST ' + pkGst() + '% = ' + inr(value * (1 + pkGst() / 100)) + (perMonth ? ' · ' + inr(perMonth) + ' a month from plans' : ''), '']].forEach(([lab, v, s2, cls]) => {
       const t = pkEl('div', 'pk-tile' + (cls ? ' ' + cls : '')); t.append(pkEl('b', '', v), pkEl('span', '', lab)); if (s2) t.append(pkEl('small', '', s2));
       if (lab === 'Extra delivered' && extra) { t.tabIndex = 0; t.setAttribute('role', 'button'); t.title = 'Show orders with extra creatives'; const go = () => { PKV.view = 'orders'; PKV.status = 'over'; PKV.page = 1; pkSaveView(); dash.draw('packages'); }; t.addEventListener('click', go); t.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); }); }
       tiles.append(t);
@@ -2059,11 +2093,11 @@
         const f = F.get(p.id), o = ord.get(p.id), open = PKV.open === p.id, kind = pkKind(p);
         const tr = pkEl('tr', 'pk-row' + (open ? ' open' : '') + (f.overUnits ? ' has-extra' : '')); tr.tabIndex = 0; tr.setAttribute('aria-expanded', String(open)); tr.setAttribute('aria-label', p.brand + ', ' + ordinal(o.n) + ' order: details');
         const c1 = td(tr, 'Order', 'pk-brand-c'); c1.append(pkEl('b', '', p.brand)); if (o.of > 1) c1.append(pkEl('span', 'pk-ord' + (o.n > 1 ? ' rep' : ''), ordinal(o.n) + ' order')); c1.append(pkEl('small', 'pk-id', p.id));
-        const kc = td(tr, 'Type'); kc.append(pkEl('span', 'pk-kind k-' + kind.toLowerCase(), kind === 'Custom' ? (pkByAmount(p) ? 'Custom · ₹' : 'Custom') : kind === 'Monthly' ? 'Monthly' : 'Fixed')); kc.append(pkEl('small', 'pk-id', p.from === 'Both' ? 'Int + Ext' : p.from));
+        const kc = td(tr, 'Type'); kc.append(pkEl('span', 'pk-kind k-' + kind.toLowerCase(), (kind === 'Custom' ? 'Custom' : kind === 'Monthly' ? 'Monthly' : 'Fixed') + (pkByAmount(p) ? ' · ₹' : ''))); kc.append(pkEl('small', 'pk-id', p.from === 'Both' ? 'Int + Ext' : p.from));
         td(tr, kind === 'Monthly' ? 'Started' : 'Purchased', 'pk-muted').textContent = CO.fmtDate(p.date, true) + (kind === 'Monthly' && p.end ? ' – ' + CO.fmtDate(p.end, true) : '');
         td(tr, kind === 'Monthly' ? 'Delivered this month' : 'Delivered').append(prog(f, f.used, f.total, f.st, kind === 'Monthly' && f.cycle ? 'Month ' + f.cycle.n + ':' : ''));
         td(tr, 'Still due', 'num').textContent = f.st === 'closed' || f.st === 'ended' ? '—' : pkNum(f, f.left);
-        td(tr, 'Value', 'num').textContent = kind === 'Monthly' ? inr(p.amount) + ' /mo' : p.amount ? inr(p.amount) : '—';
+        td(tr, 'Value', 'num').textContent = kind === 'Monthly' ? inr(p.amount) + ' /mo' : p.amount ? inr(p.amount) : '—'; tr.lastChild.title = 'Excluding GST';
         const sc = td(tr, 'Status'); sc.append(pkEl('span', 'pk-chip s-' + (f.attention ? 'attention' : f.st), f.attention ? 'Beyond package' : f.st === 'complete' ? 'Complete' : f.st === 'ended' ? 'Ended' : f.st === 'closed' ? 'Closed' : kind === 'Monthly' && f.next ? 'Bills ' + CO.fmtDate(f.next) : 'Running'));
         const cv = td(tr, '', 'pk-chev-c'); cv.append(pkEl('span', 'pk-chev'));
         const tog = () => { PKV.open = open ? '' : p.id; results(); };
@@ -2094,12 +2128,33 @@
     const kind = pkKind(p);
     // the headline: what is still due and what is extra, by type
     const sumLine = pkEl('div', 'pk-sumline');
-    const dueTxt = f.due.length ? f.due.map((d) => d.n + ' ' + d.type).join(', ') + ' still due' : f.unit === '₹' ? inr(f.left) + ' of ' + inr(f.total) + ' left' : 'Nothing due';
+    const dueTxt = f.due.length ? f.due.map((d) => d.n + ' ' + d.type).join(', ') + ' still due' : f.unit === '₹' ? inr(f.left) + ' of ' + inr(f.total) + ' left (excl. GST)' : 'Nothing due';
     sumLine.append(pkEl('span', 'pk-sum-due' + (f.due.length || f.unit === '₹' ? '' : ' ok'), dueTxt));
-    if (f.extra.length) sumLine.append(pkEl('span', 'pk-sum-extra', f.extra.map((e) => e.n + ' ' + e.type + (e.outside ? ' (not in the package)' : '')).join(', ') + ' extra'));
+    if (f.extra.length) sumLine.append(pkEl('span', 'pk-sum-extra', f.unit === '₹' ? f.extra[0].n + ' ' + f.extra[0].type + ' · ' + inr(f.extra[0].amount) + ' beyond the budget' + (kind === 'Monthly' ? ', counts toward next month' : '') : f.extra.map((e) => e.n + ' ' + e.type + (e.outside ? ' (not in the package)' : '')).join(', ') + ' extra'));
     left.append(pkEl('h3', 'pk-h3', kind === 'Monthly' ? (f.cycle ? 'Month ' + f.cycle.n + ': ' + CO.fmtDate(f.cycle.from, true) + ' – ' + CO.fmtDate(f.cycle.to, true) : 'Starts ' + CO.fmtDate(p.date, true)) : f.unit === '₹' ? 'Spent by creative type' : 'Creatives in this order'), sumLine);
     const types = pkEl('div', 'pk-types2');
-    f.items.forEach((it) => {
+    if (f.unit === '₹') {
+      // money: base, GST and total kept apart; spend and balance always excluding GST
+      const m = f.money, g2 = f.gst, gs = (v) => [inr(v), inr(f.gstOf(v)), inr(v + f.gstOf(v))];
+      const mt = pkEl('table', 'pk-money'); const th = pkEl('tr'); ['', 'Base (excl. GST)', 'GST ' + g2 + '%', 'Total incl. GST'].forEach((h) => th.append(pkEl('th', '', h))); mt.append(th);
+      const mrow = (l, v, cls) => { const r = pkEl('tr', cls || ''); r.append(pkEl('td', '', l)); gs(v).forEach((x2) => r.append(pkEl('td', 'num', x2))); mt.append(r); };
+      mrow(kind === 'Monthly' ? 'Monthly budget' : 'Package amount', f.total);
+      if (m.inV) mrow('Carried in from last month', m.inV, 'carry');
+      mrow('Spent on delivered creatives', m.spent - m.inV); mrow('Balance', f.left, 'bal'); if (m.excess) mrow(kind === 'Monthly' ? 'Extra → next month' : 'Extra beyond the budget', m.excess, 'ext');
+      left.append(mt);
+      if (m.inV) left.append(pkEl('p', 'pk-carry', inr(m.inV) + ' (' + m.inN + ' creative' + (m.inN === 1 ? '' : 's') + ') delivered beyond last month’s budget is counted in this month.'));
+      m.byType.forEach((t) => {
+        const pr = pkRateOf(x, t.type), r = pkEl('div', 'pk-type2' + (t.extra ? ' over' : '') + (t.unpriced ? ' unpriced' : ''));
+        r.append(pkEl('span', 'pk-tt', t.type)); const b = pkEl('span', 'pk-pbar2'); const fi = pkEl('i'); fi.style.width = (f.total ? Math.min(100, t.cost / f.total * 100) : 0) + '%'; b.append(fi);
+        r.append(b, pkEl('span', 'pk-tn', t.n + ' × ' + (pr == null ? 'no price' : inr(pr)) + ' = ' + inr(t.cost)));
+        const tl = pkEl('span', 'pk-tl'); if (t.unpriced) tl.append(pkEl('span', 'pk-noprice', 'Set a price')); else if (t.extra) tl.append(pkEl('span', 'pk-extra', '+' + t.extra + ' extra')); r.append(tl); types.append(r);
+      });
+      if (!m.byType.length) types.append(pkEl('p', 'co-note', 'Nothing delivered yet' + (kind === 'Monthly' ? ' this month.' : '.')));
+      if (m.unpriced) left.append(pkEl('p', 'pk-warn', m.unpriced + ' delivered creative' + (m.unpriced === 1 ? ' has a type' : 's have types') + ' with no price yet, so ' + (m.unpriced === 1 ? 'it is' : 'they are') + ' not counted. Add the price in Access › Pricing.'));
+      // what the balance still buys
+      if (f.left > 0 && f.st === 'running') { const opts = (PK.priceList || []).filter((pp) => pp.price > 0).map((pp) => ({ type: pp.type, price: pkRateOf(x, pp.type) || pp.price })).sort((a, b) => b.price - a.price).slice(0, 6); if (opts.length) { const can = pkEl('div', 'pk-can'); can.append(pkEl('span', 'pk-h3', 'The balance covers about')); opts.forEach((o2) => can.append(pkEl('span', 'pk-can-i', Math.floor(f.left / o2.price) + ' × ' + o2.type))); left.append(can); } }
+    }
+    (f.unit === '₹' ? [] : f.items).forEach((it) => {
       const lf = Math.max(0, it.qty - it.used), r = pkEl('div', 'pk-type2' + (it.over ? ' over' : f.unit !== '₹' && !lf ? ' done' : ''));
       r.append(pkEl('span', 'pk-tt', it.type));
       const b = pkEl('span', 'pk-pbar2'); const fi = pkEl('i');
@@ -2111,25 +2166,25 @@
     (f.extra.filter((e) => e.outside)).forEach((e) => { const r = pkEl('div', 'pk-type2 over outside'); r.append(pkEl('span', 'pk-tt', e.type), pkEl('span', 'pk-note2', 'Not in this package'), pkEl('span', 'pk-tn', e.n + ' delivered'), (() => { const t = pkEl('span', 'pk-tl'); t.append(pkEl('span', 'pk-extra', '+' + e.n + ' extra')); return t; })()); types.append(r); });
     left.append(types);
     const bd = pkEl('div', 'pk-breakdown'); bd.setAttribute('aria-label', 'Breakdown');
-    [['Final delivered', f.unit === '₹' ? f.items.reduce((a, it) => a + it.used, 0) : f.used, 'ok'], ['Shared, awaiting approval', f.shared, 'sh'], ['Rejected by client', f.rejected, 'rj']].forEach(([t2, v, c2]) => { const b2 = pkEl('div', 'pk-bd ' + c2); b2.append(pkEl('b', '', CO.num(v)), pkEl('span', '', t2)); bd.append(b2); });
+    [['Final delivered', f.unit === '₹' ? f.money.byType.reduce((a, t) => a + t.n, 0) + (f.money.inN || 0) : f.used, 'ok'], ['Shared, awaiting approval', f.shared, 'sh'], ['Rejected by client', f.rejected, 'rj']].forEach(([t2, v, c2]) => { const b2 = pkEl('div', 'pk-bd ' + c2); b2.append(pkEl('b', '', CO.num(v)), pkEl('span', '', t2)); bd.append(b2); });
     left.append(bd);
     const carried = f.items.reduce((a, it) => a + (it.carryIn || 0), 0);
     if (kind === 'Monthly' && carried) left.append(pkEl('p', 'pk-carry', carried + ' extra from last month counted in this month: ' + f.items.filter((it) => it.carryIn).map((it) => it.carryIn + ' ' + it.type).join(', ') + '.'));
-    if (kind === 'Monthly' && f.overUnits) left.append(pkEl('p', 'pk-carry', f.overUnits + ' delivered beyond this month’s quantity: they will count toward next month.'));
+    if (kind === 'Monthly' && f.overUnits && f.unit !== '₹') left.append(pkEl('p', 'pk-carry', f.overUnits + ' delivered beyond this month’s quantity: they will count toward next month.'));
     if (f.attention) left.append(pkEl('p', 'pk-warn', f.unit === '₹' ? f.open + ' requests are open for ' + p.brand + ' and only ' + inr(f.left) + ' is left in this package.' : f.left ? f.open + ' requests are open for ' + p.brand + ' but only ' + f.left + ' creatives are left in this order.' : 'This order is complete and ' + f.open + ' more request' + (f.open === 1 ? ' is' : 's are') + ' open. Is this a new order? Add it before the team picks them up.'));
     else if (f.st === 'complete' && !f.extra.length) left.append(pkEl('p', 'pk-ok', 'All purchased creatives delivered.'));
     if (kind === 'Monthly' && x.cycles && x.cycles.length) {
       const mh = pkEl('div', 'pk-months'); mh.append(pkEl('h3', 'pk-h3', 'Month by month'));
       const ml = pkEl('ol', 'pk-mlist');
-      x.cycles.slice().reverse().slice(0, 12).forEach((cy) => { const q2 = cy.items.reduce((a, it) => a + it.qty, 0), u2 = cy.items.reduce((a, it) => a + Math.min(it.used, it.qty), 0), ov = cy.items.reduce((a, it) => a + it.over, 0) + [...cy.outside.values()].reduce((a, n) => a + n, 0), cin = cy.items.reduce((a, it) => a + it.carryIn, 0), cout = cy.items.reduce((a, it) => a + it.carryOut, 0); const li = pkEl('li'); li.append(pkEl('span', 'pk-m-n', 'Month ' + cy.n), pkEl('span', 'pk-m-d', CO.fmtDate(cy.from) + ' – ' + CO.fmtDate(cy.to)), pkEl('b', '', u2 + ' / ' + q2)); if (cin) li.append(pkEl('span', 'pk-carry-in', cin + ' carried in')); if (cout && cy !== f.cycle) li.append(pkEl('span', 'pk-extra', '+' + cout + ' → next month')); else if (ov) li.append(pkEl('span', 'pk-extra', '+' + ov + ' extra')); else if (u2 < q2 && cy !== f.cycle) li.append(pkEl('span', 'pk-m-short', (q2 - u2) + ' not used')); ml.append(li); });
+      x.cycles.slice().reverse().slice(0, 12).forEach((cy) => { if (cy.money) { const mm = cy.money, li = pkEl('li'); li.append(pkEl('span', 'pk-m-n', 'Month ' + cy.n), pkEl('span', 'pk-m-d', CO.fmtDate(cy.from) + ' – ' + CO.fmtDate(cy.to)), pkEl('b', '', inr(mm.used) + ' / ' + inr(p.amount))); if (mm.inV) li.append(pkEl('span', 'pk-carry-in', inr(mm.inV) + ' carried in')); if (mm.carryV) li.append(pkEl('span', 'pk-extra', '+' + inr(mm.carryV) + ' · ' + mm.carryN + ' → next month')); else if (mm.excess) li.append(pkEl('span', 'pk-extra', '+' + inr(mm.excess) + ' extra')); else if (mm.left && cy !== f.cycle) li.append(pkEl('span', 'pk-m-short', inr(mm.left) + ' not used')); ml.append(li); return; } const q2 = cy.items.reduce((a, it) => a + it.qty, 0), u2 = cy.items.reduce((a, it) => a + Math.min(it.used, it.qty), 0), ov = cy.items.reduce((a, it) => a + it.over, 0) + [...cy.outside.values()].reduce((a, n) => a + n, 0), cin = cy.items.reduce((a, it) => a + it.carryIn, 0), cout = cy.items.reduce((a, it) => a + it.carryOut, 0); const li = pkEl('li'); li.append(pkEl('span', 'pk-m-n', 'Month ' + cy.n), pkEl('span', 'pk-m-d', CO.fmtDate(cy.from) + ' – ' + CO.fmtDate(cy.to)), pkEl('b', '', u2 + ' / ' + q2)); if (cin) li.append(pkEl('span', 'pk-carry-in', cin + ' carried in')); if (cout && cy !== f.cycle) li.append(pkEl('span', 'pk-extra', '+' + cout + ' → next month')); else if (ov) li.append(pkEl('span', 'pk-extra', '+' + ov + ' extra')); else if (u2 < q2 && cy !== f.cycle) li.append(pkEl('span', 'pk-m-short', (q2 - u2) + ' not used')); ml.append(li); });
       mh.append(ml); if (x.cycles.length > 12) mh.append(pkEl('p', 'co-note', 'Latest 12 of ' + x.cycles.length + ' months.')); left.append(mh);
     }
     const meta = pkEl('dl', 'pk-meta');
     const fact = (k, v) => { if (!v) return; meta.append(pkEl('dt', '', k), pkEl('dd', '', v)); };
-    fact('Package type', PK_KIND[kind] + (kind === 'Custom' ? (pkByAmount(p) ? ', by amount' : ', by number of creatives') : ''));
+    fact('Package type', PK_KIND[kind] + (pkByAmount(p) ? ', by budget (each creative at its price, excl. GST)' : kind === 'Custom' ? ', by number of creatives' : ''));
     fact('Order ID', p.id);
-    if (kind === 'Monthly') { fact('Billing', inr(p.amount) + ' a month, from ' + CO.fmtDate(p.date, true) + (p.end ? ' to ' + CO.fmtDate(p.end, true) : ' (no end date)')); fact('Billed so far', inr(f.billed) + ' for ' + (x.cycles ? x.cycles.length : 0) + ' month' + ((x.cycles || []).length === 1 ? '' : 's')); fact('Next bill', f.next ? CO.fmtDate(f.next, true) : f.ended ? 'Plan ended' : ''); fact('Carry forward', 'Extra delivered in a month counts toward the next month; unused creatives do not carry over'); }
-    else fact('Amount', p.amount ? inr(p.amount) + ' incl. tax' : '');
+    if (kind === 'Monthly') { fact('Billing', inr(p.amount) + ' + GST ' + f.gst + '% (' + inr(f.gstOf(p.amount)) + ') = ' + inr(p.amount + f.gstOf(p.amount)) + ' a month, from ' + CO.fmtDate(p.date, true) + (p.end ? ' to ' + CO.fmtDate(p.end, true) : ' (no end date)')); fact('Billed so far', inr(f.billed) + ' + GST ' + inr(f.gstOf(f.billed)) + ' = ' + inr(f.billed + f.gstOf(f.billed)) + ' for ' + (x.cycles ? x.cycles.length : 0) + ' month' + ((x.cycles || []).length === 1 ? '' : 's')); fact('Next bill', f.next ? CO.fmtDate(f.next, true) : f.ended ? 'Plan ended' : ''); fact('Carry forward', 'Extra delivered in a month counts toward the next month; unused creatives do not carry over'); }
+    else fact('Amount', p.amount ? inr(p.amount) + ' + GST ' + f.gst + '% (' + inr(f.gstOf(p.amount)) + ') = ' + inr(p.amount + f.gstOf(p.amount)) : '');
     fact('Counts from', p.from === 'Both' ? 'Internal + External sheets' : p.from + ' sheet'); fact('Notes', p.notes); fact('Added', (p.createdBy ? p.createdBy.split('@')[0] : '') + (p.created ? ' · ' + CO.fmtDate(String(p.created).slice(0, 10), true) : ''));
     left.append(meta);
     const side = pkEl('div', 'pk-det-side');
@@ -2148,6 +2203,55 @@
     g.append(left, side); c.append(g);
     return tr;
   }
+  /* ================= Pricing (Access › Pricing; on Brands for people given Pricing who are not Admins) =================
+     One price per creative type in ₹ excluding GST, and the GST rate. Budget packages charge each delivered creative at
+     its price; changes apply to every calculation at once. Admins by default; the owner can give it to anyone. */
+  const PRC = { draft: null, q: '', busy: false };
+  dash.draw('pricing', (el) => {
+    const can = A.mode === 'auth' && A.user && (A.user.owner || (A.user.perms && A.user.perms.pricing)); if (!can) { el.replaceChildren(); return; }
+    if (!PK.priceList && !PRC.busy) { PRC.busy = true; callApi({ action: 'pricing' }, true).then((r) => { if (r.ok) pkSetPrices(r); else PK.priceList = []; }).catch(() => { PK.priceList = []; }).finally(() => { PRC.busy = false; document.querySelectorAll('[data-draw="pricing"]').forEach(() => {}); dash.draw('pricing'); dash.draw('packages'); }); }
+    const focus = document.activeElement && el.contains(document.activeElement) ? document.activeElement.dataset.pk : null;
+    el.replaceChildren();
+    const head = pkEl('div', 'co-card-head'); const l = pkEl('div'); l.append(pkEl('h2', 'co-h2', 'Pricing'), pkEl('p', 'co-note', 'The price of each creative type in ₹, excluding GST. Budget packages charge every delivered creative at its price; GST is worked out separately. Changes apply to every package at once and are in the activity log.')); head.append(l); el.append(head);
+    if (!PK.priceList) { el.append(pkEl('p', 'co-note', 'Loading prices…')); return; }
+    if (!PRC.draft) { PRC.draft = { gst: PK.gst == null ? 18 : PK.gst, rows: new Map() }; PK.priceList.forEach((p2) => PRC.draft.rows.set(pkNorm(p2.type), { type: p2.type, price: p2.price, updatedBy: p2.updatedBy, updated: p2.updated })); }
+    const D = PRC.draft, used = new Map(); (CO.rows(true) || []).forEach((r) => { if (r.type) used.set(pkNorm(r.type), { type: r.type, n: ((used.get(pkNorm(r.type)) || {}).n || 0) + 1 }); });
+    used.forEach((v, k) => { if (!D.rows.has(k)) D.rows.set(k, { type: v.type, price: null }); });
+    const top = pkEl('div', 'prc-top');
+    const gl = pkEl('label', 'prc-gst'); gl.append(pkEl('span', '', 'GST rate')); const gi = pkEl('input', 'co-input'); gi.type = 'number'; gi.min = '0'; gi.max = '50'; gi.step = '0.01'; gi.value = D.gst; gi.dataset.pk = 'gst'; gi.addEventListener('input', () => { D.gst = Number(gi.value); paintRows(); dirty(); }); gl.append(gi, pkEl('span', '', '%')); 
+    const sw = pkEl('label', 'pk-search'); const q = pkEl('input', 'co-input'); q.type = 'search'; q.placeholder = 'Search creative types'; q.value = PRC.q; q.dataset.pk = 'q'; q.setAttribute('aria-label', 'Search creative types'); q.addEventListener('input', () => { PRC.q = q.value; paintRows(); }); sw.append(q);
+    const addB = pkEl('button', 'co-btn', '+ Add a type'); addB.type = 'button'; addB.addEventListener('click', () => { const t = (prompt('Creative type, exactly as written in the sheets (e.g. AI Video - 30s):') || '').trim(); if (!t) return; if (!D.rows.has(pkNorm(t))) D.rows.set(pkNorm(t), { type: t, price: null }); PRC.q = t; dash.draw('pricing'); dirty(); });
+    top.append(gl, sw, addB); el.append(top);
+    const missing = [...D.rows.values()].filter((r) => r.price == null && used.has(pkNorm(r.type))).length;
+    if (missing) el.append(pkEl('p', 'pk-warn', missing + ' creative type' + (missing === 1 ? ' used in the sheets has' : 's used in the sheets have') + ' no price yet. Budget packages skip them until a price is set.'));
+    const tbl = pkEl('table', 'co-table prc-table'); const hr = pkEl('tr'); ['Creative type', 'Price (excl. GST)', 'GST', 'Total incl. GST', 'In the sheets', 'Last changed'].forEach((h, i) => { const th = pkEl('th', i && i < 5 ? 'num' : '', h); hr.append(th); }); const th0 = pkEl('thead'); th0.append(hr); const tb = pkEl('tbody'); tbl.append(th0, tb); el.append(tbl);
+    const act = pkEl('div', 'pm-act'); const save = pkEl('button', 'co-btn primary', 'Save prices'); save.type = 'button'; const undo = pkEl('button', 'co-btn', 'Undo changes'); undo.type = 'button'; act.append(save, undo); el.append(act);
+    const gstOf = (v) => Math.round(v * (Number(D.gst) || 0)) / 100;
+    function paintRows() {
+      tb.replaceChildren(); const ql = PRC.q.toLowerCase();
+      [...D.rows.values()].filter((r) => !ql || r.type.toLowerCase().includes(ql)).sort((a, b) => (a.price == null) - (b.price == null) || a.type.localeCompare(b.type)).forEach((r) => {
+        const tr = pkEl('tr', r.price == null ? 'noprice' : ''); tr.append(pkEl('td', '', r.type));
+        const c = pkEl('td', 'num'); const inp = pkEl('input', 'co-input prc-in'); inp.type = 'number'; inp.min = '0'; inp.step = '1'; inp.placeholder = 'Set price'; inp.value = r.price == null ? '' : r.price; inp.dataset.pk = 'p:' + r.type; inp.setAttribute('aria-label', 'Price of ' + r.type + ', excluding GST');
+        const g = pkEl('td', 'num'), t = pkEl('td', 'num'); const upd = () => { const v = r.price; g.textContent = v == null ? '—' : inr(gstOf(v)); t.textContent = v == null ? '—' : inr(v + gstOf(v)); };
+        inp.addEventListener('input', () => { r.price = inp.value === '' ? null : Math.max(0, Number(inp.value) || 0); tr.classList.toggle('noprice', r.price == null); upd(); dirty(); }); c.append(inp); upd();
+        tr.append(c, g, t, pkEl('td', 'num', used.has(pkNorm(r.type)) ? CO.num(used.get(pkNorm(r.type)).n) : '—'), pkEl('td', 'pk-muted', r.updatedBy ? r.updatedBy.split('@')[0] + (r.updated ? ' · ' + CO.fmtDate(String(r.updated).slice(0, 10)) : '') : ''));
+        tb.append(tr);
+      });
+    }
+    const snap = () => JSON.stringify([D.gst, [...D.rows.values()].filter((r) => r.price != null).map((r) => [r.type, r.price]).sort()]);
+    const start = JSON.stringify([PK.gst == null ? 18 : PK.gst, (PK.priceList || []).map((r) => [r.type, r.price]).sort()]);
+    function dirty() { const d = snap() !== start; save.disabled = !d; undo.hidden = !d; }
+    undo.addEventListener('click', () => { PRC.draft = null; dash.draw('pricing'); });
+    save.addEventListener('click', async () => {
+      if (!(Number(D.gst) >= 0 && Number(D.gst) <= 50)) { toast('GST must be between 0 and 50%.', true); return; }
+      save.disabled = true; save.textContent = 'Saving…';
+      try { const r = await callApi({ action: 'pricingSave', gst: Number(D.gst), prices: [...D.rows.values()].filter((x) => x.price != null).map((x) => ({ type: x.type, price: x.price })) }); if (!r.ok) throw new Error(r.error === 'forbidden' ? 'You do not have Pricing access.' : r.error || 'Not saved'); pkSetPrices(r); PRC.draft = null; toast('Prices saved. Every package is recalculated.'); dash.draw('pricing'); dash.draw('packages'); }
+      catch (e) { toast(e.message, true); save.disabled = false; save.textContent = 'Save prices'; }
+    });
+    paintRows(); dirty();
+    if (focus) { const f2 = el.querySelector('[data-pk="' + CSS.escape(focus) + '"]'); if (f2) f2.focus(); }
+  });
+
   // ---- add / edit ----
   const $p = (id) => document.getElementById(id), pkDlg = $p('pk-dlg');
   const pkBrands = () => { const s = new Set((CO.rows(true) || []).map((r) => r.brand).filter((b) => b && b !== 'No brand')); (PK.list || []).forEach((p) => s.add(p.brand)); return [...s].sort((a, b) => a.localeCompare(b)); };
@@ -2156,40 +2260,43 @@
     const row = document.createElement('div'); row.className = 'pk-irow';
     const sel = document.createElement('select'); sel.className = 'co-select'; sel.setAttribute('aria-label', 'Creative type'); pkTypes().forEach((t) => sel.append(new Option(t, t))); sel.append(new Option('+ Other type…', '__new'));
     const other = document.createElement('input'); other.className = 'co-input'; other.placeholder = 'Type name'; other.maxLength = 60; other.hidden = true;
-    const byAmt = PK.form && PK.form.basis === 'amount' && PK.form.kind === 'Custom';
-    const q = document.createElement('input'); q.className = 'co-input pk-q'; q.type = 'number'; q.min = '1'; q.step = byAmt ? '1' : '1'; q.setAttribute('aria-label', byAmt ? 'Rate per creative (₹)' : 'Quantity'); q.placeholder = byAmt ? '₹ each' : ''; q.value = it ? (byAmt ? it.rate || '' : it.qty || 1) : byAmt ? '' : 1;
+    const byAmt = PK.form && PK.form.basis === 'amount';
+    const q = document.createElement('input'); q.className = 'co-input pk-q'; q.type = 'number'; q.min = '1'; q.step = byAmt ? '1' : '1'; q.setAttribute('aria-label', byAmt ? 'Rate per creative (₹)' : 'Quantity'); q.placeholder = byAmt ? (pkPrice(sel.value) != null ? 'List ₹' + pkPrice(sel.value) : '₹ each') : ''; q.value = it ? (byAmt ? it.rate || '' : it.qty || 1) : byAmt ? '' : 1;
     const x = document.createElement('button'); x.type = 'button'; x.className = 'icon-btn'; x.setAttribute('aria-label', 'Remove'); x.textContent = '×';
     if (it) { if ([...sel.options].some((o) => o.value === it.type)) sel.value = it.type; else { sel.value = '__new'; other.hidden = false; other.value = it.type; } } else sel.value = (pkTypes()[1] || 'Any type');
     sel.addEventListener('change', () => { other.hidden = sel.value !== '__new'; if (!other.hidden) other.focus(); pkSum(); });
     q.addEventListener('input', pkSum); x.addEventListener('click', () => { row.remove(); pkSum(); });
-    row.read = () => { const t = sel.value === '__new' ? other.value.trim() : sel.value, v = Number(q.value) || 0; return PK.form.kind === 'Custom' && PK.form.basis === 'amount' ? { type: t, rate: Math.round(v * 100) / 100, qty: 0 } : { type: t, qty: Math.round(v) }; };
+    row.read = () => { const t = sel.value === '__new' ? other.value.trim() : sel.value, v = Number(q.value) || 0; return PK.form.basis === 'amount' ? { type: t, rate: Math.round(v * 100) / 100, qty: 0 } : { type: t, qty: Math.round(v) }; };
     row.append(sel, other, q, x); return row;
   }
   const pkRows = () => [...$p('pk-items').children].map((r) => r.read());
   function pkSum() {
     const rows = pkRows(), n = rows.reduce((a, it) => a + (it.qty > 0 ? it.qty : 0), 0), F2 = PK.form;
-    $p('pk-total').textContent = F2.kind === 'Custom' && F2.basis === 'amount' ? rows.filter((it) => it.rate > 0).length + ' rate' + (rows.filter((it) => it.rate > 0).length === 1 ? '' : 's') + (Number($p('pk-amount').value) ? ' · ' + inr(Number($p('pk-amount').value)) + ' to spend' : '') : n + (n === 1 ? ' creative' : ' creatives') + (F2.kind === 'Monthly' ? ' a month' : ' in total');
+    $p('pk-total').textContent = F2.basis === 'amount' ? (rows.filter((it) => it.rate > 0).length ? rows.filter((it) => it.rate > 0).length + ' own rate' + (rows.filter((it) => it.rate > 0).length === 1 ? '' : 's') + ', others from the price list' : 'All types at the price list') : n + (n === 1 ? ' creative' : ' creatives') + (F2.kind === 'Monthly' ? ' a month' : ' in total');
     pkRepeat();
   }
   /* The package type changes the labels and fields: a monthly plan has a monthly amount, an optional end date and
      creatives per month; a custom package is by number of creatives or by amount (a rate per creative type). */
   function pkSetKind(kind, basis, keep) {
     const before = PK.form ? PK.form.kind + PK.form.basis : '';
-    PK.form = { kind, basis: kind === 'Custom' ? basis || 'creatives' : 'creatives' };
+    PK.form = { kind, basis: kind === 'Fixed' ? 'creatives' : basis || 'creatives' };
     $p('pk-kind').querySelectorAll('[data-k]').forEach((b) => { const on = b.dataset.k === kind; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
-    $p('pk-basis-row').hidden = kind !== 'Custom';
+    $p('pk-basis-row').hidden = kind === 'Fixed';
     $p('pk-basis').querySelectorAll('[data-b]').forEach((b) => { const on = b.dataset.b === PK.form.basis; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
     $p('pk-date-t').textContent = kind === 'Monthly' ? 'Starts on (billed every month from this date)' : 'Purchased on';
     $p('pk-end-l').hidden = kind !== 'Monthly'; if (kind !== 'Monthly') $p('pk-end').value = '';
-    $p('pk-amount-t').textContent = kind === 'Monthly' ? 'Monthly amount (₹, incl. tax)' : PK.form.basis === 'amount' ? 'Package amount (₹, incl. tax)' : 'Total amount (₹, incl. tax)';
+    $p('pk-amount-t').textContent = (kind === 'Monthly' ? (PK.form.basis === 'amount' ? 'Monthly budget' : 'Monthly amount') : PK.form.basis === 'amount' ? 'Budget' : 'Total amount') + ' (₹, excl. GST)';
     $p('pk-amount').required = kind === 'Monthly' || PK.form.basis === 'amount';
-    $p('pk-items-t').textContent = kind === 'Monthly' ? 'Creatives every month' : PK.form.basis === 'amount' ? 'Rate per creative type' : 'Creatives in the package';
+    $p('pk-items-t').textContent = PK.form.basis === 'amount' ? 'Special rates for this brand (optional, excl. GST)' : kind === 'Monthly' ? 'Creatives every month' : 'Creatives in the package';
+    pkGstLine();
     if (!keep && before && before !== PK.form.kind + PK.form.basis && (before.endsWith('amount') !== (PK.form.basis === 'amount'))) $p('pk-items').replaceChildren(pkItemRow(null)); // switching between rates and quantities
     pkSum();
   }
   $p('pk-kind').addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) pkSetKind(b.dataset.k, PK.form && PK.form.basis); });
-  $p('pk-basis').addEventListener('click', (e) => { const b = e.target.closest('[data-b]'); if (b) pkSetKind('Custom', b.dataset.b); });
-  $p('pk-amount').addEventListener('input', () => { if (PK.form && PK.form.basis === 'amount') pkSum(); });
+  $p('pk-basis').addEventListener('click', (e) => { const b = e.target.closest('[data-b]'); if (b) pkSetKind(PK.form.kind, b.dataset.b); });
+  // GST shown under the amount: base, GST and total, never mixed
+  function pkGstLine() { const v = Number($p('pk-amount').value) || 0, g = pkGst(), t = Math.round(v * g) / 100; $p('pk-gst').textContent = v ? inr(v) + ' + GST ' + g + '% ' + inr(t) + ' = ' + inr(v + t) + (PK.form && PK.form.kind === 'Monthly' ? ' a month' : '') : 'Enter the amount excluding GST; GST (' + g + '%) is added separately.'; }
+  $p('pk-amount').addEventListener('input', () => { pkGstLine(); if (PK.form && PK.form.basis === 'amount') pkSum(); });
   const pkBrandNow = () => ($p('pk-brand').value === '__new' ? $p('pk-newbrand').value.trim() : $p('pk-brand').value);
   /* A brand that already has orders: ask whether this is a new (repeat) order or an update to an existing one, so the
      same order is not entered twice and repeat orders are numbered correctly. Saving waits for the answer. */
@@ -2238,10 +2345,10 @@
   $p('pk-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const brand = $p('pk-brand').value === '__new' ? $p('pk-newbrand').value.trim() : $p('pk-brand').value;
-    const byAmt = PK.form.kind === 'Custom' && PK.form.basis === 'amount';
+    const byAmt = PK.form.basis === 'amount';
     const items = pkRows().filter((it) => it.type && (byAmt ? it.rate > 0 : it.qty > 0));
     const pkg = { brand, kind: PK.form.kind, basis: PK.form.basis, date: $p('pk-date').value, end: PK.form.kind === 'Monthly' ? $p('pk-end').value : '', amount: Number($p('pk-amount').value) || 0, from: $p('pk-from').value, items, notes: $p('pk-notes').value.trim(), status: $p('pk-closed').checked ? 'Closed' : 'Active' };
-    const err = !brand ? 'Choose or type a brand.' : !pkg.date ? (PK.form.kind === 'Monthly' ? 'Add the start date.' : 'Add the purchase date.') : (byAmt || PK.form.kind === 'Monthly') && !pkg.amount ? (PK.form.kind === 'Monthly' ? 'Add the monthly amount.' : 'Add the package amount.') : pkg.end && pkg.end < pkg.date ? 'The end date is before the start date.' : !items.length ? (byAmt ? 'Add at least one creative type with its rate.' : 'Add at least one creative type with a quantity.') : '';
+    const err = !brand ? 'Choose or type a brand.' : !pkg.date ? (PK.form.kind === 'Monthly' ? 'Add the start date.' : 'Add the purchase date.') : (byAmt || PK.form.kind === 'Monthly') && !pkg.amount ? (PK.form.kind === 'Monthly' ? 'Add the monthly amount.' : 'Add the package amount.') : pkg.end && pkg.end < pkg.date ? 'The end date is before the start date.' : !items.length && !byAmt ? 'Add at least one creative type with a quantity.' : '';
     if (err) { $p('pk-err').textContent = err; return; }
     $p('pk-save').disabled = true;
     let repeatAgain = false;
@@ -2972,9 +3079,9 @@
     if (!locked && u.status === 'Approved') {
       const P0 = u.perms || {}, first = (u.name || u.email).split(' ')[0];
       const box = el('fieldset', 'pm-box'); box.id = 'pm-box'; box.append(el('legend', '', 'What ' + first + ' can see and do'));
-      const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty };
+      const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty, pricing: !!P0.pricing };
       base.pages.add('mine');
-      const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty });
+      const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty, pr: o.pricing });
       // unsaved changes survive the 30-second refresh of the access list
       const st = PR.draft && PR.draft.email === u.email ? PR.draft.st : Object.assign({}, base, { pages: new Set(base.pages) });
       const snap = () => snapOf(st), start = snapOf(base);
@@ -2982,11 +3089,12 @@
       // [key, label, what View means, what Edit means (or '' when there is nothing to edit)]
       const ROWS = [['mine', 'My work', 'Their own tasks and to-dos (always on)', ''], ['today', 'Overview', 'Team numbers, Needs attention and charts', ''], ['standup', 'Stand-up', 'Stand-up cards and the Day plan', ''],
         ['tasks', 'Tasks', 'The task list', 'Change status, ETA, designer and priority (wherever tasks appear)'], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
-        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['health', 'Data health', 'Sheet checks and fixes needed', '']];
-      const level = (k) => k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
+        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', '']];
+      const level = (k) => k === 'pricing' ? (st.pricing ? 'edit' : 'hidden') : k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
         : !st.pages.has(k) ? 'hidden' : (k === 'tasks' && st.edit) || (k === 'team' && st.team) ? 'edit' : 'view';
       const setLevel = (k, v) => {
         if (k === 'mine') return;
+        if (k === 'pricing') { st.pricing = v === 'edit'; return; }
         if (k === 'packages') { st.packages = v === 'hidden' ? '' : v; if (v !== 'hidden') st.pages.add('brands'); return; }
         if (v === 'hidden') { st.pages.delete(k); if (k === 'tasks') st.edit = false; if (k === 'team') st.team = false; if (k === 'brands') st.packages = ''; return; }
         st.pages.add(k); if (k === 'tasks') st.edit = v === 'edit'; if (k === 'team') st.team = v === 'edit';
@@ -2998,7 +3106,7 @@
         const r = el('div', 'pm-row' + (k === 'packages' ? ' sub' : '')); r.setAttribute('role', 'row');
         const nm = el('div', 'pm-nm'); nm.append(el('b', '', label)); const hint = el('small', '', ''); nm.append(hint);
         const seg = el('div', 'pm-seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', label + ' access');
-        const opts = k === 'mine' ? [['view', 'View']] : eHint ? [['hidden', 'Hidden'], ['view', 'View'], ['edit', 'Edit']] : [['hidden', 'Hidden'], ['view', 'View']];
+        const opts = k === 'pricing' ? [['hidden', 'No access'], ['edit', 'Manage']] : k === 'mine' ? [['view', 'View']] : eHint ? [['hidden', 'Hidden'], ['view', 'View'], ['edit', 'Edit']] : [['hidden', 'Hidden'], ['view', 'View']];
         const btns = opts.map(([v, t]) => { const b = el('button', 'pm-opt o-' + v, t); b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.v = v; b.addEventListener('click', () => { setLevel(k, v); paint(); }); seg.append(b); return b; });
         segs.push({ k, btns, hint, vHint, eHint, r });
         r.append(nm, seg); grid.append(r);
@@ -3018,7 +3126,7 @@
       const row = el('div', 'pm-act');
       const save = el('button', 'co-btn primary', 'Save changes'); save.type = 'button';
       const undo = el('button', 'co-btn', 'Undo changes'); undo.type = 'button'; undo.addEventListener('click', () => { PR.draft = null; drawPerson(); });
-      save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
+      save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty, pricing: st.pricing }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
       row.append(save, undo);
       if (u.custom) { const rs = el('button', 'co-btn ghost', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
       box.append(row); act.append(box);

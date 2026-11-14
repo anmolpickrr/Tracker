@@ -175,6 +175,14 @@ Built to stay quick with thousands of orders:
 
 Every order also shows a breakdown of **Final delivered** (DONE), **Shared** (awaiting client approval, including no update) and **Rejected by client**. A package can be closed to stop counting. Only the owner sees packages by default; on the Access page the owner or an Admin gives anyone *View* or *Edit*. Every change is in the activity log.
 
+**Budget packages.** A monthly plan or a custom package can be *by budget* instead of by number of creatives (e.g. ₹50,000 a month, excluding GST). Every delivered creative is charged at its price from **Access › Pricing** (or a special rate set on that package), so any mix of types works: more videos simply use more of the budget. The order shows the budget, what was spent, the balance and roughly how many more of each type the balance covers. If a month's deliveries cost more than the budget, the extra amount and creatives are highlighted and carried into the next month (shown as *carried in*), reducing that month's balance. A delivered creative whose type has no price yet is flagged *Set a price* and not counted until it has one.
+
+**GST.** All prices and package amounts are entered **excluding GST**. GST (18% unless an Admin changes it) is worked out separately and shown as Base, GST and Total incl. GST; balances and carry-forward always use the base amounts, never GST-inclusive ones.
+
+## Pricing (Access › Pricing)
+
+One price per creative type (as written in the sheets' Creative Type column), in ₹ excluding GST, plus the GST rate. For tiers, use distinct types in the sheet (e.g. "AI Video - 30s" and "AI Video - 60s"), each with its own price. Types used in the sheets without a price are listed so nothing is missed. Saving recalculates every package at once; each change is in the activity log. Admins have access by default; the owner or an Admin can give **Pricing: Manage** to anyone on the Access page (they then see Pricing on the Brands page).
+
 ## Rescheduling and reassigning (Admins only)
 
 Changing a task's **ETA** or **who it is assigned to** is for Admins (and the owner) only, from any screen; the web app refuses it for everyone else, and the task editor shows those fields locked with a note. Editors can still change status, priority and quantity. In the editor, Admins have quick buttons: *Today*, *Tomorrow*, *Next working day* (Monday to Friday) and *+1 week*. A rescheduled or reassigned task moves at once: it leaves the day it was planned for (*Moved to 16 Nov*, or *Now with Yashika*), joins the new person's list, and shows in the Day plan's *Coming up* preview for its new day. The sheets themselves are shared in Google Sheets, so who can edit the ETA and designer columns there is set with the sheet's own sharing and protected ranges.
