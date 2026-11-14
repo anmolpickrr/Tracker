@@ -1832,14 +1832,14 @@
     for (let i = 0; i < 600; i++) { const from = pkAddMonths(p.date, i); if (from > stop) break; out.push({ n: i + 1, from, to: pkPrevDay(pkAddMonths(p.date, i + 1)) }); }
     return out;
   }
-  const pkItems = (p) => p.items.map((it) => ({ type: it.type, key: pkNorm(it.type), qty: it.qty || 0, rate: it.rate || 0, used: 0, over: 0, open: 0 }));
+  const pkItems = (p) => p.items.map((it) => ({ type: it.type, key: pkNorm(it.type), qty: it.qty || 0, rate: it.rate || 0, used: 0, over: 0, open: 0, raw: 0, carryIn: 0, carryOut: 0 }));
   /* Delivered creatives (DONE, from the sheets) counted against a brand's packages: monthly plans first (that month's
      allowance), then fixed and custom packages, oldest first. What is delivered beyond a type's quantity is recorded as
      extra on that type; a creative type the package does not include is recorded as "not in the package". */
   function pkAlloc(pkgs) {
     const rows = CO.rows(true) || [], out = new Map(), byBrand = new Map();
     const ps = pkgs.map((p) => {
-      const x = { p, kind: pkKind(p), amount: pkByAmount(p), items: pkItems(p), outside: new Map(), value: 0, overValue: 0, cycles: null };
+      const x = { p, kind: pkKind(p), amount: pkByAmount(p), items: pkItems(p), outside: new Map(), value: 0, overValue: 0, cycles: null, shared: 0, rejected: 0 };
       if (x.kind === 'Monthly') x.cycles = pkCycles(p).map((c) => Object.assign(c, { items: pkItems(p), outside: new Map() }));
       return x;
     }).sort((a, b) => (a.kind === 'Monthly' ? 0 : 1) - (b.kind === 'Monthly' ? 0 : 1) || a.p.date.localeCompare(b.p.date) || String(a.p.created || '').localeCompare(String(b.p.created || '')));
@@ -1847,6 +1847,12 @@
     const clsOf = (r) => (r.source === 'Paid' ? 'External' : 'Internal');
     const itemFor = (items, tk) => items.find((i) => i.key === tk) || items.find((i) => i.key === 'any type');
     const cycleOf = (x, d) => x.cycles && x.cycles.find((c) => c.from <= d && d <= c.to);
+    // Shared with the client (awaiting approval) and rejected by the client, counted separately from delivered
+    rows.forEach((r) => {
+      const sh = r.stage === 'Shared' || r.stage === 'No update', rj = r.stage === 'Rejected'; if (!sh && !rj) return;
+      const list = byBrand.get(pkNorm(r.brand)); if (!list) return; const d = r.eta || r.req || '', cls = clsOf(r), tk = pkNorm(r.type);
+      list.forEach((x) => { if (x.p.status === 'Closed' || !(x.p.from === 'Both' || x.p.from === cls) || d < x.p.date || (x.p.end && d > x.p.end)) return; if (!itemFor(x.items, tk)) return; if (x.kind === 'Monthly') { const c = x.cycles[x.cycles.length - 1]; if (!c || d < c.from) return; } if (sh) x.shared++; else x.rejected++; });
+    });
     rows.forEach((r) => {
       if (!r.open) return; const list = byBrand.get(pkNorm(r.brand)); if (!list) return;
       const tk = pkNorm(r.type), cls = clsOf(r);
@@ -1865,6 +1871,7 @@
         const cyc = x.kind === 'Monthly' ? cycleOf(x, D) : null; if (x.kind === 'Monthly' && !cyc) continue;
         const it = itemFor(cyc ? cyc.items : x.items, tk); if (!it) continue; last = { x, it };
         let take;
+        if (x.kind === 'Monthly') { it.raw += units; units = 0; break; } // a plan's extra carries to the next month (worked out below)
         if (x.amount) { take = it.rate ? Math.min(units, Math.max(0, Math.floor((x.p.amount - x.value) / it.rate + 1e-9))) : 0; x.value += take * it.rate; }
         else take = Math.min(units, it.qty - it.used);
         if (take > 0) { it.used += take; units -= take; }
@@ -1874,6 +1881,10 @@
       if (last) { last.it.over += units; if (last.x.amount) last.x.overValue += units * last.it.rate; } // delivered beyond what was bought
       else if (cands.length) { const x = cands[cands.length - 1], cyc = x.kind === 'Monthly' ? cycleOf(x, D) : null, m = cyc ? cyc.outside : x.outside; m.set(r.type || 'Unspecified', (m.get(r.type || 'Unspecified') || 0) + units); } // a type the package does not include
     });
+    // Monthly plans: what is delivered beyond a month's quantity counts toward the next month; only the current
+    // month's excess stays as extra (it will count toward next month).
+    ps.forEach((x) => { if (x.kind !== 'Monthly' || !x.cycles) return; const carry = new Map();
+      x.cycles.forEach((c, i) => c.items.forEach((it) => { it.carryIn = carry.get(it.key) || 0; const tot = it.raw + it.carryIn; it.used = Math.min(tot, it.qty); const ex = Math.max(0, tot - it.qty); it.carryOut = ex; if (i < x.cycles.length - 1) carry.set(it.key, ex); else it.over = ex; })); });
     return out;
   }
   const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
@@ -1915,7 +1926,7 @@
     const due = items.filter((it) => !x.amount && it.qty > it.used).map((it) => ({ type: it.type, n: it.qty - it.used }));
     const extra = items.filter((it) => it.over).map((it) => ({ type: it.type, n: it.over })).concat([...outside].map(([t, n]) => ({ type: t, n, outside: true })));
     const attention = st === 'running' && (x.amount ? open > 0 && left < minRate * open : kind !== 'Monthly' && open > left);
-    return { kind, unit, total, used, left, overUnits, over: overUnits, open, st, attention, pct: total ? Math.min(100, Math.round(used / total * 100)) : 0, items, outside, cycle, lifeTotal, lifeUsed, billed, next, ended, due, extra, value: x.value, overValue: x.overValue };
+    return { shared: x.shared, rejected: x.rejected, kind, unit, total, used, left, overUnits, over: overUnits, open, st, attention, pct: total ? Math.min(100, Math.round(used / total * 100)) : 0, items, outside, cycle, lifeTotal, lifeUsed, billed, next, ended, due, extra, value: x.value, overValue: x.overValue };
   }
   const pkNum = (f, n) => (f.unit === '₹' ? inr(n) : CO.num(n));
   const pkWhen = (w, d) => { if (!w) return true; const t = CO.today(); if (w === 'month') return d.slice(0, 7) === t.slice(0, 7); if (w === '3m') { const x = new Date(t); x.setMonth(x.getMonth() - 3); return d >= x.toISOString().slice(0, 10); } if (w === 'year') return d.slice(0, 4) === t.slice(0, 4); if (w === 'lastyear') return d.slice(0, 4) === String(+t.slice(0, 4) - 1); return true; };
@@ -2093,25 +2104,31 @@
       r.append(pkEl('span', 'pk-tt', it.type));
       const b = pkEl('span', 'pk-pbar2'); const fi = pkEl('i');
       if (f.unit === '₹') { fi.style.width = (f.total ? Math.min(100, it.used * it.rate / f.total * 100) : 0) + '%'; b.append(fi); r.append(b, pkEl('span', 'pk-tn', it.used + ' × ' + inr(it.rate) + ' = ' + inr(it.used * it.rate))); }
-      else { fi.style.width = (it.qty ? Math.min(100, it.used / it.qty * 100) : 0) + '%'; b.append(fi); r.append(b, pkEl('span', 'pk-tn', Math.min(it.used, it.qty) + ' / ' + it.qty)); }
+      else { fi.style.width = (it.qty ? Math.min(100, it.used / it.qty * 100) : 0) + '%'; b.append(fi); r.append(b, pkEl('span', 'pk-tn', Math.min(it.used, it.qty) + ' / ' + it.qty + (it.carryIn ? ' (' + it.carryIn + ' carried)' : ''))); }
       const tl = pkEl('span', 'pk-tl'); if (it.over) tl.append(pkEl('span', 'pk-extra', '+' + it.over + ' extra')); else tl.textContent = f.unit === '₹' ? '' : lf ? lf + ' due' : 'Done'; if (!it.over && !lf && f.unit !== '₹') tl.classList.add('ok');
       r.append(tl); types.append(r);
     });
     (f.extra.filter((e) => e.outside)).forEach((e) => { const r = pkEl('div', 'pk-type2 over outside'); r.append(pkEl('span', 'pk-tt', e.type), pkEl('span', 'pk-note2', 'Not in this package'), pkEl('span', 'pk-tn', e.n + ' delivered'), (() => { const t = pkEl('span', 'pk-tl'); t.append(pkEl('span', 'pk-extra', '+' + e.n + ' extra')); return t; })()); types.append(r); });
     left.append(types);
+    const bd = pkEl('div', 'pk-breakdown'); bd.setAttribute('aria-label', 'Breakdown');
+    [['Final delivered', f.unit === '₹' ? f.items.reduce((a, it) => a + it.used, 0) : f.used, 'ok'], ['Shared, awaiting approval', f.shared, 'sh'], ['Rejected by client', f.rejected, 'rj']].forEach(([t2, v, c2]) => { const b2 = pkEl('div', 'pk-bd ' + c2); b2.append(pkEl('b', '', CO.num(v)), pkEl('span', '', t2)); bd.append(b2); });
+    left.append(bd);
+    const carried = f.items.reduce((a, it) => a + (it.carryIn || 0), 0);
+    if (kind === 'Monthly' && carried) left.append(pkEl('p', 'pk-carry', carried + ' extra from last month counted in this month: ' + f.items.filter((it) => it.carryIn).map((it) => it.carryIn + ' ' + it.type).join(', ') + '.'));
+    if (kind === 'Monthly' && f.overUnits) left.append(pkEl('p', 'pk-carry', f.overUnits + ' delivered beyond this month’s quantity: they will count toward next month.'));
     if (f.attention) left.append(pkEl('p', 'pk-warn', f.unit === '₹' ? f.open + ' requests are open for ' + p.brand + ' and only ' + inr(f.left) + ' is left in this package.' : f.left ? f.open + ' requests are open for ' + p.brand + ' but only ' + f.left + ' creatives are left in this order.' : 'This order is complete and ' + f.open + ' more request' + (f.open === 1 ? ' is' : 's are') + ' open. Is this a new order? Add it before the team picks them up.'));
     else if (f.st === 'complete' && !f.extra.length) left.append(pkEl('p', 'pk-ok', 'All purchased creatives delivered.'));
     if (kind === 'Monthly' && x.cycles && x.cycles.length) {
       const mh = pkEl('div', 'pk-months'); mh.append(pkEl('h3', 'pk-h3', 'Month by month'));
       const ml = pkEl('ol', 'pk-mlist');
-      x.cycles.slice().reverse().slice(0, 12).forEach((cy) => { const q2 = cy.items.reduce((a, it) => a + it.qty, 0), u2 = cy.items.reduce((a, it) => a + Math.min(it.used, it.qty), 0), ov = cy.items.reduce((a, it) => a + it.over, 0) + [...cy.outside.values()].reduce((a, n) => a + n, 0); const li = pkEl('li'); li.append(pkEl('span', 'pk-m-n', 'Month ' + cy.n), pkEl('span', 'pk-m-d', CO.fmtDate(cy.from) + ' – ' + CO.fmtDate(cy.to)), pkEl('b', '', u2 + ' / ' + q2)); if (ov) li.append(pkEl('span', 'pk-extra', '+' + ov + ' extra')); else if (u2 < q2 && cy !== f.cycle) li.append(pkEl('span', 'pk-m-short', (q2 - u2) + ' not used')); ml.append(li); });
+      x.cycles.slice().reverse().slice(0, 12).forEach((cy) => { const q2 = cy.items.reduce((a, it) => a + it.qty, 0), u2 = cy.items.reduce((a, it) => a + Math.min(it.used, it.qty), 0), ov = cy.items.reduce((a, it) => a + it.over, 0) + [...cy.outside.values()].reduce((a, n) => a + n, 0), cin = cy.items.reduce((a, it) => a + it.carryIn, 0), cout = cy.items.reduce((a, it) => a + it.carryOut, 0); const li = pkEl('li'); li.append(pkEl('span', 'pk-m-n', 'Month ' + cy.n), pkEl('span', 'pk-m-d', CO.fmtDate(cy.from) + ' – ' + CO.fmtDate(cy.to)), pkEl('b', '', u2 + ' / ' + q2)); if (cin) li.append(pkEl('span', 'pk-carry-in', cin + ' carried in')); if (cout && cy !== f.cycle) li.append(pkEl('span', 'pk-extra', '+' + cout + ' → next month')); else if (ov) li.append(pkEl('span', 'pk-extra', '+' + ov + ' extra')); else if (u2 < q2 && cy !== f.cycle) li.append(pkEl('span', 'pk-m-short', (q2 - u2) + ' not used')); ml.append(li); });
       mh.append(ml); if (x.cycles.length > 12) mh.append(pkEl('p', 'co-note', 'Latest 12 of ' + x.cycles.length + ' months.')); left.append(mh);
     }
     const meta = pkEl('dl', 'pk-meta');
     const fact = (k, v) => { if (!v) return; meta.append(pkEl('dt', '', k), pkEl('dd', '', v)); };
     fact('Package type', PK_KIND[kind] + (kind === 'Custom' ? (pkByAmount(p) ? ', by amount' : ', by number of creatives') : ''));
     fact('Order ID', p.id);
-    if (kind === 'Monthly') { fact('Billing', inr(p.amount) + ' a month, from ' + CO.fmtDate(p.date, true) + (p.end ? ' to ' + CO.fmtDate(p.end, true) : ' (no end date)')); fact('Billed so far', inr(f.billed) + ' for ' + (x.cycles ? x.cycles.length : 0) + ' month' + ((x.cycles || []).length === 1 ? '' : 's')); fact('Next bill', f.next ? CO.fmtDate(f.next, true) : f.ended ? 'Plan ended' : ''); fact('Unused creatives', 'Do not carry over to the next month'); }
+    if (kind === 'Monthly') { fact('Billing', inr(p.amount) + ' a month, from ' + CO.fmtDate(p.date, true) + (p.end ? ' to ' + CO.fmtDate(p.end, true) : ' (no end date)')); fact('Billed so far', inr(f.billed) + ' for ' + (x.cycles ? x.cycles.length : 0) + ' month' + ((x.cycles || []).length === 1 ? '' : 's')); fact('Next bill', f.next ? CO.fmtDate(f.next, true) : f.ended ? 'Plan ended' : ''); fact('Carry forward', 'Extra delivered in a month counts toward the next month; unused creatives do not carry over'); }
     else fact('Amount', p.amount ? inr(p.amount) + ' incl. tax' : '');
     fact('Counts from', p.from === 'Both' ? 'Internal + External sheets' : p.from + ' sheet'); fact('Notes', p.notes); fact('Added', (p.createdBy ? p.createdBy.split('@')[0] : '') + (p.created ? ' · ' + CO.fmtDate(String(p.created).slice(0, 10), true) : ''));
     left.append(meta);
@@ -2529,7 +2546,7 @@
       return { rs, total, tasks: rs.length, paid: CO.sumQty(rs.filter((r) => r.source === 'Paid')), mkt: CO.sumQty(rs.filter((r) => r.source === 'Marketing')),
         brands: new Set(rs.map((r) => r.brand)).size, people: people.size, wd: wdIn(f, t, rs), per: people.size && wdIn(f, t, rs) ? total / people.size / wdIn(f, t, rs) : 0 };
     };
-    dash.draw('r-period', (el) => { const pr = CO.period(); const to = pr.to > CO.today() ? CO.today() : pr.to; el.textContent = 'Reporting on ' + CO.label(pr.from, pr.to) + (pr.all ? '' : ' (' + CO.workdays(pr.from, to) + ' working days' + (pr.to > CO.today() ? ' so far' : '') + ')') + (pr.pfrom ? ', compared with ' + CO.label(pr.pfrom, pr.pto) + ' (' + CO.workdays(pr.pfrom, pr.pto) + ' working days)' : '') + '.'; });
+    dash.draw('r-period', (el) => { const pr = CO.period(); const to = pr.to > CO.today() ? CO.today() : pr.to; el.textContent = 'Reporting on ' + CO.label(pr.from, pr.to) + (pr.all ? '' : ' (' + CO.workdays(pr.from, to) + ' working days' + (pr.to > CO.today() ? ' so far' : '') + ')') + (pr.pfrom ? ', compared with ' + CO.label(pr.pfrom, pr.pto) + ' (' + CO.workdays(pr.pfrom, pr.pto) + ' working days)' : '') + '. How it is counted: each Creative ID is one creative; only DONE counts as completed (Rejected, Shared and Under review do not); a creative counts on its completion date, which is its Design ETA (or today, if the ETA is still ahead). The period is whatever you pick above (a day, week, month, quarter, year or custom range), and the Internal/External, designer, brand and type filters apply to every number.'; });
     dash.draw('rkpi', (el) => {
       if (CO.notReady(el, 'text')) return;
       const pr = CO.period(), s = stats(pr.from, pr.to), k = el.dataset.kpi;
@@ -2653,6 +2670,8 @@
       top.forEach((t) => CO.td(tr, CO.num(CO.sumQty(rs.filter((r) => CO.typeOf(r, top) === t))), 'n'));
       CO.td(tr, CO.num(CO.sumQty(rs)), 'n');
       if (prev) CO.td(tr, CO.delta(CO.sumQty(rs), CO.sumQty(prev), 'up'), 'n');
+      const shared = label === 'Designer' ? rs.filter((r) => r.list.length > 1).length : 0;
+      if (shared) { const cap = table.createCaption(); cap.className = 'co-note r-cap'; cap.textContent = shared + ' creative' + (shared === 1 ? ' was' : 's were') + ' done by more than one designer and count for each of them, so the designer rows add up to more than the total (' + CO.num(CO.sumQty(rs)) + ').'; }
     };
     dash.draw('r-brand', (t) => crossTable(t, (r) => [r.brand], 'Brand'));
     dash.draw('r-designer', (t) => crossTable(t, (r) => r.list.length ? r.list : ['Unassigned'], 'Designer', (k) => { const m = CO.member(k); if (k === 'Unassigned' || m.status === 'Active') return null; const s = document.createElement('span'); s.className = m.status === 'New' ? 'tag-new' : 'tag-off'; s.textContent = m.status; return s; }));

@@ -1613,7 +1613,7 @@ function testRead() {
   }
   /* What each stage counts towards (one place, used by every page, report, briefing and the assistant). */
   const GROUPS = { 'To be planned': 'open', 'WIP': 'open', 'Changes requested': 'open', 'Under review': 'review', 'Shared': 'shared', 'No update': 'shared',
-    'Delivered': 'done', 'Rejected': 'done', 'Awaiting brief': 'brief', 'Hold': 'hold', 'Deprioritised': 'dropped' };
+    'Delivered': 'done', 'Rejected': 'rejected', 'Awaiting brief': 'brief', 'Hold': 'hold', 'Deprioritised': 'dropped' };
   function groupOf(stage) { const g = GROUPS[stage] || 'open'; return { group: g, open: g === 'open', done: g === 'done', shared: g === 'shared', review: g === 'review', brief: g === 'brief' }; }
   const KNOWN = Object.keys(GROUPS);
 
@@ -1790,7 +1790,7 @@ function testRead() {
       return {
         uid, id: clean(r.id), source, src: r.src || '', row: r.row || null,
         brand: clean(r.brand) ? brandName.get(brandKey(clean(r.brand))) : 'No brand',
-        topic: clean(r.topic), type: typeName.get(typeKey(t0)) || t0, channel: clean(r.channel), qty: r.qty || 1,
+        topic: clean(r.topic), type: typeName.get(typeKey(t0)) || t0, channel: clean(r.channel), qty: 1, qtySheet: r.qty || 1, // each Creative ID is one creative request, whatever No. of Creatives says
         priority: /^P\d$/.test(pri) ? pri : '', owner: clean(r.owner),
         designers: des.join(' + '), stage, open, group: G.group, done: G.done, shared: G.shared, review: G.review, awaiting: G.brief,
         sub: sub || '', design_status: clean(r.design_status), content_status: clean(r.content_status), req, eta,

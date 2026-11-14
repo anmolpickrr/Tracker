@@ -135,12 +135,16 @@ A task whose ETA is moved to a later day (in the sheet or from the dashboard) is
 
 Every person with access has a **Permissions** button on the Access page, and a one-line summary of what they can open and edit. It opens a section-by-section list: for each section choose **Hidden**, **View** or (where there is something to edit) **Edit**: Tasks (edit tasks wherever they appear), Team (manage the team list), Brand packages (add, change and close packages). Below it: which tasks they see (all, or only their own), seeing workload and others' work, downloads and Fasty. Save changes applies within 30 seconds without signing them out, can be changed again at any time, and is logged; Reset goes back to the role's defaults.
 
+## How numbers are counted
+
+Everywhere on the dashboard: each **Creative ID is one creative** (the No. of Creatives column is not multiplied in). **Completed / delivered = DONE only**; Rejected, Shared, No update and Under review are counted separately, never as completed. A completed creative counts on its **completion date**, its Design ETA (or today, if the ETA is still ahead). Reports cover whatever period you pick (a day, week, month, quarter, year or a custom range) and every filter at the top applies. A creative done by two designers counts for each of them in the Designer table (a note says how many), while the total counts it once.
+
 ## Brand packages (Brands)
 
 What brands buy, kept in the *Packages* tab. Three **package types**:
 
 - **Fixed package**: a set number of creatives per type, bought once (for example 20 Static and 5 Videos).
-- **Monthly plan**: creatives per type every month, billed every month from the start date, with an optional end date. Each billing month is counted on its own (unused creatives do not carry over); the order shows this month's progress, the next bill date, what has been billed so far and a month-by-month list.
+- **Monthly plan**: creatives per type every month, billed every month from the start date, with an optional end date. Each billing month is counted on its own: creatives delivered beyond a month's quantity count toward the next month (shown as *carried in* / *→ next month*), while unused creatives do not carry over; the order shows this month's progress, the next bill date, what has been billed so far and a month-by-month list.
 - **Custom package**: either a number of creatives (per type, or *Any type*), or an **amount** spent at a rate per creative type (for example ₹10,000 at ₹1,000 a Static and ₹3,000 a Video).
 
 **Delivered** = completed (DONE) creatives of that brand from the purchase date (for a monthly plan, within each billing month), counted per creative type: monthly plans first, then fixed and custom packages, oldest first. **Still due** and **extra** are worked out per type and highlighted: with 20 Static and 5 Videos bought and 19 Static and 6 Videos delivered, the order shows *1 Static still due* and *1 Video extra* (in orange, on the row, the type and the *Extra delivered* summary, which lists the orders with extra when clicked). A creative type the package does not include is shown as *not in this package* and counted as extra.
@@ -155,7 +159,7 @@ Built to stay quick with thousands of orders:
 - **Order details**: creatives per type (delivered, due, extra), billing, notes, who added it, the brand's order history, *Edit order* and *Add next order*.
 - **Repeat orders**: adding an order for a brand that already has one asks *"An order already exists for this brand. Is this a new order?"*, lists its latest orders with *Update this order*, flags a possible duplicate, and saves only after *Yes, it's a new order*. The web app checks this too.
 
-A package can be closed to stop counting. Only the owner sees packages by default; on the Access page the owner or an Admin gives anyone *View* or *Edit*. Every change is in the activity log.
+Every order also shows a breakdown of **Final delivered** (DONE), **Shared** (awaiting client approval, including no update) and **Rejected by client**. A package can be closed to stop counting. Only the owner sees packages by default; on the Access page the owner or an Admin gives anyone *View* or *Edit*. Every change is in the activity log.
 
 ## Rescheduling and reassigning (Admins only)
 

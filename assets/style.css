@@ -2928,3 +2928,11 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
 :root[data-theme="dark"] .ed-quick button.on { background: #ddff00; border-color: #ddff00; color: #141414; }
 .ed-lock { padding: 8px 12px; border-radius: 10px; background: var(--sunken); }
 .pk-basis .seg button:not(.on) { background: transparent !important; color: var(--fg-2) !important; }
+.pk-breakdown { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pk-bd { display: grid; gap: 2px; padding: 10px 12px; border-radius: 14px; background: var(--box, var(--panel-2)); }
+.pk-bd b { font: 700 20px/1.1 var(--font-head, var(--font-body)); } .pk-bd span { font-size: 11.5px; color: var(--fg-2); }
+.pk-bd.ok { background: color-mix(in srgb, #22a06b 14%, transparent); } .pk-bd.sh { background: color-mix(in srgb, #d08a1e 16%, transparent); } .pk-bd.rj { background: color-mix(in srgb, #d1433a 14%, transparent); }
+.pk-carry { margin: 0; padding: 8px 11px; border-radius: 10px; font-size: 12.5px; background: color-mix(in srgb, #e8590c 12%, transparent); }
+.pk-carry-in { padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; background: #d9f84a; color: #141414; }
+@media (max-width: 560px) { .pk-breakdown { grid-template-columns: minmax(0, 1fr); } }
+.r-cap { caption-side: bottom; text-align: left; padding: 8px 4px 0; }
