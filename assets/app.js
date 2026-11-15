@@ -4113,6 +4113,7 @@
       st.loading = false;
       if (!st.editing) dash.draw('qn-board');
       dash.draw('qn-tabs'); dash.draw('qn-filters'); dash.draw('qn-hero'); syncControls(); dash.draw('np-list');
+      if (VIEW.id && !st.editing) drawView();
     }
     const open = () => { if (!$n('qn-new').firstChild) mountComposer(); if (!st.loaded || Date.now() - (st.at || 0) > 20000) load(st.loaded); };
     // Others' changes show up while Notes is open (every 30 s) and in the background (every 2 min).
@@ -4411,6 +4412,8 @@
       f.addEventListener('submit', async (e) => {
         e.preventDefault(); const txt = ta.value.trim(); if ((!txt && !S2.files.length && !S2.doodle) || st.busy || S2.uploading) return;
         const lines = txt.split('\n'), title = (lines[0] || '').trim().slice(0, 160) || (S2.files.length ? S2.files[0].name : 'Doodle'), body = lines.slice(1).join('\n').trim();
+        // @names are matched against the people list: make sure it has loaded, or a tag would be dropped silently
+        if (!st.people.length && /@/.test(txt)) { try { const d = await callApi({ action: 'directory' }, true); if (d.ok) st.people = d.people; } catch (e2) { /* saved without the tag; the text keeps it */ } }
         const mentions = tagged();
         const keep = n ? (n.actions || []).filter((a) => !isAssign(a)) : [];
         const actions = keep.concat(S2.assign.map((a) => ({ id: a.id || ('as-' + a.email.split('@')[0]).slice(0, 40), text: title, assignee: a.name, email: a.email, done: !!a.done, doneBy: a.doneBy || '', doneAt: a.doneAt || '' })));
@@ -4454,7 +4457,8 @@
     const redrawAll = () => { saveF(); dash.draw('qn-filters'); flip(() => dash.draw('qn-board')); };
     // A slim summary under the page title: each number opens the matching list.
     dash.draw('qn-hero', (el) => {
-      el.replaceChildren();
+      el.replaceChildren(); el.hidden = true; return; // the counts are on the view tabs now (one row, not two)
+      // eslint-disable-next-line no-unreachable
       const mine = st.notes.filter((n) => n.createdBy === me()).length, shared = st.notes.filter((n) => n.createdBy !== me() && !n.viaAdmin).length, files = st.notes.reduce((a, n) => a + (n.files || []).length, 0), todo = myActions().filter((a) => !a.done).length;
       [[mine, 'Your notes', 'mine', null], [shared, 'Shared with you', 'shared', null], [todo, 'To-dos for you', 'assigned', null], [files, 'Files', 'all', 'files']].forEach(([v, l, tab, flag]) => {
         const b2 = mk('button', 'qn-stat2'); b2.type = 'button'; b2.append(mk('b', '', CO.num(v)), mk('span', '', l)); b2.title = 'Show ' + l.toLowerCase();
@@ -4471,7 +4475,7 @@
       if (st.f === 'team' && !isAdmin()) st.f = 'all';
       TABS.filter(([k]) => k !== 'team' || isAdmin()).forEach(([k, l]) => {
         const n = st.notes.filter((x) => inTab(x, k)).length, b = mk('button', 'qn-tab' + (st.f === k && !F.trash ? ' on' : '')); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(st.f === k && !F.trash));
-        b.append(mk('span', '', l)); if (k !== 'all' && n) b.append(mk('span', 'qn-n', String(n)));
+        b.append(mk('span', '', l)); b.append(mk('span', 'qn-n' + (n ? '' : ' zero'), String(n)));
         b.addEventListener('click', () => { st.f = k; F.trash = false; LS.set('co.qnf', k); dash.draw('qn-tabs'); redrawAll(); }); el.append(b);
       });
     });
@@ -4480,6 +4484,7 @@
       el.replaceChildren(); if (!st.loaded) return;
       const KEYS = ['colour', 'tag', 'files', 'doodle', 'pinned', 'author', 'when'], on = KEYS.filter((k) => F[k]).length;
       const row = mk('div', 'qn-frow');
+      if (!F.trash) { const shown = filtered().length; row.append(mk('span', 'qn-count', shown + (shown === 1 ? ' note' : ' notes'))); }
       const fb = mk('button', 'qn-fbtn' + (st.fOpen ? ' open' : '') + (on ? ' active' : '')); fb.type = 'button'; fb.setAttribute('aria-expanded', String(!!st.fOpen));
       fb.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>'; fb.append(mk('span', '', 'Filters'), on ? mk('b', 'qn-fcount', String(on)) : '');
       fb.addEventListener('click', () => { st.fOpen = !st.fOpen; dash.draw('qn-filters'); }); row.append(fb);
@@ -4513,47 +4518,51 @@
     /* ---- the board ---- */
     function card(n, i) {
       const c = mk('article', 'qn-note c-' + (n.colour || 'paper') + ' k-' + kindOf(n) + (n.pinned ? ' pinned' : '')); c.dataset.id = n.id; c.style.setProperty('--tilt', ((tagHue(n.id) - 3.5) * 0.35).toFixed(2) + 'deg');
-      if (st.editing === n.id) { c.classList.add('editing'); const ed = editor(n, () => { st.editing = ''; flip(() => dash.draw('qn-board')); dash.draw('qn-tabs'); dash.draw('qn-filters'); dash.draw('qn-hero'); dash.draw('np-list'); }); c.append(ed); setTimeout(() => ed.focusText(), 30); return c; }
       (n.stickers || []).slice(0, 4).forEach((k, j) => { const s = stickerEl(k, 'on-card p' + j); if (s) c.append(s); });
       if (n.pinned) c.append(mk('span', 'qn-pinmark', 'Pinned'));
       const t = mk('div', 'qn-text'); if (n.title && n.title !== 'Untitled note') { const tt = mk('h3', 'qn-title'); tt.append(rich(n.title)); t.append(tt); }
       if (n.body) { const bd = mk('p', 'qn-body'); bd.append(rich(n.body.length > 3000 ? n.body.slice(0, 3000) + '…' : n.body)); t.append(bd); }
       c.append(t);
-      const long = String(n.body || '').length > 260 || String(n.body || '').split('\n').length > 6 || (n.actions || []).length > 3;
-      if (st.open.has(n.id)) c.classList.add('expanded');
       if (n.doodle) c.append(doodleSvg(n.doodle));
       if ((n.files || []).length) { const fr = mk('div', 'qn-files'); n.files.forEach((fl) => fr.append(fileTile(fl))); c.append(fr); }
       if ((n.tags || []).length) { const tg = mk('div', 'qn-tags'); n.tags.forEach((x) => { const b = mk('button', 'qn-ht t' + tagHue(x), '#' + x); b.type = 'button'; b.title = 'Show notes tagged #' + x; b.addEventListener('click', (e) => { e.stopPropagation(); F.tag = x; redrawAll(); }); tg.append(b); }); c.append(tg); }
-      const as = assignees(n), other = (n.actions || []).filter((a) => !isAssign(a));
-      if (as.length || other.length) {
-        const ul = mk('ul', 'qn-todo');
-        as.concat(other).forEach((a, ai) => {
-          const li = mk('li', (a.done ? 'done' : '') + (ai >= 3 ? ' more' : '')), can = n.createdBy === me() || a.email === me();
-          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!a.done; cb.disabled = !can; cb.setAttribute('aria-label', (isAssign(a) ? a.assignee : a.text) + (a.done ? ': done' : ': open'));
-          cb.addEventListener('click', (e) => e.stopPropagation());
-          cb.addEventListener('change', async () => { const was = a.done; a.done = cb.checked; li.classList.toggle('done', a.done); if (a.done) press(li); try { const r = await callApi({ action: 'noteAction', id: n.id, actionId: a.id, done: a.done }); if (!r.ok) throw new Error(r.error || 'Not saved'); n.actions = r.actions; dash.draw('np-list'); dash.draw('qn-hero'); } catch (e) { a.done = was; cb.checked = was; li.classList.toggle('done', was); toast(e.message, true); } });
-          li.append(cb); if (isAssign(a)) { li.append(CO.av(a.assignee || nameOf2(a.email)), mk('span', '', (a.email === me() ? 'You' : a.assignee || nameOf2(a.email)) + (a.done ? ' · done' : ''))); } else li.append(mk('span', '', a.text + (a.assignee ? ' · ' + a.assignee : '')));
-          ul.append(li);
-        });
-        c.append(ul);
-      }
-      if (long) { const mb = mk('button', 'qn-moreb', st.open.has(n.id) ? 'Show less' : 'Show more'); mb.type = 'button'; mb.setAttribute('aria-expanded', String(st.open.has(n.id))); mb.addEventListener('click', (e) => { e.stopPropagation(); if (st.open.has(n.id)) st.open.delete(n.id); else st.open.add(n.id); flip(() => dash.draw('qn-board')); }); c.append(mb); }
-      // footer: who and when, then quiet icons for the reminder and who can see it; actions appear on hover
+      { const ul = todoList(n, 2); if (ul) c.append(ul); }
+      // footer: who and when, then quiet icons for the reminder and who can see it (actions are in the pop-up)
       const ft = mk('footer', 'qn-foot'); ft.append(CO.av(nameOf2(n.createdBy)), mk('span', 'qn-who', (n.createdBy === me() ? 'You' : first(nameOf2(n.createdBy))) + ' · ' + ago(n.updatedAt || n.createdAt)));
-      const info = mk('span', 'qn-info');
-      if (n.reminder) { const past = n.reminder <= istStamp(new Date()); const r = mk('span', 'qn-ico rm' + (past ? ' past' : ''), remindText(n.reminder)); r.title = (past ? 'Reminder was ' : 'Reminder ') + remindText(n.reminder); r.setAttribute('aria-label', r.title); info.append(r); }
-      const vis = mk('span', 'qn-ico vis v-' + (n.visibility || 'private')); vis.title = 'Who can see it: ' + visText(n) + (n.viaAdmin ? ' (you see it as Admin)' : ''); vis.setAttribute('aria-label', vis.title); info.append(vis);
-      if (n.viaAdmin) info.append(mk('span', 'qn-ico adm', 'Admin view'));
-      ft.append(info);
-      if (n.createdBy === me()) {
-        const pb = mk('button', 'qn-pinb' + (n.pinned ? ' on' : ''), n.pinned ? 'Unpin' : 'Pin'); pb.type = 'button'; pb.setAttribute('aria-pressed', String(!!n.pinned));
-        pb.addEventListener('click', async (e) => { e.stopPropagation(); const note = Object.assign({}, n, { pinned: !n.pinned }); try { const r = await callApi({ action: 'noteSave', id: n.id, updatedAt: n.updatedAt, note }); if (!r.ok) throw new Error(r.error === 'stale' ? 'Someone changed this note; refresh and try again.' : r.error || 'Not saved'); const sv = r.note || note; st.notes = st.notes.map((x) => (x.id === n.id ? sv : x)); flip(() => dash.draw('qn-board')); } catch (er) { toast(er.message, true); } });
-        const e2 = mk('button', 'qn-edit', 'Edit'); e2.type = 'button'; const ac = mk('span', 'qn-cardacts'); ac.append(pb, e2); ft.append(ac);
-      }
+      ft.append(infoIcons(n, true));
       c.append(ft);
-      if (n.createdBy === me() || n.canEdit) { c.tabIndex = 0; c.classList.add('can'); const go = () => { st.editing = n.id; flip(() => dash.draw('qn-board')); }; c.addEventListener('click', (e) => { if (e.target.closest('input, a, button')) { if (e.target.closest('.qn-edit')) go(); return; } go(); }); c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) go(); }); }
+      // Any note opens in a pop-up (read it in full; edit it there if you may).
+      c.tabIndex = 0; c.classList.add('can'); if (n.createdBy === me() || n.canEdit) c.classList.add('editable'); c.setAttribute('role', 'button'); c.setAttribute('aria-label', 'Open note: ' + (n.title || 'Untitled note'));
+      c.addEventListener('click', (e) => { if (e.target.closest('input, a, button, .qn-file')) return; openNote(n.id); });
+      c.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === c) { e.preventDefault(); openNote(n.id); } });
       if (i < 24 && !st.seen.has(n.id)) { st.seen.add(n.id); requestAnimationFrame(() => { enter(c, i); const dv = c.querySelector('.qn-doodle'); if (dv) drawOn(dv); }); }
       return c;
+    }
+    function infoIcons(n, short) {
+      const info = mk('span', 'qn-info');
+      if (n.reminder) { const past = n.reminder <= istStamp(new Date()); const r = mk('span', 'qn-ico rm' + (past ? ' past' : ''), remindText(n.reminder)); r.title = (past ? 'Reminder was ' : 'Reminder ') + remindText(n.reminder); r.setAttribute('aria-label', r.title); info.append(r); }
+      const vis = mk('span', 'qn-ico vis v-' + (n.visibility || 'private'), short ? '' : visText(n)); vis.title = 'Who can see it: ' + visText(n) + (n.viaAdmin ? ' (you see it as Admin)' : ''); vis.setAttribute('aria-label', vis.title); info.append(vis);
+      if (n.viaAdmin) info.append(mk('span', 'qn-ico adm', 'Admin view'));
+      return info;
+    }
+    // People assigned and action items, with working checkboxes. limit: how many to show (the rest as "+N more").
+    function todoList(n, limit) {
+      const as = assignees(n), other = (n.actions || []).filter((a) => !isAssign(a)), all = as.concat(other);
+      if (!all.length) return null;
+      const ul = mk('ul', 'qn-todo');
+      {
+        all.forEach((a, ai) => {
+          if (limit && ai >= limit) return;
+          const li = mk('li', (a.done ? 'done' : '')), can = n.createdBy === me() || a.email === me();
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!a.done; cb.disabled = !can; cb.setAttribute('aria-label', (isAssign(a) ? a.assignee : a.text) + (a.done ? ': done' : ': open'));
+          cb.addEventListener('click', (e) => e.stopPropagation());
+          cb.addEventListener('change', async () => { const was = a.done; a.done = cb.checked; li.classList.toggle('done', a.done); if (a.done) press(li); try { const r = await callApi({ action: 'noteAction', id: n.id, actionId: a.id, done: a.done }); if (!r.ok) throw new Error(r.error || 'Not saved'); n.actions = r.actions; dash.draw('np-list'); if (VIEW.id) flip(() => dash.draw('qn-board')); } catch (e) { a.done = was; cb.checked = was; li.classList.toggle('done', was); toast(e.message, true); } });
+          li.append(cb); if (isAssign(a)) { li.append(CO.av(a.assignee || nameOf2(a.email)), mk('span', 'qn-tdt', (a.email === me() ? 'You' : a.assignee || nameOf2(a.email)) + (a.done ? ' · done' : ''))); } else li.append(mk('span', 'qn-tdt', a.text + (a.assignee ? ' · ' + a.assignee : '')));
+          ul.append(li);
+        });
+        if (limit && all.length > limit) ul.append(mk('li', 'qn-tdmore', '+' + (all.length - limit) + ' more'));
+      }
+      return ul;
     }
     st.seen = new Set(); st.show = 60; st.open = new Set();
     dash.draw('qn-board', (el) => {
@@ -4579,7 +4588,53 @@
       dash.setParams({ tab: 'notes' });
       setTimeout(() => { if (!composer) mountComposer(); if (preset) composer.setText(preset); composer.focusText(); }, 120);
     }
-    const select = (id) => { dash.setParams({ tab: 'notes' }); setTimeout(() => { const c = document.querySelector('.qn-note[data-id="' + CSS.escape(id) + '"]'); if (c) { c.scrollIntoView({ behavior: 'smooth', block: 'center' }); c.classList.add('flash'); setTimeout(() => c.classList.remove('flash'), 1600); } }, 300); };
+    const select = (id) => { dash.setParams({ tab: 'notes' }); setTimeout(() => { if (st.notes.some((x) => x.id === id)) openNote(id); }, 300); };
+
+    /* ---- one note in a pop-up: read in full, tick to-dos, pin, edit; the page stays behind it (blurred) ---- */
+    const VIEW = { id: '' }, dlgV = $n('qn-view');
+    function openNote(id, edit) { VIEW.id = id; st.editing = edit ? id : ''; drawView(); if (!dlgV.open) { if (dlgV.showModal) dlgV.showModal(); else dlgV.setAttribute('open', ''); } if (!edit) setTimeout(() => { const x = $n('qn-v-x'); if (x) x.focus(); }, 30); }
+    const afterChange = () => { flip(() => dash.draw('qn-board')); dash.draw('qn-tabs'); dash.draw('qn-filters'); dash.draw('np-list'); };
+    function drawView() {
+      const box = $n('qn-v-card'), n = st.notes.find((x) => x.id === VIEW.id);
+      if (!n) { VIEW.id = ''; st.editing = ''; if (dlgV.open) dlgV.close(); return; }
+      const can = n.createdBy === me() || n.canEdit, editing = st.editing === n.id && can;
+      box.className = 'qn-v-card c-' + (n.colour || 'paper') + (editing ? ' editing' : ''); box.replaceChildren();
+      const head = mk('header', 'qn-v-head'), ht = mk('div', 'qn-v-ht');
+      const who = mk('p', 'qn-v-meta'); who.append(CO.av(nameOf2(n.createdBy)), mk('span', '', (n.createdBy === me() ? 'You' : nameOf2(n.createdBy)) + ' · ' + (n.updatedAt && n.updatedAt !== n.createdAt ? 'edited ' : '') + ago(n.updatedAt || n.createdAt)));
+      ht.append(who);
+      if (!editing) { const h = mk('h2', 'qn-v-title'); h.id = 'qn-v-title'; h.append(rich(n.title || 'Untitled note')); ht.append(h); }
+      else { const h = mk('h2', 'qn-v-title sm', 'Edit note'); h.id = 'qn-v-title'; ht.append(h); }
+      const x = mk('button', 'icon-btn qn-v-x'); x.type = 'button'; x.id = 'qn-v-x'; x.setAttribute('aria-label', 'Close'); x.title = 'Close (Esc)'; x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; x.addEventListener('click', () => dlgV.close());
+      head.append(ht, x); box.append(head);
+      if (editing) {
+        const ed = editor(n, (saved) => { st.editing = ''; afterChange(); if (!saved && !st.notes.some((y) => y.id === n.id)) { dlgV.close(); return; } drawView(); });
+        ed.classList.add('in-view'); box.append(ed); setTimeout(() => ed.focusText(), 30); return;
+      }
+      const body = mk('div', 'qn-v-body');
+      if (n.body) { const bd = mk('div', 'qn-v-text'); bd.append(rich(n.body)); body.append(bd); }
+      if (n.doodle) body.append(doodleSvg(n.doodle));
+      if ((n.files || []).length) { const fr = mk('div', 'qn-files'); n.files.forEach((fl) => fr.append(fileTile(fl))); body.append(fr); }
+      if ((n.tags || []).length) { const tg = mk('div', 'qn-tags'); n.tags.forEach((t) => { const b = mk('button', 'qn-ht t' + tagHue(t), '#' + t); b.type = 'button'; b.title = 'Show notes tagged #' + t; b.addEventListener('click', () => { dlgV.close(); F.tag = t; redrawAll(); }); tg.append(b); }); body.append(tg); }
+      const td = todoList(n, 0); if (td) { const sec = mk('section', 'qn-v-sec'); sec.append(mk('h3', '', 'Assigned and to-dos'), td); body.append(sec); }
+      if (!body.childNodes.length) body.append(mk('p', 'co-note', 'No details.'));
+      box.append(body);
+      const ft = mk('footer', 'qn-v-foot'); ft.append(infoIcons(n, false));
+      const acts = mk('div', 'qn-v-acts');
+      if (n.createdBy === me()) {
+        const pb = mk('button', 'co-btn', n.pinned ? 'Unpin' : 'Pin to top'); pb.type = 'button'; pb.setAttribute('aria-pressed', String(!!n.pinned));
+        pb.addEventListener('click', async () => { const note = Object.assign({}, n, { pinned: !n.pinned }); pb.disabled = true; try { const r = await callApi({ action: 'noteSave', id: n.id, updatedAt: n.updatedAt, note }); if (!r.ok) throw new Error(r.error === 'stale' ? 'Someone changed this note; refresh and try again.' : r.error || 'Not saved'); const sv = r.note || note; st.notes = st.notes.map((y) => (y.id === n.id ? sv : y)); afterChange(); drawView(); toast(sv.pinned ? 'Pinned' : 'Unpinned'); } catch (er) { toast(er.message, true); pb.disabled = false; } });
+        acts.append(pb);
+      }
+      if (can) { const eb = mk('button', 'co-btn primary', 'Edit'); eb.type = 'button'; eb.addEventListener('click', () => { st.editing = n.id; drawView(); }); acts.append(eb); }
+      else { const cb = mk('button', 'co-btn', 'Close'); cb.type = 'button'; cb.addEventListener('click', () => dlgV.close()); acts.append(cb); }
+      ft.append(acts); box.append(ft);
+      const dv = box.querySelector('.qn-doodle'); if (dv) drawOn(dv);
+    }
+    if (dlgV) {
+      dlgV.addEventListener('close', () => { VIEW.id = ''; if (st.editing) { st.editing = ''; afterChange(); } $n('qn-v-card').replaceChildren(); });
+      // a click on the blurred page around the note closes it (not while editing, so nothing typed is lost by accident)
+      dlgV.addEventListener('click', (e) => { if (e.target === dlgV && !st.editing) dlgV.close(); });
+    }
     const myActions = () => {
       const out = []; if (!A.user) return out;
       st.notes.forEach((n) => (n.actions || []).forEach((a) => { if (a.email === A.user.email) out.push(Object.assign({ note: n.title, noteId: n.id }, a)); }));
