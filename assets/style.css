@@ -3372,3 +3372,42 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
   .qn-play .qn-tab { flex: none; padding: 10px 2px 12px; }
   .qn-play .qn-v-card .qn-ed.in-view { padding: 4px 16px 16px; }
 }
+
+/* ===== Notes, Nov 2026 (3): stickers back over the cards; cooler, livelier accents (green, blue, cyan, violet with lime) ===== */
+/* Stickers sit over the card edges again: only the text is kept inside, the card itself does not clip. */
+.qn-play .qn-note { overflow: visible; }
+.qn-play .qn-note > .stk.on-card { max-width: none; }
+/* Each card gets one accent from the theme's cooler set; its ink is chosen for contrast. */
+.qn-play .ac0 { --acc: #ddff00; --acc2: #3ddc97; --acc-ink: #141414; }
+.qn-play .ac1 { --acc: #3ddc97; --acc2: #22c3e6; --acc-ink: #0d2018; }
+.qn-play .ac2 { --acc: #2f6bff; --acc2: #22c3e6; --acc-ink: #ffffff; }
+.qn-play .ac3 { --acc: #22c3e6; --acc2: #2f6bff; --acc-ink: #06232b; }
+.qn-play .ac4 { --acc: #8b5cf6; --acc2: #2f6bff; --acc-ink: #ffffff; }
+.qn-play .ac5 { --acc: #ff6b2c; --acc2: #ddff00; --acc-ink: #1a0b03; }
+.qn-play .qn-note[class*=" ac"] { border-color: color-mix(in srgb, var(--acc) 34%, transparent); }
+/* white/default notes take a soft wash of their accent; chosen colours keep their own */
+.qn-play .qn-note.c-paper, .qn-play .qn-v-card.c-paper { background: linear-gradient(160deg, color-mix(in srgb, var(--acc) 15%, var(--nc)) 0%, var(--nc) 58%); }
+/* a short strip of tape across the top edge, in the accent gradient */
+.qn-play .qn-note::before { content: ""; position: absolute; top: -1px; left: 22px; width: 64px; height: 5px; border-radius: 0 0 6px 6px; background: linear-gradient(90deg, var(--acc), var(--acc2)); pointer-events: none; }
+.qn-play .qn-note.can:hover { border-color: color-mix(in srgb, var(--acc) 70%, transparent); box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 22px 44px -26px color-mix(in srgb, var(--acc) 70%, transparent); }
+.qn-play .qn-note .qn-todo input, .qn-v-card .qn-todo input { accent-color: var(--acc); }
+.qn-play .qn-note .qn-todo .av, .qn-play .qn-v-card .qn-todo .av { background: var(--acc) !important; color: var(--acc-ink) !important; }
+.qn-play .qn-note .qn-ico.rm { color: color-mix(in srgb, var(--acc) 60%, var(--fg-2)); }
+.qn-play .qn-v-card { border-color: color-mix(in srgb, var(--acc) 40%, transparent); box-shadow: 0 30px 80px -30px color-mix(in srgb, var(--acc) 45%, rgba(0, 0, 0, .7)); }
+.qn-play .qn-v-card::before { content: ""; display: block; height: 4px; flex: none; background: linear-gradient(90deg, var(--acc), var(--acc2)); }
+/* view tabs: each count in its own cool colour; the active tab underlined in a lime-to-blue gradient */
+.qn-play .qn-tab.on::after { background: linear-gradient(90deg, #ddff00, #3ddc97 45%, #2f6bff); height: 3px; }
+.qn-play .qn-tab:nth-child(1) .qn-n { color: #b8d400; } .qn-play .qn-tab:nth-child(2) .qn-n { color: #3ddc97; }
+.qn-play .qn-tab:nth-child(3) .qn-n { color: #22c3e6; } .qn-play .qn-tab:nth-child(4) .qn-n { color: #5b8cff; }
+.qn-play .qn-tab:nth-child(5) .qn-n { color: #ff6b2c; } .qn-play .qn-tab:nth-child(6) .qn-n { color: #a78bfa; }
+:root[data-theme="dark"] .qn-play .qn-tab:nth-child(1) .qn-n { color: #ddff00; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .qn-play .qn-tab:nth-child(1) .qn-n { color: #ddff00; } }
+.qn-play .qn-tab .qn-n.zero { opacity: .5; }
+.qn-play .qn-fbtn.active, .qn-play .qn-fbtn.open { border-color: #3ddc97; }
+/* the floating background: lime, blue and green */
+.qn-play .qn-bg .b3 { background: radial-gradient(circle at 35% 30%, #fff 0, #b5f5d6 35%, #3ddc97 85%); opacity: .28; filter: blur(30px); }
+.qn-play .qn-bg .b2 { background: radial-gradient(circle at 35% 30%, #fff 0, #b9e9f7 30%, #22c3e6 55%, #2f6bff 90%); opacity: .3; }
+@media (prefers-reduced-motion: reduce) { .qn-play .qn-note.can:hover { transform: none; } }
+.qn-play { overflow-x: clip; overflow-clip-margin: 14px; }
+.qn-play .qn-note .qn-ico.rm { color: color-mix(in srgb, var(--acc) 38%, var(--fg)); }
+.qn-play .qn-tab:nth-child(1) .qn-n { color: #5f7f00; }

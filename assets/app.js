@@ -4517,7 +4517,7 @@
 
     /* ---- the board ---- */
     function card(n, i) {
-      const c = mk('article', 'qn-note c-' + (n.colour || 'paper') + ' k-' + kindOf(n) + (n.pinned ? ' pinned' : '')); c.dataset.id = n.id; c.style.setProperty('--tilt', ((tagHue(n.id) - 3.5) * 0.35).toFixed(2) + 'deg');
+      const c = mk('article', 'qn-note c-' + (n.colour || 'paper') + ' ac' + (tagHue(n.id) % 6) + ' k-' + kindOf(n) + (n.pinned ? ' pinned' : '')); // ac: the card's accent colour c.dataset.id = n.id; c.style.setProperty('--tilt', ((tagHue(n.id) - 3.5) * 0.35).toFixed(2) + 'deg');
       (n.stickers || []).slice(0, 4).forEach((k, j) => { const s = stickerEl(k, 'on-card p' + j); if (s) c.append(s); });
       if (n.pinned) c.append(mk('span', 'qn-pinmark', 'Pinned'));
       const t = mk('div', 'qn-text'); if (n.title && n.title !== 'Untitled note') { const tt = mk('h3', 'qn-title'); tt.append(rich(n.title)); t.append(tt); }
@@ -4598,7 +4598,7 @@
       const box = $n('qn-v-card'), n = st.notes.find((x) => x.id === VIEW.id);
       if (!n) { VIEW.id = ''; st.editing = ''; if (dlgV.open) dlgV.close(); return; }
       const can = n.createdBy === me() || n.canEdit, editing = st.editing === n.id && can;
-      box.className = 'qn-v-card c-' + (n.colour || 'paper') + (editing ? ' editing' : ''); box.replaceChildren();
+      box.className = 'qn-v-card c-' + (n.colour || 'paper') + ' ac' + (tagHue(n.id) % 6) + (editing ? ' editing' : ''); box.replaceChildren();
       const head = mk('header', 'qn-v-head'), ht = mk('div', 'qn-v-ht');
       const who = mk('p', 'qn-v-meta'); who.append(CO.av(nameOf2(n.createdBy)), mk('span', '', (n.createdBy === me() ? 'You' : nameOf2(n.createdBy)) + ' · ' + (n.updatedAt && n.updatedAt !== n.createdAt ? 'edited ' : '') + ago(n.updatedAt || n.createdAt)));
       ht.append(who);
