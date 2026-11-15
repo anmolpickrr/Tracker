@@ -1429,7 +1429,7 @@ function pkgSave_(b, u) {
   const desc = x.brand + ' (' + (x.kind === 'Monthly' ? 'monthly plan' : x.kind === 'Custom' ? 'custom package' : 'fixed package') + '): ' + (x.basis === 'amount' ? 'budget ₹' + x.amount + ' excl. GST' + (x.kind === 'Monthly' ? ' a month' : '') + ', ' + (x.items.length ? 'own rates: ' + x.items.map(function (it) { return it.type + ' ₹' + it.rate; }).join(', ') + ', others at the price list' : 'creatives at the price list') : x.total + ' creatives' + (x.kind === 'Monthly' ? ' a month' : '') + ' (' + x.items.map(function (it) { return it.qty + ' ' + it.type; }).join(', ') + '), ₹' + x.amount + ' excl. GST' + (x.kind === 'Monthly' ? ' a month' : '')) + ', from ' + x.date + (x.end ? ' to ' + x.end : '');
   // A brand that already has orders: the person confirms this is a new (repeat) order, so an existing order is not
   // entered twice by mistake. Order numbers (1st, 2nd, 3rd…) follow from the purchase dates.
-  const bkey = function (t) { return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+  const bkey = function (t) { return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }; // brands match whatever the spacing
   const prior = pkgAll_().filter(function (p) { return bkey(p.brand) === bkey(x.brand) && p.id !== String(b.id || ''); });
   const curBrand = b.id ? (pkgAll_().filter(function (p) { return p.id === String(b.id); })[0] || {}).brand : '';
   if (prior.length && !b.repeatOk && (!b.id || bkey(curBrand) !== bkey(x.brand))) {

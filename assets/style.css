@@ -3187,3 +3187,7 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
   .prc-table { table-layout: fixed; width: 100%; } .prc-table td:first-child { overflow-wrap: anywhere; } .prc-in { width: 100%; min-width: 0; }
   .pk-money { font-size: 11.5px; } .pk-money th, .pk-money td { padding: 6px 4px; }
 }
+
+.pk-miss { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; background: #ff6b2c; color: #141414; }
+.pk-missbox { display: grid; gap: 6px; } .pk-missbox .co-btn { justify-self: start; }
+.pk-misslist { margin: 0; padding-left: 18px; font-size: 12px; font-variant-numeric: tabular-nums; }
