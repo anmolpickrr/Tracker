@@ -133,7 +133,7 @@ A task whose ETA is moved to a later day (in the sheet or from the dashboard) is
 
 ## Changing access at any time (Access)
 
-Every person with access has a **Permissions** button on the Access page, and a one-line summary of what they can open and edit. It opens a section-by-section list: for each section choose **Hidden**, **View** or (where there is something to edit) **Edit**: Tasks (edit tasks wherever they appear), Team (manage the team list), Brand packages (add, change and close packages). Below it: which tasks they see (all, or only their own), seeing workload and others' work, downloads and Fasty. Save changes applies within 30 seconds without signing them out, can be changed again at any time, and is logged; Reset goes back to the role's defaults.
+Every person with access has a **Permissions** button on the Access page, and a one-line summary of what they can open and edit. It opens a section-by-section list: for each section choose **Hidden**, **View** or (where there is something to edit) **Edit**: Tasks (edit tasks wherever they appear), Team (manage the team list), Brand packages (add, change and close packages). Below it: which tasks they see (only their own, or all), changing design status, reading briefs, submitting creative links, seeing workload and others' work, downloads and Fasty. Save changes applies within 30 seconds without signing them out, can be changed again at any time, and is logged; Reset goes back to the role's defaults.
 
 ## Notes
 
@@ -188,9 +188,40 @@ Every order also shows a breakdown of **Final delivered** (DONE), **Shared** (aw
 
 One price per creative type (as written in the sheets' Creative Type column), in ₹ excluding GST, plus the GST rate. For tiers, use distinct types in the sheet (e.g. "AI Video - 30s" and "AI Video - 60s"), each with its own price. Types used in the sheets without a price are listed so nothing is missed. Saving recalculates every package at once; each change is in the activity log. Admins have access by default; the owner or an Admin can give **Pricing: Manage** to anyone on the Access page (they then see Pricing on the Brands page).
 
+## Working on a task without opening the sheet (task panel)
+
+Click any task to open its panel. Each person can do this on the tasks they can see:
+
+1. **Read the brief.** The *Creative brief* box shows the Google Doc from the task's **Creative Brief** cell inside the dashboard (title, text, lists, tables and images; scripts and outside content are removed). *Open in Google Docs* opens the original. The Doc has to be readable by the Google account the web app runs as (share it with that account as a viewer, or keep briefs in a shared drive it can see); otherwise the box says so and the link still works. A brief typed straight into the cell is shown as text; other links (Drive files, Figma…) open in a new tab.
+2. **Submit the creative link.** Paste the finished creative's link (it must start with https://) and click *Submit link* (or *Update link*). It is written to the **Creative Link** column. With *Move the task to Under review* ticked (on by default for open work), the status changes in the same step.
+3. **Change the status** with the Design status dropdown and *Save to sheet*.
+
+Each of these is a switch per person on the Access page (*Change design status*, *Read briefs*, *Submit creative links*), all on by default. Priority and quantity need Tasks › Edit; ETA and designer stay Admin-only. The web app checks every change again, so a switched-off or other person's task is refused even if someone tries it from outside the dashboard.
+
+**No overwriting.** The panel remembers the status, link and ETA it showed when it opened. If the sheet changed since (someone edited the row in Google Sheets), the save is refused with *Someone changed Design status in the sheet to "…"*; the dashboard reloads the row so you can decide again. Every saved change is in the activity log with before and after.
+
+## Errors & issues (Admins)
+
+The **Issues** page (Admin menu, with a count of open issues; the bell also shows it) lists everything that went wrong, found automatically. Each issue shows the **area**, **what went wrong** (expand *What went wrong*), when it was first and last seen, how many times, who it happened to, and whether it is **Active** or **Resolved** (and by whom).
+
+| Area | Found by | Closes by itself when |
+|---|---|---|
+| Actions: a save from the task panel failed (not a refusal for permissions) | the person's dashboard, at once | the same task is saved successfully |
+| Sync: a sheet or tab could not be read | the web app, every 10 minutes | the sheet can be read again |
+| Sync: someone's dashboard could not load tasks | that dashboard | it loads again |
+| Data: duplicate task IDs, rows without an ID | the web app, every 10 minutes | the IDs are fixed in the sheet |
+| Packages: deliveries a running package does not count, creative types without a price | an Admin's dashboard when Brands is open | fixed |
+| Connection: someone's dashboard could not reach the web app for 2+ minutes | that dashboard, when it is back | recorded as resolved (for the record) |
+| Screen: an error in the dashboard page | that dashboard | an Admin marks it resolved |
+| Background jobs, Stand-up: the 10-minute maintenance or the day plan failed | the web app | the next run succeeds |
+| Web app: automatic updates need the owner | the web app, every 10 minutes | updates work again |
+| Server, Creative brief: a request failed on the server, a brief cell could not be read | the web app | an Admin marks it resolved (after checking) |
+
+**What to do with an issue:** *Retry* (failed saves) shows exactly what it will write (for example *SRA2353: status → WIP*), writes it and resolves the issue. *Reload from the sheets*, *Open Data health*, *Open Brands* and *Open Pricing* take you to the fix. *Mark resolved* closes it by hand; *Reopen* and *Remove* are on resolved issues. Filters: Open / Resolved / All, area and search. The page refreshes every minute; the same problem is counted again instead of listed twice. A retry only ever carries the fields the person who hit the problem was allowed to change. Issues are kept in a hidden *Issues* tab of the access spreadsheet.
+
 ## Rescheduling and reassigning (Admins only)
 
-Changing a task's **ETA** or **who it is assigned to** is for Admins (and the owner) only, from any screen; the web app refuses it for everyone else, and the task editor shows those fields locked with a note. Editors can still change status, priority and quantity. In the editor, Admins have quick buttons: *Today*, *Tomorrow*, *Next working day* (Monday to Friday) and *+1 week*. A rescheduled or reassigned task moves at once: it leaves the day it was planned for (*Moved to 16 Nov*, or *Now with Yashika*), joins the new person's list, and shows in the Day plan's *Coming up* preview for its new day. The sheets themselves are shared in Google Sheets, so who can edit the ETA and designer columns there is set with the sheet's own sharing and protected ranges.
+Changing a task's **ETA** or **who it is assigned to** is for Admins (and the owner) only, from any screen; the web app refuses it for everyone else, and the task editor shows those fields locked with a note. Everyone can change the status of the tasks they can see (unless switched off for them); Editors also priority and quantity. In the editor, Admins have quick buttons: *Today*, *Tomorrow*, *Next working day* (Monday to Friday) and *+1 week*. A rescheduled or reassigned task moves at once: it leaves the day it was planned for (*Moved to 16 Nov*, or *Now with Yashika*), joins the new person's list, and shows in the Day plan's *Coming up* preview for its new day. The sheets themselves are shared in Google Sheets, so who can edit the ETA and designer columns there is set with the sheet's own sharing and protected ranges.
 
 ## Content tasks (briefs, scripts, content)
 
@@ -200,7 +231,7 @@ Content writers: Jahanvi and Gul (content only: they appear under Content tasks,
 
 ## Access levels and sections
 
-- **View only** sees only their own work by default (tasks assigned to them by their name on the team list, or whose brief they own). **Can edit**, **Admin** and the owner see everyone's work, brands and workload. The owner or an Admin can change this per person.
+- Everyone except **Admins** and the owner sees and manages **only their own tasks** by default (tasks assigned to them by their name on the team list, or whose brief they own); this includes **Can edit** since November 2026, when existing Can edit users were switched to their own tasks. Admins and the owner see everyone's work, brands and workload. The owner or an Admin can give anyone access to others' tasks (*Tasks they can see → All tasks*).
 - "Own work" matches people by their team-list name. Someone not on the team list (a KAM, for example) would see nothing, so the Access page warns when that would happen, and the person's dashboard explains it instead of staying blank.
 - **Sections:** when you add someone, approve a request or give access back, the *Sections they can open* dropdown picks one, several or all sections; the rest are hidden from their menu and cannot be opened. Click a name on the Access page to change it later. My work is always included.
 - **Admins** (and the owner) manage access and see the activity log and live team activity. Admins cannot change the owner's access or their own. Settings stay owner-only.

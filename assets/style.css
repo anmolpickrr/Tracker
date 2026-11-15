@@ -3245,3 +3245,56 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
 .qn-play .qn-note.pinned .qn-title { padding-right: 62px; }
 .qn-ftags .qn-ht { cursor: pointer; } .qn-ftags .qn-ht small { margin-left: 5px; opacity: .65; font-weight: 600; }
 .qn-fgrp .qn-fcolours { justify-self: start; }
+
+/* ===== Workspace in the task panel: brief, creative link (Nov 2026) ===== */
+#editor { width: min(46rem, calc(100vw - 32px)); }
+.ed-brief, .ed-linkbox { margin: 12px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-2, var(--panel)); }
+.ed-sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.ed-sec-h b { font: 600 13px/1.3 var(--font-body); color: var(--fg); }
+.ed-brief-body { max-height: 18rem; overflow: auto; overscroll-behavior: contain; font-size: 13.5px; line-height: 1.55; color: var(--fg-2); }
+.ed-brief-doc > * { max-width: 68ch; }
+.ed-brief-doc h1, .ed-brief-doc h2, .ed-brief-doc h3, .ed-brief-doc h4 { margin: 12px 0 4px; font: 600 14px/1.35 var(--font-body); color: var(--fg); }
+.ed-brief-doc p, .ed-brief-doc li { margin: 0 0 6px; }
+.ed-brief-doc ul, .ed-brief-doc ol { margin: 0 0 8px; padding-left: 1.3em; }
+.ed-brief-doc table { border-collapse: collapse; margin: 6px 0 10px; font-size: 12.5px; }
+.ed-brief-doc td, .ed-brief-doc th { border: 1px solid var(--line); padding: 4px 8px; vertical-align: top; }
+.ed-brief-doc img { max-width: 100%; height: auto; border-radius: 8px; }
+.ed-brief-doc a, .ed-brief .co-link, .ed-linkbox .co-link { color: var(--primary-text, var(--primary)); }
+.ed-brief-title { font: 600 15px/1.35 var(--font-body); color: var(--fg); margin: 0 0 8px !important; }
+.ed-brief-text { white-space: pre-wrap; margin: 0; }
+.ed-brief-wait { animation: edPulse 1.2s ease-in-out infinite; }
+@keyframes edPulse { 50% { opacity: .45; } }
+.ed-link-row { display: flex; gap: 8px; }
+.ed-link-row .co-input { flex: 1; min-width: 0; }
+.ed-link-rv { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; }
+.ed-link-rv[hidden] { display: none; }
+@media (max-width: 560px) { .ed-link-row { flex-direction: column; } .ed-brief-body { max-height: 14rem; } }
+@media (prefers-reduced-motion: reduce) { .ed-brief-wait { animation: none; } }
+
+/* ===== Errors & issues page (Admins) ===== */
+.iss-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: 4px 0 14px; }
+.iss-tile { display: flex; align-items: baseline; gap: 8px; padding: 8px 14px; border-radius: 12px; background: var(--sunken); }
+.iss-tile b { font: 700 22px/1 var(--font-display); color: var(--fg); }
+.iss-tile span { font-size: 12.5px; color: var(--fg-2); }
+.iss-tile.bad b { color: var(--bad); }
+.iss-tile.ok b { color: var(--ok); }
+.iss-areas { margin: 0; }
+.iss-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.iss-filters .co-input { flex: 1 1 12rem; min-width: 0; }
+.iss-seg .pm-opt.on { background: var(--panel); color: var(--fg); }
+.iss-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.iss-row { padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 12px; background: var(--panel); }
+.iss-row.open { border-left-color: var(--bad); }
+.iss-top { display: flex; gap: 12px; align-items: flex-start; }
+.iss-st { flex: none; padding: 2px 9px; border-radius: 999px; font: 600 11.5px/1.6 var(--font-body); }
+.iss-st.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.iss-st.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.iss-tt { display: grid; gap: 2px; min-width: 0; }
+.iss-tt b { font-size: 14px; color: var(--fg); overflow-wrap: anywhere; }
+.iss-det { margin: 8px 0 0; font-size: 13px; color: var(--fg-2); }
+.iss-det summary { cursor: pointer; color: var(--fg-2); font-weight: 500; }
+.iss-det p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.iss-res { margin: 6px 0 0; }
+.iss-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.iss-acts .co-btn { padding: 6px 12px; font-size: 12.5px; }
+.iss-what { overflow-wrap: anywhere; }

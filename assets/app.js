@@ -11,7 +11,7 @@
   const P = Object.assign({}, DEFAULTS);
   try { Object.assign(P, JSON.parse(LS.get('co.view', '{}'))); } catch (e) { /* ignore */ }
   let TASK_SAVE = null; // set by the task editor; also used by the assistant
-  const TABS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health', 'access'];
+  const TABS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health', 'issues', 'access'];
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
   const CFG = window.CO_CONFIG || {};
   const RANK = { Viewer: 1, Editor: 2, Admin: 3 };
@@ -25,7 +25,7 @@
   // Access management, the activity log and live team activity: the owner and everyone with the Admin role.
   const isAdmin = () => isOwner() || !!(A.user && A.user.role === 'Admin');
   const perm = (k) => A.mode === 'key' || !!(A.user && (A.user.owner || (A.user.perms ? !!A.user.perms[k] : (k === 'edit' ? RANK[A.user.role] >= 2 : k === 'export' || k === 'fasty' ? true : RANK[A.user.role] >= 3))));
-  const pageOk = (t) => { if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access'; if (t === 'access') return isAdmin(); if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
+  const pageOk = (t) => { if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access' && t !== 'issues'; if (t === 'access' || t === 'issues') return isAdmin(); if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
 
   const S = { status: 'idle', error: '', tasks: null, team: null, teamRaw: [], sources: {}, generatedAt: null, loadedAt: null };
@@ -40,6 +40,7 @@
       LS.set('co.view', JSON.stringify({ src: P.src, designer: P.designer, brand: P.brand, type: P.type, stage: P.stage, susort: P.susort, who: P.who, rpreset: P.rpreset, rfrom: P.rfrom, rto: P.rto, rchart: P.rchart }));
       if (o.tab) { try { history.replaceState(null, '', '#' + o.tab); } catch (e) { /* ignore */ } }
       if (o.tab === 'access') axRefresh(true);
+      if (o.tab === 'issues') ISS.load();
       if (o.tab) { closeNav(); window.scrollTo({ top: 0 }); }
       renderAll();
     },
@@ -76,7 +77,10 @@
   /* Signed-in requests: everything goes by POST with the session, never in the URL. */
   // quiet: background calls (the live-activity heartbeat) never sign anyone out; the 30-second check handles that with the right message.
   async function callApi(payload, quiet) {
-    const res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)) });
+    let res;
+    try { res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)) }); }
+    catch (e) { ISS.net(false); throw e; }
+    ISS.net(true);
     const body = parse(await res.text());
     if (body.ok && window.__liveAct) { const f = payload.fields || {}, W = { updateTask: () => 'Updated ' + (payload.id || 'a task') + ': ' + Object.keys(f).map((k) => k + ' → ' + f[k]).join(', '), noteSave: () => 'Saved a note', noteDelete: () => 'Deleted a note', noteAction: () => 'Updated an action in a note', setMember: () => 'Changed the team list' }; if (W[payload.action]) window.__liveAct('update', W[payload.action]()); }
     if (!quiet && !body.ok && ['signin_required', 'session_expired', 'no_access'].includes(body.error)) { lostAccess(body); throw new AuthLost(body.error); }
@@ -102,7 +106,7 @@
       const body = A.mode === 'auth' ? await callApi({ action: 'data', fresh: !!fresh }) : await keyGet(fresh ? { fresh: '1' } : {});
       if (!body.ok) throw new Error(errText(body.error));
       applyData(body);
-      if (A.mode === 'auth' && A.user) DC.put(A.user.email, body);
+      if (A.mode === 'auth' && A.user) { DC.put(A.user.email, body); ISS.resolve('client|load|' + A.user.email.split('@')[0]); }
       loadHealth();
       if (P.tab === 'access') axRefresh(true);
       LS.set('co.cacheAt', S.generatedAt);
@@ -119,6 +123,7 @@
       }
       if (S.status !== 'ok') S.status = 'error';
       else S.staleError = S.error;
+      if (A.mode === 'auth' && A.user && !/could not reach the web app/i.test(S.error)) ISS.report('client|load|' + A.user.email.split('@')[0], 'Sync', 'Tasks could not be loaded for ' + (A.user.name || A.user.email).split(' ')[0], S.error, null, 'retry-sync');
     }
     S.refreshing = false; S.cached = false;
     renderAll();
@@ -157,7 +162,7 @@
   let firstDone = false;
   function afterFirstData() {
     if (firstDone || A.mode !== 'auth' || !A.user) return; firstDone = true;
-    setTimeout(() => { NB.load(); loadHistory(); loadFeed(true); loadSettings(); dash.draw('cal'); checkForChanges(); }, 50);
+    setTimeout(() => { NB.load(); loadHistory(); loadFeed(true); loadSettings(); dash.draw('cal'); checkForChanges(); if (isAdmin()) ISS.load(true); }, 50);
   }
   /* Integration health from the web app (account, change detection, edit access). Admins only. Best effort. */
   async function loadHealth() {
@@ -176,9 +181,69 @@
       const res = await fetch(url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ key }, payload)) });
       body = parse(await res.text());
     }
-    if (!body.ok) throw new Error(body.error === 'forbidden' ? 'your role (' + (A.user ? A.user.role : '?') + ') cannot do this' : body.error || 'save failed');
+    if (!body.ok) { const er = new Error(body.error === 'forbidden' ? 'your role (' + (A.user ? A.user.role : '?') + ') cannot do this' : body.error === 'changed' ? 'Someone changed ' + body.field + ' in the sheet to "' + (body.now || 'blank') + '" since you opened this task. The dashboard has reloaded it: check and try again.' : body.error || 'save failed'); er.body = body; throw er; }
     return body;
   }
+  /* ================= Errors & issues =================
+     The dashboard reports what goes wrong on anyone's screen (a save that failed, lost connection, data that could not
+     be loaded, an error in the page); the web app adds its own checks every 10 minutes (sheets that cannot be read,
+     duplicate or missing IDs, updates). Admins see them all on the Issues page. Each issue is closed automatically
+     when its check passes again (a later save of the same task, the connection back, a clean load), or by an Admin. */
+  const ISS = { list: null, err: '', busy: false, f: 'open', area: '', q: '', at: 0, queue: [], timer: 0, open: 0, js: 0,
+    mine: (() => { try { return JSON.parse(LS.get('co.issKeys', '[]')) || []; } catch (e) { return []; } })() };
+  const browserName = () => { const u = navigator.userAgent, m = u.match(/(Edg|OPR|Firefox|Chrome|Version)\/(\d+)/); const n = !m ? 'Browser' : m[1] === 'Edg' ? 'Edge' : m[1] === 'OPR' ? 'Opera' : m[1] === 'Version' ? 'Safari' : m[1]; return n + (m ? ' ' + m[2] : '') + (/Mobi|Android|iPhone/.test(u) ? ' on a phone' : ''); };
+  ISS.keep = () => LS.set('co.issKeys', JSON.stringify(ISS.mine.slice(-60)));
+  ISS.flush = async () => {
+    ISS.timer = 0; if (A.mode !== 'auth' || !A.user || !ISS.queue.length) return;
+    const items = ISS.queue.splice(0, 40);
+    try { await callApi({ action: 'issueReport', items }, true); if (isAdmin() && P.tab === 'issues') ISS.load(); } catch (e) { /* offline: the next report carries on */ }
+  };
+  const issQueue = (it) => { ISS.queue = ISS.queue.filter((x) => x.key !== it.key); ISS.queue.push(it); if (!ISS.timer) ISS.timer = setTimeout(ISS.flush, 1500); };
+  ISS.report = (key, area, title, details, retry, fix) => {
+    if (A.mode !== 'auth' || !A.user) return;
+    if (!ISS.mine.includes(key)) { ISS.mine.push(key); ISS.keep(); }
+    issQueue({ key, area, title, details: String(details || '').slice(0, 1500) + ' · Page: ' + (PAGES[P.tab] ? PAGES[P.tab][0] : P.tab || '') + ' · ' + browserName(), retry: retry || undefined, fix: fix || undefined, active: true });
+  };
+  // Only issues this browser reported are closed from here (the web app also allows only those to be closed by non-Admins).
+  ISS.resolve = (key) => { if (!ISS.mine.includes(key)) return; ISS.mine = ISS.mine.filter((k) => k !== key); ISS.keep(); issQueue({ key, active: false }); };
+  ISS.load = async (force) => {
+    if (A.mode !== 'auth' || !isAdmin() || ISS.busy || (!force && Date.now() - ISS.at < 20000 && ISS.list)) return;
+    ISS.busy = true; if (!AX.users) axRefresh(false); // names of who reported what
+    try { const b = await callApi({ action: 'issues' }, true); if (b.ok) { ISS.list = b.issues; ISS.err = ''; ISS.at = Date.now(); } else ISS.err = errText(b.error); }
+    catch (e) { if (!(e instanceof AuthLost)) ISS.err = e.message; }
+    ISS.busy = false; ISS.open = (ISS.list || []).filter((x) => x.status === 'Open').length;
+    syncControls(); dash.draw('issues');
+  };
+  // Checks Admins' screens run on data only they see (packages): opened when they fail, closed when they pass,
+  // sent only when the result changes (or every 10 minutes).
+  const ISS_LAST = {};
+  ISS.check = (key, bad, area, title, details, fix) => {
+    if (A.mode !== 'auth' || !isAdmin()) return;
+    const sig = bad ? '1' + details : '0', l = ISS_LAST[key];
+    if (l && l.sig === sig && Date.now() - l.at < 6e5) return; ISS_LAST[key] = { sig, at: Date.now() };
+    issQueue(bad ? { key, area, title, details, fix, active: true } : { key, active: false });
+  };
+  // Errors in the page itself (not from browser add-ons), at most 5 per visit.
+  const jsIssue = (msg, where) => {
+    msg = String(msg || '').slice(0, 200); if (!msg || /ResizeObserver|Script error\.?$|AbortError|AuthLost/i.test(msg) || ISS.js >= 5) return; ISS.js++;
+    let h = 0; for (const c of msg) h = (h * 31 + c.charCodeAt(0)) | 0;
+    ISS.report('client|js|' + (h >>> 0).toString(36), 'Screen', 'Error on the dashboard: ' + msg.slice(0, 90), msg + (where ? ' · ' + where : ''));
+  };
+  window.addEventListener('error', (e) => { if (e.filename && !e.filename.startsWith(location.origin)) return; jsIssue(e.message, (e.filename || '').split('/').pop() + ':' + (e.lineno || '')); });
+  window.addEventListener('unhandledrejection', (e) => { const r = e.reason; if (r instanceof AuthLost) return; jsIssue(r && r.message ? r.message : r, 'promise'); });
+  // Connection: a failed request starts the clock; when requests work again, an outage of 2 minutes or more is
+  // recorded (it could not be sent while offline) and closed at once, so Admins see when and how long.
+  const NET = { down: 0 };
+  ISS.net = (ok) => {
+    if (!ok) { if (!NET.down) NET.down = Date.now(); return; }
+    if (!NET.down) return;
+    const mins = Math.round((Date.now() - NET.down) / 60000), from = NET.down; NET.down = 0;
+    if (mins < 2 || A.mode !== 'auth' || !A.user) return;
+    const key = 'client|connection|' + A.user.email.split('@')[0];
+    issQueue({ key, area: 'Connection', title: (A.user.name || A.user.email).split(' ')[0] + '\'s dashboard lost the connection', details: 'Could not reach the web app for ' + mins + ' min (from ' + CO.istDateTime(new Date(from)) + '). Changes made meanwhile were not saved; ask them to check.', active: true });
+    issQueue({ key, active: false });
+  };
+
   /* Live sync: every 30 s ask the web app whether a sheet changed (a tiny request), and reload only then.
      A full reload also runs every 10 minutes as a safety net, and on return to the tab. */
   let checking = false;
@@ -505,6 +570,7 @@
     axTab.hidden = !admin;
     // Pages each person may see (set by the owner on the Access page).
     document.querySelectorAll('.co-tab[data-tab], .btabs .bt[data-tab]').forEach((b) => { if (b.dataset.tab === 'access' || b.dataset.tab === 'notes' || b.dataset.tab === 'mine') return; b.hidden = !pageOk(b.dataset.tab); });
+    { const ib = document.getElementById('iss-badge'); ib.hidden = !(admin && ISS.open); ib.textContent = ISS.open ? ISS.open + ' open' : ''; }
     const badge = axTab.querySelector('.nav-badge'); badge.hidden = !AX.pending; badge.textContent = AX.pending ? AX.pending + ' waiting' : '';
     document.querySelector('.bt-dot').hidden = !(admin && AX.pending);
     const signed = A.mode === 'auth' && !!A.user;
@@ -537,7 +603,7 @@
     document.querySelectorAll('.co-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     document.querySelectorAll('.bt[data-tab]').forEach((b) => { if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     document.getElementById('bt-more').toggleAttribute('aria-current', !['today', document.querySelector('.btabs .bt[data-tab="mine"]') ? 'mine' : 'standup', 'tasks', 'notes'].includes(tab));
-    document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes';
+    document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes' || tab === 'issues';
     ['src', 'designer', 'brand', 'type'].forEach((k) => { const el = document.querySelector('.co-f[data-param="' + k + '"]'); if (el) el.classList.toggle('is-set', !!p[k]); });
     document.getElementById('f-reset').hidden = !(p.src || p.designer || p.brand || p.type);
     document.querySelectorAll('[data-rchart]').forEach((b) => b.setAttribute('aria-pressed', String((p.rchart || 'total') === b.dataset.rchart)));
@@ -664,6 +730,7 @@
     team: ['Team', 'Workload, output and who is on the team.'],
     reports: ['Delivery reports', 'Completed work (delivered + rejected) by month, brand, designer and creative type.'],
     health: ['Data health', 'Rows that make tracking less reliable, and the connection to the sheets.'],
+    issues: ['Errors & issues', 'Anything that failed or does not match, found automatically: what went wrong, where, and how to fix it.'],
     access: ['Access & activity', 'Who can use the dashboard, and every change they made.']
   };
   const curTab = () => { const t = dash.params().tab; return PAGES[t] && pageOk(t) ? t : pageOk('today') ? 'today' : 'mine'; };
@@ -1999,6 +2066,12 @@
     if (PK.list === null) { el.append(pkEl('p', 'co-note', 'Loading packages…')); return; }
     if (CO.status() !== 'ok') return;
     const all = PK.list.slice(), al = pkAlloc(all), ord = pkOrders(all), F = new Map(all.map((p) => [p.id, pkFacts(p, al.get(p.id))]));
+    { // Issues: deliveries a running package does not count (they are in the other sheet), and budget packages with
+      // deliveries of a creative type that has no price.
+      const run = all.filter((p) => F.get(p.id).st === 'running'), miss = run.filter((p) => pkMissed(p, F.get(p.id)).other > 0), unp = run.filter((p) => { const m = (al.get(p.id) || {}).money; return m && m.unpriced > 0; });
+      ISS.check('data|pk-missed', miss.length > 0, 'Packages', 'Deliveries not counted in packages', miss.length + ' running package' + (miss.length === 1 ? '' : 's') + ' (' + miss.slice(0, 8).map((p) => p.brand).join(', ') + ') have deliveries in the other sheet that they do not count. Open the order and set "Counts work from" to Both if they belong to it.', 'open-brands');
+      ISS.check('data|pk-unpriced', unp.length > 0, 'Packages', 'Creative types without a price', unp.length + ' budget package' + (unp.length === 1 ? '' : 's') + ' (' + unp.slice(0, 8).map((p) => p.brand).join(', ') + ') have deliveries of a creative type with no price, so the amount used is too low. Add the price under Access → Pricing.', 'open-pricing');
+    }
     if (!all.length) { el.append(pkEl('p', 'qn-empty', perm === 'edit' ? 'No packages yet. Add one with Add package; deliveries are counted automatically.' : 'No packages yet.')); return; }
     // brands (lifetime) and brands that need a new order
     const brands = new Map();
@@ -2888,7 +2961,7 @@
       if (window.__liveAct) window.__liveAct('open', 'Opened task ' + EDITING.label);
       if (perm('edit')) setTimeout(checkForChanges, 50);
       const list = r.designers ? [...new Set(r.designers.split(' + ').map(CO.canon))] : [];
-      before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1) };
+      before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1), link: r.link || '' };
       $('ed-where').textContent = CO.cls(r) + ' · ' + (SHEET[r.src] || r.source) + (r.row ? ' · row ' + r.row : '') + (r.id ? ' · ' + r.id : '');
       $('ed-title').textContent = r.brand + ' · ' + r.type;
       $('ed-topic').textContent = CO.topicText(r);
@@ -2910,15 +2983,17 @@
       const links = CO.links(r); $('ed-links').replaceChildren(links);
       $('ed-msg').textContent = r.id ? '' : 'This row has no ID in the sheet, so it can only be edited there.';
       $('ed-save').disabled = !r.id; $('ed-save').textContent = 'Save to sheet';
-      const edit = perm('edit');
-      ['ed-status', 'ed-eta', 'ed-designer', 'ed-qty'].forEach((id) => { $(id).disabled = !edit; });
-      // Rescheduling and reassigning are for Admins only (the web app checks this too).
-      const resch = edit && A.mode === 'auth' && isAdmin();
+      // What this person can change here (the web app checks every field again): status, priority and quantity,
+      // the creative link; rescheduling and reassigning are for Admins only.
+      const edit = perm('edit'), canSt = perm('status'), canLink = perm('links'), canBrief = perm('briefs');
+      const resch = edit && (A.mode !== 'auth' || isAdmin());
+      $('ed-status').disabled = !canSt; $('ed-qty').disabled = !edit;
       ['ed-eta', 'ed-designer'].forEach((id) => { $(id).disabled = !resch; $(id).title = resch ? '' : 'Only Admins can reschedule or reassign a task'; });
-      $('ed-quick').hidden = !resch; $('ed-lock').hidden = resch || !edit;
+      $('ed-quick').hidden = !resch; $('ed-lock').hidden = resch || !(edit || canSt);
       if (!edit) $('ed-priority').disabled = true;
-      $('ed-save').hidden = !edit;
-      if (!edit) $('ed-msg').textContent = 'View only. Ask the admin for Editor access to change tasks.';
+      $('ed-save').hidden = !(edit || canSt);
+      if (!edit && !canSt && !canLink) $('ed-msg').textContent = 'View only. Ask an Admin if you need to change this task.';
+      wsBrief(r, canBrief); wsLink(r, canLink, canSt);
       $('ed-history').hidden = !(A.mode === 'auth' && isAdmin() && r.id);
       if (dlgE.showModal) dlgE.showModal(); else dlgE.setAttribute('open', '');
     }
@@ -2946,7 +3021,7 @@
     $('ed-history').addEventListener('click', () => { if (!current) return; dlgE.close(); AX.q = current.id; AX.kind = ''; document.getElementById('ax-q').value = current.id; document.getElementById('ax-kind').value = ''; dash.setParams({ tab: 'access' }); });
     $('editor-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const r = current; if (!r || !perm('edit')) return;
+      const r = current; if (!r || $('ed-save').hidden) return;
       const now = { status: $('ed-status').value, eta: $('ed-eta').value, designer: $('ed-designer').value.replace(/\s*\+\s*/g, ', ').replace(/\s+/g, ' ').trim(), priority: $('ed-priority').value, qty: $('ed-qty').value };
       if ($('ed-eta').value && !$('ed-eta').validity.valid) { $('ed-msg').textContent = 'Pick a complete date.'; return; }
       const fields = {};
@@ -2957,15 +3032,28 @@
       if (!$('ed-qty-wrap').hidden && now.qty !== before.qty) fields.qty = now.qty;
       if (!Object.keys(fields).length) { dlgE.close(); return; }
       $('ed-save').disabled = true; $('ed-save').textContent = 'Saving…'; $('ed-msg').textContent = '';
-      try { await saveFields(r, fields); dlgE.close(); }
+      try { await saveFields(r, fields, before); dlgE.close(); }
       catch (err) {
         $('ed-msg').textContent = 'Not saved: ' + err.message;
         $('ed-save').disabled = false; $('ed-save').textContent = 'Save to sheet';
       }
     });
     // One path for every task change (the editor and the assistant): write to the sheet, show it at once, then reload.
-    async function saveFields(r, fields) {
-        const res = await post({ action: 'updateTask', source: r.src, id: r.id, row: r.row, fields });
+    // was: the values this screen showed when it opened. The web app refuses the change when the sheet has
+    // changed since (someone edited it there), so nobody overwrites work they have not seen.
+    async function saveFields(r, fields, was) {
+        const key = 'action|save|' + r.src + ':' + (r.id || r.row), payload = { action: 'updateTask', source: r.src, id: r.id, row: r.row, fields };
+        if (was) payload.before = { status: 'status' in fields ? was.status : undefined, link: 'link' in fields ? was.link : undefined, eta: 'eta' in fields ? was.eta : undefined };
+        let res;
+        try { res = await post(payload); }
+        catch (err) {
+          if (err.body && err.body.error === 'changed') { load(true); throw err; }
+          // Saving failed for another reason: keep it on the Issues page with a one-click retry (without the guard,
+          // which an Admin retrying later would trip on).
+          if (!(err instanceof AuthLost) && !(err.body && /permission|not assigned|forbidden|link must|not a link|only admins/i.test(err.body.error || ''))) ISS.report(key, 'Actions', 'Could not save ' + (r.id || 'row ' + r.row) + ' (' + Object.keys(fields).join(', ') + ')', err.message, { action: 'updateTask', source: r.src, id: r.id, row: r.row, fields });
+          throw err;
+        }
+        ISS.resolve(key);
         // Show the change at once; the reload that follows confirms it from the sheet.
         const t = Object.assign({}, r);
         if (fields.status) { t.stage = fields.status; t.open = CODATA.OPEN_STAGES.includes(fields.status); }
@@ -2973,6 +3061,7 @@
         if ('designer' in fields) t.designers = fields.designer ? fields.designer.split(/\s*,\s*/).join(' + ') : '';
         if ('priority' in fields) t.priority = fields.priority;
         if (fields.qty) t.qty = Number(fields.qty);
+        if ('link' in fields) t.link = fields.link;
         Object.assign(t, CODATA.groupOf(t.stage)); if (t.done) { t.ddate = t.eta || t.req; if (t.ddate && t.ddate > CO.today()) t.ddate = CO.today(); t.month = t.ddate ? t.ddate.slice(0, 7) : ''; } else { t.ddate = null; t.month = ''; }
         if (res.row) t.row = res.row;
         S.tasks = S.tasks.map((x) => (x.uid === r.uid ? t : x));
@@ -2982,10 +3071,158 @@
         return res;
     }
     TASK_SAVE = saveFields;
+
+    /* Workspace: read the brief and submit the creative link without opening the sheet. */
+    const BR = { seq: 0 };
+    const SAFE_TAG = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'LI', 'B', 'STRONG', 'I', 'EM', 'U', 'A', 'IMG', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TD', 'TH', 'BR', 'SPAN', 'HR', 'BLOCKQUOTE']);
+    // Google's exported HTML, reduced to plain formatting: no scripts, styles, event handlers or outside requests
+    // except Google's own image host. Google's redirect links are unwrapped.
+    function cleanBrief(html) {
+      const doc = new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html'), out = document.createElement('div');
+      const walk = (from, to) => from.childNodes.forEach((n) => {
+        if (n.nodeType === 3) { to.append(n.textContent); return; }
+        if (n.nodeType !== 1) return;
+        if (!SAFE_TAG.has(n.tagName)) { if (!/^(SCRIPT|STYLE|IFRAME|OBJECT|EMBED|svg|SVG|META|LINK|TITLE|HEAD)$/.test(n.tagName)) walk(n, to); return; }
+        const e = document.createElement(n.tagName.toLowerCase());
+        if (n.tagName === 'A') { let h = n.getAttribute('href') || ''; const g = h.match(/^https:\/\/www\.google\.com\/url\?q=([^&]+)/); if (g) { try { h = decodeURIComponent(g[1]); } catch (x) { /* keep */ } } if (/^https?:\/\//i.test(h)) { e.href = h; e.target = '_blank'; e.rel = 'noopener noreferrer'; } }
+        if (n.tagName === 'IMG') { const src = n.getAttribute('src') || ''; if (!/^https:\/\/[a-z0-9-]+\.googleusercontent\.com\//i.test(src)) return; e.src = src; e.alt = n.getAttribute('alt') || ''; e.loading = 'lazy'; e.referrerPolicy = 'no-referrer'; }
+        if (n.tagName === 'TD' || n.tagName === 'TH') { ['colspan', 'rowspan'].forEach((a) => { const v = n.getAttribute(a); if (/^\d{1,2}$/.test(v || '')) e.setAttribute(a, v); }); }
+        const st = n.getAttribute('style') || '';
+        if (/font-weight:\s*(700|bold)/.test(st)) e.style.fontWeight = '700';
+        if (/font-style:\s*italic/.test(st)) e.style.fontStyle = 'italic';
+        if (/text-decoration:[^;]*underline/.test(st) && n.tagName !== 'A') e.style.textDecoration = 'underline';
+        walk(n, e);
+        if (n.tagName === 'SPAN' && !e.getAttribute('style')) { to.append(...e.childNodes); return; }
+        to.append(e);
+      });
+      walk(doc.body.firstChild || doc.body, out);
+      // drop empty paragraphs Google adds between blocks
+      out.querySelectorAll('p').forEach((p) => { if (!p.textContent.trim() && !p.querySelector('img')) p.remove(); });
+      return out;
+    }
+    function wsBrief(r, can) {
+      const box = $('ed-brief-box'), body = $('ed-brief'), open = $('ed-brief-open'), seq = ++BR.seq;
+      const url = /^https?:\/\//i.test(r.brief || '') ? r.brief : '';
+      box.hidden = !can || !r.brief && !r.id; open.hidden = !url; if (url) open.href = url;
+      open.textContent = /docs\.google\.com\/document/.test(url) ? 'Open in Google Docs ↗' : 'Open the brief ↗';
+      if (box.hidden) return;
+      const note = (t, cls) => body.replaceChildren(el('p', 'co-note' + (cls ? ' ' + cls : ''), t));
+      if (A.mode !== 'auth' || !r.id) { if (r.brief && !url) note(r.brief); else note(url ? 'Open the brief with the link above.' : 'No brief in the sheet yet.'); return; }
+      note('Loading the brief…', 'ed-brief-wait');
+      callApi({ action: 'brief', source: r.src, id: r.id, row: r.row }, true).then((b) => {
+        if (seq !== BR.seq) return; // another task was opened meanwhile
+        if (!b.ok) { note(b.error === 'forbidden' ? 'You cannot read briefs. Ask an Admin.' : 'The brief could not be loaded: ' + (b.error || 'unknown error'), 'warn'); return; }
+        if (b.url) { open.href = b.url; open.hidden = false; }
+        if (b.empty) { note('No brief in the sheet yet.'); return; }
+        if (b.text) { body.replaceChildren(el('p', 'ed-brief-text', b.text)); return; }
+        if (b.noAccess) { note(b.error || 'The brief could not be read here. Open it in Google Docs.', 'warn'); return; }
+        if (b.kind !== 'doc') { note('This brief is not a Google Doc, so it opens in a new tab.'); return; }
+        const doc = cleanBrief(b.html || ''); if (b.title) doc.prepend(el('p', 'ed-brief-title', b.title));
+        if (!doc.textContent.trim()) { note('The brief is empty.'); return; }
+        doc.className = 'ed-brief-doc'; body.replaceChildren(doc);
+      }).catch((e) => { if (seq === BR.seq && !(e instanceof AuthLost)) note('The brief could not be loaded: ' + e.message, 'warn'); });
+    }
+    function wsLink(r, can, canSt) {
+      const box = $('ed-link-box'); box.hidden = !can || !r.id;
+      if (box.hidden) return;
+      const cur = $('ed-link-cur'); cur.replaceChildren();
+      if (r.link && /^https?:\/\//i.test(r.link)) { const a = el('a', 'co-link', 'Open the current link ↗'); a.href = r.link; a.target = '_blank'; a.rel = 'noopener noreferrer'; cur.append(a); }
+      else cur.textContent = 'Not submitted yet';
+      $('ed-link').value = ''; $('ed-link').placeholder = r.link ? 'Paste a new link to replace it (https://…)' : 'Paste the link to the finished creative (https://…)';
+      $('ed-link-save').textContent = r.link ? 'Update link' : 'Submit link';
+      // Submitting a finished creative moves open work to Under review (if they may change the status).
+      const rv = canSt && r.open; $('ed-link-rv-l').hidden = !rv; $('ed-link-rv').checked = rv;
+    }
+    $('ed-link-save').addEventListener('click', async () => {
+      const r = current; if (!r) return;
+      const v = $('ed-link').value.trim();
+      if (!/^https:\/\/\S+\.\S+/i.test(v)) { $('ed-msg').textContent = 'Paste a full link that starts with https://'; $('ed-link').focus(); return; }
+      if (v === before.link) { $('ed-msg').textContent = 'That is already the link in the sheet.'; return; }
+      const fields = { link: v }; if (!$('ed-link-rv-l').hidden && $('ed-link-rv').checked) fields.status = 'Under review';
+      const b = $('ed-link-save'), was = b.textContent; b.disabled = true; b.textContent = 'Submitting…'; $('ed-msg').textContent = '';
+      try { await saveFields(r, fields, before); dlgE.close(); toast(fields.status ? 'Link submitted and moved to Under review' : 'Link submitted'); }
+      catch (err) { $('ed-msg').textContent = 'Not submitted: ' + err.message; }
+      b.disabled = false; b.textContent = was;
+    });
+    $('ed-link').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('ed-link-save').click(); } });
   })();
 
   /* ================= Start ================= */
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (TABS.includes(h) && h !== P.tab) dash.setParams({ tab: h }); });
+  /* ================= Issues page (Admins) ================= */
+  const ISS_FIX = {
+    'retry-sync': ['Reload from the sheets', () => { load(true); ISS.load(true); }],
+    'open-health': ['Open Data health', () => dash.setParams({ tab: 'health' })],
+    'open-brands': ['Open Brands', () => dash.setParams({ tab: 'brands' })],
+    'open-pricing': ['Open Pricing', () => { dash.setParams({ tab: 'access' }); setTimeout(() => { const c = document.querySelector('[data-panel="access"] [data-draw="pricing"]'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 120); }]
+  };
+  // What a retry would change, in words (shown before it runs: the request came from someone's screen).
+  const retryText = (r) => { const f = r.fields || {}; return (r.id || 'row ' + r.row) + ': ' + Object.keys(f).map((k) => (k === 'link' ? 'creative link' : k) + ' → ' + (f[k] === '' ? '(blank)' : f[k])).join(', '); };
+  async function issAct(x, act) {
+    try { await post({ action: 'issueAct', key: x.key, act }); toast(act === 'resolve' ? 'Marked resolved' : act === 'reopen' ? 'Reopened' : 'Removed'); }
+    catch (e) { toast('Not changed: ' + e.message, true); }
+    ISS.load(true);
+  }
+  async function issRetry(x, btn) {
+    let r; try { r = JSON.parse(x.retry); } catch (e) { r = null; }
+    if (!r || r.action !== 'updateTask' || !r.fields) { toast('This issue has nothing to retry.', true); return; }
+    if (!confirm('Retry this change in the sheet?\n\n' + retryText(r) + '\n\nReported by ' + (x.by || 'someone') + '.')) return;
+    btn.disabled = true; btn.textContent = 'Retrying…';
+    try {
+      const t = (S.tasks || []).find((y) => y.src === r.source && y.id === r.id);
+      if (t && TASK_SAVE) await TASK_SAVE(t, r.fields); else await post({ action: 'updateTask', source: r.source, id: r.id, row: r.row, fields: r.fields });
+      await post({ action: 'issueAct', key: x.key, act: 'resolve' }); toast('Saved. Issue resolved.');
+    } catch (e) { toast('Still failing: ' + e.message, true); }
+    ISS.load(true);
+  }
+  dash.draw('issues', (box) => {
+    box.replaceChildren();
+    if (!ISS.list) { box.append(el('p', 'co-note', ISS.err || 'Loading issues…')); if (!ISS.busy) ISS.load(); return; }
+    const L = ISS.list, open = L.filter((x) => x.status === 'Open'), wk = Date.now() - 7 * 864e5, fixed7 = L.filter((x) => x.status !== 'Open' && x.resolvedOn && new Date(x.resolvedOn) > wk);
+    const areas = [...new Set(L.map((x) => x.area))].sort();
+    // summary line: open, resolved this week, and which areas have open issues
+    const sum = el('div', 'iss-sum');
+    const tile = (n, t, cls) => { const d = el('div', 'iss-tile' + (cls ? ' ' + cls : '')); d.append(el('b', '', String(n)), el('span', '', t)); return d; };
+    const byArea = areas.map((a) => [a, open.filter((x) => x.area === a).length]).filter((x) => x[1]);
+    sum.append(tile(open.length, open.length === 1 ? 'open issue' : 'open issues', open.length ? 'bad' : 'ok'), tile(fixed7.length, 'resolved in 7 days'));
+    const ar = el('p', 'iss-areas co-note', byArea.length ? 'Open by area: ' + byArea.map(([a, n]) => a + ' ' + n).join(', ') : 'Nothing open. Checks run every 10 minutes and on every action.'); sum.append(ar);
+    box.append(sum);
+    if (ISS.err) box.append(el('p', 'co-note warn', 'Could not refresh: ' + ISS.err));
+    // filters
+    const fl = el('div', 'iss-filters');
+    const seg = el('div', 'pm-seg iss-seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', 'Show');
+    [['open', 'Open (' + open.length + ')'], ['resolved', 'Resolved'], ['all', 'All']].forEach(([v, t]) => { const b = el('button', 'pm-opt' + (ISS.f === v ? ' on' : ''), t); b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(ISS.f === v)); b.addEventListener('click', () => { ISS.f = v; dash.draw('issues'); }); seg.append(b); });
+    const as = el('select', 'co-select'); as.setAttribute('aria-label', 'Area'); as.append(new Option('All areas', ''), ...areas.map((a) => new Option(a, a))); as.value = areas.includes(ISS.area) ? ISS.area : ''; as.addEventListener('change', () => { ISS.area = as.value; dash.draw('issues'); });
+    const q = el('input', 'co-input'); q.type = 'search'; q.placeholder = 'Search issues'; q.value = ISS.q; q.setAttribute('aria-label', 'Search issues'); q.id = 'iss-q';
+    q.addEventListener('input', () => { clearTimeout(ISS.qt); ISS.qt = setTimeout(() => { ISS.q = q.value; dash.draw('issues'); const n = document.getElementById('iss-q'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 250); });
+    fl.append(seg, as, q); box.append(fl);
+    const qq = ISS.q.trim().toLowerCase();
+    const rows = L.filter((x) => (ISS.f === 'all' || (ISS.f === 'open' ? x.status === 'Open' : x.status !== 'Open')) && (!ISS.area || x.area === ISS.area) && (!qq || (x.area + ' ' + x.title + ' ' + x.details + ' ' + x.by).toLowerCase().includes(qq)));
+    if (!rows.length) { box.append(el('p', 'qn-empty', ISS.f === 'open' && !qq && !ISS.area ? 'No open issues. Everything the checks look at is working.' : 'No issues match.')); return; }
+    const ul = el('ul', 'iss-list');
+    rows.slice(0, 200).forEach((x) => {
+      const on = x.status === 'Open', li = el('li', 'iss-row' + (on ? ' open' : ''));
+      const top = el('div', 'iss-top');
+      const st = el('span', 'iss-st ' + (on ? 'bad' : 'ok'), on ? 'Active' : 'Resolved');
+      const tt = el('div', 'iss-tt'); tt.append(el('b', '', x.title), el('span', 'co-note', x.area + ' · first ' + when(x.first) + (x.count > 1 ? ' · seen ' + x.count + ' times, last ' + when(x.last) : '') + (x.by && x.by !== 'Automatic check' ? ' · reported by ' + nameOf(x.by) : x.by ? ' · automatic check' : '')));
+      top.append(st, tt); li.append(top);
+      if (x.details) { const d = el('details', 'iss-det'); d.append(el('summary', '', 'What went wrong'), el('p', '', CO.maskText(x.details))); li.append(d); }
+      if (!on && x.resolvedOn) li.append(el('p', 'co-note iss-res', 'Resolved ' + when(x.resolvedOn) + ' by ' + (x.resolvedBy === 'Automatic check' ? 'the automatic check (it passed again)' : nameOf(x.resolvedBy))));
+      const acts = el('div', 'iss-acts');
+      const btn = (t, cls, fn) => { const b = el('button', 'co-btn sm' + (cls ? ' ' + cls : ''), t); b.type = 'button'; b.addEventListener('click', () => fn(b)); acts.append(b); return b; };
+      if (on && x.retry) { let r = null; try { r = JSON.parse(x.retry); } catch (e) { /* ignore */ } if (r && r.action === 'updateTask') { btn('Retry', 'primary', (b) => issRetry(x, b)); acts.append(el('span', 'co-note iss-what', retryText(r))); } }
+      if (on && ISS_FIX[x.fix]) btn(ISS_FIX[x.fix][0], x.retry ? '' : 'primary', ISS_FIX[x.fix][1]);
+      if (on) btn('Mark resolved', '', () => issAct(x, 'resolve')); else btn('Reopen', 'ghost', () => issAct(x, 'reopen'));
+      if (!on) btn('Remove', 'ghost', () => { if (confirm('Remove this issue from the list?')) issAct(x, 'delete'); });
+      li.append(acts); ul.append(li);
+    });
+    box.append(ul);
+    if (rows.length > 200) box.append(el('p', 'co-note', 'Showing the latest 200 of ' + rows.length + '. Narrow with the filters.'));
+  });
+  document.getElementById('iss-refresh').addEventListener('click', () => ISS.load(true));
+  // Admins: the open count (sidebar badge, bell) stays current; the page refreshes every minute while open.
+  setInterval(() => { if (A.mode === 'auth' && isAdmin() && document.visibilityState === 'visible') { if (P.tab === 'issues' || Date.now() - ISS.at > 5 * 6e4) ISS.load(true); } }, 6e4);
+
   /* ================= Access (admins): requests, people, activity log ================= */
   const AX = { users: null, you: '', log: null, next: null, total: 0, q: '', kind: '', who: '', err: '', busy: false, pending: 0 };
   async function axRefresh(withLog) {
@@ -3091,8 +3328,8 @@
       if (u.status !== 'Approved') {
         pick = secPicker(DEF_PAGES(u.role)); const pl = el('div', 'co-field'); pl.append(el('span', '', 'Sections they can open'), pick); act.append(pl);
         sel.addEventListener('change', () => { if (!pick.touched) pick.set(DEF_PAGES(sel.value)); });
-        const w2 = el('p', 'co-note warn pm-warn', (u.name || u.email).split(' ')[0] + ' is not on the team list: as View only they would see no tasks (they only see work assigned to them). Choose Can edit, or set All tasks after approving.'); act.append(w2);
-        const pw = () => { w2.hidden = !(sel.value === 'Viewer' && u.onTeam === false); }; sel.addEventListener('change', pw); pw();
+        const w2 = el('p', 'co-note warn pm-warn', (u.name || u.email).split(' ')[0] + ' is not on the team list, so they would see no tasks (everyone but Admins sees only the work assigned to them). Add them to the team list, or set All tasks after approving.'); act.append(w2);
+        const pw = () => { w2.hidden = !(sel.value !== 'Admin' && u.onTeam === false); }; sel.addEventListener('change', pw); pw();
       }
       const withPerms = (o) => { const pm = pick ? permsFor(sel.value, pick.read()) : undefined; return pm ? Object.assign(o, { perms: pm }) : o; };
       const btn = (text, cls, fn) => { const b = el('button', 'co-btn' + (cls ? ' ' + cls : ''), text); b.type = 'button'; b.addEventListener('click', fn); act.append(b); };
@@ -3111,16 +3348,16 @@
     if (!locked && u.status === 'Approved') {
       const P0 = u.perms || {}, first = (u.name || u.email).split(' ')[0];
       const box = el('fieldset', 'pm-box'); box.id = 'pm-box'; box.append(el('legend', '', 'What ' + first + ' can see and do'));
-      const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty, pricing: !!P0.pricing };
+      const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty, pricing: !!P0.pricing, status: P0.status !== false, briefs: P0.briefs !== false, links: P0.links !== false };
       base.pages.add('mine');
-      const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty, pr: o.pricing });
+      const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty, pr: o.pricing, st: o.status, br: o.briefs, li: o.links });
       // unsaved changes survive the 30-second refresh of the access list
       const st = PR.draft && PR.draft.email === u.email ? PR.draft.st : Object.assign({}, base, { pages: new Set(base.pages) });
       const snap = () => snapOf(st), start = snapOf(base);
       const sum = el('p', 'pm-sum');
       // [key, label, what View means, what Edit means (or '' when there is nothing to edit)]
       const ROWS = [['mine', 'My work', 'Their own tasks and to-dos (always on)', ''], ['today', 'Overview', 'Team numbers, Needs attention and charts', ''], ['standup', 'Stand-up', 'Stand-up cards and the Day plan', ''],
-        ['tasks', 'Tasks', 'The task list', 'Change status, ETA, designer and priority (wherever tasks appear)'], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
+        ['tasks', 'Tasks', 'The task list', 'Change priority and quantity (status and links are switched below; only Admins reschedule or reassign)'], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
         ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', '']];
       const level = (k) => k === 'pricing' ? (st.pricing ? 'edit' : 'hidden') : k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
         : !st.pages.has(k) ? 'hidden' : (k === 'tasks' && st.edit) || (k === 'team' && st.team) ? 'edit' : 'view';
@@ -3146,11 +3383,11 @@
       box.append(sum, grid);
       // which tasks + extra abilities
       const more = el('div', 'pm-more');
-      const sc = el('label', 'co-field', 'Tasks they can see'); const scs = el('select', 'co-select'); scs.append(new Option('All tasks', 'all'), new Option('Only tasks assigned to them (or whose brief they own)', 'own')); scs.value = st.scope; sc.append(scs);
+      const sc = el('label', 'co-field', 'Tasks they can see'); const scs = el('select', 'co-select'); scs.append(new Option('Only tasks assigned to them (or whose brief they own)', 'own'), new Option('All tasks (others\' tasks too)', 'all')); scs.value = st.scope; sc.append(scs);
       const ownWarn = el('p', 'co-note warn pm-warn', first + ' is not on the team list, so "only tasks assigned to them" would show nothing. Choose All tasks, or add them to the team list first.');
       scs.addEventListener('change', () => { st.scope = scs.value; paint(); });
       more.append(sc, ownWarn);
-      const AB = [['load', 'See workload and others\' work', 'Workload estimates and "View as" on My work'], ['export', 'Download data', 'CSV downloads on Tasks, Reports and Brands'], ['fasty', 'Use Fasty', 'The voice and chat assistant']];
+      const AB = [['status', 'Change design status', 'On the tasks they can see, from the task panel'], ['briefs', 'Read briefs', 'Open the Creative Brief inside the dashboard'], ['links', 'Submit creative links', 'Paste the finished creative\'s link; it is written to the sheet'], ['load', 'See workload and others\' work', 'Workload estimates and "View as" on My work'], ['export', 'Download data', 'CSV downloads on Tasks, Reports and Brands'], ['fasty', 'Use Fasty', 'The voice and chat assistant']];
       const ab = el('div', 'pm-abs');
       AB.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = st[k]; cb.addEventListener('change', () => { st[k] = cb.checked; paint(); }); const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); ab.append(lab); });
       more.append(ab); box.append(more);
@@ -3158,7 +3395,7 @@
       const row = el('div', 'pm-act');
       const save = el('button', 'co-btn primary', 'Save changes'); save.type = 'button';
       const undo = el('button', 'co-btn', 'Undo changes'); undo.type = 'button'; undo.addEventListener('click', () => { PR.draft = null; drawPerson(); });
-      save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty, pricing: st.pricing }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
+      save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty, pricing: st.pricing, status: st.status, briefs: st.briefs, links: st.links }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
       row.append(save, undo);
       if (u.custom) { const rs = el('button', 'co-btn ghost', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
       box.append(row); act.append(box);
@@ -3168,7 +3405,7 @@
           hint.textContent = lv === 'edit' ? 'Can see and ' + eHint.charAt(0).toLowerCase() + eHint.slice(1) : lv === 'view' ? vHint + (eHint ? ' · view only' : '') : 'Not shown to ' + first;
           r.classList.toggle('off', lv === 'hidden');
         });
-        const n = SECTIONS.filter(([k]) => st.pages.has(k)).length, edits = [st.edit && 'tasks', st.team && 'the team list', st.packages === 'edit' && 'brand packages'].filter(Boolean);
+        const n = SECTIONS.filter(([k]) => st.pages.has(k)).length, edits = [st.status && 'status', st.links && 'links', st.edit && 'priority', st.team && 'the team list', st.packages === 'edit' && 'brand packages'].filter(Boolean);
         sum.textContent = 'Opens ' + n + ' of ' + SECTIONS.length + ' sections · ' + (edits.length ? 'can edit ' + edits.join(', ') : 'view only') + ' · sees ' + (st.scope === 'own' ? 'only their own tasks' : 'all tasks');
         ownWarn.hidden = !(st.scope === 'own' && u.onTeam === false);
         const dirty = snap() !== start; PR.draft = dirty ? { email: u.email, st } : null; save.disabled = !dirty; undo.hidden = !dirty; box.classList.toggle('dirty', dirty);
@@ -3659,7 +3896,7 @@
     sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
     moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
     user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1',
-    bell: 'M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0',
+    bell: 'M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0', alert: 'M12 3 2 20h20L12 3zM12 10v4M12 17h.01',
     check: 'M20 6L9 17l-5-5', at: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.5 7.1',
     clock: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', cal: 'M4 5h16v16H4zM4 10h16M9 3v4M15 3v4', plus: 'M12 5v14M5 12h14', edit: 'M4 20l4-1 11-11-3-3L5 16z', video: 'M3 7h12v10H3zM15 10l6-3v10l-6-3'
   };
@@ -3768,6 +4005,7 @@
       });
       // Meetings starting within 15 minutes (connected Google Calendar).
       (CAL.events || []).forEach((ev) => { const m = (new Date(ev.start) - Date.now()) / 60000; if (m <= 15 && m > -5) out.unshift({ id: 'mtg-' + ev.id + '-' + ev.start, icon: 'video', tone: 'lime', t: (m > 0 ? 'Starts ' + untilText(ev.start) + ': ' : 'Now: ') + ev.title, s: fmtRange(ev.start, ev.end) + (ev.people.length ? ' · ' + ev.people.length + ' people' : ''), go: () => { if (ev.meet) window.open(ev.meet, '_blank', 'noopener'); else dash.setParams({ tab: 'today' }); } }); });
+      if (isAdmin() && ISS.open) { const top = (ISS.list || []).filter((x) => x.status === 'Open')[0]; out.unshift({ id: 'iss-' + ISS.open + '-' + (top ? top.key + top.last : ''), icon: 'alert', tone: 'bad', t: ISS.open + (ISS.open === 1 ? ' open issue' : ' open issues'), s: top ? top.area + ': ' + top.title : 'See the Issues page', go: () => dash.setParams({ tab: 'issues' }) }); }
       if (isAdmin() && AX.pending) out.unshift({ id: 'access-' + AX.pending + '-' + t, icon: 'user', tone: 'violet', t: AX.pending + (AX.pending === 1 ? ' access request' : ' access requests') + ' waiting', s: 'Approve or reject on the Access page', go: () => dash.setParams({ tab: 'access' }) });
       NB.notes.forEach((n) => {
         if (n.reminder && n.reminder <= nowLocal && n.reminder.slice(0, 10) >= CO.addDays(t, -2) && (n.createdBy === A.user.email || (n.actions || []).some((a) => !a.done && a.email === A.user.email))) out.unshift({ id: 'rem-' + n.id + '-' + n.reminder, icon: 'bell', tone: 'bad', t: 'Reminder: ' + n.title, s: CO.istDateTime(n.reminder + ':00+05:30') + (n.followUps ? ' · ' + n.followUps.slice(0, 60) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } });

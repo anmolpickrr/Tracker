@@ -28,7 +28,7 @@ const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
  * Everyone else gets a role (View only / Can edit / Admin) whose defaults the owner and Admins can fine-tune per person:
  * which pages they see, and whether they can edit tasks, download data, see workload estimates and other people's
  * work, manage the team list and use Fasty, and whether they see all tasks or only their own. */
-const PAGE_KEYS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health'];
+const PAGE_KEYS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health', 'issues'];
 const OWNER_ONLY = { settings: 1, saveSettings: 1 };
 // The owner and everyone with the Admin role manage access and see the activity log and live team activity.
 const ADMIN_ONLY = { users: 1, setAccess: 1, audit: 1, presence: 1 };
@@ -36,8 +36,11 @@ function isAdminUser_(u) { return !!u && (u.owner || isOwner_(u.email) || u.role
 function defaultPerms_(role) {
   // View only sees only their own work by default; Can edit and Admin see everyone's work (Creative Head, Nov 2026:
   // edit access means working with all tasks, brands and people, e.g. KAMs who are not on the designer team list).
-  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '', pricing: false };
-  if (role === 'Editor') { p.edit = true; p.load = true; p.scope = 'all'; }
+  // Workspace (Nov 2026): everyone except Admins sees and manages only the tasks assigned to them; on those tasks they
+  // can change the status, read the brief and submit the creative link. The owner can switch each of these per person,
+  // and give access to others' tasks (scope "all").
+  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health' && k !== 'issues'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '', pricing: false, status: true, briefs: true, links: true };
+  if (role === 'Editor') { p.edit = true; }
   if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; p.pricing = true; }
   return p;
 }
@@ -46,7 +49,7 @@ function permsOf_(u) {
   if (u.owner || isOwner_(u.email)) { const all = defaultPerms_('Admin'); all.owner = true; all.packages = 'edit'; all.pricing = true; return all; }
   const p = defaultPerms_(u.role), o = u.perms || {};
   if (Array.isArray(o.pages)) p.pages = o.pages.filter(function (k) { return PAGE_KEYS.indexOf(k) >= 0; });
-  ['edit', 'export', 'load', 'team', 'fasty', 'pricing'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
+  ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') p.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') p.packages = o.packages;
   if (p.pages.indexOf('mine') < 0) p.pages.unshift('mine'); // everyone keeps their own work page
@@ -56,7 +59,7 @@ function cleanPerms_(o) {
   if (!o || typeof o !== 'object') return null;
   const out = {};
   if (Array.isArray(o.pages)) out.pages = o.pages.map(String).filter(function (k, i, a) { return PAGE_KEYS.indexOf(k) >= 0 && a.indexOf(k) === i; });
-  ['edit', 'export', 'load', 'team', 'fasty', 'pricing'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
+  ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') out.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') out.packages = o.packages;
   return out;
@@ -66,7 +69,9 @@ function allowed_(u, action) {
   if (OWNER_ONLY[action]) return !!(u.owner || isOwner_(u.email));
   if (ADMIN_ONLY[action]) return isAdminUser_(u);
   const p = permsOf_(u);
-  if (action === 'updateTask') return p.edit;
+  if (action === 'updateTask') return p.edit || p.status || p.links; // each field is checked again in taskWrite_
+  if (action === 'brief') return !!p.briefs;
+  if (action === 'issues' || action === 'issueAct') return isAdminUser_(u);
   if (action === 'setMember') return p.team;
   if (action === 'health') return p.pages.indexOf('health') >= 0;
   if (action === 'assist' || action === 'speak') return p.fasty;
@@ -77,7 +82,7 @@ function allowed_(u, action) {
   if (action === 'packageSave' || action === 'packageDelete') return p.packages === 'edit';
   return true;
 }
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Editor', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Admin', issueAct: 'Admin', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -297,6 +302,9 @@ function doPost(e) {
       return json_(out);
     }
     if (body.action === 'feed') return json_(feed_(user));
+    if (body.action === 'brief') { const r = brief_(body, user); if (!r.ok) issueLog_('Creative brief', 'Brief could not open', r.error + ' (task ' + clean_(body.id) + ')', user.email); return json_(r); }
+    if (body.action === 'issues') return json_(issuesList_());
+    if (body.action === 'issueReport') return json_(issueReport_(body, user));
     if (body.action === 'noteTrash') return json_(noteTrash_(user));
     if (body.action === 'noteFile') return json_(noteFile_(body, user));
     if (body.action === 'meetings') return json_(meetings_(user));
@@ -318,6 +326,7 @@ function doPost(e) {
     // Writes: one at a time, each recorded in the audit log with before and after values.
     return json_(write_(body, user));
   } catch (err) {
+    try { issueLog_('Server', 'Request failed: ' + clean_(body.action || 'unknown'), String(err && err.message || err), 'web app'); } catch (e2) { /* never fail twice */ }
     return json_({ ok: false, error: String(err && err.message || err) });
   }
 }
@@ -335,9 +344,14 @@ function write_(body, user) {
     let out;
     if (body.action === 'setMember') out = setMember_(body);
     else if (body.action === 'updateTask') {
-      // Rescheduling (ETA) and reassigning (designer) are for Admins only; status, priority and quantity follow Edit.
-      const ff = body.fields || {};
-      out = (ff.eta != null || ff.designer != null) && !isAdminUser_(user) ? { ok: false, error: 'Only Admins can change a task\'s ETA or who it is assigned to.' } : updateTask_(body);
+      // Rescheduling (ETA) and reassigning (designer) are for Admins only; status, creative link, priority and quantity
+      // follow the person's switches; outside Admins, only tasks assigned to them (unless given access to others').
+      const ff = body.fields || {}, pm = permsOf_(user), adm = isAdminUser_(user);
+      out = (ff.eta != null || ff.designer != null) && !adm ? { ok: false, error: 'Only Admins can change a task\'s ETA or who it is assigned to.' }
+        : ff.status != null && !pm.status ? { ok: false, error: 'You do not have permission to change task status. Ask an Admin.' }
+        : ff.link != null && !pm.links ? { ok: false, error: 'You do not have permission to submit creative links. Ask an Admin.' }
+        : (ff.priority != null || ff.qty != null) && !pm.edit ? { ok: false, error: 'You do not have permission to change priority or quantity.' }
+        : updateTask_(body, adm || pm.scope === 'all' ? null : ownMatcher_(user));
     }
     else if (body.action === 'setAccess') out = setAccess_(body, user);
     else if (body.action === 'noteSave') out = noteSave_(body, user);
@@ -346,6 +360,7 @@ function write_(body, user) {
     else if (body.action === 'noteFileUpload') out = noteFileUpload_(body, user);
     else if (body.action === 'packageSave') out = pkgSave_(body, user);
     else if (body.action === 'pricingSave') out = pricingSave_(body, user);
+    else if (body.action === 'issueAct') out = issueAct_(body, user);
     else if (body.action === 'packageDelete') out = pkgDelete_(body, user);
     else if (body.action === 'noteAction') out = noteAction_(body, user);
     else if (body.action === 'prefs') out = prefs_(body, user);
@@ -418,7 +433,7 @@ const QTY_HEADER = /^(no\.?\s*of\s*creatives?|number of creatives?|qty|quantity|
  * body: { source: a name from CONFIG.sources, id, row, fields: { status?, eta?, designer?, priority?, qty? } }
  * Finds the row by its ID (using `row` as a hint), then writes only the fields given.
  */
-function updateTask_(body) {
+function updateTask_(body, mine) {
   const src = CONFIG.sources[body.source];
   if (!src || kindOf_(body.source) === 'team') return { ok: false, error: 'unknown sheet' };
   const id = clean_(body.id);
@@ -450,6 +465,15 @@ function updateTask_(body) {
   if (f.priority != null && clean_(f.priority) && !/^P[0-3]$/.test(clean_(f.priority).toUpperCase())) return { ok: false, error: 'bad priority' };
   if (f.qty != null && c.qty < 0) return { ok: false, error: 'Add a "No. of Creatives" column to the sheet first' };
   if (f.qty != null && !(parseInt(f.qty, 10) >= 1 && parseInt(f.qty, 10) <= 999)) return { ok: false, error: 'bad quantity' };
+  if (f.link != null && c.link < 0) return { ok: false, error: 'No Creative Link column found in this sheet' };
+  if (f.link != null && f.link !== '' && !/^https:\/\/[^\s"'<>]{4,1990}$/i.test(String(f.link).trim())) return { ok: false, error: 'The creative link must be a full https:// address.' };
+  // Only the person's own tasks (unless they may work on others').
+  if (mine && !mine(sheet.getRange(row, c.designer + 1).getDisplayValue(), c.owner >= 0 ? sheet.getRange(row, c.owner + 1).getDisplayValue() : '')) return { ok: false, error: 'This task is not assigned to you, so you cannot change it. Ask an Admin if you need access.' };
+  // Changed in the sheet since the dashboard last loaded it? Refuse, so nothing is overwritten without being seen.
+  const was = body.before || {};
+  if (was.status != null && f.status != null && c.status >= 0) { const cur = CODATA.stageOf(sheet.getRange(row, c.status + 1).getDisplayValue(), '')[0]; if (cur !== was.status && !(was.status === 'To be planned' && cur === 'Awaiting brief')) return { ok: false, error: 'changed', field: 'Design status', now: cur }; }
+  if (was.link != null && f.link != null && c.link >= 0) { const cur = clean_(sheet.getRange(row, c.link + 1).getDisplayValue()); if (cur !== clean_(was.link)) return { ok: false, error: 'changed', field: 'Creative link', now: cur }; }
+  if (was.eta != null && f.eta != null && c.eta >= 0) { const v = sheet.getRange(row, c.eta + 1).getValue(); const cur = v instanceof Date ? Utilities.formatDate(v, IST, 'yyyy-MM-dd') : (CODATA.parseDate(clean_(v)) || ''); if (cur !== was.eta) return { ok: false, error: 'changed', field: 'Design ETA', now: cur }; }
 
   const statusVal = f.status != null ? statusValue_(sheet, sheet.getRange(row, c.status + 1), c.status, String(f.status)) : null;
 
@@ -492,15 +516,51 @@ function updateTask_(body) {
   }
   if (f.designer != null) { track(c.designer, function (cell) { cell.setValue(f.designer); }); written.designer = f.designer; }
   if (f.priority != null) { const p = clean_(f.priority).toUpperCase(); track(c.priority, function (cell) { cell.setValue(p); }); written.priority = p; }
+  if (f.link != null) { const l = String(f.link).trim(); track(c.link, function (cell) { cell.setValue(l); }); written.link = l; }
   if (f.qty != null) { const q = parseInt(f.qty, 10); track(c.qty, function (cell) { cell.setValue(q); }); written.qty = q; }
   return { ok: true, row: row, written: written, changes: changes };
+}
+
+/* The Creative Brief of a task, for people allowed to read briefs (and who can see the task). A Google Doc is read
+   through the dashboard's Google account (export as HTML, read-only access it already has) and returned for a clean
+   in-dashboard view; any other link is returned as a link. Cached for 10 minutes. */
+function brief_(body, user) {
+  const src = CONFIG.sources[body.source]; if (!src || kindOf_(body.source) === 'team') return { ok: false, error: 'unknown sheet' };
+  const id = clean_(body.id); if (!id) return { ok: false, error: 'This task has no ID.' };
+  const sheet = openTab_(src), lastCol = sheet.getLastColumn(), lastRow = sheet.getLastRow();
+  const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function (h) { return clean_(h).toLowerCase(); });
+  const c = taskColumns_(kindOf_(body.source), head);
+  let row = Number(body.row) || 0; const idAt = function (r) { return clean_(sheet.getRange(r, c.id + 1).getDisplayValue()); };
+  if (!(row >= 2 && row <= lastRow && idAt(row) === id)) { const ids = sheet.getRange(2, c.id + 1, Math.max(1, lastRow - 1), 1).getDisplayValues(); row = 0; for (let i = 0; i < ids.length; i++) if (clean_(ids[i][0]) === id) { row = i + 2; break; } }
+  if (!row) return { ok: false, error: 'ID ' + id + ' was not found in the sheet.' };
+  const pm = permsOf_(user);
+  if (!isAdminUser_(user) && pm.scope !== 'all' && !ownMatcher_(user)(sheet.getRange(row, c.designer + 1).getDisplayValue(), c.owner >= 0 ? sheet.getRange(row, c.owner + 1).getDisplayValue() : '')) return { ok: false, error: 'This task is not assigned to you.' };
+  if (c.brief < 0) return { ok: false, error: 'No Creative Brief column in this sheet.' };
+  const cell = sheet.getRange(row, c.brief + 1), rich = cell.getRichTextValue();
+  let url = clean_(rich && rich.getLinkUrl() ? rich.getLinkUrl() : cell.getDisplayValue());
+  const m = url.match(/^https:\/\/docs\.google\.com\/document\/d\/([A-Za-z0-9_-]{20,})/);
+  if (!url) return { ok: true, empty: true };
+  if (!/^https?:\/\//i.test(url)) return { ok: true, text: url }; // a brief typed into the cell
+  if (!m) return { ok: true, url: url, kind: /drive\.google\.com|docs\.google\.com/.test(url) ? 'google' : 'link' };
+  const cache = CacheService.getScriptCache(), key = 'brief:' + m[1], hit = cache.get(key);
+  if (hit) return { ok: true, url: url, kind: 'doc', title: hit.split('\u0000')[0], html: hit.split('\u0000')[1] };
+  try {
+    const meta = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + m[1] + '?fields=name&supportsAllDrives=true', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (meta.getResponseCode() !== 200) return { ok: true, url: url, kind: 'doc', noAccess: true, error: meta.getResponseCode() === 404 ? 'The dashboard\'s Google account cannot open this Doc. Share it with that account (view access) to read it here.' : 'Google Docs did not answer (' + meta.getResponseCode() + ').' };
+    const res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + m[1] + '/export?mimeType=text/html', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return { ok: true, url: url, kind: 'doc', noAccess: true, error: 'The Doc could not be read (' + res.getResponseCode() + ').' };
+    const title = JSON.parse(meta.getContentText()).name || 'Creative brief';
+    let html = res.getContentText(); const b = html.match(/<body[^>]*>([\s\S]*)<\/body>/i); html = (b ? b[1] : html).slice(0, 400000);
+    try { cache.put(key, title + '\u0000' + html, 600); } catch (e) { /* too large to cache */ }
+    return { ok: true, url: url, kind: 'doc', title: title, html: html };
+  } catch (e) { return { ok: true, url: url, kind: 'doc', noAccess: true, error: 'The Doc could not be read: ' + e.message }; }
 }
 
 function taskColumns_(kind, head) {
   const col = function (n, nth) { let seen = 0; for (let i = 0; i < head.length; i++) if (head[i] === n) { if (seen === (nth || 0)) return i; seen++; } return -1; };
   const any = function () { for (let i = 0; i < arguments.length; i++) { const k = col(arguments[i]); if (k >= 0) return k; } return -1; };
   const find = function (re) { for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; };
-  const c = { priority: col('priority'), qty: find(QTY_HEADER) };
+  const c = { priority: col('priority'), qty: find(QTY_HEADER), link: col('creative link'), brief: col('creative brief'), owner: find(/content owner|^owner$/) };
   if (kind === 'paid') {
     // Paid sheet: column A holds the ID; the second "Design ETA" column holds the design status.
     c.id = 0; c.eta = col('design eta', 0);
@@ -1142,7 +1202,7 @@ function prefs_(b, u) {
 /* Runs every 10 minutes (setup installs it). Sends the 10:00 and 18:00 IST emails once a day each, and note reminders when due. */
 function remindersTick() {
   TEAM_MEMO_ = null;
-  try { maintenance_(); } catch (e) { console.log('maintenance: ' + e); }
+  try { maintenance_(); issueResolveKey_('Background jobs|Maintenance failed'); } catch (e) { console.log('maintenance: ' + e); try { issueLog_('Background jobs', 'Maintenance failed', String(e.message || e), 'schedule'); } catch (e2) { /* ignore */ } }
   if (!authOn_() || !hasAccessBook_()) return;
   const now = new Date(), day = Utilities.formatDate(now, IST, 'yyyy-MM-dd');
   const mins = Number(Utilities.formatDate(now, IST, 'H')) * 60 + Number(Utilities.formatDate(now, IST, 'mm'));
@@ -1161,9 +1221,78 @@ function remindersTick() {
     // One snapshot a day of the point-in-time numbers (open, overdue…), so later comparisons are exact.
     if (mins >= 9 * 60 && props.getProperty('SNAP_DAY') !== day) { props.setProperty('SNAP_DAY', day); snapshot_(day); }
     sendNoteReminders_(now);
-    try { dayPlanTick_(day, mins); } catch (e) { console.log('day plan: ' + e); }
+    try { dayPlanTick_(day, mins); issueResolveKey_('Stand-up|Day plan could not be saved'); } catch (e) { console.log('day plan: ' + e); issueLog_('Stand-up', 'Day plan could not be saved', String(e.message || e), 'schedule'); }
+    try { serverChecks_(); } catch (e) { console.log('checks: ' + e); }
   } finally { lock.releaseLock(); }
 }
+/* ================= Errors & issues =================
+   One row per issue in the hidden "Issues" tab of the access spreadsheet: where (area), what, details, first and last
+   seen, how many times, and whether it is still open. The same issue is counted, not repeated. Checks that pass again
+   resolve their issue automatically; Admins see everything on the Issues page and can retry, fix or close items. */
+const ISSUE_HEAD = ['Key', 'Area', 'Issue', 'Details', 'First seen', 'Last seen', 'Count', 'Status', 'Resolved by', 'Resolved on', 'Reported by', 'Retry', 'Fix'];
+function issuesSheet_() { const ss = accessBook_(); let sh = ss.getSheetByName('Issues'); if (!sh) { sh = ss.insertSheet('Issues'); sh.appendRow(ISSUE_HEAD); sh.setFrozenRows(1); sh.hideSheet(); } return sh; }
+function issueRows_() { const sh = issuesSheet_(), last = sh.getLastRow(); if (last < 2) return []; return sh.getRange(2, 1, last - 1, ISSUE_HEAD.length).getValues().map(function (v, i) { return { row: i + 2, key: String(v[0]), area: String(v[1]), title: String(v[2]), details: String(v[3]), first: iso_(v[4]), last: iso_(v[5]), count: Number(v[6]) || 1, status: String(v[7] || 'Open'), resolvedBy: String(v[8] || ''), resolvedOn: iso_(v[9]), by: String(v[10] || ''), retry: String(v[11] || ''), fix: String(v[12] || '') }; }); }
+function issueLog_(area, title, details, by, extra) {
+  if (!hasAccessBook_()) return;
+  area = clean_(area).slice(0, 60) || 'Dashboard'; title = clean_(title).slice(0, 160) || 'Something went wrong'; const key = (extra && extra.key ? clean_(extra.key) : area + '|' + title).slice(0, 200);
+  const cache = CacheService.getScriptCache(), ck = 'iss:' + Utilities.base64EncodeWebSafe(key).slice(0, 200); if (cache.get(ck)) return; cache.put(ck, '1', 60); // the same issue at most once a minute
+  const sh = issuesSheet_(), now = new Date(), cur = issueRows_().filter(function (x) { return x.key === key; })[0];
+  const retry = extra && extra.retry ? JSON.stringify(extra.retry).slice(0, 4000) : '', fix = extra && extra.fix ? String(extra.fix).slice(0, 60) : '';
+  if (cur) sh.getRange(cur.row, 4, 1, 9).setValues([[safe_(String(details || cur.details).slice(0, 2000)), cur.first ? new Date(cur.first) : now, now, cur.count + 1, 'Open', '', '', safe_(by || cur.by), retry || cur.retry, fix || cur.fix]]);
+  else sh.appendRow([safe_(key), safe_(area), safe_(title), safe_(String(details || '').slice(0, 2000)), now, now, 1, 'Open', '', '', safe_(by || ''), retry, fix]);
+}
+function issueResolveKey_(key, by) {
+  if (!hasAccessBook_()) return; const cur = issueRows_().filter(function (x) { return x.key === key && x.status === 'Open'; })[0];
+  if (cur) issuesSheet_().getRange(cur.row, 8, 1, 3).setValues([['Resolved', by || 'Automatic check', new Date()]]);
+}
+function issuesList_() {
+  if (!hasAccessBook_()) return { ok: false, error: 'not set up' };
+  const rows = issueRows_().sort(function (a, b) { return (a.status === 'Open' ? 0 : 1) - (b.status === 'Open' ? 0 : 1) || String(b.last).localeCompare(String(a.last)); }).slice(0, 500);
+  return { ok: true, issues: rows.map(function (x) { const o = Object.assign({}, x); delete o.row; return o; }) };
+}
+// The dashboard reports what it detects (failed actions, sync and data checks) and which of its checks now pass.
+function issueReport_(b, u) {
+  const items = (Array.isArray(b.items) ? b.items : []).slice(0, 40);
+  items.forEach(function (it) {
+    const key = clean_(it && it.key).slice(0, 200); if (!key) return;
+    if (it.active === false) { const isAdmin = isAdminUser_(u); if (isAdmin || /^(action|client)\|/.test(key)) issueResolveKey_(key, 'Automatic check'); return; }
+    issueLog_(it.area, it.title, it.details, u.email, { key: key, retry: retryOk_(it.retry, u), fix: /^(retry-sync|open-health|open-brands|open-pricing)$/.test(String(it.fix || '')) ? it.fix : '' });
+  });
+  return { ok: true };
+}
+// A retry an Admin can run later from the Issues page: only a task change, and only the fields the person who
+// reported it was allowed to change themselves (an Admin's click must not carry more than that person could do).
+function retryOk_(r, u) {
+  if (!r || typeof r !== 'object' || r.action !== 'updateTask' || !r.fields || typeof r.fields !== 'object') return null;
+  const pm = permsOf_(u), adm = isAdminUser_(u), f = {}, may = { status: pm.status, link: pm.links, priority: pm.edit, qty: pm.edit, eta: adm, designer: adm };
+  Object.keys(r.fields).forEach(function (k) { if (may[k]) f[k] = String(r.fields[k]).slice(0, 2000); });
+  if (!Object.keys(f).length) return null;
+  return { action: 'updateTask', source: String(r.source || '').slice(0, 40), id: String(r.id || '').slice(0, 60), row: Number(r.row) || 0, fields: f };
+}
+function issueAct_(b, u) {
+  const cur = issueRows_().filter(function (x) { return x.key === String(b.key); })[0]; if (!cur) return { ok: false, error: 'This issue is no longer there.' };
+  const sh = issuesSheet_();
+  if (b.act === 'resolve') sh.getRange(cur.row, 8, 1, 3).setValues([['Resolved', u.email, new Date()]]);
+  else if (b.act === 'reopen') sh.getRange(cur.row, 8, 1, 3).setValues([['Open', '', '']]);
+  else if (b.act === 'delete') sh.deleteRow(cur.row);
+  else return { ok: false, error: 'unknown' };
+  return { ok: true, changes: [{ action: 'Issue ' + (b.act === 'resolve' ? 'resolved' : b.act === 'reopen' ? 'reopened' : 'removed'), sheet: 'Issues', record: cur.title, details: cur.area }] };
+}
+/* Every 10 minutes: can each sheet be read, are there duplicate or missing IDs (they break saving), does the web app
+   need the owner, are prices missing for budget packages. Each check opens or resolves its issue. */
+function serverChecks_() {
+  const set = function (key, area, title, bad, details, fix) { if (bad) issueLog_(area, title, details, 'Automatic check', { key: key, fix: fix }); else issueResolveKey_(key); };
+  let all = null; try { all = JSON.parse(dataText_(true)); } catch (e) { set('sync|data', 'Sync', 'The sheets could not be read', true, String(e.message || e), 'retry-sync'); return; }
+  set('sync|data', 'Sync', 'The sheets could not be read', false);
+  Object.keys(all.sources || {}).forEach(function (k) { const x = all.sources[k]; set('sync|' + k, 'Sync', 'Sheet "' + k + '" could not be read', !!(x && x.error && !x.optional), x && x.error ? x.error : '', 'retry-sync'); });
+  try {
+    const t = tasksNow_().tasks, dup = t.filter(function (r) { return /Duplicate ID/.test(r.flags || ''); }).map(function (r) { return r.id; }), noId = t.filter(function (r) { return /No Creative_ID/.test(r.flags || ''); }).length;
+    set('data|duplicate-ids', 'Data', 'Duplicate task IDs in the sheets', dup.length > 0, dup.length + ' rows share an ID (' + dup.filter(function (v, i, a) { return a.indexOf(v) === i; }).slice(0, 10).join(', ') + '). The dashboard cannot save to these rows until each ID is unique.', 'open-health');
+    set('data|missing-ids', 'Data', 'Tasks without an ID', noId > 0, noId + ' rows have no Creative_ID, so they can only be changed in the sheet.', 'open-health');
+  } catch (e) { issueLog_('Data', 'Data checks failed', String(e.message || e), 'Automatic check'); }
+  try { const up = updateStatus_(); set('update|owner', 'Web app', 'Automatic updates need attention', !!(up && up.err), up && up.err ? String(up.err) : '', ''); } catch (e) { /* older versions */ }
+}
+
 /** Run from the editor to email yourself today's morning briefing (nothing else is sent). */
 function sendTestReminder() { sendDigests_('morning', Session.getEffectiveUser().getEmail()); Logger.log('Sent a test morning briefing to ' + Session.getEffectiveUser().getEmail()); }
 
@@ -2274,6 +2403,10 @@ function maintenance_() {
     if (!tune.model || !tune.at || Date.now() - tune.at > 7 * 864e5) tuneGemini_(false);
   }
   if (p.getProperty('NOTES_BACKUP_DAY') !== Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd') && hasAccessBook_()) { try { notesBackup_(); p.setProperty('NOTES_BACKUP_DAY', Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd')); } catch (e) { console.log('notes backup: ' + e); } }
+  if (!p.getProperty('OWN_TASKS_2026_11_15') && hasAccessBook_()) {
+    try { const moved = []; users_().list.forEach(function (u) { if (u.role === 'Admin' || u.owner || isOwner_(u.email)) return; const o = u.perms || null; if (o && o.scope === 'all') { const np = Object.assign({}, o); delete np.scope; updateUser_(u, { perms: JSON.stringify(np) }); moved.push(u.email); } });
+      p.setProperty('OWN_TASKS_2026_11_15', new Date().toISOString()); if (moved.length) audit_([{ who: 'Automatic change', role: 'System', action: 'Permissions changed', field: 'Tasks they can see', before: 'All tasks', after: 'Only their own', details: moved.join(', ') }]); } catch (e) { console.log('own tasks: ' + e); }
+  }
   autoUpdate_(false);
 }
 
@@ -2498,12 +2631,25 @@ function teamEntryOf_(user, all) {
     return teamMatch_(user, CODATA.parseTeam(team));
   } catch (e) { return null; }
 }
+/* Whose task is it: the person's team-list name and spellings in the designer column, or their first name among the
+   content owners. One rule for what someone sees and what they may change. */
+function ownMatcher_(user, all) {
+  all = all || JSON.parse(dataText_(false));
+  const names = [user.name || ''];
+  try {
+    const team = all.sources && Object.keys(all.sources).map(function (k) { return all.sources[k]; }).filter(function (x) { return x && x.kind === 'team'; })[0];
+    if (team) { const me = teamMatch_(user, CODATA.parseTeam(team)); if (me) { names.unshift(me.key || me.name); String(me.aliases || '').split(/[,;\n]/).forEach(function (a) { if (a.indexOf('@') < 0) names.push(a); }); } }
+  } catch (e) { /* names from the Google profile only */ }
+  const keys = names.map(function (n) { return String(n).toLowerCase().trim(); }).filter(function (n) { return n.length > 2; });
+  const first = keys.length ? keys[0].split(' ')[0] : '';
+  return function (designer, owner) { const d = String(designer == null ? '' : designer).toLowerCase(), o = String(owner == null ? '' : owner).toLowerCase(); return keys.some(function (n) { return d.indexOf(n) >= 0; }) || (!!first && o.split(/[\s,;&\/+|]+/).indexOf(first) >= 0); };
+}
 function ownDataText_(user, fresh) {
   const all = JSON.parse(dataText_(fresh));
   const names = [user.name || ''];
   try {
     const team = all.sources && Object.keys(all.sources).map(function (k) { return all.sources[k]; }).filter(function (x) { return x && x.kind === 'team'; })[0];
-    if (team) { const me = teamMatch_(user, CODATA.parseTeam(team)); if (me) { names.unshift(me.name); String(me.aliases || '').split(/[,;\n]/).forEach(function (a) { if (a.indexOf('@') < 0) names.push(a); }); } }
+    if (team) { const me = teamMatch_(user, CODATA.parseTeam(team)); if (me) { names.unshift(me.key || me.name); String(me.aliases || '').split(/[,;\n]/).forEach(function (a) { if (a.indexOf('@') < 0) names.push(a); }); } }
   } catch (e) { /* names from the Google profile only */ }
   const keys = names.map(function (n) { return String(n).toLowerCase().trim(); }).filter(function (n) { return n.length > 2; });
   const first = keys.length ? keys[0].split(' ')[0] : '';
