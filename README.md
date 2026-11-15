@@ -54,6 +54,8 @@ Changes pushed to GitHub reach everyone without anyone copying code:
 
 One-time setup (owner): switch on **Google Apps Script API** at script.google.com/home/usersettings, paste this `Code.gs` and `appsscript.json` one last time, run `updateNow` and approve the two new permissions (manage this script's code and deployments), then deploy a new version.
 
+
+**Open dashboards update too.** Each release has a build number (in `index.html` and `version.txt`). Every open dashboard checks `version.txt` every 2 minutes and whenever its tab comes back to the front; when a newer build is out it reloads itself at a safe moment (no task, note or other window open and nothing half-typed; it offers *Reload now* otherwise), through a fresh address so no cached page is served. Everyone therefore runs the same build within minutes, and what each person sees still follows their own permissions, which the web app sends with every 30-second check. When releasing, bump the build number in `index.html`, the asset links and `version.txt` together.
 ## Accounts and ownership
 
 One Google account runs the whole integration, so nothing depends on which account a person happens to be signed into.

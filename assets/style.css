@@ -3657,3 +3657,11 @@ body { background:
 .ed-manage .co-field > .co-select, .ed-manage .co-field > .co-input { height: 44px; min-height: 44px; }
 #editor .co-dialog-actions { background: var(--panel); border-top: 1px solid var(--glass-line); flex-wrap: wrap; }
 @media (max-width: 600px) { #editor .co-dialog-actions { position: static; margin: 0; padding: 4px 0 0; border-top: 0; background: none; } }
+/* meeting attendees: solid faces that read on the violet and the orange (live) card */
+.cal-next .cal-ppl { gap: 0; }
+.cal-next .cal-ppl .av { width: 30px !important; height: 30px !important; font: 700 10.5px/1 var(--font-body) !important; letter-spacing: .02em; background: #fff !important; color: #1e1e1e !important; box-shadow: 0 0 0 2.5px #5b3fe0 !important; border: 0 !important; position: relative; }
+.cal-next.live .cal-ppl .av { box-shadow: 0 0 0 2.5px #f05a22 !important; }
+.cal-next .cal-ppl .av + .av { margin-left: -9px; }
+.cal-next .cal-ppl .av:nth-child(2) { background: #ddff00 !important; } .cal-next .cal-ppl .av:nth-child(3) { background: #bff3dc !important; }
+.cal-next .cal-ppl .av:nth-child(4) { background: #c9e9ff !important; } .cal-next .cal-ppl .av:nth-child(5) { background: #e6defe !important; }
+.cal-next .cal-ppl .cal-more { margin-left: 6px; font-weight: 600; font-size: 12px; color: #fff; }

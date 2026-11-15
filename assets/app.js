@@ -719,6 +719,34 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; if (action && action.onTimeout) action.onTimeout(); }, action ? 5000 : 4000);
   }
 
+  /* ================= Everyone on the latest release =================
+     The dashboard checks version.txt (never cached) every 2 minutes and when the tab comes back. When a newer release
+     is out it reloads itself at a safe moment (nothing open or being typed; drafts are kept anyway), through a new
+     address so no browser or GitHub Pages cache can serve the old page. What each person sees still comes from their
+     own permissions, which the web app sends with every check. */
+  const BUILD = ((document.querySelector('meta[name="co-build"]') || {}).content || '').trim();
+  const REL = { next: '', asked: false };
+  try { const u = new URL(location.href); if (u.searchParams.has('v')) { u.searchParams.delete('v'); history.replaceState(null, '', u.pathname + (u.search || '') + location.hash); } } catch (e) { /* ignore */ }
+  const busyNow = () => !!document.querySelector('dialog[open]') || (document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) && String(document.activeElement.value || '').trim() !== '');
+  function goLatest() {
+    try { sessionStorage.setItem('co.reloadFor', REL.next); } catch (e) { /* ignore */ }
+    location.replace(location.pathname + '?v=' + encodeURIComponent(REL.next) + location.hash);
+  }
+  async function checkRelease() {
+    if (!BUILD || document.visibilityState !== 'visible') return;
+    let v = '';
+    try { const r = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) return; v = (await r.text()).trim(); } catch (e) { return; }
+    if (!/^\d{8}[a-z]?$/.test(v) || v <= BUILD) return; // only ever move forward
+    REL.next = v;
+    let tried = ''; try { tried = sessionStorage.getItem('co.reloadFor') || ''; } catch (e) { /* ignore */ }
+    if (tried === v) { if (!REL.asked) { REL.asked = true; toast('A new version of the dashboard is ready.', false, { label: 'Reload', fn: goLatest }); } return; }
+    if (!busyNow()) { toast('Updating to the latest version…'); setTimeout(() => { if (!busyNow()) goLatest(); }, 1500); }
+    else if (!REL.asked) { REL.asked = true; toast('A new version is ready. It loads when you finish what you are doing.', false, { label: 'Reload now', fn: goLatest }); }
+  }
+  setInterval(checkRelease, 2 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkRelease(); });
+  setTimeout(checkRelease, 20 * 1000);
+
   /* ================= Header, sync state and filters ================= */
   const PAGES = {
     mine: ['My work', 'Your overdue work, what is due today, what is next and what you delivered this week.'],
