@@ -2991,8 +2991,13 @@
       ['ed-eta', 'ed-designer'].forEach((id) => { $(id).disabled = !resch; $(id).title = resch ? '' : 'Only Admins can reschedule or reassign a task'; });
       $('ed-quick').hidden = !resch; $('ed-lock').hidden = resch || !(edit || canSt);
       if (!edit) $('ed-priority').disabled = true;
-      $('ed-save').hidden = !(edit || canSt);
-      if (!edit && !canSt && !canLink) $('ed-msg').textContent = 'View only. Ask an Admin if you need to change this task.';
+      // Team members finish work by submitting the link (which moves the task to Under review); the Manage section
+      // (status, ETA, designer, priority) shows only for Admins and people the owner gave the status switch.
+      const manage = resch || canSt || (A.mode !== 'auth' && edit);
+      $('ed-manage').hidden = !manage; $('ed-save').hidden = !manage;
+      $('ed-cancel').textContent = manage ? 'Cancel' : 'Close';
+      if (!manage && !canLink) $('ed-msg').textContent = 'View only. Ask an Admin if you need to change this task.';
+      edFacts(r, links);
       wsBrief(r, canBrief); wsLink(r, canLink, canSt);
       $('ed-history').hidden = !(A.mode === 'auth' && isAdmin() && r.id);
       if (dlgE.showModal) dlgE.showModal(); else dlgE.setAttribute('open', '');
@@ -3009,6 +3014,7 @@
   document.addEventListener('co-open-editor', (e) => openEditor(e.detail));
     document.querySelector('.co').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-uid][tabindex]')) openEditor(e.target.dataset.uid); });
     $('ed-cancel').addEventListener('click', () => dlgE.close());
+    $('ed-x').addEventListener('click', () => dlgE.close());
     // Admins: one-click rescheduling (Monday to Friday are working days, as everywhere on the dashboard)
     $('ed-quick').addEventListener('click', (e) => {
       const b = e.target.closest('[data-d]'); if (!b) return;
@@ -3122,6 +3128,17 @@
         doc.className = 'ed-brief-doc'; body.replaceChildren(doc);
       }).catch((e) => { if (seq === BR.seq && !(e instanceof AuthLost)) note('The brief could not be loaded: ' + e.message, 'warn'); });
     }
+    // Read-only summary under the title: status, ETA, designer, priority and the task's own links.
+    function edFacts(r, links) {
+      const box = $('ed-facts'); box.replaceChildren();
+      const chip = (label, val, cls) => { if (!val) return; const c = el('span', 'ed-fact' + (cls ? ' ' + cls : '')); c.append(el('small', '', label), el('b', '', val)); box.append(c); };
+      const t = CO.today(), late = r.open && r.eta && r.eta < t;
+      chip('Status', r.awaiting ? 'Awaiting brief' : r.stage, 'st st-' + String(r.group || 'open'));
+      chip('Due', r.eta ? CO.fmtDate(r.eta) + (late ? ' · late' : r.eta === t ? ' · today' : '') : 'No ETA', late ? 'late' : r.eta === t ? 'today' : '');
+      chip('Designer', r.designers ? r.designers.split(' + ').map(CO.canon).join(', ') : 'Unassigned');
+      if (r.priority) chip('Priority', r.priority, 'pr pr-' + r.priority.toLowerCase());
+      if (links && links.textContent && links.textContent !== '—') { const w = el('span', 'ed-fact links'); w.append(links); box.append(w); }
+    }
     function wsLink(r, can, canSt) {
       const box = $('ed-link-box'); box.hidden = !can || !r.id;
       if (box.hidden) return;
@@ -3132,13 +3149,14 @@
       $('ed-link-save').textContent = r.link ? 'Update link' : 'Submit link';
       // Submitting a finished creative moves open work to Under review (if they may change the status).
       const rv = canSt && r.open; $('ed-link-rv-l').hidden = !rv; $('ed-link-rv').checked = rv;
+      $('ed-link-auto').hidden = !(r.open && !canSt); box.dataset.auto = r.open && !canSt ? '1' : '';
     }
     $('ed-link-save').addEventListener('click', async () => {
       const r = current; if (!r) return;
       const v = $('ed-link').value.trim();
       if (!/^https:\/\/\S+\.\S+/i.test(v)) { $('ed-msg').textContent = 'Paste a full link that starts with https://'; $('ed-link').focus(); return; }
       if (v === before.link) { $('ed-msg').textContent = 'That is already the link in the sheet.'; return; }
-      const fields = { link: v }; if (!$('ed-link-rv-l').hidden && $('ed-link-rv').checked) fields.status = 'Under review';
+      const fields = { link: v }; if ((!$('ed-link-rv-l').hidden && $('ed-link-rv').checked) || $('ed-link-box').dataset.auto) fields.status = 'Under review';
       const b = $('ed-link-save'), was = b.textContent; b.disabled = true; b.textContent = 'Submitting…'; $('ed-msg').textContent = '';
       try { await saveFields(r, fields, before); dlgE.close(); toast(fields.status ? 'Link submitted and moved to Under review' : 'Link submitted'); }
       catch (err) { $('ed-msg').textContent = 'Not submitted: ' + err.message; }
@@ -3175,46 +3193,76 @@
     } catch (e) { toast('Still failing: ' + e.message, true); }
     ISS.load(true);
   }
+  // Each area has its own colour and icon, used on the summary, the area filter and every issue.
+  const ISS_AREA = {
+    Actions: ['#2f6bff', 'M13 2 4 14h7l-1 8 9-12h-7z'], Sync: ['#22c3e6', 'M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4'],
+    Data: ['#8b5cf6', 'M4 5h16v14H4zM4 10h16M10 10v9'], Packages: ['#ff6b2c', 'M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10'],
+    Connection: ['#3ddc97', 'M2 9a15 15 0 0 1 20 0M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0M12 20h.01'], Screen: ['#c8e600', 'M3 4h18v12H3zM8 20h8M12 16v4'],
+    Server: ['#ff5c7a', 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01'], 'Background jobs': ['#22c3e6', 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z'],
+    'Stand-up': ['#8b5cf6', 'M4 5h16v16H4zM4 10h16M9 3v4M15 3v4'], 'Web app': ['#2f6bff', 'M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12'],
+    'Creative brief': ['#3ddc97', 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5']
+  };
+  const issArea = (a) => ISS_AREA[a] || ['#9a978f', 'M12 3 2 20h20L12 3zM12 10v4M12 17h.01'];
+  const issIcon = (a, cls) => { const [c, d] = issArea(a), w = el('span', 'iss-ic' + (cls ? ' ' + cls : '')); w.style.setProperty('--ac', c); w.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>'; return w; };
+  const ISS_RF = document.getElementById('iss-refresh'); // the Check now button lives in the toolbar (kept across redraws)
   dash.draw('issues', (box) => {
     box.replaceChildren();
     if (!ISS.list) { box.append(el('p', 'co-note', ISS.err || 'Loading issues…')); if (!ISS.busy) ISS.load(); return; }
     const L = ISS.list, open = L.filter((x) => x.status === 'Open'), wk = Date.now() - 7 * 864e5, fixed7 = L.filter((x) => x.status !== 'Open' && x.resolvedOn && new Date(x.resolvedOn) > wk);
-    const areas = [...new Set(L.map((x) => x.area))].sort();
-    // summary line: open, resolved this week, and which areas have open issues
-    const sum = el('div', 'iss-sum');
-    const tile = (n, t, cls) => { const d = el('div', 'iss-tile' + (cls ? ' ' + cls : '')); d.append(el('b', '', String(n)), el('span', '', t)); return d; };
-    const byArea = areas.map((a) => [a, open.filter((x) => x.area === a).length]).filter((x) => x[1]);
-    sum.append(tile(open.length, open.length === 1 ? 'open issue' : 'open issues', open.length ? 'bad' : 'ok'), tile(fixed7.length, 'resolved in 7 days'));
-    const ar = el('p', 'iss-areas co-note', byArea.length ? 'Open by area: ' + byArea.map(([a, n]) => a + ' ' + n).join(', ') : 'Nothing open. Checks run every 10 minutes and on every action.'); sum.append(ar);
-    box.append(sum);
+    const areas = [...new Set(L.map((x) => x.area))].sort(), auto = fixed7.filter((x) => x.resolvedBy === 'Automatic check').length;
+    // summary: what is open now, what was fixed this week, which areas are affected
+    const hero = el('div', 'iss-hero');
+    const tile = (cls, n, label, sub) => { const t = el('div', 'iss-tile2 ' + cls); const top = el('div', 'iss-t-top'); top.append(el('span', 'iss-t-dot'), el('span', 'iss-t-l', label)); t.append(top, el('b', 'iss-t-n', String(n)), el('span', 'iss-t-s', sub)); return t; };
+    hero.append(tile(open.length ? 'is-open' : 'is-clear', open.length, open.length ? 'Need attention' : 'All clear', open.length ? (open.length === 1 ? '1 issue is active' : open.length + ' issues are active') : 'Nothing is failing right now'),
+      tile('is-fixed', fixed7.length, 'Resolved in 7 days', auto ? auto + ' closed by the checks themselves' : 'Closed by the checks or an Admin'));
+    const at = el('div', 'iss-tile2 is-areas'); const atop = el('div', 'iss-t-top'); atop.append(el('span', 'iss-t-l', 'Where')); at.append(atop);
+    const byArea = areas.map((a) => [a, open.filter((x) => x.area === a).length]).filter((x) => x[1]).sort((a, b) => b[1] - a[1]);
+    const al = el('div', 'iss-area-list');
+    if (!byArea.length) al.append(el('span', 'iss-t-s', 'No area has open issues'));
+    byArea.forEach(([a, n]) => { const b = el('button', 'iss-area-pill'); b.type = 'button'; b.style.setProperty('--ac', issArea(a)[0]); b.append(issIcon(a, 'sm'), el('span', '', a), el('b', '', String(n))); b.addEventListener('click', () => { ISS.area = ISS.area === a ? '' : a; ISS.f = 'open'; dash.draw('issues'); }); al.append(b); });
+    at.append(al); hero.append(at);
+    box.append(hero);
+    const flow = el('ol', 'iss-flow'); flow.setAttribute('aria-label', 'How issues are handled');
+    [['Detected', 'by every screen and a check every 10 minutes'], ['Shown', 'here, with a count in the menu and the bell'], ['Fixed', 'with Retry or the fix button on each issue'], ['Closed', 'when its check passes again, or by an Admin']].forEach(([t, d]) => { const li = el('li'); li.append(el('b', '', t), el('span', '', d)); flow.append(li); });
+    box.append(flow);
     if (ISS.err) box.append(el('p', 'co-note warn', 'Could not refresh: ' + ISS.err));
-    // filters
-    const fl = el('div', 'iss-filters');
+    // toolbar
+    const fl = el('div', 'iss-bar');
     const seg = el('div', 'pm-seg iss-seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', 'Show');
-    [['open', 'Open (' + open.length + ')'], ['resolved', 'Resolved'], ['all', 'All']].forEach(([v, t]) => { const b = el('button', 'pm-opt' + (ISS.f === v ? ' on' : ''), t); b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(ISS.f === v)); b.addEventListener('click', () => { ISS.f = v; dash.draw('issues'); }); seg.append(b); });
-    const as = el('select', 'co-select'); as.setAttribute('aria-label', 'Area'); as.append(new Option('All areas', ''), ...areas.map((a) => new Option(a, a))); as.value = areas.includes(ISS.area) ? ISS.area : ''; as.addEventListener('change', () => { ISS.area = as.value; dash.draw('issues'); });
-    const q = el('input', 'co-input'); q.type = 'search'; q.placeholder = 'Search issues'; q.value = ISS.q; q.setAttribute('aria-label', 'Search issues'); q.id = 'iss-q';
+    [['open', 'Active', open.length], ['resolved', 'Resolved', L.length - open.length], ['all', 'All', L.length]].forEach(([v, t, n]) => { const b = el('button', 'pm-opt' + (ISS.f === v ? ' on' : '')); b.type = 'button'; b.append(document.createTextNode(t + ' '), el('small', '', String(n))); b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(ISS.f === v)); b.addEventListener('click', () => { ISS.f = v; dash.draw('issues'); }); seg.append(b); });
+    const as = el('select', 'co-select iss-asel'); as.setAttribute('aria-label', 'Area'); as.append(new Option('All areas', ''), ...areas.map((a) => new Option(a, a))); as.value = areas.includes(ISS.area) ? ISS.area : ''; as.addEventListener('change', () => { ISS.area = as.value; dash.draw('issues'); });
+    const sw = el('label', 'iss-search'); sw.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>';
+    const q = el('input', 'co-input'); q.type = 'search'; q.placeholder = 'Search issues, IDs, people'; q.value = ISS.q; q.setAttribute('aria-label', 'Search issues'); q.id = 'iss-q'; sw.append(q);
     q.addEventListener('input', () => { clearTimeout(ISS.qt); ISS.qt = setTimeout(() => { ISS.q = q.value; dash.draw('issues'); const n = document.getElementById('iss-q'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 250); });
-    fl.append(seg, as, q); box.append(fl);
+    fl.append(seg, as, sw, ISS_RF); box.append(fl);
     const qq = ISS.q.trim().toLowerCase();
     const rows = L.filter((x) => (ISS.f === 'all' || (ISS.f === 'open' ? x.status === 'Open' : x.status !== 'Open')) && (!ISS.area || x.area === ISS.area) && (!qq || (x.area + ' ' + x.title + ' ' + x.details + ' ' + x.by).toLowerCase().includes(qq)));
-    if (!rows.length) { box.append(el('p', 'qn-empty', ISS.f === 'open' && !qq && !ISS.area ? 'No open issues. Everything the checks look at is working.' : 'No issues match.')); return; }
-    const ul = el('ul', 'iss-list');
-    rows.slice(0, 200).forEach((x) => {
-      const on = x.status === 'Open', li = el('li', 'iss-row' + (on ? ' open' : ''));
-      const top = el('div', 'iss-top');
-      const st = el('span', 'iss-st ' + (on ? 'bad' : 'ok'), on ? 'Active' : 'Resolved');
-      const tt = el('div', 'iss-tt'); tt.append(el('b', '', x.title), el('span', 'co-note', x.area + ' · first ' + when(x.first) + (x.count > 1 ? ' · seen ' + x.count + ' times, last ' + when(x.last) : '') + (x.by && x.by !== 'Automatic check' ? ' · reported by ' + nameOf(x.by) : x.by ? ' · automatic check' : '')));
-      top.append(st, tt); li.append(top);
-      if (x.details) { const d = el('details', 'iss-det'); d.append(el('summary', '', 'What went wrong'), el('p', '', CO.maskText(x.details))); li.append(d); }
-      if (!on && x.resolvedOn) li.append(el('p', 'co-note iss-res', 'Resolved ' + when(x.resolvedOn) + ' by ' + (x.resolvedBy === 'Automatic check' ? 'the automatic check (it passed again)' : nameOf(x.resolvedBy))));
-      const acts = el('div', 'iss-acts');
+    if (!rows.length) {
+      const e = el('div', 'iss-empty'); e.append(el('b', '', ISS.f === 'open' && !qq && !ISS.area ? 'Nothing needs attention' : 'No issues match'), el('span', '', ISS.f === 'open' && !qq && !ISS.area ? 'Every check passed. New problems appear here within a minute.' : 'Try another filter or clear the search.'));
+      box.append(e); return;
+    }
+    const ul = el('ul', 'iss-list2');
+    rows.slice(0, 200).forEach((x, i) => {
+      const on = x.status === 'Open', li = el('li', 'iss-item' + (on ? ' open' : ' done')); li.style.setProperty('--ac', issArea(x.area)[0]); li.style.setProperty('--i', String(Math.min(i, 12)));
+      const st = el('span', 'iss-pill ' + (on ? 'open' : 'done')); st.append(el('i', ''), document.createTextNode(on ? 'Active' : 'Resolved'));
+      const main = el('div', 'iss-main');
+      const h = el('div', 'iss-h'); h.append(el('b', 'iss-title', x.title), st); main.append(h);
+      const meta = el('div', 'iss-meta');
+      const mchip = (t, cls) => meta.append(el('span', 'iss-m' + (cls ? ' ' + cls : ''), t));
+      mchip(x.area, 'area');
+      mchip(on ? 'last seen ' + agoText(x.last) : 'first seen ' + when(x.first));
+      if (x.count > 1) mchip('seen ' + x.count + '×', 'count');
+      if (x.by && x.by !== 'Automatic check' && x.by !== 'schedule' && x.by !== 'web app') { const who = el('span', 'iss-m who'); who.append(avatar({ name: nameOf(x.by), email: x.by }, 'xs'), document.createTextNode(nameOf(x.by))); meta.append(who); } else if (x.by) mchip('automatic check', 'auto');
+      main.append(meta);
+      if (x.details) { const d = el('details', 'iss-det2'); const sm = el('summary', '', 'What went wrong'); d.append(sm, el('p', '', CO.maskText(x.details))); main.append(d); }
+      if (!on && x.resolvedOn) main.append(el('p', 'iss-res2', 'Resolved ' + when(x.resolvedOn) + ' · ' + (x.resolvedBy === 'Automatic check' ? 'the check passed again' : 'by ' + nameOf(x.resolvedBy))));
+      const acts = el('div', 'iss-acts2');
       const btn = (t, cls, fn) => { const b = el('button', 'co-btn sm' + (cls ? ' ' + cls : ''), t); b.type = 'button'; b.addEventListener('click', () => fn(b)); acts.append(b); return b; };
-      if (on && x.retry) { let r = null; try { r = JSON.parse(x.retry); } catch (e) { /* ignore */ } if (r && r.action === 'updateTask') { btn('Retry', 'primary', (b) => issRetry(x, b)); acts.append(el('span', 'co-note iss-what', retryText(r))); } }
+      if (on && x.retry) { let r = null; try { r = JSON.parse(x.retry); } catch (e) { /* ignore */ } if (r && r.action === 'updateTask') { btn('Retry', 'primary', (b) => issRetry(x, b)); acts.append(el('code', 'iss-what2', retryText(r))); } }
       if (on && ISS_FIX[x.fix]) btn(ISS_FIX[x.fix][0], x.retry ? '' : 'primary', ISS_FIX[x.fix][1]);
-      if (on) btn('Mark resolved', '', () => issAct(x, 'resolve')); else btn('Reopen', 'ghost', () => issAct(x, 'reopen'));
-      if (!on) btn('Remove', 'ghost', () => { if (confirm('Remove this issue from the list?')) issAct(x, 'delete'); });
-      li.append(acts); ul.append(li);
+      if (on) btn('Mark resolved', 'ghost', () => issAct(x, 'resolve')); else { btn('Reopen', 'ghost', () => issAct(x, 'reopen')); btn('Remove', 'ghost', () => { if (confirm('Remove this issue from the list?')) issAct(x, 'delete'); }); }
+      main.append(acts);
+      li.append(issIcon(x.area), main); ul.append(li);
     });
     box.append(ul);
     if (rows.length > 200) box.append(el('p', 'co-note', 'Showing the latest 200 of ' + rows.length + '. Narrow with the filters.'));
@@ -3357,7 +3405,7 @@
       const sum = el('p', 'pm-sum');
       // [key, label, what View means, what Edit means (or '' when there is nothing to edit)]
       const ROWS = [['mine', 'My work', 'Their own tasks and to-dos (always on)', ''], ['today', 'Overview', 'Team numbers, Needs attention and charts', ''], ['standup', 'Stand-up', 'Stand-up cards and the Day plan', ''],
-        ['tasks', 'Tasks', 'The task list', 'Change priority and quantity (status and links are switched below; only Admins reschedule or reassign)'], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
+        ['tasks', 'Tasks', 'The task list', 'Change priority and quantity, together with "Change design status" below (only Admins reschedule or reassign)'], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
         ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', '']];
       const level = (k) => k === 'pricing' ? (st.pricing ? 'edit' : 'hidden') : k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
         : !st.pages.has(k) ? 'hidden' : (k === 'tasks' && st.edit) || (k === 'team' && st.team) ? 'edit' : 'view';

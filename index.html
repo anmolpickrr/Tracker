@@ -7,13 +7,13 @@
 <meta name="description" content="Creative Ops: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
 <meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/ https://www.googleapis.com; frame-src https://accounts.google.com/gsi/ blob:; media-src data: blob:; form-action 'none'; base-uri 'none'; object-src 'none'">
-<link rel="icon" href="assets/favicon.svg?v=20261115g" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.svg?v=20261115h" type="image/svg+xml">
 <meta name="theme-color" content="#0f0f0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=20261115g">
-<script src="assets/theme.js?v=20261115g"></script>
+<link rel="stylesheet" href="assets/style.css?v=20261115h">
+<script src="assets/theme.js?v=20261115h"></script>
 </head>
 <body>
 <div class="boot" id="boot" aria-hidden="true"><div class="boot-lock"><svg class="logo mark boot-mark" viewBox="30 140 452 212" aria-hidden="true"><defs><clipPath id="mk-c-boot"><path d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></clipPath><linearGradient id="mk-t-boot" x1="0" x2="1"><stop offset="0" class="mk-s0"/><stop offset="1" class="mk-s1"/></linearGradient><linearGradient id="mk-h-boot" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect class="sl sl1" x="-170" y="160" width="300" height="9" rx="4.5" fill="url(#mk-t-boot)"/><rect class="sl sl2" x="-230" y="244" width="360" height="7" rx="3.5" fill="url(#mk-t-boot)"/><rect class="sl sl3 lime" x="-120" y="214" width="220" height="6" rx="3" /><rect class="sl sl4" x="-260" y="350" width="330" height="8" rx="4" fill="url(#mk-t-boot)"/><rect class="lt lt1" x="20" y="176" width="190" height="24" rx="12" fill="url(#mk-t-boot)"/><rect class="lt lt2" x="-150" y="292" width="200" height="24" rx="12" fill="url(#mk-t-boot)"/><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/><g clip-path="url(#mk-c-boot)"><rect class="mk-shine" x="0" y="140" width="130" height="212" fill="url(#mk-h-boot)"/></g></svg></div></div>
@@ -433,7 +433,7 @@
   <!-- ISSUES (admins only): errors and problems found automatically, with retry and fixes -->
   <section class="co-panel" id="issues" data-panel="issues" hidden>
     <div class="co-card iss-card">
-      <div class="co-card-head"><div><h2 class="co-h2">Errors &amp; issues</h2><p class="co-note">Found automatically: failed actions (with retry), sheets that can't be read, lost connection, duplicate or missing IDs, deliveries packages don't count, prices missing, errors on anyone's screen. Each issue closes by itself when its check passes again. Only Admins see this page.</p></div><button class="co-btn" type="button" id="iss-refresh">Check now</button></div>
+      <div class="co-card-head"><div><h2 class="co-h2">Errors &amp; issues</h2><p class="co-note">Anything that failed or does not match, found automatically across the dashboard, the sheets and the web app.</p></div><button class="co-btn" type="button" id="iss-refresh"><svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></svg>Check now</button></div>
       <div data-draw="issues"></div>
     </div>
   </section>
@@ -623,20 +623,25 @@
 
 <dialog id="editor" class="co-dialog" aria-labelledby="ed-title">
   <form method="dialog" id="editor-form" autocomplete="off">
-    <div>
+    <header class="ed-head">
       <p class="co-eyebrow" id="ed-where">—</p>
       <h2 class="co-h2" id="ed-title">—</h2>
       <p class="co-note" id="ed-topic">—</p>
-    </div>
+      <div class="ed-facts" id="ed-facts" aria-label="Task details"></div>
+      <button class="icon-btn ed-x" type="button" id="ed-x" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
     <section class="ed-brief" id="ed-brief-box" hidden aria-labelledby="ed-brief-h">
-      <div class="ed-sec-h"><b id="ed-brief-h">Creative brief</b><a class="co-link" id="ed-brief-open" target="_blank" rel="noopener noreferrer" hidden>Open in Google Docs ↗</a></div>
+      <div class="ed-sec-h"><b id="ed-brief-h"><i class="ed-step">1</i>Read the brief</b><a class="co-link" id="ed-brief-open" target="_blank" rel="noopener noreferrer" hidden>Open in Google Docs ↗</a></div>
       <div class="ed-brief-body" id="ed-brief"></div>
     </section>
     <section class="ed-linkbox" id="ed-link-box" hidden aria-labelledby="ed-link-h">
-      <div class="ed-sec-h"><b id="ed-link-h">Creative link</b><span class="co-note" id="ed-link-cur"></span></div>
+      <div class="ed-sec-h"><b id="ed-link-h"><i class="ed-step">2</i>Submit the creative link</b><span class="co-note" id="ed-link-cur"></span></div>
       <div class="ed-link-row"><input class="co-input" id="ed-link" type="url" inputmode="url" placeholder="Paste the link to the finished creative (https://…)" aria-label="Creative link"><button class="co-btn primary" type="button" id="ed-link-save">Submit link</button></div>
       <label class="ed-link-rv" id="ed-link-rv-l"><input type="checkbox" id="ed-link-rv" checked> Move the task to <b>Under review</b> when I submit</label>
+      <p class="ed-link-auto" id="ed-link-auto" hidden>Submitting moves this task to <b>Under review</b> for the Creative Head.</p>
     </section>
+    <section class="ed-manage" id="ed-manage" aria-labelledby="ed-manage-h">
+    <div class="ed-sec-h"><b id="ed-manage-h">Manage task</b><span class="co-note" id="ed-manage-n">Status, schedule and assignment</span></div>
     <div class="co-ed-grid">
       <label class="co-field">Design status
         <select class="co-select" id="ed-status">
@@ -661,8 +666,9 @@
     </div>
     <datalist id="ed-people"></datalist>
     <p class="co-note ed-lock" id="ed-lock" hidden>Only Admins can change the ETA or reassign this task. Ask an Admin to reschedule it.</p>
+    </section>
     <p class="co-note" id="ed-info"></p>
-    <p class="co-note" id="ed-links"></p>
+    <p class="co-note" id="ed-links" hidden></p>
     <p class="co-note ed-msg" id="ed-msg" role="status"></p>
     <div class="co-dialog-actions">
       <button class="co-link" type="button" id="ed-history" hidden>Change history</button>
@@ -675,8 +681,8 @@
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/motion@11.11.17/dist/motion.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.min.js" defer></script>
-<script src="assets/config.js?v=20261115g"></script>
-<script src="assets/data.js?v=20261115g"></script>
-<script src="assets/app.js?v=20261115g"></script>
+<script src="assets/config.js?v=20261115h"></script>
+<script src="assets/data.js?v=20261115h"></script>
+<script src="assets/app.js?v=20261115h"></script>
 </body>
 </html>

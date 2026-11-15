@@ -39,9 +39,11 @@ function defaultPerms_(role) {
   // Workspace (Nov 2026): everyone except Admins sees and manages only the tasks assigned to them; on those tasks they
   // can change the status, read the brief and submit the creative link. The owner can switch each of these per person,
   // and give access to others' tasks (scope "all").
-  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health' && k !== 'issues'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '', pricing: false, status: true, briefs: true, links: true };
+  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health' && k !== 'issues'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '', pricing: false, status: false, briefs: true, links: true };
+  // (Nov 2026) Team members finish a task by submitting its creative link, which moves it to Under review; changing the
+  // status by hand, the ETA, the designer and the priority stay with Admins unless the owner switches one on.
   if (role === 'Editor') { p.edit = true; }
-  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; p.pricing = true; }
+  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; p.pricing = true; p.status = true; }
   return p;
 }
 function permsOf_(u) {
@@ -348,7 +350,8 @@ function write_(body, user) {
       // follow the person's switches; outside Admins, only tasks assigned to them (unless given access to others').
       const ff = body.fields || {}, pm = permsOf_(user), adm = isAdminUser_(user);
       out = (ff.eta != null || ff.designer != null) && !adm ? { ok: false, error: 'Only Admins can change a task\'s ETA or who it is assigned to.' }
-        : ff.status != null && !pm.status ? { ok: false, error: 'You do not have permission to change task status. Ask an Admin.' }
+        // submitting the finished creative's link may move the task to Under review in the same step
+        : ff.status != null && !pm.status && !(ff.status === 'Under review' && ff.link && pm.links && Object.keys(ff).length === 2) ? { ok: false, error: 'You do not have permission to change task status. Ask an Admin.' }
         : ff.link != null && !pm.links ? { ok: false, error: 'You do not have permission to submit creative links. Ask an Admin.' }
         : (ff.priority != null || ff.qty != null) && !pm.edit ? { ok: false, error: 'You do not have permission to change priority or quantity.' }
         : updateTask_(body, adm || pm.scope === 'all' ? null : ownMatcher_(user));
@@ -538,22 +541,27 @@ function brief_(body, user) {
   if (c.brief < 0) return { ok: false, error: 'No Creative Brief column in this sheet.' };
   const cell = sheet.getRange(row, c.brief + 1), rich = cell.getRichTextValue();
   let url = clean_(rich && rich.getLinkUrl() ? rich.getLinkUrl() : cell.getDisplayValue());
-  const m = url.match(/^https:\/\/docs\.google\.com\/document\/d\/([A-Za-z0-9_-]{20,})/);
+  const m = url.match(/^https:\/\/docs\.google\.com\/document\/(?:u\/\d+\/)?d\/([A-Za-z0-9_-]{20,})/);
   if (!url) return { ok: true, empty: true };
   if (!/^https?:\/\//i.test(url)) return { ok: true, text: url }; // a brief typed into the cell
   if (!m) return { ok: true, url: url, kind: /drive\.google\.com|docs\.google\.com/.test(url) ? 'google' : 'link' };
   const cache = CacheService.getScriptCache(), key = 'brief:' + m[1], hit = cache.get(key);
   if (hit) return { ok: true, url: url, kind: 'doc', title: hit.split('\u0000')[0], html: hit.split('\u0000')[1] };
+  // Read the Doc as the web app's account. The Drive service (DriveApp) and the Docs export link need no Google Cloud
+  // API switched on (the Drive REST API answered 403 where it is not enabled); the REST API is only a last resort.
+  const auth = { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true };
+  let title = '';
+  try { title = DriveApp.getFileById(m[1]).getName(); }
+  catch (e) { return { ok: true, url: url, kind: 'doc', noAccess: true, error: 'The dashboard\'s Google account cannot open this Doc. Share it with that account (Viewer is enough), or ask the brief\'s owner to, then open the task again.' }; }
   try {
-    const meta = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + m[1] + '?fields=name&supportsAllDrives=true', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
-    if (meta.getResponseCode() !== 200) return { ok: true, url: url, kind: 'doc', noAccess: true, error: meta.getResponseCode() === 404 ? 'The dashboard\'s Google account cannot open this Doc. Share it with that account (view access) to read it here.' : 'Google Docs did not answer (' + meta.getResponseCode() + ').' };
-    const res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + m[1] + '/export?mimeType=text/html', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
-    if (res.getResponseCode() !== 200) return { ok: true, url: url, kind: 'doc', noAccess: true, error: 'The Doc could not be read (' + res.getResponseCode() + ').' };
-    const title = JSON.parse(meta.getContentText()).name || 'Creative brief';
+    let res = UrlFetchApp.fetch('https://docs.google.com/document/d/' + m[1] + '/export?format=html', auth);
+    if (res.getResponseCode() !== 200) res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + m[1] + '/export?mimeType=text%2Fhtml', auth);
+    if (res.getResponseCode() !== 200) return { ok: true, url: url, kind: 'doc', noAccess: true, title: title, error: 'Google Docs would not export this brief (' + res.getResponseCode() + '). Open it in Google Docs instead.' };
     let html = res.getContentText(); const b = html.match(/<body[^>]*>([\s\S]*)<\/body>/i); html = (b ? b[1] : html).slice(0, 400000);
+    title = title || 'Creative brief';
     try { cache.put(key, title + '\u0000' + html, 600); } catch (e) { /* too large to cache */ }
     return { ok: true, url: url, kind: 'doc', title: title, html: html };
-  } catch (e) { return { ok: true, url: url, kind: 'doc', noAccess: true, error: 'The Doc could not be read: ' + e.message }; }
+  } catch (e) { return { ok: true, url: url, kind: 'doc', noAccess: true, title: title, error: 'The Doc could not be read: ' + e.message }; }
 }
 
 function taskColumns_(kind, head) {
@@ -1264,7 +1272,7 @@ function issueReport_(b, u) {
 // reported it was allowed to change themselves (an Admin's click must not carry more than that person could do).
 function retryOk_(r, u) {
   if (!r || typeof r !== 'object' || r.action !== 'updateTask' || !r.fields || typeof r.fields !== 'object') return null;
-  const pm = permsOf_(u), adm = isAdminUser_(u), f = {}, may = { status: pm.status, link: pm.links, priority: pm.edit, qty: pm.edit, eta: adm, designer: adm };
+  const pm = permsOf_(u), adm = isAdminUser_(u), f = {}, may = { status: pm.status || (r.fields.status === 'Under review' && !!r.fields.link && pm.links), link: pm.links, priority: pm.edit, qty: pm.edit, eta: adm, designer: adm };
   Object.keys(r.fields).forEach(function (k) { if (may[k]) f[k] = String(r.fields[k]).slice(0, 2000); });
   if (!Object.keys(f).length) return null;
   return { action: 'updateTask', source: String(r.source || '').slice(0, 40), id: String(r.id || '').slice(0, 60), row: Number(r.row) || 0, fields: f };
@@ -2406,6 +2414,11 @@ function maintenance_() {
   if (!p.getProperty('OWN_TASKS_2026_11_15') && hasAccessBook_()) {
     try { const moved = []; users_().list.forEach(function (u) { if (u.role === 'Admin' || u.owner || isOwner_(u.email)) return; const o = u.perms || null; if (o && o.scope === 'all') { const np = Object.assign({}, o); delete np.scope; updateUser_(u, { perms: JSON.stringify(np) }); moved.push(u.email); } });
       p.setProperty('OWN_TASKS_2026_11_15', new Date().toISOString()); if (moved.length) audit_([{ who: 'Automatic change', role: 'System', action: 'Permissions changed', field: 'Tasks they can see', before: 'All tasks', after: 'Only their own', details: moved.join(', ') }]); } catch (e) { console.log('own tasks: ' + e); }
+  }
+  // One time (Nov 2026): status switches saved with the old default (on) go back to the new default (off) for non-Admins.
+  if (!p.getProperty('STATUS_DEFAULT_2026_11_15') && hasAccessBook_()) {
+    try { const moved = []; users_().list.forEach(function (u) { if (u.role === 'Admin' || u.owner || isOwner_(u.email)) return; const o = u.perms || null; if (o && o.status === true) { const np = Object.assign({}, o); delete np.status; updateUser_(u, { perms: JSON.stringify(np) }); moved.push(u.email); } });
+      p.setProperty('STATUS_DEFAULT_2026_11_15', new Date().toISOString()); if (moved.length) audit_([{ who: 'Automatic change', role: 'System', action: 'Permissions changed', field: 'Change design status', before: 'On', after: 'Off (submitting the link moves the task to Under review)', details: moved.join(', ') }]); } catch (e) { console.log('status default: ' + e); }
   }
   autoUpdate_(false);
 }

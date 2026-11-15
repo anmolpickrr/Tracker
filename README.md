@@ -191,19 +191,18 @@ One price per creative type (as written in the sheets' Creative Type column), in
 
 ## Working on a task without opening the sheet (task panel)
 
-Click any task to open its panel. Each person can do this on the tasks they can see:
+Click any task to open its panel. At the top: where the task is, its title and a row of facts (status, due date and whether it is late, designer, priority, and its links). Then two steps:
 
-1. **Read the brief.** The *Creative brief* box shows the Google Doc from the task's **Creative Brief** cell inside the dashboard (title, text, lists, tables and images; scripts and outside content are removed). *Open in Google Docs* opens the original. The Doc has to be readable by the Google account the web app runs as (share it with that account as a viewer, or keep briefs in a shared drive it can see); otherwise the box says so and the link still works. A brief typed straight into the cell is shown as text; other links (Drive files, Figma…) open in a new tab.
-2. **Submit the creative link.** Paste the finished creative's link (it must start with https://) and click *Submit link* (or *Update link*). It is written to the **Creative Link** column. With *Move the task to Under review* ticked (on by default for open work), the status changes in the same step.
-3. **Change the status** with the Design status dropdown and *Save to sheet*.
+1. **Read the brief.** The Google Doc in the task's **Creative Brief** cell shows inside the panel (title, text, lists, tables and images; scripts and outside content are removed). *Open in Google Docs* opens the original. The web app reads the Doc as its own Google account through the built-in Drive service and the Docs export link, so no Google Cloud API needs switching on; the Doc must be readable by that account (share it as Viewer, or keep briefs in a shared drive it can see), otherwise the panel says so and the link still works. A brief typed straight into the cell shows as text; other links open in a new tab.
+2. **Submit the creative link.** Paste the finished creative's link (https://…) and click *Submit link* (or *Update link*). It is written to the **Creative Link** column and, for open work, the task moves to **Under review** in the same step, for the Creative Head to review. Team members need nothing else: they do not change the status, ETA, designer or priority by hand.
 
-Each of these is a switch per person on the Access page (*Change design status*, *Read briefs*, *Submit creative links*), all on by default. Priority and quantity need Tasks › Edit; ETA and designer stay Admin-only. The web app checks every change again, so a switched-off or other person's task is refused even if someone tries it from outside the dashboard.
+**Manage task** (status, ETA with quick dates, designer, priority, quantity, *Save to sheet*) shows for Admins and the owner. The owner can also give one person *Change design status* on the Access page; priority and quantity then follow Tasks › Edit. ETA and designer stay Admin-only. The web app checks every change again, so a switched-off or other person's task is refused even if someone tries it from outside the dashboard. In November 2026 everyone's *Change design status* switch was reset to off (except Admins); the change is in the activity log.
 
-**No overwriting.** The panel remembers the status, link and ETA it showed when it opened. If the sheet changed since (someone edited the row in Google Sheets), the save is refused with *Someone changed Design status in the sheet to "…"*; the dashboard reloads the row so you can decide again. Every saved change is in the activity log with before and after.
+**No overwriting.** The panel remembers the status, link and ETA it showed when it opened. If the sheet changed since (someone edited the row in Google Sheets), the save is refused with *Someone changed … in the sheet to "…"*; the dashboard reloads the row so you can decide again. Every saved change is in the activity log with before and after.
 
 ## Errors & issues (Admins)
 
-The **Issues** page (Admin menu, with a count of open issues; the bell also shows it) lists everything that went wrong, found automatically. Each issue shows the **area**, **what went wrong** (expand *What went wrong*), when it was first and last seen, how many times, who it happened to, and whether it is **Active** or **Resolved** (and by whom).
+The **Issues** page (Admin menu, with a count of open issues; the bell also shows it) lists everything that went wrong, found automatically. At the top: how many issues need attention (pulsing while any are active), how many were resolved in the last 7 days, and which areas are affected (click an area to filter), with the four steps every issue goes through: detected, shown, fixed, closed. Each issue is a card with its area's colour and icon. Each issue shows the **area**, **what went wrong** (expand *What went wrong*), when it was first and last seen, how many times, who it happened to, and whether it is **Active** or **Resolved** (and by whom).
 
 | Area | Found by | Closes by itself when |
 |---|---|---|
@@ -220,9 +219,13 @@ The **Issues** page (Admin menu, with a count of open issues; the bell also show
 
 **What to do with an issue:** *Retry* (failed saves) shows exactly what it will write (for example *SRA2353: status → WIP*), writes it and resolves the issue. *Reload from the sheets*, *Open Data health*, *Open Brands* and *Open Pricing* take you to the fix. *Mark resolved* closes it by hand; *Reopen* and *Remove* are on resolved issues. Filters: Open / Resolved / All, area and search. The page refreshes every minute; the same problem is counted again instead of listed twice. A retry only ever carries the fields the person who hit the problem was allowed to change. Issues are kept in a hidden *Issues* tab of the access spreadsheet.
 
+## Look and feel
+
+One visual language across every section: a soft field of the theme's colours behind the page, frosted-glass cards with a light edge, violet-to-blue buttons and selected tabs, cool accents (green, cyan, blue) alongside lime, orange and violet, consistent pills, inputs with a blue focus ring, and small motion that answers what you do (hover, press, open). Light and dark themes both follow it; motion stops for people who turn on *reduce motion*.
+
 ## Rescheduling and reassigning (Admins only)
 
-Changing a task's **ETA** or **who it is assigned to** is for Admins (and the owner) only, from any screen; the web app refuses it for everyone else, and the task editor shows those fields locked with a note. Everyone can change the status of the tasks they can see (unless switched off for them); Editors also priority and quantity. In the editor, Admins have quick buttons: *Today*, *Tomorrow*, *Next working day* (Monday to Friday) and *+1 week*. A rescheduled or reassigned task moves at once: it leaves the day it was planned for (*Moved to 16 Nov*, or *Now with Yashika*), joins the new person's list, and shows in the Day plan's *Coming up* preview for its new day. The sheets themselves are shared in Google Sheets, so who can edit the ETA and designer columns there is set with the sheet's own sharing and protected ranges.
+Changing a task's **ETA** or **who it is assigned to** is for Admins (and the owner) only, from any screen; the web app refuses it for everyone else, and the task editor shows those fields locked with a note. Team members finish a task by submitting its creative link, which moves it to Under review; changing the status by hand is for Admins and anyone the owner gives *Change design status*. In the editor, Admins have quick buttons: *Today*, *Tomorrow*, *Next working day* (Monday to Friday) and *+1 week*. A rescheduled or reassigned task moves at once: it leaves the day it was planned for (*Moved to 16 Nov*, or *Now with Yashika*), joins the new person's list, and shows in the Day plan's *Coming up* preview for its new day. The sheets themselves are shared in Google Sheets, so who can edit the ETA and designer columns there is set with the sheet's own sharing and protected ranges.
 
 ## Content tasks (briefs, scripts, content)
 
