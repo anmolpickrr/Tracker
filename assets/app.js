@@ -4084,12 +4084,20 @@
       const acts = mk('div', 'qn-acts');
       const save = mk('button', 'co-btn primary qn-save', n ? 'Save' : 'Add note'); save.type = 'submit';
       if (n) {
-        const cancel = mk('button', 'co-btn', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', () => { draftSet(n.id, null); done(null); });
         const del = mk('button', 'icon-btn qn-del'); del.type = 'button'; del.setAttribute('aria-label', 'Move to trash'); del.title = 'Move to trash (restore within 30 days)'; del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
         del.addEventListener('click', async () => { if (!confirm('Move this note to the trash? It disappears for everyone it was shared with; you can restore it from Trash for 30 days.')) return; st.busy = true; try { const r = await callApi({ action: 'noteDelete', id: n.id }); if (!r.ok) throw new Error(r.error || 'Not deleted'); st.notes = st.notes.filter((x) => x.id !== n.id); st.trash = null; draftSet(n.id, null); toast('Moved to trash · restore it from Trash'); done(null); } catch (e) { toast(e.message, true); } st.busy = false; });
-        acts.append(del, cancel);
+        acts.append(del);
       }
-      acts.append(save);
+      // Discard: throw away what is being written (and its saved draft) and start fresh
+      const discard = mk('button', 'co-btn ghost qn-discard', n ? 'Discard changes' : 'Discard'); discard.type = 'button';
+      discard.addEventListener('click', () => {
+        const has = ta.value.trim() || S2.files.length || S2.doodle || S2.stickers.length || S2.assign.length || S2.reminder;
+        if (has && !confirm(n ? 'Discard your changes to this note?' : 'Discard this note? What you wrote will be lost.')) return;
+        clearTimeout(dT); draftSet(n && n.id, null);
+        if (n) { done(null); return; }
+        ta.value = ''; Object.assign(S2, { assign: [], reminder: '', team: false, stickers: [], files: [], doodle: null, colour: 'paper' }); scb.checked = false; ta.style.height = ''; tray.hidden = true; paint(); clearTimeout(dT); draftSet(null, null); f.classList.add('collapsed'); toast('Discarded');
+      });
+      acts.append(discard, save);
       row.append(assignDd, remindDd, share, vis, acts);
       const bar = mk('div', 'qn-edbar'); bar.append(colours, tools);
       f.append(bar, field, tray, extras, chips, row, fileIn);
@@ -4180,12 +4188,19 @@
           clearTimeout(dT); draftSet(n && n.id, null); press(save);
           const shared = new Set([...mentions.map((m) => m.email), ...S2.assign.map((a) => a.email)]);
           toast(n ? 'Note saved' : shared.size ? 'Note added and shared with ' + [...shared].map((x) => first(nameOf2(x))).join(', ') : 'Note added');
-          if (!n) { ta.value = ''; Object.assign(S2, { assign: [], reminder: '', team: false, stickers: [], files: [], doodle: null }); scb.checked = false; ta.style.height = ''; paint(); clearTimeout(dT); draftSet(null, null); }
+          if (!n) { ta.value = ''; Object.assign(S2, { assign: [], reminder: '', team: false, stickers: [], files: [], doodle: null }); scb.checked = false; ta.style.height = ''; paint(); clearTimeout(dT); draftSet(null, null); f.classList.add('collapsed'); }
           done(saved);
         } catch (err) { toast('Not saved: ' + err.message + ' Your text is kept as a draft in this browser.', true); }
         st.busy = false; save.textContent = n ? 'Save' : 'Add note'; paint();
       });
       paint(); if (ta.value) setTimeout(grow, 0);
+      // a new note starts as a single line; the tools open when you start writing
+      if (!n) {
+        const empty = () => !ta.value.trim() && !S2.files.length && !S2.doodle && !S2.stickers.length && !S2.assign.length && !S2.reminder && !S2.uploading;
+        if (empty()) f.classList.add('collapsed');
+        f.addEventListener('focusin', () => f.classList.remove('collapsed'));
+        f.addEventListener('focusout', () => setTimeout(() => { if (!f.contains(document.activeElement) && empty() && tray.hidden && !document.querySelector('dialog[open]')) f.classList.add('collapsed'); }, 150));
+      }
       if (dr && (!n || dr.from === n.updatedAt) && dr.text) setTimeout(() => toast(n ? 'Unsaved changes restored' : 'Your unsaved note was restored'), 300);
       f.focusText = () => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); };
       f.setText = (v) => { ta.value = v; ta.dispatchEvent(new Event('input')); };
@@ -4199,14 +4214,14 @@
     const F = Object.assign({ colour: '', tag: '', files: false, doodle: false, pinned: false, author: '', when: '', sort: 'edited', trash: false }, (() => { try { return Object.assign(JSON.parse(LS.get('co.qnF', '{}')) || {}, { trash: false }); } catch (e) { return {}; } })());
     const saveF = () => LS.set('co.qnF', JSON.stringify(Object.assign({}, F, { trash: false })));
     const redrawAll = () => { saveF(); dash.draw('qn-filters'); flip(() => dash.draw('qn-board')); };
+    // A slim summary under the page title: each number opens the matching list.
     dash.draw('qn-hero', (el) => {
       el.replaceChildren();
-      const h = mk('div', 'qn-hero-t'); const ttl = mk('h2', 'qn-h'); ttl.append(document.createTextNode('Notes'));
-      h.append(ttl, mk('p', 'qn-sub', 'Ideas, briefs, references and to-dos in one place. Tag the team, sketch, drop files. Saved to the team sheet; drafts stay in this browser until you save.'));
       const mine = st.notes.filter((n) => n.createdBy === me()).length, shared = st.notes.filter((n) => n.createdBy !== me() && !n.viaAdmin).length, files = st.notes.reduce((a, n) => a + (n.files || []).length, 0), todo = myActions().filter((a) => !a.done).length;
-      const stats = mk('div', 'qn-stats');
-      [[mine, 'Your notes', 'lemon'], [shared, 'Shared with you', 'paper'], [todo, 'To-dos for you', 'ink'], [files, 'Files', 'sky']].forEach(([v, l, c]) => { const s2 = mk('div', 'qn-stat c-' + c); s2.append(mk('b', '', CO.num(v)), mk('span', '', l)); stats.append(s2); });
-      el.append(h, stats);
+      [[mine, 'Your notes', 'mine', null], [shared, 'Shared with you', 'shared', null], [todo, 'To-dos for you', 'assigned', null], [files, 'Files', 'all', 'files']].forEach(([v, l, tab, flag]) => {
+        const b2 = mk('button', 'qn-stat2'); b2.type = 'button'; b2.append(mk('b', '', CO.num(v)), mk('span', '', l)); b2.title = 'Show ' + l.toLowerCase();
+        b2.addEventListener('click', () => { st.f = tab; F.trash = false; if (flag) F[flag] = true; LS.set('co.qnf', tab); dash.draw('qn-tabs'); redrawAll(); }); el.append(b2);
+      });
     });
     const TABS = [['all', 'All'], ['mine', 'Mine'], ['shared', 'Shared with me'], ['assigned', 'Assigned to me'], ['reminders', 'Reminders'], ['team', 'Team notes']];
     const inTab = (n, t) => t === 'all' || (t === 'mine' ? n.createdBy === me() : t === 'shared' ? n.createdBy !== me() && !n.viaAdmin : t === 'assigned' ? assignees(n).some((a) => a.email === me()) : t === 'team' ? n.createdBy !== me() : !!n.reminder);
@@ -4222,22 +4237,38 @@
         b.addEventListener('click', () => { st.f = k; F.trash = false; LS.set('co.qnf', k); dash.draw('qn-tabs'); redrawAll(); }); el.append(b);
       });
     });
+    // Filters: one slim row (Filters, the active filters as removable chips, sort, Trash); the options open in a panel.
     dash.draw('qn-filters', (el) => {
       el.replaceChildren(); if (!st.loaded) return;
-      const row1 = mk('div', 'qn-frow');
+      const KEYS = ['colour', 'tag', 'files', 'doodle', 'pinned', 'author', 'when'], on = KEYS.filter((k) => F[k]).length;
+      const row = mk('div', 'qn-frow');
+      const fb = mk('button', 'qn-fbtn' + (st.fOpen ? ' open' : '') + (on ? ' active' : '')); fb.type = 'button'; fb.setAttribute('aria-expanded', String(!!st.fOpen));
+      fb.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>'; fb.append(mk('span', '', 'Filters'), on ? mk('b', 'qn-fcount', String(on)) : '');
+      fb.addEventListener('click', () => { st.fOpen = !st.fOpen; dash.draw('qn-filters'); }); row.append(fb);
+      const chipsW = mk('div', 'qn-achips');
+      const authorsAll = [...new Set(st.notes.map((n) => n.createdBy))].map((e) => [e, e === me() ? 'You' : nameOf2(e)]).sort((a, b) => a[1].localeCompare(b[1]));
+      const label = { colour: () => (COLOURS.find((c) => c[0] === F.colour) || ['', F.colour])[1] + ' notes', tag: () => '#' + F.tag, files: () => 'With files', doodle: () => 'With sketches', pinned: () => 'Pinned', author: () => 'By ' + ((authorsAll.find((x) => x[0] === F.author) || [0, F.author])[1]), when: () => ({ today: 'Edited today', week: 'Last 7 days', month: 'This month' })[F.when] };
+      KEYS.filter((k) => F[k]).forEach((k) => { const c = mk('button', 'pk-chip2'); c.type = 'button'; c.append(document.createTextNode(label[k]()), mk('i', '', '×')); c.setAttribute('aria-label', 'Remove filter: ' + label[k]()); c.addEventListener('click', () => { F[k] = typeof F[k] === 'boolean' ? false : ''; redrawAll(); }); chipsW.append(c); });
+      if (on > 1) { const c = mk('button', 'co-link', 'Clear all'); c.type = 'button'; c.addEventListener('click', () => { Object.assign(F, { colour: '', tag: '', files: false, doodle: false, pinned: false, author: '', when: '' }); redrawAll(); }); chipsW.append(c); }
+      row.append(chipsW);
+      const sel = (key, label2, opts) => { const s2 = mk('select', 'co-select qn-fsel'); s2.setAttribute('aria-label', label2); opts.forEach(([v, t]) => s2.append(new Option(t, v))); s2.value = F[key]; s2.addEventListener('change', () => { F[key] = s2.value; redrawAll(); }); return s2; };
+      const right = mk('div', 'qn-fright');
+      right.append(sel('sort', 'Sort', [['edited', 'Recently edited'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'A to Z']]));
+      const tr = mk('button', 'qn-fchip trash' + (F.trash ? ' on' : ''), F.trash ? 'Back to notes' : 'Trash'); tr.type = 'button'; tr.setAttribute('aria-pressed', String(F.trash)); tr.addEventListener('click', () => { F.trash = !F.trash; dash.draw('qn-tabs'); redrawAll(); if (F.trash) loadTrash(); }); right.append(tr);
+      row.append(right); el.append(row);
+      if (!st.fOpen) return;
+      const pan = mk('div', 'qn-fpanel');
+      const grp = (title, ...kids) => { const g2 = mk('div', 'qn-fgrp'); g2.append(mk('span', 'qn-flab', title), ...kids); pan.append(g2); };
       const cl = mk('div', 'qn-fcolours'); cl.setAttribute('role', 'group'); cl.setAttribute('aria-label', 'Colour');
-      COLOURS.forEach(([k, l]) => { const b = mk('button', 'qn-cdot sm c-' + k + (F.colour === k ? ' on' : '')); b.type = 'button'; b.title = l + ' notes'; b.setAttribute('aria-pressed', String(F.colour === k)); b.setAttribute('aria-label', l + ' notes'); b.addEventListener('click', () => { F.colour = F.colour === k ? '' : k; redrawAll(); }); cl.append(b); });
-      const tog = (k, label) => { const b = mk('button', 'qn-fchip' + (F[k] ? ' on' : ''), label); b.type = 'button'; b.setAttribute('aria-pressed', String(!!F[k])); b.addEventListener('click', () => { F[k] = !F[k]; redrawAll(); }); return b; };
-      const sel = (key, label, opts) => { const s = mk('select', 'co-select qn-fsel'); s.setAttribute('aria-label', label); opts.forEach(([v, t]) => s.append(new Option(t, v))); s.value = F[key]; s.addEventListener('change', () => { F[key] = s.value; redrawAll(); }); return s; };
-      const authors = [...new Set(st.notes.map((n) => n.createdBy))].map((e) => [e, e === me() ? 'You' : nameOf2(e)]).sort((a, b) => a[1].localeCompare(b[1]));
-      row1.append(cl, tog('pinned', 'Pinned'), tog('files', 'With files'), tog('doodle', 'With sketches'),
-        sel('author', 'Written by', [['', 'Anyone']].concat(authors)), sel('when', 'Edited', [['', 'Any time'], ['today', 'Today'], ['week', 'Last 7 days'], ['month', 'This month']]), sel('sort', 'Sort', [['edited', 'Recently edited'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'A to Z']]));
-      const tr = mk('button', 'qn-fchip trash' + (F.trash ? ' on' : ''), 'Trash'); tr.type = 'button'; tr.setAttribute('aria-pressed', String(F.trash)); tr.addEventListener('click', () => { F.trash = !F.trash; dash.draw('qn-tabs'); redrawAll(); if (F.trash) loadTrash(); }); row1.append(tr);
-      el.append(row1);
+      COLOURS.forEach(([k, l]) => { const b2 = mk('button', 'qn-cdot sm c-' + k + (F.colour === k ? ' on' : '')); b2.type = 'button'; b2.title = l + ' notes'; b2.setAttribute('aria-pressed', String(F.colour === k)); b2.setAttribute('aria-label', l + ' notes'); b2.addEventListener('click', () => { F.colour = F.colour === k ? '' : k; redrawAll(); }); cl.append(b2); });
+      const tog = (k, l) => { const b2 = mk('button', 'qn-fchip' + (F[k] ? ' on' : ''), l); b2.type = 'button'; b2.setAttribute('aria-pressed', String(!!F[k])); b2.addEventListener('click', () => { F[k] = !F[k]; redrawAll(); }); return b2; };
+      grp('Colour', cl);
+      grp('Show only', tog('pinned', 'Pinned'), tog('files', 'With files'), tog('doodle', 'With sketches'));
+      grp('Written by', sel('author', 'Written by', [['', 'Anyone']].concat(authorsAll)));
+      grp('Edited', sel('when', 'Edited', [['', 'Any time'], ['today', 'Today'], ['week', 'Last 7 days'], ['month', 'This month']]));
       const tags = new Map(); st.notes.forEach((n) => (n.tags || []).forEach((t) => tags.set(t, (tags.get(t) || 0) + 1)));
-      if (tags.size) { const row2 = mk('div', 'qn-frow tags'); row2.append(mk('span', 'qn-flab', 'Tags')); [...tags].sort((a, b) => b[1] - a[1]).slice(0, 24).forEach(([t, c]) => { const b = mk('button', 'qn-ht t' + tagHue(t) + (F.tag === t ? ' on' : '')); b.type = 'button'; b.append(document.createTextNode('#' + t), mk('small', '', String(c))); b.setAttribute('aria-pressed', String(F.tag === t)); b.addEventListener('click', () => { F.tag = F.tag === t ? '' : t; redrawAll(); }); row2.append(b); }); el.append(row2); }
-      const on = ['colour', 'tag', 'files', 'doodle', 'pinned', 'author', 'when'].filter((k) => F[k]).length;
-      if (on) { const c = mk('button', 'co-link qn-fclear', 'Clear filters (' + on + ')'); c.type = 'button'; c.addEventListener('click', () => { Object.assign(F, { colour: '', tag: '', files: false, doodle: false, pinned: false, author: '', when: '' }); redrawAll(); }); el.append(c); }
+      if (tags.size) { const tw = mk('div', 'qn-ftags'); [...tags].sort((a, b) => b[1] - a[1]).slice(0, 30).forEach(([t, c]) => { const b2 = mk('button', 'qn-ht t' + tagHue(t) + (F.tag === t ? ' on' : '')); b2.type = 'button'; b2.append(document.createTextNode('#' + t), mk('small', '', String(c))); b2.setAttribute('aria-pressed', String(F.tag === t)); b2.addEventListener('click', () => { F.tag = F.tag === t ? '' : t; redrawAll(); }); tw.append(b2); }); grp('Tags', tw); }
+      el.append(pan);
     });
     async function loadTrash() { try { const r = await callApi({ action: 'noteTrash' }, true); st.trash = r.ok ? r.notes : []; } catch (e) { st.trash = []; } dash.draw('qn-board'); }
 
@@ -4248,16 +4279,18 @@
       (n.stickers || []).slice(0, 4).forEach((k, j) => { const s = stickerEl(k, 'on-card p' + j); if (s) c.append(s); });
       if (n.pinned) c.append(mk('span', 'qn-pinmark', 'Pinned'));
       const t = mk('div', 'qn-text'); if (n.title && n.title !== 'Untitled note') { const tt = mk('h3', 'qn-title'); tt.append(rich(n.title)); t.append(tt); }
-      if (n.body) { const bd = mk('p', 'qn-body'); bd.append(rich(n.body.length > 700 ? n.body.slice(0, 700) + '…' : n.body)); t.append(bd); }
+      if (n.body) { const bd = mk('p', 'qn-body'); bd.append(rich(n.body.length > 3000 ? n.body.slice(0, 3000) + '…' : n.body)); t.append(bd); }
       c.append(t);
+      const long = String(n.body || '').length > 260 || String(n.body || '').split('\n').length > 6 || (n.actions || []).length > 3;
+      if (st.open.has(n.id)) c.classList.add('expanded');
       if (n.doodle) c.append(doodleSvg(n.doodle));
       if ((n.files || []).length) { const fr = mk('div', 'qn-files'); n.files.forEach((fl) => fr.append(fileTile(fl))); c.append(fr); }
       if ((n.tags || []).length) { const tg = mk('div', 'qn-tags'); n.tags.forEach((x) => { const b = mk('button', 'qn-ht t' + tagHue(x), '#' + x); b.type = 'button'; b.title = 'Show notes tagged #' + x; b.addEventListener('click', (e) => { e.stopPropagation(); F.tag = x; redrawAll(); }); tg.append(b); }); c.append(tg); }
       const as = assignees(n), other = (n.actions || []).filter((a) => !isAssign(a));
       if (as.length || other.length) {
         const ul = mk('ul', 'qn-todo');
-        as.concat(other).forEach((a) => {
-          const li = mk('li', a.done ? 'done' : ''), can = n.createdBy === me() || a.email === me();
+        as.concat(other).forEach((a, ai) => {
+          const li = mk('li', (a.done ? 'done' : '') + (ai >= 3 ? ' more' : '')), can = n.createdBy === me() || a.email === me();
           const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!a.done; cb.disabled = !can; cb.setAttribute('aria-label', (isAssign(a) ? a.assignee : a.text) + (a.done ? ': done' : ': open'));
           cb.addEventListener('click', (e) => e.stopPropagation());
           cb.addEventListener('change', async () => { const was = a.done; a.done = cb.checked; li.classList.toggle('done', a.done); if (a.done) press(li); try { const r = await callApi({ action: 'noteAction', id: n.id, actionId: a.id, done: a.done }); if (!r.ok) throw new Error(r.error || 'Not saved'); n.actions = r.actions; dash.draw('np-list'); dash.draw('qn-hero'); } catch (e) { a.done = was; cb.checked = was; li.classList.toggle('done', was); toast(e.message, true); } });
@@ -4266,23 +4299,25 @@
         });
         c.append(ul);
       }
-      const meta = mk('div', 'qn-meta');
-      if (n.reminder) { const due = n.reminder <= istStamp(new Date()); const r = mk('span', 'qn-pill rm' + (due ? ' due' : '')); r.textContent = (due ? 'Reminder ' : '⏰ ') + remindText(n.reminder); meta.append(r); }
-      meta.append(mk('span', 'qn-pill vis', visText(n)));
-      if (n.viaAdmin) meta.append(mk('span', 'qn-pill adm', 'Visible to you as Admin'));
-      c.append(meta);
-      const ft = mk('footer', 'qn-foot'); ft.append(CO.av(nameOf2(n.createdBy)), mk('span', '', (n.createdBy === me() ? 'You' : first(nameOf2(n.createdBy))) + ' · ' + ago(n.updatedAt || n.createdAt)));
+      if (long) { const mb = mk('button', 'qn-moreb', st.open.has(n.id) ? 'Show less' : 'Show more'); mb.type = 'button'; mb.setAttribute('aria-expanded', String(st.open.has(n.id))); mb.addEventListener('click', (e) => { e.stopPropagation(); if (st.open.has(n.id)) st.open.delete(n.id); else st.open.add(n.id); flip(() => dash.draw('qn-board')); }); c.append(mb); }
+      // footer: who and when, then quiet icons for the reminder and who can see it; actions appear on hover
+      const ft = mk('footer', 'qn-foot'); ft.append(CO.av(nameOf2(n.createdBy)), mk('span', 'qn-who', (n.createdBy === me() ? 'You' : first(nameOf2(n.createdBy))) + ' · ' + ago(n.updatedAt || n.createdAt)));
+      const info = mk('span', 'qn-info');
+      if (n.reminder) { const past = n.reminder <= istStamp(new Date()); const r = mk('span', 'qn-ico rm' + (past ? ' past' : ''), remindText(n.reminder)); r.title = (past ? 'Reminder was ' : 'Reminder ') + remindText(n.reminder); r.setAttribute('aria-label', r.title); info.append(r); }
+      const vis = mk('span', 'qn-ico vis v-' + (n.visibility || 'private')); vis.title = 'Who can see it: ' + visText(n) + (n.viaAdmin ? ' (you see it as Admin)' : ''); vis.setAttribute('aria-label', vis.title); info.append(vis);
+      if (n.viaAdmin) info.append(mk('span', 'qn-ico adm', 'Admin view'));
+      ft.append(info);
       if (n.createdBy === me()) {
         const pb = mk('button', 'qn-pinb' + (n.pinned ? ' on' : ''), n.pinned ? 'Unpin' : 'Pin'); pb.type = 'button'; pb.setAttribute('aria-pressed', String(!!n.pinned));
         pb.addEventListener('click', async (e) => { e.stopPropagation(); const note = Object.assign({}, n, { pinned: !n.pinned }); try { const r = await callApi({ action: 'noteSave', id: n.id, updatedAt: n.updatedAt, note }); if (!r.ok) throw new Error(r.error === 'stale' ? 'Someone changed this note; refresh and try again.' : r.error || 'Not saved'); const sv = r.note || note; st.notes = st.notes.map((x) => (x.id === n.id ? sv : x)); flip(() => dash.draw('qn-board')); } catch (er) { toast(er.message, true); } });
-        const e2 = mk('button', 'qn-edit', 'Edit'); e2.type = 'button'; ft.append(pb, e2);
+        const e2 = mk('button', 'qn-edit', 'Edit'); e2.type = 'button'; const ac = mk('span', 'qn-cardacts'); ac.append(pb, e2); ft.append(ac);
       }
       c.append(ft);
       if (n.createdBy === me() || n.canEdit) { c.tabIndex = 0; c.classList.add('can'); const go = () => { st.editing = n.id; flip(() => dash.draw('qn-board')); }; c.addEventListener('click', (e) => { if (e.target.closest('input, a, button')) { if (e.target.closest('.qn-edit')) go(); return; } go(); }); c.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === c) go(); }); }
       if (i < 24 && !st.seen.has(n.id)) { st.seen.add(n.id); requestAnimationFrame(() => { enter(c, i); const dv = c.querySelector('.qn-doodle'); if (dv) drawOn(dv); }); }
       return c;
     }
-    st.seen = new Set(); st.show = 60;
+    st.seen = new Set(); st.show = 60; st.open = new Set();
     dash.draw('qn-board', (el) => {
       el.replaceChildren();
       if (!st.loaded) { el.append(mk('p', 'qn-empty', A.mode === 'auth' ? 'Loading notes…' : 'Sign in to use notes.')); return; }
