@@ -3149,7 +3149,16 @@
         if (b.url) { open.href = b.url; open.hidden = false; }
         if (b.empty) { note('No brief in the sheet yet.'); return; }
         if (b.text) { body.replaceChildren(el('p', 'ed-brief-text', b.text)); return; }
-        if (b.noAccess) { note(b.error || 'The brief could not be read here. Open it in Google Docs.', 'warn'); return; }
+        if (b.noAccess) {
+          // Google's own preview, opened with the viewer's Google account (the person assigned can read their brief)
+          const id = b.id || ((b.url || '').match(/\/d\/([A-Za-z0-9_-]{20,})/) || [])[1];
+          if (b.kind === 'doc' && id) {
+            const f = document.createElement('iframe'); f.className = 'ed-brief-frame'; f.src = 'https://docs.google.com/document/d/' + id + '/preview'; f.title = 'Creative brief'; f.loading = 'lazy'; f.referrerPolicy = 'no-referrer';
+            const wrap = el('div', 'ed-brief-embed'); if (b.title) wrap.append(el('p', 'ed-brief-title', b.title)); wrap.append(f, el('p', 'co-note', 'Shown with your Google account. If it stays blank, open it in Google Docs.'));
+            body.replaceChildren(wrap); return;
+          }
+          note(b.error || 'The brief could not be read here. Open it in Google Docs.', 'warn'); return;
+        }
         if (b.kind !== 'doc') { note('This brief is not a Google Doc, so it opens in a new tab.'); return; }
         const doc = cleanBrief(b.html || ''); if (b.title) doc.prepend(el('p', 'ed-brief-title', b.title));
         if (!doc.textContent.trim()) { note('The brief is empty.'); return; }
@@ -3223,12 +3232,12 @@
   }
   // Each area has its own colour and icon, used on the summary, the area filter and every issue.
   const ISS_AREA = {
-    Actions: ['#2f6bff', 'M13 2 4 14h7l-1 8 9-12h-7z'], Sync: ['#22c3e6', 'M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4'],
-    Data: ['#8b5cf6', 'M4 5h16v14H4zM4 10h16M10 10v9'], Packages: ['#ff6b2c', 'M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10'],
-    Connection: ['#3ddc97', 'M2 9a15 15 0 0 1 20 0M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0M12 20h.01'], Screen: ['#c8e600', 'M3 4h18v12H3zM8 20h8M12 16v4'],
-    Server: ['#ff5c7a', 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01'], 'Background jobs': ['#22c3e6', 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z'],
-    'Stand-up': ['#8b5cf6', 'M4 5h16v16H4zM4 10h16M9 3v4M15 3v4'], 'Web app': ['#2f6bff', 'M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12'],
-    'Creative brief': ['#3ddc97', 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5']
+    Actions: ['#685bc7', 'M13 2 4 14h7l-1 8 9-12h-7z'], Sync: ['#685bc7', 'M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4'],
+    Data: ['#8a877f', 'M4 5h16v14H4zM4 10h16M10 10v9'], Packages: ['#ff5a26', 'M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10'],
+    Connection: ['#8aa000', 'M2 9a15 15 0 0 1 20 0M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0M12 20h.01'], Screen: ['#8aa000', 'M3 4h18v12H3zM8 20h8M12 16v4'],
+    Server: ['#ff5a26', 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01'], 'Background jobs': ['#8a877f', 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z'],
+    'Stand-up': ['#685bc7', 'M4 5h16v16H4zM4 10h16M9 3v4M15 3v4'], 'Web app': ['#685bc7', 'M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12'],
+    'Creative brief': ['#8aa000', 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5']
   };
   const issArea = (a) => ISS_AREA[a] || ['#9a978f', 'M12 3 2 20h20L12 3zM12 10v4M12 17h.01'];
   const issIcon = (a, cls) => { const [c, d] = issArea(a), w = el('span', 'iss-ic' + (cls ? ' ' + cls : '')); w.style.setProperty('--ac', c); w.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>'; return w; };

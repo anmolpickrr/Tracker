@@ -3373,152 +3373,10 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
   .qn-play .qn-v-card .qn-ed.in-view { padding: 4px 16px 16px; }
 }
 
-/* ===== Notes, Nov 2026 (3): stickers back over the cards; cooler, livelier accents (green, blue, cyan, violet with lime) ===== */
-/* Stickers sit over the card edges again: only the text is kept inside, the card itself does not clip. */
+/* ===== Notes: stickers sit over the card edges (only the text is kept inside the card) ===== */
 .qn-play .qn-note { overflow: visible; }
 .qn-play .qn-note > .stk.on-card { max-width: none; }
-/* Each card gets one accent from the theme's cooler set; its ink is chosen for contrast. */
-.qn-play .ac0 { --acc: #ddff00; --acc2: #3ddc97; --acc-ink: #141414; }
-.qn-play .ac1 { --acc: #3ddc97; --acc2: #22c3e6; --acc-ink: #0d2018; }
-.qn-play .ac2 { --acc: #2f6bff; --acc2: #22c3e6; --acc-ink: #ffffff; }
-.qn-play .ac3 { --acc: #22c3e6; --acc2: #2f6bff; --acc-ink: #06232b; }
-.qn-play .ac4 { --acc: #8b5cf6; --acc2: #2f6bff; --acc-ink: #ffffff; }
-.qn-play .ac5 { --acc: #ff6b2c; --acc2: #ddff00; --acc-ink: #1a0b03; }
-.qn-play .qn-note[class*=" ac"] { border-color: color-mix(in srgb, var(--acc) 34%, transparent); }
-/* white/default notes take a soft wash of their accent; chosen colours keep their own */
-.qn-play .qn-note.c-paper, .qn-play .qn-v-card.c-paper { background: linear-gradient(160deg, color-mix(in srgb, var(--acc) 15%, var(--nc)) 0%, var(--nc) 58%); }
-/* a short strip of tape across the top edge, in the accent gradient */
-.qn-play .qn-note::before { content: ""; position: absolute; top: -1px; left: 22px; width: 64px; height: 5px; border-radius: 0 0 6px 6px; background: linear-gradient(90deg, var(--acc), var(--acc2)); pointer-events: none; }
-.qn-play .qn-note.can:hover { border-color: color-mix(in srgb, var(--acc) 70%, transparent); box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 22px 44px -26px color-mix(in srgb, var(--acc) 70%, transparent); }
-.qn-play .qn-note .qn-todo input, .qn-v-card .qn-todo input { accent-color: var(--acc); }
-.qn-play .qn-note .qn-todo .av, .qn-play .qn-v-card .qn-todo .av { background: var(--acc) !important; color: var(--acc-ink) !important; }
-.qn-play .qn-note .qn-ico.rm { color: color-mix(in srgb, var(--acc) 60%, var(--fg-2)); }
-.qn-play .qn-v-card { border-color: color-mix(in srgb, var(--acc) 40%, transparent); box-shadow: 0 30px 80px -30px color-mix(in srgb, var(--acc) 45%, rgba(0, 0, 0, .7)); }
-.qn-play .qn-v-card::before { content: ""; display: block; height: 4px; flex: none; background: linear-gradient(90deg, var(--acc), var(--acc2)); }
-/* view tabs: each count in its own cool colour; the active tab underlined in a lime-to-blue gradient */
-.qn-play .qn-tab.on::after { background: linear-gradient(90deg, #ddff00, #3ddc97 45%, #2f6bff); height: 3px; }
-.qn-play .qn-tab:nth-child(1) .qn-n { color: #b8d400; } .qn-play .qn-tab:nth-child(2) .qn-n { color: #3ddc97; }
-.qn-play .qn-tab:nth-child(3) .qn-n { color: #22c3e6; } .qn-play .qn-tab:nth-child(4) .qn-n { color: #5b8cff; }
-.qn-play .qn-tab:nth-child(5) .qn-n { color: #ff6b2c; } .qn-play .qn-tab:nth-child(6) .qn-n { color: #a78bfa; }
-:root[data-theme="dark"] .qn-play .qn-tab:nth-child(1) .qn-n { color: #ddff00; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .qn-play .qn-tab:nth-child(1) .qn-n { color: #ddff00; } }
-.qn-play .qn-tab .qn-n.zero { opacity: .5; }
-.qn-play .qn-fbtn.active, .qn-play .qn-fbtn.open { border-color: #3ddc97; }
-/* the floating background: lime, blue and green */
-.qn-play .qn-bg .b3 { background: radial-gradient(circle at 35% 30%, #fff 0, #b5f5d6 35%, #3ddc97 85%); opacity: .28; filter: blur(30px); }
-.qn-play .qn-bg .b2 { background: radial-gradient(circle at 35% 30%, #fff 0, #b9e9f7 30%, #22c3e6 55%, #2f6bff 90%); opacity: .3; }
-@media (prefers-reduced-motion: reduce) { .qn-play .qn-note.can:hover { transform: none; } }
 .qn-play { overflow-x: clip; overflow-clip-margin: 14px; }
-.qn-play .qn-note .qn-ico.rm { color: color-mix(in srgb, var(--acc) 38%, var(--fg)); }
-.qn-play .qn-tab:nth-child(1) .qn-n { color: #5f7f00; }
-
-/* =====================================================================================================
-   Studio Glass (Nov 2026): one visual language for every section.
-   A soft field of the theme's colours sits behind the page; cards are frosted glass with a light-catching
-   edge; actions use a violet-to-blue gradient; cool accents (green #3ddc97, cyan #22c3e6, blue #2f6bff)
-   join lime, orange and violet. Motion answers what people do (hover, press, open) and respects
-   reduced motion.
-   ===================================================================================================== */
-:root, :root[data-theme="light"] {
-  --g-green: #12a36b; --g-cyan: #0e9fc0; --g-blue: #2f6bff; --g-violet: #6f50f0; --g-lime: #9fbf00; --g-orange: #f0581f;
-  --glass: rgba(255, 255, 255, .72); --glass-2: rgba(255, 255, 255, .55); --glass-in: rgba(255, 255, 255, .8);
-  --glass-edge: rgba(255, 255, 255, .95); --glass-edge-2: rgba(30, 30, 30, .07); --glass-line: rgba(30, 30, 30, .09);
-  --glass-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 18px 40px -28px rgba(40, 40, 70, .35);
-  --grad-act: linear-gradient(135deg, #6f50f0 0%, #4a63ff 55%, #2f6bff 100%);
-  --grad-cool: linear-gradient(90deg, #ddff00, #3ddc97 45%, #22c3e6 70%, #2f6bff);
-  --ring: 0 0 0 3px rgba(47, 107, 255, .28);
-  --aura-1: rgba(221, 255, 0, .22); --aura-2: rgba(34, 195, 230, .16); --aura-3: rgba(111, 80, 240, .14); --aura-4: rgba(61, 220, 151, .12);
-}
-:root[data-theme="dark"] {
-  --g-green: #3ddc97; --g-cyan: #22c3e6; --g-blue: #5b8cff; --g-violet: #8f84e8; --g-lime: #ddff00; --g-orange: #ff7a45;
-  --glass: rgba(30, 30, 34, .62); --glass-2: rgba(36, 36, 42, .5); --glass-in: rgba(255, 255, 255, .045);
-  --glass-edge: rgba(255, 255, 255, .13); --glass-edge-2: rgba(255, 255, 255, .03); --glass-line: rgba(255, 255, 255, .08);
-  --glass-shadow: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 24px 50px -30px rgba(0, 0, 0, .85);
-  --ring: 0 0 0 3px rgba(91, 140, 255, .35);
-  --aura-1: rgba(221, 255, 0, .07); --aura-2: rgba(34, 195, 230, .09); --aura-3: rgba(111, 80, 240, .13); --aura-4: rgba(61, 220, 151, .06);
-}
-/* the colour field behind everything (fixed, so glass has something to frost) */
-body { background:
-  radial-gradient(900px 600px at 8% -10%, var(--aura-1), transparent 60%),
-  radial-gradient(800px 700px at 100% 10%, var(--aura-2), transparent 60%),
-  radial-gradient(900px 700px at 70% 110%, var(--aura-3), transparent 60%),
-  radial-gradient(700px 600px at 0% 90%, var(--aura-4), transparent 60%),
-  var(--bg); background-attachment: fixed; }
-
-/* ---- surfaces ---- */
-.co-card, .co-kpi:not(.hero), .side, .co-dialog, .qn-view .qn-v-card {
-  background: linear-gradient(var(--glass), var(--glass)) padding-box, linear-gradient(160deg, var(--glass-edge), var(--glass-edge-2) 38%, var(--glass-edge-2) 70%, color-mix(in srgb, var(--g-blue) 22%, transparent)) border-box !important;
-  border: 1px solid transparent !important; box-shadow: var(--glass-shadow) !important; }
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .co-card, .co-kpi:not(.hero), .side, .co-dialog { -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%); }
-}
-.side { --side-bg: transparent; }
-:root[data-theme="dark"] .side { background: linear-gradient(rgba(18, 18, 22, .78), rgba(18, 18, 22, .78)) padding-box, linear-gradient(170deg, rgba(255, 255, 255, .12), rgba(255, 255, 255, .02) 50%, rgba(111, 80, 240, .25)) border-box !important; }
-:root[data-theme="light"] .side { background: linear-gradient(rgba(20, 20, 24, .9), rgba(20, 20, 24, .9)) padding-box, linear-gradient(170deg, rgba(255, 255, 255, .2), rgba(255, 255, 255, .04)) border-box !important; }
-.co-dialog::backdrop { background: rgba(10, 10, 14, .38); -webkit-backdrop-filter: blur(6px) saturate(.9); backdrop-filter: blur(6px) saturate(.9); }
-.co-dialog[open] { animation: glassIn .24s cubic-bezier(.2, .8, .2, 1); }
-@keyframes glassIn { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
-
-/* ---- navigation ---- */
-.co-tab { transition: background .18s, color .18s, box-shadow .2s, transform .15s; }
-.co-tab:hover:not([aria-selected="true"]) { background: rgba(255, 255, 255, .06); color: #fff; }
-.co-tab[aria-selected="true"], .bt[aria-current="page"] { background: var(--grad-act) !important; color: #fff !important; box-shadow: 0 10px 24px -12px rgba(79, 99, 255, .9), 0 1px 0 rgba(255, 255, 255, .25) inset !important; }
-.co-tab[aria-selected="true"]::after { content: ""; margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: #ddff00; box-shadow: 0 0 10px #ddff00; flex: none; }
-.co-tab[aria-selected="true"] .nav-badge ~ *::after { display: none; }
-
-/* ---- buttons ---- */
-.co-btn { transition: background .18s, border-color .18s, color .18s, box-shadow .2s, transform .15s; border-color: var(--glass-line); background: var(--glass-in); }
-.co-btn:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--g-blue) 45%, var(--glass-line)); background: color-mix(in srgb, var(--g-blue) 8%, var(--glass-in)); }
-.co-btn:active { transform: translateY(0) scale(.97); }
-.co-btn:focus-visible, .co-input:focus-visible, .co-select:focus-visible, .seg button:focus-visible, .pm-opt:focus-visible { outline: none; box-shadow: var(--ring); }
-.co-btn.primary, .brief-card .co-btn.primary, .cal-empty .cal-acts .co-btn.primary { background: var(--grad-act) !important; border-color: transparent !important; color: #fff !important; box-shadow: 0 10px 22px -12px rgba(79, 99, 255, .9), 0 1px 0 rgba(255, 255, 255, .25) inset; }
-.co-btn.primary:hover { filter: brightness(1.08) saturate(1.05); box-shadow: 0 14px 28px -12px rgba(79, 99, 255, 1), 0 1px 0 rgba(255, 255, 255, .3) inset; }
-.co-btn.danger { color: var(--bad); }
-.icon-btn { transition: background .18s, transform .15s, box-shadow .2s; }
-.icon-btn:hover { transform: translateY(-1px); }
-
-/* ---- inputs ---- */
-.co-input, .co-select { background-color: var(--glass-in) !important; border-color: var(--glass-line) !important; transition: border-color .18s, box-shadow .2s, background-color .18s; }
-.co-input:hover, .co-select:hover { border-color: color-mix(in srgb, var(--g-blue) 35%, var(--glass-line)) !important; }
-.co-input:focus, .co-select:focus { border-color: var(--g-blue) !important; box-shadow: var(--ring); outline: none; }
-
-/* ---- pills and segmented choices ---- */
-.seg { background: transparent; }
-.seg button { background: var(--glass-in); border-color: var(--glass-line); transition: background .18s, border-color .18s, color .18s, transform .15s, box-shadow .2s; }
-.seg button:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--g-cyan) 50%, var(--glass-line)); }
-.seg button[aria-pressed="true"], .seg.small button[aria-pressed="true"] { background: var(--grad-act) !important; border-color: transparent !important; color: #fff !important; box-shadow: 0 8px 18px -10px rgba(79, 99, 255, .9); }
-.pm-seg { background: var(--glass-in); box-shadow: 0 0 0 1px var(--glass-line) inset; }
-.pm-opt.on { box-shadow: 0 4px 12px -6px rgba(0, 0, 0, .4); }
-
-/* ---- KPI tiles: each with its own cool accent, a lift on hover ---- */
-.co-kpis .co-kpi { transition: transform .2s cubic-bezier(.2, .8, .2, 1), box-shadow .2s; }
-.co-kpis .co-kpi:hover { transform: translateY(-3px); }
-.co-kpis .co-kpi:nth-child(6n+1) { --kacc: var(--g-cyan); } .co-kpis .co-kpi:nth-child(6n+2) { --kacc: var(--g-orange); }
-.co-kpis .co-kpi:nth-child(6n+3) { --kacc: var(--g-blue); } .co-kpis .co-kpi:nth-child(6n+4) { --kacc: var(--g-violet); }
-.co-kpis .co-kpi:nth-child(6n+5) { --kacc: var(--g-green); } .co-kpis .co-kpi:nth-child(6n) { --kacc: var(--g-lime); }
-.co-kpis .co-kpi:not(.hero) .kpi-ico { color: var(--kacc); background: color-mix(in srgb, var(--kacc) 14%, transparent); border-color: color-mix(in srgb, var(--kacc) 35%, transparent); }
-.co-kpis .co-kpi:not(.hero)::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(120% 70% at 100% 0%, color-mix(in srgb, var(--kacc) 16%, transparent), transparent 60%); }
-.co-kpi.hero { background: linear-gradient(150deg, #ddff00, #c4f500 55%, #8ff0b8) !important; box-shadow: 0 18px 40px -22px rgba(170, 220, 0, .8) !important; }
-
-/* ---- tables ---- */
-.co-table th { background: color-mix(in srgb, var(--glass) 92%, var(--panel)) !important; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
-.co-table tbody tr { transition: background .15s; }
-.co-table tbody tr:hover td { background: color-mix(in srgb, var(--g-blue) 8%, transparent) !important; }
-.co-table tbody tr:hover td:first-child { box-shadow: 3px 0 0 var(--g-blue) inset; }
-
-/* ---- headings and small chips ---- */
-.co-card-head .co-h2 { letter-spacing: -.01em; }
-.chip { transition: transform .15s; }
-.nav-badge { background: linear-gradient(135deg, #ff7a45, #ff5a26) !important; color: #fff !important; box-shadow: 0 4px 10px -4px rgba(255, 90, 38, .8); }
-
-@media (prefers-reduced-motion: reduce) {
-  .co-btn:hover, .seg button:hover, .co-kpis .co-kpi:hover, .icon-btn:hover { transform: none; }
-  .co-dialog[open] { animation: none; }
-}
-/* the sticky page header frosts what scrolls under it instead of painting a flat block */
-.top { background: transparent !important; }
-.top::before { content: ""; position: absolute; inset: 0 -12px; z-index: -1; pointer-events: none; background: color-mix(in srgb, var(--bg) 55%, transparent); -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%); -webkit-mask-image: linear-gradient(#000 75%, transparent); mask-image: linear-gradient(#000 75%, transparent); }
-.top { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; box-shadow: none !important; }
 
 /* ===== Issues page (Studio Glass) ===== */
 .iss-hero { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 1.6fr); gap: 14px; }
@@ -3665,3 +3523,38 @@ body { background:
 .cal-next .cal-ppl .av:nth-child(2) { background: #ddff00 !important; } .cal-next .cal-ppl .av:nth-child(3) { background: #bff3dc !important; }
 .cal-next .cal-ppl .av:nth-child(4) { background: #c9e9ff !important; } .cal-next .cal-ppl .av:nth-child(5) { background: #e6defe !important; }
 .cal-next .cal-ppl .cal-more { margin-left: 6px; font-weight: 600; font-size: 12px; color: #fff; }
+
+/* ===== One design language: the Overview section is the reference (Nov 2026) =====
+   Solid panels on the page background, the theme's own colours only (violet primary, lime highlight, orange alert,
+   ink, greys), no gradients or frosted glass. The tokens used by the task panel and the Issues page map onto them. */
+:root, :root[data-theme="light"], :root[data-theme="dark"] {
+  --glass: var(--panel); --glass-2: var(--panel); --glass-in: var(--panel-2); --glass-line: var(--line);
+  --glass-edge: var(--line); --glass-edge-2: var(--line); --glass-shadow: var(--shadow);
+  --grad-act: var(--primary); --grad-cool: var(--accent); --ring: 0 0 0 3px var(--primary-soft);
+  --g-blue: var(--primary); --g-violet: var(--violet); --g-cyan: var(--violet); --g-green: var(--ok); --g-lime: var(--accent); --g-orange: var(--coral);
+}
+.qn-play .qn-bg { display: none; }
+.co-btn:focus-visible, .co-input:focus-visible, .co-select:focus-visible { outline: none; box-shadow: var(--ring); }
+/* task panel */
+.ed-head { background: none; }
+.ed-brief, .ed-linkbox, .ed-manage { background: var(--panel-2) !important; border: 1px solid var(--line) !important; box-shadow: none !important; }
+.ed-linkbox .co-input, .ed-brief-body { background: var(--panel) !important; }
+.ed-step { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+.ed-fact { background: var(--panel-2); box-shadow: 0 0 0 1px var(--line) inset; }
+.ed-link-auto::before { background: var(--primary); box-shadow: none; }
+.ed-brief .co-link#ed-brief-open { background: var(--primary-soft); box-shadow: none; }
+/* Issues */
+.iss-tile2 { background: var(--panel-2); box-shadow: 0 0 0 1px var(--line) inset; }
+.iss-tile2::after { display: none; }
+.iss-tile2.is-open { --tc: var(--coral); } .iss-tile2.is-clear, .iss-tile2.is-fixed { --tc: var(--ok); } .iss-tile2.is-areas { --tc: var(--violet); }
+.iss-t-dot { box-shadow: none; }
+.iss-ic { background: color-mix(in srgb, var(--ac) 14%, transparent); box-shadow: none; }
+.iss-item, .iss-item.open { background: var(--panel-2); box-shadow: 0 0 0 1px var(--line) inset; }
+.iss-flow { box-shadow: 0 0 0 1px var(--line) inset; }
+.iss-flow li::before { background: var(--accent); color: var(--accent-ink); }
+.iss-empty { background: var(--panel-2); }
+.iss-area-pill b { color: #fff; }
+.iss-seg .pm-opt.on { background: var(--primary); }
+/* brief shown from Google Docs inside the panel */
+.ed-brief-frame { width: 100%; height: 22rem; border: 0; border-radius: 12px; background: #fff; display: block; }
+.ed-brief-body:has(.ed-brief-embed) { max-height: none; padding: 10px; } .ed-brief-embed { display: grid; gap: 8px; } .ed-brief-embed .co-note { margin: 0; }

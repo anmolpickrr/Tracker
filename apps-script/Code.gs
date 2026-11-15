@@ -550,18 +550,22 @@ function brief_(body, user) {
   // Read the Doc as the web app's account. The Drive service (DriveApp) and the Docs export link need no Google Cloud
   // API switched on (the Drive REST API answered 403 where it is not enabled); the REST API is only a last resort.
   const auth = { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true };
-  let title = '';
-  try { title = DriveApp.getFileById(m[1]).getName(); }
-  catch (e) { return { ok: true, url: url, kind: 'doc', noAccess: true, error: 'The dashboard\'s Google account cannot open this Doc. Share it with that account (Viewer is enough), or ask the brief\'s owner to, then open the task again.' }; }
+  // The export link first (works whenever this account can read the Doc, no Cloud API needed); then the Drive service
+  // to name the reason. When the web app's account cannot read it, the dashboard shows Google's own preview instead,
+  // which opens with the viewer's Google account.
+  let title = '', why = '';
   try {
-    let res = UrlFetchApp.fetch('https://docs.google.com/document/d/' + m[1] + '/export?format=html', auth);
-    if (res.getResponseCode() !== 200) res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + m[1] + '/export?mimeType=text%2Fhtml', auth);
-    if (res.getResponseCode() !== 200) return { ok: true, url: url, kind: 'doc', noAccess: true, title: title, error: 'Google Docs would not export this brief (' + res.getResponseCode() + '). Open it in Google Docs instead.' };
-    let html = res.getContentText(); const b = html.match(/<body[^>]*>([\s\S]*)<\/body>/i); html = (b ? b[1] : html).slice(0, 400000);
-    title = title || 'Creative brief';
-    try { cache.put(key, title + '\u0000' + html, 600); } catch (e) { /* too large to cache */ }
-    return { ok: true, url: url, kind: 'doc', title: title, html: html };
-  } catch (e) { return { ok: true, url: url, kind: 'doc', noAccess: true, title: title, error: 'The Doc could not be read: ' + e.message }; }
+    const res = UrlFetchApp.fetch('https://docs.google.com/document/d/' + m[1] + '/export?format=html', auth), code = res.getResponseCode();
+    if (code === 200 && !/<title>\s*Google Docs\s*<\/title>[\s\S]*accounts\.google/i.test(res.getContentText().slice(0, 4000))) {
+      let html = res.getContentText(); const t = html.match(/<title>([^<]*)<\/title>/i); try { title = DriveApp.getFileById(m[1]).getName(); } catch (e) { title = t ? t[1] : ''; }
+      const b = html.match(/<body[^>]*>([\s\S]*)<\/body>/i); html = (b ? b[1] : html).slice(0, 400000); title = title || 'Creative brief';
+      try { cache.put(key, title + '\u0000' + html, 600); } catch (e) { /* too large to cache */ }
+      return { ok: true, url: url, kind: 'doc', id: m[1], title: title, html: html };
+    }
+    why = 'export ' + code;
+  } catch (e) { why = String(e.message || e); }
+  try { title = DriveApp.getFileById(m[1]).getName(); } catch (e) { why += '; Drive: ' + String(e.message || e).slice(0, 120); }
+  return { ok: true, url: url, kind: 'doc', id: m[1], title: title, noAccess: true, why: why, error: 'The dashboard\'s Google account cannot read this Doc, so it is shown with your own Google account below.' };
 }
 
 function taskColumns_(kind, head) {
