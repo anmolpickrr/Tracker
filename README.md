@@ -149,6 +149,10 @@ A clean, editorial space for everyone (designers, editors, writers): neutral gre
 
 Design and motion references are kept in `docs/design-references.md`.
 
+## Inactive people
+
+Anyone marked Inactive in the team list is never shown by name, to anyone: everywhere (tables, filters, reports, CSV downloads, stand-up, notes, Fasty, emails, the activity log, the Content Owner column) they appear as **"M – Inactive User"** (their initial; a number is added if two share one). Their past work still counts under that label. Admins can still set them active again on the Team page; the team sheet itself keeps the real name.
+
 ## How numbers are counted
 
 Everywhere on the dashboard: each **Creative ID is one creative** (the No. of Creatives column is not multiplied in). **Completed / delivered = DONE only**; Rejected, Shared, No update and Under review are counted separately, never as completed. A completed creative counts on its **completion date**, its Design ETA (or today, if the ETA is still ahead). Reports cover whatever period you pick (a day, week, month, quarter, year or a custom range) and every filter at the top applies. A creative done by two designers counts for each of them in the Designer table (a note says how many), while the total counts it once.

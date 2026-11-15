@@ -288,6 +288,13 @@
     const canon = (n) => { const r = team().resolve(n); return r ? r.name : n; };
     const member = (n) => { const t = team(); const r = t.resolve(n); return r || { name: n, status: t.ok ? 'New' : 'Active', role: '', listed: false }; };
     const isActive = (n) => member(n).status !== 'Inactive';
+    // Free text (content owner, activity log) with an inactive person's name: the name is replaced by their masked label.
+    let maskMemo = { data: undefined, re: null, map: null };
+    const maskText = (txt) => {
+      if (!txt) return txt; const data = S.team;
+      if (maskMemo.data !== data) { const map = new Map(); (data || []).filter((m) => m.key).forEach((m) => String(m.aliases || '').split(/\s*,\s*/).filter((a) => a && !/@/.test(a)).forEach((a) => map.set(a.toLowerCase(), m.name))); const keys = [...map.keys()].sort((a, b) => b.length - a.length).map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); maskMemo = { data, map, re: keys.length ? new RegExp('\\b(' + keys.join('|') + ')\\b', 'gi') : null }; }
+      return maskMemo.re ? String(txt).replace(maskMemo.re, (w) => maskMemo.map.get(w.toLowerCase()) || w) : txt;
+    };
 
     const due = (r, t) => {
       if (!r.open) return '';
@@ -314,7 +321,7 @@
         if (p.type && r0.type !== p.type) continue;
         const list = r0.designers ? [...new Set(r0.designers.split(' + ').map(canon))] : [];
         if (p.designer && (p.designer === '__none' ? list.length : !list.includes(p.designer))) continue;
-        const r = Object.assign({}, r0, { list, designers: list.join(' + ') });
+        const r = Object.assign({}, r0, { list, designers: list.join(' + '), owner: maskText(r0.owner) });
         r.due = due(r, t);
         out.push(r);
       }
@@ -476,7 +483,7 @@
       a.download = filename; document.body.append(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     };
-    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, cls, emptyRow, isWorkday, workdays, nthWorkday, sameWorkdaysEnd, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials, inr, istHour, istTime, istDateTime, istParts, tone, toneInk, toneWash, toneFill, pctText };
+    return { today, addDays, diffDays, fmtDate, fmtMonth, thisMonth, prevMonth, monthEnd, addMonths, num, sumQty, CLOSED, VIDEO, team, member, isActive, canon, maskText, all, rows, status, stageMatch, stageColor, chip, td, links, topic, topicText, srcTag, cls, emptyRow, isWorkday, workdays, nthWorkday, sameWorkdaysEnd, notReady, goTasks, typeColors, topTypes, typeOf, tip, placeTip, sign, delta, period, label, csv, av, who, task, initials, inr, istHour, istTime, istDateTime, istParts, tone, toneInk, toneWash, toneFill, pctText };
   })();
 
   /* ================= Controls ================= */
@@ -626,7 +633,8 @@
     const old = (S.team || []).find((m) => m.name.toLowerCase() === name.toLowerCase());
     next.push(Object.assign({ name, aliases: '', notes: '' }, old || {}, { status, role: role != null ? role : (old ? old.role : '') }));
     S.team = next; renderAll();
-    try { await post({ action: 'setMember', name, status, role }); toast(name + (old ? ' is now ' + status : ' added to the team list')); }
+    // inactive people are shown masked; the team sheet is updated by their real name (never displayed)
+    try { await post({ action: 'setMember', name: (old && old.key) || name, status, role }); toast((status === 'Active' && old && old.key ? 'Team member' : name) + (old ? ' is now ' + status : ' added to the team list')); }
     catch (err) { S.team = prev; renderAll(); toast('Could not save: ' + err.message + '. Check the web app is redeployed with the latest code.', true); }
   }
   document.getElementById('add-member').addEventListener('submit', (e) => {
@@ -3176,7 +3184,7 @@
       const what = el('span', 'pr-what');
       what.append(el('b', '', e.action));
       if (e.record) what.append(document.createTextNode(' · ' + e.record));
-      if (e.field) what.append(document.createTextNode(' · ' + e.field + ': '), el('span', 'ax-before', e.before === '' ? '(blank)' : e.before), document.createTextNode(' → '), el('span', '', e.after === '' ? '(blank)' : e.after));
+      if (e.field) what.append(document.createTextNode(' · ' + e.field + ': '), el('span', 'ax-before', e.before === '' ? '(blank)' : CO.maskText(e.before)), document.createTextNode(' → '), el('span', '', e.after === '' ? '(blank)' : CO.maskText(e.after)));
       else if (e.details) what.append(document.createTextNode(' · ' + e.details));
       li.append(what); ul.append(li);
     });
@@ -3254,7 +3262,7 @@
       if (e.field) {
         ch.append(mk('span', 'ax-field', e.field));
         const line = mk('span', 'ax-line');
-        const bf = mk('span', 'ax-before', e.before === '' ? '(blank)' : e.before), af = mk('span', 'ax-after', e.after === '' ? '(blank)' : e.after);
+        const bf = mk('span', 'ax-before', e.before === '' ? '(blank)' : CO.maskText(e.before)), af = mk('span', 'ax-after', e.after === '' ? '(blank)' : CO.maskText(e.after));
         line.append(bf, mk('span', 'ax-arrow', '→'), af); ch.append(line); ch.title = e.field + ': ' + (e.before || '(blank)') + ' → ' + (e.after || '(blank)');
       } else ch.append(mk('span', 'ax-after', e.after || e.details || '—'));
       if (e.field && e.details) ch.append(mk('span', 'ax-det', e.details));

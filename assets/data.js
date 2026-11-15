@@ -79,11 +79,25 @@
     const f = (re) => head.findIndex((h) => re.test(h));
     const ix = { name: f(/^name/), status: f(/^status/), role: f(/^role/), aliases: f(/also|alias/), notes: f(/^notes?/) };
     const v = (r, k) => (ix[k] >= 0 && r[ix[k]] != null ? clean(r[ix[k]]) : '');
-    return src.rows.filter((r) => v(r, 'name')).map((r) => ({
+    const list = src.rows.filter((r) => v(r, 'name')).map((r) => ({
       name: v(r, 'name'),
       status: /inactive|left|former|^no$/i.test(v(r, 'status')) ? 'Inactive' : 'Active',
       role: v(r, 'role'), aliases: v(r, 'aliases'), notes: v(r, 'notes')
     }));
+    /* People marked Inactive are never shown by name, to anyone: they appear as "M – Inactive User" (a number is added if
+       two share an initial). Their real name and first name stay as hidden aliases, so sheet rows written with their name
+       still count for them; key keeps the real name only for saving changes to the team list. */
+    const activeFirst = new Set(list.filter((m) => m.status !== 'Inactive').map((m) => m.name.split(' ')[0].toLowerCase()));
+    const used = {};
+    list.forEach((m) => {
+      if (m.status !== 'Inactive') return;
+      const real = m.name, ini = (real.match(/[A-Za-z0-9]/) || ['?'])[0].toUpperCase(); used[ini] = (used[ini] || 0) + 1;
+      const fn = real.split(' ')[0];
+      m.key = real; m.name = ini + (used[ini] > 1 ? used[ini] : '') + ' – Inactive User';
+      m.aliases = [real, activeFirst.has(fn.toLowerCase()) ? '' : fn].concat(String(m.aliases || '').split(/[,;\/]/)).map((a) => a.trim()).filter(Boolean).join(', ');
+      m.notes = '';
+    });
+    return list;
   }
 
   /* ---------- Status ---------- */
