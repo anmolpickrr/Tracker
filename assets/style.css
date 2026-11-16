@@ -3580,3 +3580,27 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
 :root[data-theme="dark"] .su-item .meta, :root[data-theme="dark"] .su-item .m { color: #a6a39c; }
 .la-av { text-shadow: 0 1px 1px rgba(0, 0, 0, .35); font-weight: 800; }
 .la-av { background: color-mix(in srgb, var(--hue) 72%, #000); }
+/* task panel: editable file and content steps */
+.ed-file { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.ed-sec-h.sub b { font-size: 13px; }
+.ed-hint { margin: -6px 0 8px; font-size: 12px; }
+.ed-cst { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 10px; font-size: 12.5px; color: var(--fg-2); }
+.ed-cst label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--fg); }
+.ed-cst input { accent-color: var(--primary); }
+.t-focus-w:empty { display: none; } .t-focus-w { display: inline-flex; }
+/* ===== Stand-up (Nov 2026): every task listed, cards scroll inside a fixed height ===== */
+[data-draw="standup"] .su { max-height: 640px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+[data-draw="standup"] .su .su-head { position: sticky; top: -1px; z-index: 2; background: var(--panel); padding-bottom: 6px; }
+/* still with the content team: dashed and muted, with the content status */
+.su-item.await { border-left: 3px dashed var(--coral); padding-left: 10px; opacity: .9; }
+.su-item.await .t { color: var(--fg-2); }
+.su-await { grid-column: 1 / -1; justify-self: start; margin-top: 2px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--coral); background: var(--coral-soft); }
+/* writers: every open content task, coloured by its content status; due today or earlier marked */
+.su-ct-list .su-item.ct-hl { border-left: 3px solid var(--muted); padding-left: 10px; }
+.su-ct-list .su-item.cs-pending, .su-ct-list .su-item.cs-tbd { border-left-color: var(--coral); }
+.su-ct-list .su-item.cs-tbp { border-left-color: var(--accent); }
+.su-ct-list .su-item.cs-wip { border-left-color: var(--violet); }
+.su-ct-list .su-item.cs-changes, .su-ct-list .su-item.cs-incomplete-brief { border-left-color: var(--warn); }
+.su-ct-list .su-item.ct-due { background: var(--coral-soft); border-radius: 10px; }
+.su-ct-list .su-item.ct-due .m { color: var(--coral) !important; }
+[data-draw="standup"] .su::before, [data-draw="standup"] .su::after { z-index: 3; }

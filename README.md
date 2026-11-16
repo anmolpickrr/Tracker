@@ -121,6 +121,12 @@ Everyone lands on **My work** showing their own work (the owner lands on the Ove
 
 **Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) opens with how long approvals take: the typical (median) and longest wait, then bars for up to 7 days, 8–14, 15–30 and over 30 days (orange = over 14 days), each with its count and share. Click a bar (or press Enter on it) to list only those tasks; click again for all. Below that it groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
 
+## Stand-up cards
+
+Every task assigned for the day is on the person's card, including work still with the content team (content Pending, TBP, WIP or Changes): those rows have a dashed orange edge and say *Content wip · pick up when ready*, so everyone sees what is theirs today, what is ready to pick up and what is waiting on content. Overdue and due-today work comes first; work waiting on content that is not due yet has its own list. Content writers' cards list every open content task, coloured by its content status, with anything due today or earlier highlighted. Each card keeps a fixed height and scrolls inside, so a long list never stretches the page.
+
+**Filters stay yours.** Clicking a task opens it; links such as a person's name on Team or a chart bar open Tasks with a one-off *Showing …'s tasks* chip (× clears it, and it disappears when you leave Tasks). The filters at the top (Internal/External, designer, brand, type) only change when you pick them.
+
 ## Day plan (Stand-up › Day plan)
 
 At 10:00 IST the web app saves each person's tasks for the day in the *Day plans* tab: their open tasks due today or overdue, and anything in WIP or Changes requested. Tasks that come into scope later are added and marked **New**. Each 10-minute check records every planned task's current status, so a past day keeps its end-of-day status.
@@ -197,6 +203,14 @@ Click any task to open its panel. At the top: where the task is, its title and a
 
 1. **Read the brief.** The Google Doc in the task's **Creative Brief** cell shows inside the panel (title, text, lists, tables and images; scripts and outside content are removed). *Open in Google Docs* opens the original. The web app reads the Doc as its own Google account through the built-in Drive service and the Docs export link, so no Google Cloud API needs switching on; the Doc must be readable by that account (share it as Viewer, or keep briefs in a shared drive it can see), otherwise the panel says so and the link still works. A brief typed straight into the cell shows as text; other links open in a new tab.
 2. **Submit the creative link.** Paste the finished creative's link (https://…) and click *Submit link* (or *Update link*). It is written to the **Creative Link** column and, for open work, the task moves to **Under review** in the same step, for the Creative Head to review. Team members need nothing else: they do not change the status, ETA, designer or priority by hand.
+
+**Links by role (written straight to the sheet).** Each person sees the steps that are theirs:
+
+- **Designers and editors**: *Submit the creative link* (Creative Link column; open work moves to **Under review**) and **Open File**: the original, editable file or its folder (Open File column), so source files are always one click away.
+- **Content writers** (Jahanvi, Gul, Anmol, and anyone named in the task's **Content Owner** cell): *Submit the content*: the script or content doc goes to the **Creative Brief** column (so the designer reads it in the panel) and the **Content Status** is set to **Done** or **Shared**, whichever they pick. The sheet's own spelling is used (its dropdown first).
+- Admins see every step. The web app checks each link (full https:// address), that the task is the person's own (the Content Owner for the content step), and that the sheet has not changed since the panel opened.
+
+To find a task: My work lists everything assigned to you; on Tasks, search by ID, brand or creative and click the row.
 
 **Task fields, one switch each (Access › a person › Task fields they can edit).** Admins and the owner have all of them; everyone else starts with none and the owner or an Admin switches on exactly what a person needs:
 

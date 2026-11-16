@@ -41,6 +41,7 @@
       if (o.tab) { try { history.replaceState(null, '', '#' + o.tab); } catch (e) { /* ignore */ } }
       if (o.tab === 'access') axRefresh(true);
       if (o.tab === 'issues') ISS.load();
+      if (o.tab && o.tab !== 'tasks' && P.focus) P.focus = null;
       if (o.tab) { closeNav(); window.scrollTo({ top: 0 }); }
       renderAll();
     },
@@ -458,7 +459,9 @@
       el.classList.toggle('skeleton', S.status === 'loading');
       return true;
     };
-    const goTasks = (stage, extra) => dash.setParams(Object.assign({ tab: 'tasks', stage }, extra || {}));
+    // Jump to Tasks. A person or brand from a link ("+3 more", a chart bar, a brand row) is a one-off focus on the
+    // Tasks page only, shown as a removable chip; the filters at the top change only when someone picks them.
+    const goTasks = (stage, extra) => { const e = Object.assign({}, extra || {}), focus = {}; ['designer', 'brand'].forEach((k) => { if (k in e) { if (e[k]) focus[k] = e[k]; delete e[k]; } }); P.focus = Object.keys(focus).length ? focus : null; dash.setParams(Object.assign({ tab: 'tasks', stage }, e)); };
     const typeColors = (types) => { const m = new Map(); types.forEach((t, i) => m.set(t, t === 'Other' || i >= colors.length ? 'var(--chart-muted)' : colors[i])); return m; };
     /* People: initials avatar + name. Several designers show stacked avatars. */
     const initials = (n) => String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
@@ -1650,14 +1653,17 @@
       m.textContent = (r.qty > 1 ? r.qty + '× · ' : '') + (dd == null ? 'No ETA' : dd < 0 ? (-dd) + 'd late' : dd === 0 ? 'Today' : dd === 1 ? 'Tomorrow' : CO.fmtDate(r.eta));
       if (dd != null && dd < 0) m.classList.add('bad'); else if (dd === 0) m.classList.add('warn');
       const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = [r.id, r.type, r.stage, r.priority, CO.cls(r)].filter(Boolean).join(' · ');
-      d.append(t, m, meta); return d;
+      d.append(t, m, meta);
+      // still with the content team: shown so the day is complete, marked so it is not picked up too early
+      if (r.awaiting) { d.classList.add('await'); const w = document.createElement('span'); w.className = 'su-await'; w.textContent = 'Content ' + (String(r.content_status || 'pending').trim().toUpperCase() === 'CHANGES' ? 'changes' : String(r.content_status || 'pending').trim().toLowerCase()) + ' · pick up when ready'; meta.textContent = [r.id, r.type, r.priority, CO.cls(r)].filter(Boolean).join(' · '); d.append(w); }
+      return d;
     };
-    const section = (title, list, max, onMore) => {
+    // Every task is listed (the card scrolls inside itself); ready work first, then work waiting on content.
+    const section = (title, list) => {
       if (!list.length) return null;
       const s = document.createElement('div'); s.className = 'su-sec';
       const h = document.createElement('h3'); h.textContent = title + ' · ' + list.length; s.append(h);
-      list.slice(0, max).forEach((r) => s.append(line(r)));
-      if (list.length > max) { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-link'; b.textContent = '+' + (list.length - max) + ' more'; b.addEventListener('click', onMore); s.append(b); }
+      list.slice().sort((a, b) => (!!a.awaiting - !!b.awaiting)).forEach((r) => s.append(line(r)));
       return s;
     };
     const byEta = (a, b) => (a.eta || '9999').localeCompare(b.eta || '9999');
@@ -1675,8 +1681,8 @@
       if (ct.client.length) { const s2 = document.createElement('span'); s2.className = 'chip s-lav'; s2.textContent = ct.client.length + ' with client'; chips.append(s2); }
       if (ct.hold.length) { const s2 = document.createElement('span'); s2.className = 'chip s-mute'; s2.textContent = ct.hold.length + ' on hold'; chips.append(s2); }
       if (chips.childNodes.length) box.append(chips);
-      if (ct.open.length) { const sec = document.createElement('div'); sec.className = 'su-sec'; ct.open.slice(0, 5).forEach((r) => sec.append(cline(r))); if (ct.open.length > 5) { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-link'; b.textContent = '+' + (ct.open.length - 5) + ' more'; b.addEventListener('click', () => { dash.setParams({ tab: 'mine' }); }); sec.append(b); } box.append(sec); }
-      else { const f = document.createElement('p'); f.className = 'su-free'; f.textContent = 'No open content tasks.'; box.append(f); }
+      if (ct.open.length) { const sec = document.createElement('div'); sec.className = 'su-sec su-ct-list'; const tt = CO.today(); ct.open.slice().sort((a, b) => ((b.eta && b.eta <= tt) - (a.eta && a.eta <= tt)) || (a.eta || '9999').localeCompare(b.eta || '9999')).forEach((r) => { const d0 = cline(r); d0.classList.add('ct-hl', 'cs-' + String(r.content_status || '').trim().toLowerCase().replace(/\s+/g, '-')); if (r.eta && r.eta <= tt) d0.classList.add('ct-due'); sec.append(d0); }); box.append(sec); }
+      if (!ct.open.length) { const f = document.createElement('p'); f.className = 'su-free'; f.textContent = 'No open content tasks.'; box.append(f); }
       const t = CO.today(), wk = ct.doneIn(CO.addDays(t, -6), t).length;
       if (wk) { const d = document.createElement('p'); d.className = 'su-done'; d.textContent = wk + (wk === 1 ? ' content task' : ' content tasks') + ' completed in the last 7 days (by ETA)'; box.append(d); }
       return box;
@@ -1707,6 +1713,7 @@
           changes: open.filter((r) => r.stage === 'Changes requested' && notLateOrToday(r)).sort(byEta),
           next: open.filter((r) => r.stage !== 'WIP' && r.stage !== 'Changes requested' && notLateOrToday(r)).sort(byEta),
           review: list.filter((r) => r.shared), done: list.filter((r) => r.done),
+          await: list.filter((r) => r.awaiting).sort(byEta),
           content: CT.writers().includes(name) ? CT.of(name, rs) : null };
       });
       const sort = p.susort || 'urgent';
@@ -1731,10 +1738,11 @@
         const stats = document.createElement('div'); stats.className = 'su-stats';
         const st = (n, lab, cls, color) => { if (!n) return; const s = document.createElement('span'); s.className = 'chip ' + cls; if (color) s.style.color = color; s.textContent = n + ' ' + lab; stats.append(s); };
         st(c.overdue.length, 'overdue', 's-bad'); st(c.today.length, 'due today', 's-warn'); st(c.open.filter((r) => r.stage === 'WIP').length, 'WIP', '', CO.stageColor('WIP'));
-        st(c.open.filter((r) => r.stage === 'To be planned').length, 'TBP', 's-mute'); st(c.review.length, 'pending approval', 's-lav');
+        st(c.open.filter((r) => r.stage === 'To be planned').length, 'TBP', 's-mute'); st(c.await.length, 'waiting on content', 's-content'); st(c.review.length, 'pending approval', 's-lav');
         if (stats.childNodes.length) card.append(stats);
-        const more = () => CO.goTasks('open', { designer: c.name === 'Unassigned' ? '__none' : c.name });
-        [section('Overdue', c.overdue, 4, more), section('Due today', c.today, 4, more), section('WIP', c.wip, 4, more), section('Changes requested', c.changes, 3, more), section('Up next', c.next, 3, more)].forEach((s) => { if (s) card.append(s); });
+        // tasks still with the content team join the day they are due (overdue, today) or wait in their own list
+        const awLate = c.await.filter((r) => r.eta && r.eta < t), awToday = c.await.filter((r) => r.eta === t), awLater = c.await.filter((r) => !r.eta || r.eta > t);
+        [section('Overdue', c.overdue.concat(awLate)), section('Due today', c.today.concat(awToday)), section('WIP', c.wip), section('Changes requested', c.changes), section('Up next', c.next), section('Waiting on content', awLater)].forEach((s) => { if (s) card.append(s); });
         const onlyContent = c.content && CT.contentOnly(c.name) && !c.open.length && !c.review.length && !c.done.length;
         if (!c.open.length && !onlyContent) { const f = document.createElement('p'); f.className = 'su-free'; f.textContent = c.review.length ? 'No open design work, ' + c.review.length + ' with reviewers. Free to take new tasks.' : 'No open design work. Free to take new tasks.'; card.append(f); }
         if (c.done.length) { const d = document.createElement('p'); d.className = 'su-done'; const nd = CO.sumQty(c.done); d.textContent = CO.num(nd) + (nd === 1 ? ' creative' : ' creatives') + ' delivered in the last 7 days (by ETA)'; card.append(d); }
@@ -2511,6 +2519,7 @@
     const filtered = () => {
       const s = dash.params().stage || 'active', ctx = CO.period();
       let rs = CO.rows().filter((r) => CO.stageMatch(r, s, ctx));
+      const fo = P.focus; if (fo) rs = rs.filter((r) => (!fo.designer || (fo.designer === '__none' ? !r.list.length : r.list.includes(fo.designer))) && (!fo.brand || r.brand === fo.brand));
       if (q) rs = rs.filter((r) => [r.id, r.brand, r.topic, r.type, r.designers, r.owner, r.channel, r.stage].join(' ').toLowerCase().includes(q));
       const blank = dir > 0 ? '￿' : '';
       const val = (r) => sortKey === 'qty' ? String(r.qty).padStart(4, '0') : String(r[sortKey] || blank);
@@ -2535,6 +2544,13 @@
         b.addEventListener('click', () => dash.setParams({ stage: k }));
         return b;
       }));
+    });
+    // the one-off focus from a link (a person or brand), shown beside the search with a way to clear it
+    dash.draw('task-focus', (el) => {
+      el.replaceChildren(); const fo = P.focus; if (!fo) return; // (an empty span takes no space; never hidden, so it is redrawn)
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'pk-chip2 t-focus';
+      b.append(document.createTextNode('Showing ' + [fo.designer === '__none' ? 'unassigned work' : fo.designer ? fo.designer + '\'s tasks' : '', fo.brand || ''].filter(Boolean).join(' · ')), Object.assign(document.createElement('i'), { textContent: '×' }));
+      b.setAttribute('aria-label', 'Show all tasks again'); b.addEventListener('click', () => { P.focus = null; renderAll(); }); el.append(b);
     });
     dash.draw('tasks', (tb) => {
       if (CO.notReady(tb, 'table')) return;
@@ -2766,7 +2782,7 @@
         ms.forEach((m) => {
           const v = cell.get(d + '|' + m) || 0; const c = CO.td(tr, v ? String(v) : '·', 'h');
           if (v) { const a = 0.1 + 0.7 * (v / max); c.style.background = `color-mix(in srgb, var(--heat) ${Math.round(a * 100)}%, transparent)`; c.title = d + ', ' + CO.fmtMonth(m, true) + ': ' + v + ' creatives'; if (a > 0.5) c.classList.add('hot'); } else c.classList.add('co-muted');
-          c.addEventListener('click', () => dash.setParams({ rpreset: 'custom', rfrom: m + '-01', rto: CO.monthEnd(m), tab: 'reports', designer: d }));
+          c.addEventListener('click', () => dash.setParams({ rpreset: 'custom', rfrom: m + '-01', rto: CO.monthEnd(m), tab: 'reports' })); // the month only: filters change only when picked
         });
         CO.td(tr, CO.num(tot(d)), 'n num-b');
       });
@@ -2989,7 +3005,7 @@
       if (window.__liveAct) window.__liveAct('open', 'Opened task ' + EDITING.label);
       if (['status', 'eta', 'delivery', 'assign', 'details', 'links'].some(perm)) setTimeout(checkForChanges, 50);
       const list = r.designers ? [...new Set(r.designers.split(' + ').map(CO.canon))] : [];
-      before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1), link: r.link || '' };
+      before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1), link: r.link || '', file: r.file || '', brief: r.brief || '' };
       $('ed-where').textContent = CO.cls(r) + ' · ' + (SHEET[r.src] || r.source) + (r.row ? ' · row ' + r.row : '') + (r.id ? ' · ' + r.id : '');
       $('ed-title').textContent = r.brand + ' · ' + r.type;
       $('ed-topic').textContent = CO.topicText(r);
@@ -3081,7 +3097,7 @@
     // changed since (someone edited it there), so nobody overwrites work they have not seen.
     async function saveFields(r, fields, was) {
         const key = 'action|save|' + r.src + ':' + (r.id || r.row), payload = { action: 'updateTask', source: r.src, id: r.id, row: r.row, fields };
-        if (was) payload.before = { status: 'status' in fields ? was.status : undefined, link: 'link' in fields ? was.link : undefined, eta: 'eta' in fields ? was.eta : undefined };
+        if (was) payload.before = { status: 'status' in fields ? was.status : undefined, link: 'link' in fields ? was.link : undefined, eta: 'eta' in fields ? was.eta : undefined, file: 'file' in fields ? was.file : undefined, brief: 'brief' in fields ? was.brief : undefined };
         let res;
         try { res = await post(payload); }
         catch (err) {
@@ -3100,6 +3116,9 @@
         if ('priority' in fields) t.priority = fields.priority;
         if (fields.qty) t.qty = Number(fields.qty);
         if ('link' in fields) t.link = fields.link;
+        if ('file' in fields) t.file = fields.file;
+        if ('brief' in fields) t.brief = fields.brief;
+        if (fields.cstatus) t.content_status = String(res && res.written && res.written.cstatus || fields.cstatus).toUpperCase();
         Object.assign(t, CODATA.groupOf(t.stage)); if (t.done) { t.ddate = t.eta || t.req; if (t.ddate && t.ddate > CO.today()) t.ddate = CO.today(); t.month = t.ddate ? t.ddate.slice(0, 7) : ''; } else { t.ddate = null; t.month = ''; }
         if (res.row) t.row = res.row;
         S.tasks = S.tasks.map((x) => (x.uid === r.uid ? t : x));
@@ -3180,8 +3199,27 @@
       if (r.priority) chip('Priority', r.priority, 'pr pr-' + r.priority.toLowerCase());
       if (links && links.textContent && links.textContent !== '—') { const w = el('span', 'ed-fact links'); w.append(links); box.append(w); }
     }
+    // Who does what on this task: the designer/editor submits the creative and its editable file; the Content Owner
+    // (Jahanvi, Gul, Anmol or anyone named there) submits the content. Admins can do both.
+    const meName = () => (A.user && (myDesigner() || A.user.name)) || '';
+    const amOwner = (r) => !!meName() && CT.owns(r, meName());
+    const amDesigner = (r) => !!meName() && (r.list || []).some((n) => n.toLowerCase() === meName().toLowerCase());
+    function wsContent(r, can) {
+      const box = $('ed-content-box'), adm = A.mode !== 'auth' || isAdmin();
+      box.hidden = !can || !r.id || !(adm || amOwner(r));
+      if (box.hidden) return;
+      const cur = $('ed-content-cur'); cur.replaceChildren();
+      if (/^https?:\/\//i.test(r.brief || '')) { const a = el('a', 'co-link', 'Open the current content ↗'); a.href = r.brief; a.target = '_blank'; a.rel = 'noopener noreferrer'; cur.append(a); }
+      else cur.textContent = r.content_status ? 'Content: ' + r.content_status : 'Not submitted yet';
+      $('ed-content').value = ''; $('ed-content-save').textContent = /^https?:/i.test(r.brief || '') ? 'Update content' : 'Submit content';
+      const cs = String(r.content_status || '').trim().toUpperCase(); box.querySelector('input[value="' + (cs === 'SHARED' ? 'Shared' : 'Done') + '"]').checked = true;
+    }
     function wsLink(r, can, canSt) {
-      const box = $('ed-link-box'); box.hidden = !can || !r.id;
+      const box = $('ed-link-box'), adm = A.mode !== 'auth' || isAdmin();
+      // content writers who are not the designer see only their content step
+      box.hidden = !can || !r.id || (!adm && amOwner(r) && !amDesigner(r) && CT.contentOnly(meName()));
+      wsContent(r, can);
+      { const fc = $('ed-file-cur'); fc.replaceChildren(); if (/^https?:\/\//i.test(r.file || '')) { const a = el('a', 'co-link', 'Open the current file ↗'); a.href = r.file; a.target = '_blank'; a.rel = 'noopener noreferrer'; fc.append(a); } else fc.textContent = 'Not added yet'; $('ed-file').value = ''; $('ed-file-save').textContent = r.file ? 'Update file link' : 'Save file link'; }
       if (box.hidden) return;
       const cur = $('ed-link-cur'); cur.replaceChildren();
       if (r.link && /^https?:\/\//i.test(r.link)) { const a = el('a', 'co-link', 'Open the current link ↗'); a.href = r.link; a.target = '_blank'; a.rel = 'noopener noreferrer'; cur.append(a); }
@@ -3204,6 +3242,22 @@
       b.disabled = false; b.textContent = was;
     });
     $('ed-link').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('ed-link-save').click(); } });
+    // One handler for the other two links: the editable file (Open File) and the content (Creative Brief + content status).
+    const linkSave = (btnId, inputId, field, label, extra) => $(btnId).addEventListener('click', async () => {
+      const r = current; if (!r) return;
+      const v = $(inputId).value.trim();
+      if (!/^https:\/\/\S+\.\S+/i.test(v)) { $('ed-msg').textContent = 'Paste a full link that starts with https://'; $(inputId).focus(); return; }
+      const fields = Object.assign({ [field]: v }, extra ? extra() : {});
+      if (v === before[field] && !extra) { $('ed-msg').textContent = 'That is already the link in the sheet.'; return; }
+      const b = $(btnId), was = b.textContent; b.disabled = true; b.textContent = 'Saving…'; $('ed-msg').textContent = '';
+      try { await saveFields(r, fields, before); dlgE.close(); toast(label(fields)); }
+      catch (err) { $('ed-msg').textContent = 'Not saved: ' + err.message; }
+      b.disabled = false; b.textContent = was;
+    });
+    linkSave('ed-file-save', 'ed-file', 'file', () => 'Open File link saved to the sheet');
+    linkSave('ed-content-save', 'ed-content', 'brief', (f) => 'Content submitted and marked ' + f.cstatus, () => ({ cstatus: (document.querySelector('input[name="ed-cst"]:checked') || {}).value || 'Done' }));
+    $('ed-file').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('ed-file-save').click(); } });
+    $('ed-content').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('ed-content-save').click(); } });
   })();
 
   /* ================= Start ================= */

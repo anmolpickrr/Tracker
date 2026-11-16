@@ -355,10 +355,12 @@ function write_(body, user) {
       out = ff.designer != null && !pm.assign ? { ok: false, error: 'You do not have permission to reassign tasks. Ask an Admin.' }
         : ff.eta != null && !pm.eta && !pm.delivery ? { ok: false, error: 'You do not have permission to change dates. Ask an Admin.' }
         // submitting the finished creative's link may move the task to Under review in the same step
-        : ff.status != null && !pm.status && !(ff.status === 'Under review' && ff.link && pm.links && Object.keys(ff).length === 2) ? { ok: false, error: 'You do not have permission to change task status. Ask an Admin.' }
-        : ff.link != null && !pm.links ? { ok: false, error: 'You do not have permission to submit creative links. Ask an Admin.' }
+        : ff.status != null && !pm.status && !(ff.status === 'Under review' && ff.link && pm.links && Object.keys(ff).every(function (k) { return ['status', 'link', 'file'].indexOf(k) >= 0; })) ? { ok: false, error: 'You do not have permission to change task status. Ask an Admin.' }
+        : (ff.link != null || ff.file != null || ff.brief != null) && !pm.links ? { ok: false, error: 'You do not have permission to submit links. Ask an Admin.' }
+        // content status: Admins, or the Content Owner together with their content link (Done or Shared)
+        : ff.cstatus != null && !adm && !(ff.brief && pm.links) ? { ok: false, error: 'Content status changes with the content link. Ask an Admin to change it on its own.' }
         : (ff.priority != null || ff.qty != null) && !pm.details ? { ok: false, error: 'You do not have permission to change brand requirement details (priority, number of creatives). Ask an Admin.' }
-        : updateTask_(body, adm || pm.scope === 'all' ? null : ownMatcher_(user), pm);
+        : updateTask_(body, adm || pm.scope === 'all' ? null : ownMatcher_(user), pm, adm ? null : (function (m) { return function (o) { return m('', o); }; })(ownMatcher_(user)));
     }
     else if (body.action === 'setAccess') out = setAccess_(body, user);
     else if (body.action === 'noteSave') out = noteSave_(body, user);
@@ -441,7 +443,7 @@ const QTY_HEADER = /^(no\.?\s*of\s*creatives?|number of creatives?|qty|quantity|
  * body: { source: a name from CONFIG.sources, id, row, fields: { status?, eta?, designer?, priority?, qty? } }
  * Finds the row by its ID (using `row` as a hint), then writes only the fields given.
  */
-function updateTask_(body, mine, pm) {
+function updateTask_(body, mine, pm, contentMine) {
   const src = CONFIG.sources[body.source];
   if (!src || kindOf_(body.source) === 'team') return { ok: false, error: 'unknown sheet' };
   const id = clean_(body.id);
@@ -475,8 +477,16 @@ function updateTask_(body, mine, pm) {
   if (f.qty != null && !(parseInt(f.qty, 10) >= 1 && parseInt(f.qty, 10) <= 999)) return { ok: false, error: 'bad quantity' };
   if (f.link != null && c.link < 0) return { ok: false, error: 'No Creative Link column found in this sheet' };
   if (f.link != null && f.link !== '' && !/^https:\/\/[^\s"'<>]{4,1990}$/i.test(String(f.link).trim())) return { ok: false, error: 'The creative link must be a full https:// address.' };
+  if (f.file != null && c.file < 0) return { ok: false, error: 'No Open File column found in this sheet' };
+  if (f.file != null && f.file !== '' && !/^https:\/\/[^\s"'<>]{4,1990}$/i.test(String(f.file).trim())) return { ok: false, error: 'The Open File link must be a full https:// address.' };
+  if (f.brief != null && c.brief < 0) return { ok: false, error: 'No Creative Brief column found in this sheet' };
+  if (f.brief != null && f.brief !== '' && !/^https:\/\/[^\s"'<>]{4,1990}$/i.test(String(f.brief).trim())) return { ok: false, error: 'The content link must be a full https:// address.' };
+  if (f.cstatus != null && c.cstatus < 0) return { ok: false, error: 'No Content Status column found in this sheet' };
+  if (f.cstatus != null && ['Done', 'Shared'].indexOf(String(f.cstatus)) < 0) return { ok: false, error: 'Content status can be set to Done or Shared here.' };
   // Only the person's own tasks (unless they may work on others').
   if (mine && !mine(sheet.getRange(row, c.designer + 1).getDisplayValue(), c.owner >= 0 ? sheet.getRange(row, c.owner + 1).getDisplayValue() : '')) return { ok: false, error: 'This task is not assigned to you, so you cannot change it. Ask an Admin if you need access.' };
+  // The content link (Creative Brief) and content status belong to the task's Content Owner (or an Admin).
+  if (contentMine && (f.brief != null || f.cstatus != null) && !contentMine(c.owner >= 0 ? sheet.getRange(row, c.owner + 1).getDisplayValue() : '')) return { ok: false, error: 'Only the task\'s Content Owner can submit its content link or content status.' };
   // Dates: the Design ETA of open work and the delivery date of completed work are separate permissions.
   if (pm && f.eta != null && c.status >= 0) {
     const g = CODATA.groupOf(CODATA.stageOf(sheet.getRange(row, c.status + 1).getDisplayValue(), '')[0]), done = g.done || g.group === 'rejected';
@@ -486,6 +496,8 @@ function updateTask_(body, mine, pm) {
   // Changed in the sheet since the dashboard last loaded it? Refuse, so nothing is overwritten without being seen.
   const was = body.before || {};
   if (was.status != null && f.status != null && c.status >= 0) { const cur = CODATA.stageOf(sheet.getRange(row, c.status + 1).getDisplayValue(), '')[0]; if (cur !== was.status && !(was.status === 'To be planned' && cur === 'Awaiting brief')) return { ok: false, error: 'changed', field: 'Design status', now: cur }; }
+  if (was.file != null && f.file != null && c.file >= 0) { const cur = clean_(sheet.getRange(row, c.file + 1).getDisplayValue()); if (cur !== clean_(was.file)) return { ok: false, error: 'changed', field: 'Open File', now: cur }; }
+  if (was.brief != null && f.brief != null && c.brief >= 0) { const cur = clean_(sheet.getRange(row, c.brief + 1).getDisplayValue()); if (cur !== clean_(was.brief)) return { ok: false, error: 'changed', field: 'Creative Brief', now: cur }; }
   if (was.link != null && f.link != null && c.link >= 0) { const cur = clean_(sheet.getRange(row, c.link + 1).getDisplayValue()); if (cur !== clean_(was.link)) return { ok: false, error: 'changed', field: 'Creative link', now: cur }; }
   if (was.eta != null && f.eta != null && c.eta >= 0) { const v = sheet.getRange(row, c.eta + 1).getValue(); const cur = v instanceof Date ? Utilities.formatDate(v, IST, 'yyyy-MM-dd') : (CODATA.parseDate(clean_(v)) || ''); if (cur !== was.eta) return { ok: false, error: 'changed', field: 'Design ETA', now: cur }; }
 
@@ -531,6 +543,15 @@ function updateTask_(body, mine, pm) {
   if (f.designer != null) { track(c.designer, function (cell) { cell.setValue(f.designer); }); written.designer = f.designer; }
   if (f.priority != null) { const p = clean_(f.priority).toUpperCase(); track(c.priority, function (cell) { cell.setValue(p); }); written.priority = p; }
   if (f.link != null) { const l = String(f.link).trim(); track(c.link, function (cell) { cell.setValue(l); }); written.link = l; }
+  if (f.file != null) { const l = String(f.file).trim(); track(c.file, function (cell) { cell.setValue(l); }); written.file = l; }
+  if (f.brief != null) { const l = String(f.brief).trim(); track(c.brief, function (cell) { cell.setValue(l); }); written.brief = l; }
+  if (f.cstatus != null) {
+    // the spelling the sheet already uses (its dropdown first, then the words the team writes)
+    const cell0 = sheet.getRange(row, c.cstatus + 1), opts = listOptions_(cell0).map(String), want = f.cstatus === 'Done' ? ['DONE', 'Done', 'COMPLETED', 'Approved', 'APPROVED'] : ['SHARED', 'Shared'];
+    let v = ''; for (let i = 0; i < want.length && !v; i++) { const k = opts.map(function (o) { return o.trim().toLowerCase(); }).indexOf(want[i].toLowerCase()); if (k >= 0) v = opts[k].trim(); }
+    v = v || want[0];
+    track(c.cstatus, function (cell) { cell.setValue(v); }); written.cstatus = v;
+  }
   if (f.qty != null) { const q = parseInt(f.qty, 10); track(c.qty, function (cell) { cell.setValue(q); }); written.qty = q; }
   return { ok: true, row: row, written: written, changes: changes };
 }
@@ -583,7 +604,7 @@ function taskColumns_(kind, head) {
   const col = function (n, nth) { let seen = 0; for (let i = 0; i < head.length; i++) if (head[i] === n) { if (seen === (nth || 0)) return i; seen++; } return -1; };
   const any = function () { for (let i = 0; i < arguments.length; i++) { const k = col(arguments[i]); if (k >= 0) return k; } return -1; };
   const find = function (re) { for (let i = 0; i < head.length; i++) if (re.test(head[i])) return i; return -1; };
-  const c = { priority: col('priority'), qty: find(QTY_HEADER), link: col('creative link'), brief: col('creative brief'), owner: find(/content owner|^owner$/) };
+  const c = { priority: col('priority'), qty: find(QTY_HEADER), link: col('creative link'), brief: col('creative brief'), owner: find(/content owner|^owner$/), file: col('open file'), cstatus: col('content status') };
   if (kind === 'paid') {
     // Paid sheet: column A holds the ID; the second "Design ETA" column holds the design status.
     c.id = 0; c.eta = col('design eta', 0);
@@ -1302,7 +1323,7 @@ function issueReport_(b, u) {
 // reported it was allowed to change themselves (an Admin's click must not carry more than that person could do).
 function retryOk_(r, u) {
   if (!r || typeof r !== 'object' || r.action !== 'updateTask' || !r.fields || typeof r.fields !== 'object') return null;
-  const pm = permsOf_(u), f = {}, may = { status: pm.status || (r.fields.status === 'Under review' && !!r.fields.link && pm.links), link: pm.links, priority: pm.details, qty: pm.details, eta: pm.eta || pm.delivery, designer: pm.assign };
+  const pm = permsOf_(u), f = {}, may = { status: pm.status || (r.fields.status === 'Under review' && !!r.fields.link && pm.links), link: pm.links, file: pm.links, brief: pm.links, cstatus: !!r.fields.brief && pm.links, priority: pm.details, qty: pm.details, eta: pm.eta || pm.delivery, designer: pm.assign };
   Object.keys(r.fields).forEach(function (k) { if (may[k]) f[k] = String(r.fields[k]).slice(0, 2000); });
   if (!Object.keys(f).length) return null;
   return { action: 'updateTask', source: String(r.source || '').slice(0, 40), id: String(r.id || '').slice(0, 60), row: Number(r.row) || 0, fields: f };
