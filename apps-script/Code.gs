@@ -87,7 +87,7 @@ function allowed_(u, action) {
   if (action === 'packageSave' || action === 'packageDelete') return p.packages === 'edit';
   return true;
 }
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Admin', issueAct: 'Admin', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Admin', issueAct: 'Admin', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -370,6 +370,7 @@ function write_(body, user) {
     else if (body.action === 'issueAct') out = issueAct_(body, user);
     else if (body.action === 'packageDelete') out = pkgDelete_(body, user);
     else if (body.action === 'noteAction') out = noteAction_(body, user);
+    else if (body.action === 'noteDone') out = noteDone_(body, user);
     else if (body.action === 'prefs') out = prefs_(body, user);
     else if (body.action === 'saveSettings') out = saveSettings_(body, user);
     else out = { ok: false, error: 'unknown_action' };
@@ -1030,14 +1031,17 @@ function iso_(v) { return v instanceof Date && !isNaN(v) ? v.toISOString() : (v 
  * Who changes it: its author or an admin. Anyone with an action item can tick that item.
  * Every create, edit and delete is in the audit log; deleted notes are kept, marked deleted.
  */
-const NOTE_HEAD = ['ID', 'Created', 'Created by', 'Updated', 'Updated by', 'Title', 'Meeting date', 'Type', 'Brand', 'Category', 'Visibility', 'Shared with', 'Mentions', 'Body', 'Action items', 'Reminder', 'Follow-ups', 'Reminder sent', 'Deleted', 'Deleted by', 'Pinned', 'Tags', 'Colour', 'Stickers', 'Files', 'Doodle', 'Deleted on'];
+const NOTE_HEAD = ['ID', 'Created', 'Created by', 'Updated', 'Updated by', 'Title', 'Meeting date', 'Type', 'Brand', 'Category', 'Visibility', 'Shared with', 'Mentions', 'Body', 'Action items', 'Reminder', 'Follow-ups', 'Reminder sent', 'Deleted', 'Deleted by', 'Pinned', 'Tags', 'Colour', 'Stickers', 'Files', 'Doodle', 'Deleted on', 'Done'];
 const NOTE_COLOURS = ['lemon', 'peach', 'pink', 'lilac', 'sky', 'mint', 'sand', 'paper'];
 const NOTE_TYPES = ['Meeting', 'Discussion', 'Personal'];
 function notesSheet_() {
   const ss = accessBook_();
   let sh = ss.getSheetByName('Notes');
   if (!sh) { sh = ss.insertSheet('Notes'); sh.appendRow(NOTE_HEAD); sh.setFrozenRows(1); }
-  else if (String(sh.getRange(1, 22).getValue()) !== 'Tags') sh.getRange(1, 22, 1, 6).setValues([NOTE_HEAD.slice(21)]); // tabs made before tags, colours, stickers, files and doodles
+  else if (String(sh.getRange(1, 22).getValue()) !== 'Tags') sh.getRange(1, 22, 1, 6).setValues([NOTE_HEAD.slice(21, 27)]); // tabs made before tags, colours, stickers, files and doodles
+  // (Nov 2026) the Done column: when a note was marked done and by whom
+  while (sh.getMaxColumns() < NOTE_HEAD.length) sh.insertColumnAfter(sh.getMaxColumns());
+  if (String(sh.getRange(1, NOTE_HEAD.length).getValue()) !== 'Done') sh.getRange(1, NOTE_HEAD.length).setValue('Done');
   return sh;
 }
 function parseJson_(s, d) { try { const v = JSON.parse(String(s || '')); return v == null ? d : v; } catch (err) { return d; } }
@@ -1047,7 +1051,8 @@ function noteFromRow_(v, row) {
     title: String(v[5] || ''), date: v[6] instanceof Date ? Utilities.formatDate(v[6], IST, 'yyyy-MM-dd') : clean_(v[6]), type: clean_(v[7]) || 'Meeting', brand: clean_(v[8]), category: clean_(v[9]),
     visibility: ['private', 'team', 'people'].indexOf(clean_(v[10])) >= 0 ? clean_(v[10]) : 'private', sharedWith: parseJson_(v[11], []), mentions: parseJson_(v[12], []),
     body: String(v[13] || ''), actions: parseJson_(v[14], []), reminder: clean_(v[15]), followUps: String(v[16] || ''), reminderSent: clean_(v[17]), deleted: v[18] === true || clean_(v[18]) === 'TRUE', deletedBy: clean_(v[19]).toLowerCase(), pinned: v[20] === true || clean_(v[20]) === 'TRUE',
-    tags: parseJson_(v[21], []), colour: NOTE_COLOURS.indexOf(clean_(v[22])) >= 0 ? clean_(v[22]) : '', stickers: parseJson_(v[23], []), files: parseJson_(v[24], []), doodle: parseJson_(v[25], null), deletedOn: iso_(v[26])
+    tags: parseJson_(v[21], []), colour: NOTE_COLOURS.indexOf(clean_(v[22])) >= 0 ? clean_(v[22]) : '', stickers: parseJson_(v[23], []), files: parseJson_(v[24], []), doodle: parseJson_(v[25], null), deletedOn: iso_(v[26]),
+    doneAt: String(v[27] || '').split('|')[0], doneBy: String(v[27] || '').split('|')[1] || ''
   };
 }
 function noteReaders_(n) {
@@ -1120,12 +1125,22 @@ function noteDoodle_(d) {
   return out.strokes.length ? out : null;
 }
 function noteRowValues_(id, created, createdBy, n, now, by, reminderSent) {
-  return [id, created, createdBy, now, by, n.title, n.date, n.type, n.brand, n.category, n.visibility, JSON.stringify(n.sharedWith), JSON.stringify(n.mentions), n.body, JSON.stringify(n.actions), n.reminder, n.followUps, reminderSent || '', false, '', n.pinned, JSON.stringify(n.tags || []), n.colour || '', JSON.stringify(n.stickers || []), JSON.stringify(n.files || []), n.doodle ? JSON.stringify(n.doodle) : '', '']
+  return [id, created, createdBy, now, by, n.title, n.date, n.type, n.brand, n.category, n.visibility, JSON.stringify(n.sharedWith), JSON.stringify(n.mentions), n.body, JSON.stringify(n.actions), n.reminder, n.followUps, reminderSent || '', false, '', n.pinned, JSON.stringify(n.tags || []), n.colour || '', JSON.stringify(n.stickers || []), JSON.stringify(n.files || []), n.doodle ? JSON.stringify(n.doodle) : '', '', n.doneAt ? n.doneAt + '|' + (n.doneBy || '') : '']
     // Dates and times are kept as plain text (IST), so Sheets never turns them into another time zone.
     .map(function (v, i) { return i === 1 || i === 3 || typeof v === 'boolean' ? v : (i === 6 || i === 15 || i === 17) && v ? "'" + v : safe_(v); });
 }
 // The note as stored after a save (new updatedAt, to-do ids), so the dashboard can update in place without reloading every note.
 function savedNote_(id, u) { try { SpreadsheetApp.flush(); const n = allNotes_().filter(function (x) { return x.id === id; })[0]; return n ? publicNote_(n, u) : null; } catch (e) { return null; } }
+// Mark a note done (it moves to the Done tab for everyone who can see it) or open it again. The writer, anyone it is
+// shared with or assigned to, and Admins can do this; it is recorded in the activity log.
+function noteDone_(b, u) {
+  const sh = notesSheet_(), cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
+  if (!cur || cur.deleted) return { ok: false, error: 'This note no longer exists.' };
+  if (!(canEditNote_(cur, u) || noteReaders_(cur)[u.email] || isAdminUser_(u))) return { ok: false, error: 'forbidden' };
+  const val = b.done ? new Date().toISOString() + '|' + u.email : '';
+  sh.getRange(cur.row, NOTE_HEAD.length).setValue(val);
+  return { ok: true, note: savedNote_(cur.id, u), changes: [{ action: b.done ? 'Note marked done' : 'Note reopened', sheet: 'Notes', record: cur.title }] };
+}
 function noteSave_(b, u) {
   const n = noteInput_(b.note || {}), now = new Date(), sh = notesSheet_();
   const prevFiles = b.id ? ((allNotes_().filter(function (x) { return x.id === String(b.id); })[0] || {}).files || []) : [];
@@ -1141,6 +1156,7 @@ function noteSave_(b, u) {
   if (b.updatedAt && cur.updatedAt && b.updatedAt !== cur.updatedAt) return { ok: false, error: 'stale', note: publicNote_(cur, u) };
   // A changed reminder time is sent again.
   const sent = n.reminder && n.reminder === cur.reminder ? cur.reminderSent : '';
+  n.doneAt = cur.doneAt; n.doneBy = cur.doneBy; // editing keeps a note's done state
   sh.getRange(cur.row, 1, 1, NOTE_HEAD.length).setValues([noteRowValues_(cur.id, new Date(cur.createdAt), cur.createdBy, n, now, u.email, sent)]);
   const changed = ['title', 'date', 'type', 'brand', 'category', 'visibility', 'body', 'reminder', 'followUps'].filter(function (k) { return String(cur[k] || '') !== String(n[k] || ''); });
   if (JSON.stringify(cur.actions) !== JSON.stringify(n.actions)) changed.push('action items');
