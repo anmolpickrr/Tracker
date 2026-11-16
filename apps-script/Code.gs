@@ -331,7 +331,7 @@ function doPost(e) {
     // Writes: one at a time, each recorded in the audit log with before and after values.
     return json_(write_(body, user));
   } catch (err) {
-    try { issueLog_('Server', 'Request failed: ' + clean_(body.action || 'unknown'), String(err && err.message || err), 'web app'); } catch (e2) { /* never fail twice */ }
+    try { if (!transient_(err && err.message || err)) issueLog_('Server', 'Request failed: ' + clean_(body.action || 'unknown'), String(err && err.message || err), 'web app'); } catch (e2) { /* never fail twice */ }
     return json_({ ok: false, error: String(err && err.message || err) });
   }
 }
@@ -1261,7 +1261,7 @@ function prefs_(b, u) {
 /* Runs every 10 minutes (setup installs it). Sends the 10:00 and 18:00 IST emails once a day each, and note reminders when due. */
 function remindersTick() {
   TEAM_MEMO_ = null;
-  try { maintenance_(); issueResolveKey_('Background jobs|Maintenance failed'); } catch (e) { console.log('maintenance: ' + e); try { issueLog_('Background jobs', 'Maintenance failed', String(e.message || e), 'schedule'); } catch (e2) { /* ignore */ } }
+  try { maintenance_(); persistent_('jobs|maint', false); issueResolveKey_('Background jobs|Maintenance failed'); } catch (e) { console.log('maintenance: ' + e); try { if (persistent_('jobs|maint', true, transient_(e.message || e) ? 3 : 1)) issueLog_('Background jobs', 'Maintenance failed', String(e.message || e), 'schedule'); } catch (e2) { /* ignore */ } }
   if (!authOn_() || !hasAccessBook_()) return;
   const now = new Date(), day = Utilities.formatDate(now, IST, 'yyyy-MM-dd');
   const mins = Number(Utilities.formatDate(now, IST, 'H')) * 60 + Number(Utilities.formatDate(now, IST, 'mm'));
@@ -1280,7 +1280,7 @@ function remindersTick() {
     // One snapshot a day of the point-in-time numbers (open, overdue…), so later comparisons are exact.
     if (mins >= 9 * 60 && props.getProperty('SNAP_DAY') !== day) { props.setProperty('SNAP_DAY', day); snapshot_(day); }
     sendNoteReminders_(now);
-    try { dayPlanTick_(day, mins); issueResolveKey_('Stand-up|Day plan could not be saved'); } catch (e) { console.log('day plan: ' + e); issueLog_('Stand-up', 'Day plan could not be saved', String(e.message || e), 'schedule'); }
+    try { dayPlanTick_(day, mins); persistent_('jobs|dayplan', false); issueResolveKey_('Stand-up|Day plan could not be saved'); } catch (e) { console.log('day plan: ' + e); if (persistent_('jobs|dayplan', true, transient_(e.message || e) ? 3 : 1)) issueLog_('Stand-up', 'Day plan could not be saved', String(e.message || e), 'schedule'); }
     try { serverChecks_(); } catch (e) { console.log('checks: ' + e); }
   } finally { lock.releaseLock(); }
 }
@@ -1340,7 +1340,7 @@ function issueAct_(b, u) {
 /* Every 10 minutes: can each sheet be read, are there duplicate or missing IDs (they break saving), does the web app
    need the owner, are prices missing for budget packages. Each check opens or resolves its issue. */
 function serverChecks_() {
-  const set = function (key, area, title, bad, details, fix) { if (bad) issueLog_(area, title, details, 'Automatic check', { key: key, fix: fix }); else issueResolveKey_(key); };
+  const set = function (key, area, title, bad, details, fix) { if (/^sync\|/.test(key) ? persistent_(key, bad, 2) : bad) issueLog_(area, title, details, 'Automatic check', { key: key, fix: fix }); else if (!bad) issueResolveKey_(key); };
   let all = null; try { all = JSON.parse(dataText_(true)); } catch (e) { set('sync|data', 'Sync', 'The sheets could not be read', true, String(e.message || e), 'retry-sync'); return; }
   set('sync|data', 'Sync', 'The sheets could not be read', false);
   Object.keys(all.sources || {}).forEach(function (k) { const x = all.sources[k]; set('sync|' + k, 'Sync', 'Sheet "' + k + '" could not be read', !!(x && x.error && !x.optional), x && x.error ? x.error : '', 'retry-sync'); });
@@ -2486,6 +2486,13 @@ function maintenance_() {
  * Needs, once: the Apps Script API switched on at script.google.com/home/usersettings, and the two script.* permissions.
  * If GitHub's appsscript.json asks for new permissions, it is not installed automatically: the System check asks the owner. */
 const UPDATE_SRC = 'https://raw.githubusercontent.com/anmolpickrr/Tracker/main/apps-script/';
+// Google's own services sometimes answer "busy" or "unavailable" for a few seconds (HTTP 429, 500, 502, 503, 504,
+// timeouts). These are not faults in the dashboard: they are retried, and only reported when they keep happening.
+function transient_(m) { return /HTTP (429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|DEADLINE_EXCEEDED|Service (is currently )?unavailable|temporarily|try again|timed? ?out|Address unavailable|Service error|Internal error|backendError|rateLimit/i.test(String(m || '')); }
+// Run fn up to 3 times while it fails with a temporary error (waits 2 s, then 6 s).
+function withRetry_(fn) { let last; for (let i = 0; i < 3; i++) { try { return fn(); } catch (e) { last = e; if (!transient_(e && e.message || e) || i === 2) throw e; Utilities.sleep(i ? 6000 : 2000); } } throw last; }
+// A check that fails only counts after it failed `times` runs in a row (a run every 10 minutes); a pass resets it.
+function persistent_(key, bad, times) { const c = CacheService.getScriptCache(), k = 'pf:' + key, n = bad ? (Number(c.get(k)) || 0) + 1 : 0; if (bad) c.put(k, String(n), 21600); else c.remove(k); return bad && n >= (times || 2); }
 function updateStatus_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('UPDATE_STATUS') || '{}'); } catch (e) { return {}; } }
 function hash_(t) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, t)); }
 function autoUpdate_(log) {
@@ -2493,17 +2500,17 @@ function autoUpdate_(log) {
   const save = function (o) { p.setProperty('UPDATE_STATUS', JSON.stringify(Object.assign(st, o, { checked: Date.now() }))); };
   if (p.getProperty('AUTO_UPDATE') === 'off') { say('Automatic updates are off (script property AUTO_UPDATE = off).'); return; }
   try {
-    const get = function (f) { const r = UrlFetchApp.fetch(UPDATE_SRC + f + '?t=' + Date.now(), { muteHttpExceptions: true }); if (r.getResponseCode() !== 200) throw new Error('GitHub ' + f + ': HTTP ' + r.getResponseCode()); return r.getContentText(); };
+    const get = function (f) { return withRetry_(function () { const r = UrlFetchApp.fetch(UPDATE_SRC + f + '?t=' + Date.now(), { muteHttpExceptions: true }); if (r.getResponseCode() !== 200) throw new Error('GitHub ' + f + ': HTTP ' + r.getResponseCode()); return r.getContentText(); }); };
     const code = get('Code.gs'), manifest = get('appsscript.json'), h = hash_(code + manifest);
-    if (h === st.hash) { say('Already up to date (' + (st.version ? 'version ' + st.version : 'no version yet') + ').'); save({ err: '' }); return; }
+    if (h === st.hash) { say('Already up to date (' + (st.version ? 'version ' + st.version : 'no version yet') + ').'); save({ err: '', busy: 0 }); return; }
     // Safety: the new code must parse and still be the dashboard's web app.
     try { new Function(code); } catch (e) { if (e instanceof SyntaxError) { save({ err: 'The newest Code.gs on GitHub has an error and was not installed: ' + e.message }); say(st.err); return; } }
     if (!/function doPost\(/.test(code) || !/function doGet\(/.test(code)) { save({ err: 'The newest Code.gs on GitHub does not look complete; not installed.' }); return; }
     const token = ScriptApp.getOAuthToken(), id = ScriptApp.getScriptId(), api = 'https://script.googleapis.com/v1/projects/' + id;
-    const call = function (method, path, body) {
+    const call = function (method, path, body) { return withRetry_(function () {
       const r = UrlFetchApp.fetch(api + path, { method: method, contentType: 'application/json', headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true, payload: body ? JSON.stringify(body) : undefined });
       const t = r.getContentText(); if (r.getResponseCode() >= 300) throw new Error('Apps Script API ' + path + ': HTTP ' + r.getResponseCode() + ' ' + t.slice(0, 220)); return t ? JSON.parse(t) : {};
-    };
+    }); };
     const content = call('get', '/content');
     const files = content.files.map(function (f) { return { name: f.name, type: f.type, source: f.source }; });
     const cur = files.filter(function (f) { return f.name === 'appsscript'; })[0];
@@ -2516,12 +2523,14 @@ function autoUpdate_(log) {
     // Point the live web app deployment (the one the dashboard uses) at the new version; the URL does not change.
     const deps = (call('get', '/deployments').deployments || []).filter(function (d) { return d.deploymentConfig && d.deploymentConfig.versionNumber && (d.entryPoints || []).some(function (e) { return e.entryPointType === 'WEB_APP'; }); });
     deps.forEach(function (d) { call('put', '/deployments/' + d.deploymentId, { deploymentConfig: { scriptId: id, versionNumber: ver.versionNumber, manifestFileName: 'appsscript', description: 'Automatic update' } }); });
-    save({ hash: needsOwner ? '' : h, version: ver.versionNumber, at: Date.now(), err: needsOwner, deployments: deps.length });
+    save({ hash: needsOwner ? '' : h, version: ver.versionNumber, at: Date.now(), err: needsOwner, deployments: deps.length, busy: 0 });
     say('Installed version ' + ver.versionNumber + ' and updated ' + deps.length + ' web app deployment(s).' + (needsOwner ? ' ' + needsOwner : ''));
   } catch (e) {
     const m = String(e.message || e);
     const proj = (m.match(/project (\d+)/) || [])[1];
-    save({ err: proj && /has not been used|disabled|SERVICE_DISABLED/i.test(m) ? 'Enable the Apps Script API in this script\'s Google Cloud project: https://console.cloud.google.com/apis/library/script.googleapis.com?project=' + proj + ' (click Enable, wait 2 minutes, run updateNow).' : /has not been used|disabled|SERVICE_DISABLED|User has not enabled/i.test(m) ? 'Switch on "Google Apps Script API" at script.google.com/home/usersettings so updates can install themselves.' : /insufficient|PERMISSION_DENIED|scope/i.test(m) ? 'Automatic updates need permission: open Apps Script, run updateNow once and approve.' : 'Automatic update failed: ' + m.slice(0, 200) });
+    // Google's API busy for a moment: try again on the next run (10 minutes); only a problem if it lasts an hour.
+    if (transient_(m) && !/has not been used|disabled|SERVICE_DISABLED/i.test(m)) { const n = (st.busy || 0) + 1; save({ busy: n, err: n >= 6 ? 'Google\'s Apps Script service has not answered for about an hour (' + m.slice(0, 120) + '). Updates continue by themselves when it is back; nothing to do unless this stays.' : '' }); say('Google was busy (' + n + ' in a row); trying again next run: ' + m); return; }
+    save({ busy: 0, err: proj && /has not been used|disabled|SERVICE_DISABLED/i.test(m) ? 'Enable the Apps Script API in this script\'s Google Cloud project: https://console.cloud.google.com/apis/library/script.googleapis.com?project=' + proj + ' (click Enable, wait 2 minutes, run updateNow).' : /has not been used|disabled|SERVICE_DISABLED|User has not enabled/i.test(m) ? 'Switch on "Google Apps Script API" at script.google.com/home/usersettings so updates can install themselves.' : /insufficient|PERMISSION_DENIED|scope/i.test(m) ? 'Automatic updates need permission: open Apps Script, run updateNow once and approve.' : 'Automatic update failed: ' + m.slice(0, 200) });
     say('Automatic update failed: ' + m);
   }
 }

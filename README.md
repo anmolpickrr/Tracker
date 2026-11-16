@@ -121,6 +121,10 @@ Everyone lands on **My work** showing their own work (the owner lands on the Ove
 
 **Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) opens with how long approvals take: the typical (median) and longest wait, then bars for up to 7 days, 8–14, 15–30 and over 30 days (orange = over 14 days), each with its count and share. Click a bar (or press Enter on it) to list only those tasks; click again for all. Below that it groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
 
+## What team members see
+
+Hints and summaries about other people (who is free, what someone is working on, team-wide overdue counts) are for Admins and the owner only. Team members' Fasty tips are about their own work, Stand-up shows them no "free to take work" count or "Free to take new tasks" remarks, and the bell's team-wide alerts go to Admins.
+
 ## Stand-up cards
 
 Every task assigned for the day is on the person's card, including work still with the content team (content Pending, TBP, WIP or Changes): those rows have a dashed orange edge and say *Content wip · pick up when ready*, so everyone sees what is theirs today, what is ready to pick up and what is waiting on content. Overdue and due-today work comes first; work waiting on content that is not due yet has its own list. Content writers' cards list every open content task, coloured by its content status, with anything due today or earlier highlighted. Each card keeps a fixed height and scrolls inside, so a long list never stretches the page.
@@ -242,6 +246,8 @@ The **Issues** page (Admin menu, with a count of open issues; the bell also show
 | Background jobs, Stand-up: the 10-minute maintenance or the day plan failed | the web app | the next run succeeds |
 | Web app: automatic updates need the owner | the web app, every 10 minutes | updates work again |
 | Server, Creative brief: a request failed on the server, a brief cell could not be read | the web app | an Admin marks it resolved (after checking) |
+
+**Temporary Google errors are not issues.** Google's own services sometimes answer "busy" or "unavailable" for a few seconds (HTTP 429/500/502/503/504, timeouts). The web app retries those straight away (after 2 and 6 seconds); a sheet that cannot be read counts only when it fails two checks in a row, background jobs after three, and automatic updates only when Google has not answered for about an hour (they simply try again every 10 minutes). Each closes by itself when the next attempt works.
 
 **What to do with an issue:** *Retry* (failed saves) shows exactly what it will write (for example *SRA2353: status → WIP*), writes it and resolves the issue. *Reload from the sheets*, *Open Data health*, *Open Brands* and *Open Pricing* take you to the fix. *Mark resolved* closes it by hand; *Reopen* and *Remove* are on resolved issues. Filters: Open / Resolved / All, area and search. The page refreshes every minute; the same problem is counted again instead of listed twice. A retry only ever carries the fields the person who hit the problem was allowed to change. Issues are kept in a hidden *Issues* tab of the access spreadsheet.
 

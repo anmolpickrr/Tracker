@@ -1640,7 +1640,7 @@
     pill(people.length, people.length === 1 ? 'person' : 'people');
     pill(d3.sum(cs, (c) => c.overdue.length), 'overdue', 'bad');
     pill(d3.sum(cs, (c) => c.today.length), 'due today');
-    pill(people.filter((c) => !c.open.length).length, 'free to take work');
+    if (A.mode !== 'auth' || isAdmin()) pill(people.filter((c) => !c.open.length).length, 'free to take work'); // who is free: Admins only
     if (un) pill(un.open.length, 'unassigned', un.overdue.length ? 'bad' : '');
     const cOpen = new Set(cs.flatMap((c) => (c.content ? c.content.open.map((r) => r.uid) : []))).size; pill(cOpen, cOpen === 1 ? 'content task open' : 'content tasks open', 'ct');
   });
@@ -1744,7 +1744,7 @@
         const awLate = c.await.filter((r) => r.eta && r.eta < t), awToday = c.await.filter((r) => r.eta === t), awLater = c.await.filter((r) => !r.eta || r.eta > t);
         [section('Overdue', c.overdue.concat(awLate)), section('Due today', c.today.concat(awToday)), section('WIP', c.wip), section('Changes requested', c.changes), section('Up next', c.next), section('Waiting on content', awLater)].forEach((s) => { if (s) card.append(s); });
         const onlyContent = c.content && CT.contentOnly(c.name) && !c.open.length && !c.review.length && !c.done.length;
-        if (!c.open.length && !onlyContent) { const f = document.createElement('p'); f.className = 'su-free'; f.textContent = c.review.length ? 'No open design work, ' + c.review.length + ' with reviewers. Free to take new tasks.' : 'No open design work. Free to take new tasks.'; card.append(f); }
+        if (!c.open.length && !onlyContent) { const f = document.createElement('p'); f.className = 'su-free'; const adm0 = A.mode !== 'auth' || isAdmin(); f.textContent = (c.review.length ? 'No open design work, ' + c.review.length + ' with reviewers.' : 'No open design work.') + (adm0 ? ' Free to take new tasks.' : ''); card.append(f); }
         if (c.done.length) { const d = document.createElement('p'); d.className = 'su-done'; const nd = CO.sumQty(c.done); d.textContent = CO.num(nd) + (nd === 1 ? ' creative' : ' creatives') + ' delivered in the last 7 days (by ETA)'; card.append(d); }
         if (c.content) card.append(contentBlock(c.content, c.name));
         el.append(card);
@@ -5181,11 +5181,10 @@
     const hint = el('div', 'fy-hint'); hint.setAttribute('role', 'status'); const hintT = el('button', 'fy-hint-t'); hintT.type = 'button';
     const hintX = el('button', 'fy-hint-x'); hintX.type = 'button'; hintX.setAttribute('aria-label', 'Hide tips for today'); hintX.title = 'Hide tips for today'; hintX.innerHTML = ICON.x;
     hint.append(hintT, hintX); hint.hidden = true;
-    const TIPS = [
-      'Need help? Ask me anything', 'Try: “What’s overdue today?”', 'Hindi mein bhi pooch sakte ho', 'Press Alt+A to talk to me',
-      'Try: “What is Sagun working on?”', 'Tap the mic and just speak', 'Try: “Delivered this month?”', 'I can open any section for you',
-      'Try: “Kaun free hai?”', 'Ask me for today’s summary'
-    ];
+    // Tips about one's own work for everyone; tips about other people or who is free only for Admins and the owner.
+    const TIPS_ALL = ['Need help? Ask me anything', 'Try: “What’s due today for me?”', 'Hindi mein bhi pooch sakte ho', 'Press Alt+A to talk to me', 'Tap the mic and just speak', 'I can open any section for you', 'Ask me for today’s summary'];
+    const TIPS_ADMIN = ['Try: “What is Sagun working on?”', 'Try: “Delivered this month?”', 'Try: “Kaun free hai?”', 'Try: “What’s overdue today?”'];
+    const tipsNow = () => (A.mode === 'auth' && isAdmin() ? TIPS_ALL.concat(TIPS_ADMIN) : TIPS_ALL);
     const liveTip = () => {
       try {
         const all = CO.status() === 'ok' ? CO.rows() || [] : [];
@@ -5201,7 +5200,7 @@
       if (fab.hidden || tipsOff()) { hint.hidden = true; return; }
       const idle = !panel.hidden || tip.hover || document.visibilityState !== 'visible';
       if (hint.hidden && !idle) {
-        const pool = TIPS.concat(liveTip()); const text = pool[tip.i++ % pool.length];
+        const pool = tipsNow().concat(A.mode === 'auth' && isAdmin() ? liveTip() : []); const text = pool[tip.i++ % pool.length];
         hintT.textContent = text; hint.hidden = false; hint.classList.remove('out');
         tip.timer = setTimeout(() => { if (tip.hover) return tipCycle(); hint.classList.add('out'); tip.timer = setTimeout(() => { hint.hidden = true; hint.classList.remove('out'); tip.timer = setTimeout(tipCycle, 2300); }, 260); }, 2500);
         return;
