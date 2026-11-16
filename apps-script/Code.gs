@@ -1260,7 +1260,7 @@ function issueLog_(area, title, details, by, extra) {
   const cache = CacheService.getScriptCache(), ck = 'iss:' + Utilities.base64EncodeWebSafe(key).slice(0, 200); if (cache.get(ck)) return; cache.put(ck, '1', 60); // the same issue at most once a minute
   const sh = issuesSheet_(), now = new Date(), cur = issueRows_().filter(function (x) { return x.key === key; })[0];
   const retry = extra && extra.retry ? JSON.stringify(extra.retry).slice(0, 4000) : '', fix = extra && extra.fix ? String(extra.fix).slice(0, 60) : '';
-  if (cur) sh.getRange(cur.row, 4, 1, 9).setValues([[safe_(String(details || cur.details).slice(0, 2000)), cur.first ? new Date(cur.first) : now, now, cur.count + 1, 'Open', '', '', safe_(by || cur.by), retry || cur.retry, fix || cur.fix]]);
+  if (cur) sh.getRange(cur.row, 4, 1, 10).setValues([[safe_(String(details || cur.details).slice(0, 2000)), cur.first ? new Date(cur.first) : now, now, cur.count + 1, 'Open', '', '', safe_(by || cur.by), retry || cur.retry, fix || cur.fix]]);
   else sh.appendRow([safe_(key), safe_(area), safe_(title), safe_(String(details || '').slice(0, 2000)), now, now, 1, 'Open', '', '', safe_(by || ''), retry, fix]);
 }
 function issueResolveKey_(key, by) {
@@ -2428,6 +2428,11 @@ function maintenance_() {
   if (!p.getProperty('OWN_TASKS_2026_11_15') && hasAccessBook_()) {
     try { const moved = []; users_().list.forEach(function (u) { if (u.role === 'Admin' || u.owner || isOwner_(u.email)) return; const o = u.perms || null; if (o && o.scope === 'all') { const np = Object.assign({}, o); delete np.scope; updateUser_(u, { perms: JSON.stringify(np) }); moved.push(u.email); } });
       p.setProperty('OWN_TASKS_2026_11_15', new Date().toISOString()); if (moved.length) audit_([{ who: 'Automatic change', role: 'System', action: 'Permissions changed', field: 'Tasks they can see', before: 'All tasks', after: 'Only their own', details: moved.join(', ') }]); } catch (e) { console.log('own tasks: ' + e); }
+  }
+  // One time (Nov 2026): close issues caused by a bug now fixed (updating a repeated issue wrote one column too many)
+  // and harmless page-animation interruptions.
+  if (!p.getProperty('ISSUE_CLEANUP_2026_11_16') && hasAccessBook_()) {
+    try { issueRows_().forEach(function (x) { if (x.status === 'Open' && (/number of columns in the data does not match/i.test(x.details) || /Transition was aborted|invalid state/i.test(x.title))) issueResolveKey_(x.key, 'Automatic fix (16 Nov)'); }); p.setProperty('ISSUE_CLEANUP_2026_11_16', new Date().toISOString()); } catch (e) { console.log('issue cleanup: ' + e); }
   }
   // One time (Nov 2026): status switches saved with the old default (on) go back to the new default (off) for non-Admins.
   if (!p.getProperty('STATUS_DEFAULT_2026_11_15') && hasAccessBook_()) {

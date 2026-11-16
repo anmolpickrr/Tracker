@@ -225,7 +225,7 @@
   };
   // Errors in the page itself (not from browser add-ons), at most 5 per visit.
   const jsIssue = (msg, where) => {
-    msg = String(msg || '').slice(0, 200); if (!msg || /ResizeObserver|Script error\.?$|AbortError|AuthLost/i.test(msg) || ISS.js >= 5) return; ISS.js++;
+    msg = String(msg || '').slice(0, 200); if (!msg || /ResizeObserver|Script error\.?$|AbortError|AuthLost|Transition was (aborted|skipped)|invalid state/i.test(msg) || ISS.js >= 5) return; ISS.js++;
     let h = 0; for (const c of msg) h = (h * 31 + c.charCodeAt(0)) | 0;
     ISS.report('client|js|' + (h >>> 0).toString(36), 'Screen', 'Error on the dashboard: ' + msg.slice(0, 90), msg + (where ? ' · ' + where : ''));
   };
@@ -659,7 +659,7 @@
     if (!reduce && document.startViewTransition && origin) {
       const r = origin.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, rad = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
       root.style.setProperty('--vt-x', x + 'px'); root.style.setProperty('--vt-y', y + 'px'); root.style.setProperty('--vt-r', rad + 'px');
-      document.startViewTransition(swap);
+      { const vt = document.startViewTransition(swap); [vt.ready, vt.finished, vt.updateCallbackDone].forEach((pr) => pr && pr.catch(() => {})); } // an interrupted page animation is harmless
     } else { root.classList.add('theme-fade'); swap(); setTimeout(() => root.classList.remove('theme-fade'), 700); }
   }
   // Follow sunrise and sunset automatically (checked every minute) unless someone chose a theme for now.
