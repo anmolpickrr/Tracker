@@ -2987,7 +2987,7 @@
       current = r;
       EDITING.uid = r.src + ':' + (r.id || r.row); EDITING.label = (r.id ? r.id + ' · ' : '') + r.brand + ' · ' + CO.topicText(r).slice(0, 50);
       if (window.__liveAct) window.__liveAct('open', 'Opened task ' + EDITING.label);
-      if (perm('edit')) setTimeout(checkForChanges, 50);
+      if (['status', 'eta', 'delivery', 'assign', 'details', 'links'].some(perm)) setTimeout(checkForChanges, 50);
       const list = r.designers ? [...new Set(r.designers.split(' + ').map(CO.canon))] : [];
       before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1), link: r.link || '' };
       $('ed-where').textContent = CO.cls(r) + ' · ' + (SHEET[r.src] || r.source) + (r.row ? ' · row ' + r.row : '') + (r.id ? ' · ' + r.id : '');
@@ -3013,15 +3013,19 @@
       $('ed-save').disabled = !r.id; $('ed-save').textContent = 'Save to sheet';
       // What this person can change here (the web app checks every field again): status, priority and quantity,
       // the creative link; rescheduling and reassigning are for Admins only.
-      const edit = perm('edit'), canSt = perm('status'), canLink = perm('links'), canBrief = perm('briefs');
-      const resch = edit && (A.mode !== 'auth' || isAdmin());
-      $('ed-status').disabled = !canSt; $('ed-qty').disabled = !edit;
-      ['ed-eta', 'ed-designer'].forEach((id) => { $(id).disabled = !resch; $(id).title = resch ? '' : 'Only Admins can reschedule or reassign a task'; });
-      $('ed-quick').hidden = !resch; $('ed-lock').hidden = resch || !(edit || canSt);
-      if (!edit) $('ed-priority').disabled = true;
+      // Each task field is its own permission (set per person on the Access page; Admins have all of them):
+      // status, Design ETA (open work), delivery date (the date of completed work), designer, requirement details.
+      const canSt = perm('status'), canLink = perm('links'), canBrief = perm('briefs'), done = !!(r.done || r.group === 'rejected');
+      const canDate = done ? perm('delivery') : perm('eta'), canAssign = perm('assign'), canDet = perm('details');
+      const edit = canSt || canDate || canAssign || canDet, resch = canDate;
+      $('ed-status').disabled = !canSt; $('ed-qty').disabled = !canDet; if (!canDet) $('ed-priority').disabled = true;
+      $('ed-eta').disabled = !canDate; $('ed-eta').title = canDate ? '' : done ? 'You cannot change the delivery date of this task' : 'You cannot change the Design ETA';
+      $('ed-designer').disabled = !canAssign; $('ed-designer').title = canAssign ? '' : 'You cannot reassign this task';
+      $('ed-eta-l').firstChild.textContent = done ? 'Delivery date' : 'Design ETA';
+      $('ed-quick').hidden = !canDate; $('ed-lock').hidden = (canDate && canAssign && canSt && canDet) || !edit;
       // Team members finish work by submitting the link (which moves the task to Under review); the Manage section
       // (status, ETA, designer, priority) shows only for Admins and people the owner gave the status switch.
-      const manage = resch || canSt || (A.mode !== 'auth' && edit);
+      const manage = edit;
       $('ed-manage').hidden = !manage; $('ed-save').hidden = !manage;
       $('ed-cancel').textContent = manage ? 'Cancel' : 'Close';
       if (!manage && !canLink) $('ed-msg').textContent = 'View only. Ask an Admin if you need to change this task.';
@@ -3433,19 +3437,19 @@
     if (!locked && u.status === 'Approved') {
       const P0 = u.perms || {}, first = (u.name || u.email).split(' ')[0];
       const box = el('fieldset', 'pm-box'); box.id = 'pm-box'; box.append(el('legend', '', 'What ' + first + ' can see and do'));
-      const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty, pricing: !!P0.pricing, status: P0.status !== false, briefs: P0.briefs !== false, links: P0.links !== false };
+      const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty, pricing: !!P0.pricing, status: !!P0.status, briefs: P0.briefs !== false, links: P0.links !== false, eta: !!P0.eta, delivery: !!P0.delivery, assign: !!P0.assign, details: !!P0.details };
       base.pages.add('mine');
-      const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty, pr: o.pricing, st: o.status, br: o.briefs, li: o.links });
+      const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty, pr: o.pricing, st: o.status, br: o.briefs, li: o.links, et: o.eta, dl: o.delivery, as: o.assign, dt: o.details });
       // unsaved changes survive the 30-second refresh of the access list
       const st = PR.draft && PR.draft.email === u.email ? PR.draft.st : Object.assign({}, base, { pages: new Set(base.pages) });
       const snap = () => snapOf(st), start = snapOf(base);
       const sum = el('p', 'pm-sum');
       // [key, label, what View means, what Edit means (or '' when there is nothing to edit)]
       const ROWS = [['mine', 'My work', 'Their own tasks and to-dos (always on)', ''], ['today', 'Overview', 'Team numbers, Needs attention and charts', ''], ['standup', 'Stand-up', 'Stand-up cards and the Day plan', ''],
-        ['tasks', 'Tasks', 'The task list', 'Change priority and quantity, together with "Change design status" below (only Admins reschedule or reassign)'], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
+        ['tasks', 'Tasks', 'The task list (what they can edit is set under Task fields below)', ''], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
         ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', '']];
       const level = (k) => k === 'pricing' ? (st.pricing ? 'edit' : 'hidden') : k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
-        : !st.pages.has(k) ? 'hidden' : (k === 'tasks' && st.edit) || (k === 'team' && st.team) ? 'edit' : 'view';
+        : !st.pages.has(k) ? 'hidden' : (k === 'team' && st.team) ? 'edit' : 'view';
       const setLevel = (k, v) => {
         if (k === 'mine') return;
         if (k === 'pricing') { st.pricing = v === 'edit'; return; }
@@ -3472,15 +3476,20 @@
       const ownWarn = el('p', 'co-note warn pm-warn', first + ' is not on the team list, so "only tasks assigned to them" would show nothing. Choose All tasks, or add them to the team list first.');
       scs.addEventListener('change', () => { st.scope = scs.value; paint(); });
       more.append(sc, ownWarn);
-      const AB = [['status', 'Change design status', 'On the tasks they can see, from the task panel'], ['briefs', 'Read briefs', 'Open the Creative Brief inside the dashboard'], ['links', 'Submit creative links', 'Paste the finished creative\'s link; it is written to the sheet'], ['load', 'See workload and others\' work', 'Workload estimates and "View as" on My work'], ['export', 'Download data', 'CSV downloads on Tasks, Reports and Brands'], ['fasty', 'Use Fasty', 'The voice and chat assistant']];
+      const TF = [['status', 'Task status', 'Change the design status by hand (submitting a link moves work to Under review anyway)'], ['eta', 'Design ETA', 'Reschedule open work'], ['delivery', 'Delivery date', 'Change the date of completed work (its Design ETA)'], ['assign', 'Designer', 'Reassign tasks to someone else'], ['details', 'Brand requirement details', 'Priority and number of creatives']];
+      const AB = [ ['briefs', 'Read briefs', 'Open the Creative Brief inside the dashboard'], ['links', 'Submit creative links', 'Paste the finished creative\'s link; it is written to the sheet'], ['load', 'See workload and others\' work', 'Workload estimates and "View as" on My work'], ['export', 'Download data', 'CSV downloads on Tasks, Reports and Brands'], ['fasty', 'Use Fasty', 'The voice and chat assistant']];
       const ab = el('div', 'pm-abs');
       AB.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = st[k]; cb.addEventListener('change', () => { st[k] = cb.checked; paint(); }); const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); ab.append(lab); });
-      more.append(ab); box.append(more);
+      more.append(ab);
+      // Task fields they may edit, one switch each (written to the sheets; the web app checks every change)
+      const tf = el('div', 'pm-abs pm-tf'); tf.append(el('p', 'pm-tf-h', 'Task fields they can edit'));
+      TF.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = !!st[k]; cb.addEventListener('change', () => { st[k] = cb.checked; paint(); }); const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); tf.append(lab); });
+      more.append(tf); box.append(more);
       box.append(el('p', 'co-note', 'Only you and Admins: giving access, the activity log and live team activity. Only you: settings. Changes apply within 30 seconds, without signing out.' + (u.custom ? '' : ' Now using the defaults for ' + ROLE_LABEL[u.role] + '.')));
       const row = el('div', 'pm-act');
       const save = el('button', 'co-btn primary', 'Save changes'); save.type = 'button';
       const undo = el('button', 'co-btn', 'Undo changes'); undo.type = 'button'; undo.addEventListener('click', () => { PR.draft = null; drawPerson(); });
-      save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty, pricing: st.pricing, status: st.status, briefs: st.briefs, links: st.links }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
+      save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty, pricing: st.pricing, status: st.status, briefs: st.briefs, links: st.links, eta: st.eta, delivery: st.delivery, assign: st.assign, details: st.details }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
       row.append(save, undo);
       if (u.custom) { const rs = el('button', 'co-btn ghost', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
       box.append(row); act.append(box);
@@ -3490,7 +3499,7 @@
           hint.textContent = lv === 'edit' ? 'Can see and ' + eHint.charAt(0).toLowerCase() + eHint.slice(1) : lv === 'view' ? vHint + (eHint ? ' · view only' : '') : 'Not shown to ' + first;
           r.classList.toggle('off', lv === 'hidden');
         });
-        const n = SECTIONS.filter(([k]) => st.pages.has(k)).length, edits = [st.status && 'status', st.links && 'links', st.edit && 'priority', st.team && 'the team list', st.packages === 'edit' && 'brand packages'].filter(Boolean);
+        const n = SECTIONS.filter(([k]) => st.pages.has(k)).length, edits = [st.status && 'status', st.eta && 'ETA', st.delivery && 'delivery date', st.assign && 'designer', st.details && 'requirement details', st.links && 'links', st.team && 'the team list', st.packages === 'edit' && 'brand packages'].filter(Boolean);
         sum.textContent = 'Opens ' + n + ' of ' + SECTIONS.length + ' sections · ' + (edits.length ? 'can edit ' + edits.join(', ') : 'view only') + ' · sees ' + (st.scope === 'own' ? 'only their own tasks' : 'all tasks');
         ownWarn.hidden = !(st.scope === 'own' && u.onTeam === false);
         const dirty = snap() !== start; PR.draft = dirty ? { email: u.email, st } : null; save.disabled = !dirty; undo.hidden = !dirty; box.classList.toggle('dirty', dirty);
@@ -5391,7 +5400,7 @@
         document.dispatchEvent(new CustomEvent('co-open-task', { detail: r.uid })); return { opened: brief(r) };
       },
       async update_task(a) {
-        if (A.mode === 'auth' && !perm('edit')) return { error: 'not_allowed', detail: 'This person has view-only access. An Editor or the Admin can change tasks.' };
+        if (A.mode === 'auth' && !['status', 'eta', 'delivery', 'assign', 'details'].some(perm)) return { error: 'not_allowed', detail: 'This person has view-only access. An Editor or the Admin can change tasks.' };
         if (!TASK_SAVE) return { error: 'Editing is not available right now.' };
         const r = allRows().find((x) => String(x.id).toLowerCase() === String(a.id).toLowerCase().replace(/\s+/g, ''));
         if (!r) return { error: 'No task with ID ' + a.id + '.' };

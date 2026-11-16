@@ -198,7 +198,17 @@ Click any task to open its panel. At the top: where the task is, its title and a
 1. **Read the brief.** The Google Doc in the task's **Creative Brief** cell shows inside the panel (title, text, lists, tables and images; scripts and outside content are removed). *Open in Google Docs* opens the original. The web app reads the Doc as its own Google account through the built-in Drive service and the Docs export link, so no Google Cloud API needs switching on; the Doc must be readable by that account (share it as Viewer, or keep briefs in a shared drive it can see), otherwise the panel says so and the link still works. A brief typed straight into the cell shows as text; other links open in a new tab.
 2. **Submit the creative link.** Paste the finished creative's link (https://…) and click *Submit link* (or *Update link*). It is written to the **Creative Link** column and, for open work, the task moves to **Under review** in the same step, for the Creative Head to review. Team members need nothing else: they do not change the status, ETA, designer or priority by hand.
 
-**Manage task** (status, ETA with quick dates, designer, priority, quantity, *Save to sheet*) shows for Admins and the owner. The owner can also give one person *Change design status* on the Access page; priority and quantity then follow Tasks › Edit. ETA and designer stay Admin-only. The web app checks every change again, so a switched-off or other person's task is refused even if someone tries it from outside the dashboard. In November 2026 everyone's *Change design status* switch was reset to off (except Admins); the change is in the activity log.
+**Task fields, one switch each (Access › a person › Task fields they can edit).** Admins and the owner have all of them; everyone else starts with none and the owner or an Admin switches on exactly what a person needs:
+
+| Switch | Lets them change | In the sheet |
+|---|---|---|
+| Task status | the design status by hand | Design Status (Paid: the second Design ETA column) |
+| Design ETA | the date of open work (quick buttons too) | Design ETA |
+| Delivery date | the date of completed work (Delivered, Rejected) | Design ETA (the sheets have no separate delivery column; the dashboard counts a completed creative on this date) |
+| Designer | who the task is assigned to | Creator / Designer |
+| Brand requirement details | priority and number of creatives | Priority, No. of Creatives |
+
+The task panel shows **Manage task** when a person has at least one of these, with every other field locked. The web app checks each field again before writing (a completed task's date needs *Delivery date*, an open one's *Design ETA*), so the rules hold wherever a change comes from: the task panel, Fasty, or a retry on the Issues page. Changes reach the sheet at once, appear on everyone's dashboard within 30 seconds, and are in the activity log; a switch changed on the Access page applies to that person within 30 seconds, without signing them out, and nobody else's access changes.
 
 **No overwriting.** The panel remembers the status, link and ETA it showed when it opened. If the sheet changed since (someone edited the row in Google Sheets), the save is refused with *Someone changed … in the sheet to "…"*; the dashboard reloads the row so you can decide again. Every saved change is in the activity log with before and after.
 

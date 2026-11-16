@@ -39,11 +39,14 @@ function defaultPerms_(role) {
   // Workspace (Nov 2026): everyone except Admins sees and manages only the tasks assigned to them; on those tasks they
   // can change the status, read the brief and submit the creative link. The owner can switch each of these per person,
   // and give access to others' tasks (scope "all").
-  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health' && k !== 'issues'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '', pricing: false, status: false, briefs: true, links: true };
+  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health' && k !== 'issues'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '', pricing: false, status: false, briefs: true, links: true, eta: false, delivery: false, assign: false, details: false };
+  // Task fields, each switched on per person (Nov 2026): eta = Design ETA of open work, delivery = the date of
+  // completed work (its Design ETA), status, assign = designer, details = brand requirement details (priority,
+  // number of creatives). Admins have all of them.
   // (Nov 2026) Team members finish a task by submitting its creative link, which moves it to Under review; changing the
   // status by hand, the ETA, the designer and the priority stay with Admins unless the owner switches one on.
   if (role === 'Editor') { p.edit = true; }
-  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; p.pricing = true; p.status = true; }
+  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; p.pricing = true; p.status = true; p.eta = true; p.delivery = true; p.assign = true; p.details = true; }
   return p;
 }
 function permsOf_(u) {
@@ -51,7 +54,7 @@ function permsOf_(u) {
   if (u.owner || isOwner_(u.email)) { const all = defaultPerms_('Admin'); all.owner = true; all.packages = 'edit'; all.pricing = true; return all; }
   const p = defaultPerms_(u.role), o = u.perms || {};
   if (Array.isArray(o.pages)) p.pages = o.pages.filter(function (k) { return PAGE_KEYS.indexOf(k) >= 0; });
-  ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
+  ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links', 'eta', 'delivery', 'assign', 'details'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') p.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') p.packages = o.packages;
   if (p.pages.indexOf('mine') < 0) p.pages.unshift('mine'); // everyone keeps their own work page
@@ -61,7 +64,7 @@ function cleanPerms_(o) {
   if (!o || typeof o !== 'object') return null;
   const out = {};
   if (Array.isArray(o.pages)) out.pages = o.pages.map(String).filter(function (k, i, a) { return PAGE_KEYS.indexOf(k) >= 0 && a.indexOf(k) === i; });
-  ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
+  ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links', 'eta', 'delivery', 'assign', 'details'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') out.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') out.packages = o.packages;
   return out;
@@ -71,7 +74,7 @@ function allowed_(u, action) {
   if (OWNER_ONLY[action]) return !!(u.owner || isOwner_(u.email));
   if (ADMIN_ONLY[action]) return isAdminUser_(u);
   const p = permsOf_(u);
-  if (action === 'updateTask') return p.edit || p.status || p.links; // each field is checked again in taskWrite_
+  if (action === 'updateTask') return p.status || p.links || p.eta || p.delivery || p.assign || p.details; // each field is checked again in taskWrite_
   if (action === 'brief') return !!p.briefs;
   if (action === 'issues' || action === 'issueAct') return isAdminUser_(u);
   if (action === 'setMember') return p.team;
@@ -349,12 +352,13 @@ function write_(body, user) {
       // Rescheduling (ETA) and reassigning (designer) are for Admins only; status, creative link, priority and quantity
       // follow the person's switches; outside Admins, only tasks assigned to them (unless given access to others').
       const ff = body.fields || {}, pm = permsOf_(user), adm = isAdminUser_(user);
-      out = (ff.eta != null || ff.designer != null) && !adm ? { ok: false, error: 'Only Admins can change a task\'s ETA or who it is assigned to.' }
+      out = ff.designer != null && !pm.assign ? { ok: false, error: 'You do not have permission to reassign tasks. Ask an Admin.' }
+        : ff.eta != null && !pm.eta && !pm.delivery ? { ok: false, error: 'You do not have permission to change dates. Ask an Admin.' }
         // submitting the finished creative's link may move the task to Under review in the same step
         : ff.status != null && !pm.status && !(ff.status === 'Under review' && ff.link && pm.links && Object.keys(ff).length === 2) ? { ok: false, error: 'You do not have permission to change task status. Ask an Admin.' }
         : ff.link != null && !pm.links ? { ok: false, error: 'You do not have permission to submit creative links. Ask an Admin.' }
-        : (ff.priority != null || ff.qty != null) && !pm.edit ? { ok: false, error: 'You do not have permission to change priority or quantity.' }
-        : updateTask_(body, adm || pm.scope === 'all' ? null : ownMatcher_(user));
+        : (ff.priority != null || ff.qty != null) && !pm.details ? { ok: false, error: 'You do not have permission to change brand requirement details (priority, number of creatives). Ask an Admin.' }
+        : updateTask_(body, adm || pm.scope === 'all' ? null : ownMatcher_(user), pm);
     }
     else if (body.action === 'setAccess') out = setAccess_(body, user);
     else if (body.action === 'noteSave') out = noteSave_(body, user);
@@ -436,7 +440,7 @@ const QTY_HEADER = /^(no\.?\s*of\s*creatives?|number of creatives?|qty|quantity|
  * body: { source: a name from CONFIG.sources, id, row, fields: { status?, eta?, designer?, priority?, qty? } }
  * Finds the row by its ID (using `row` as a hint), then writes only the fields given.
  */
-function updateTask_(body, mine) {
+function updateTask_(body, mine, pm) {
   const src = CONFIG.sources[body.source];
   if (!src || kindOf_(body.source) === 'team') return { ok: false, error: 'unknown sheet' };
   const id = clean_(body.id);
@@ -472,6 +476,12 @@ function updateTask_(body, mine) {
   if (f.link != null && f.link !== '' && !/^https:\/\/[^\s"'<>]{4,1990}$/i.test(String(f.link).trim())) return { ok: false, error: 'The creative link must be a full https:// address.' };
   // Only the person's own tasks (unless they may work on others').
   if (mine && !mine(sheet.getRange(row, c.designer + 1).getDisplayValue(), c.owner >= 0 ? sheet.getRange(row, c.owner + 1).getDisplayValue() : '')) return { ok: false, error: 'This task is not assigned to you, so you cannot change it. Ask an Admin if you need access.' };
+  // Dates: the Design ETA of open work and the delivery date of completed work are separate permissions.
+  if (pm && f.eta != null && c.status >= 0) {
+    const g = CODATA.groupOf(CODATA.stageOf(sheet.getRange(row, c.status + 1).getDisplayValue(), '')[0]), done = g.done || g.group === 'rejected';
+    if (done && !pm.delivery) return { ok: false, error: 'This task is completed: changing its delivery date needs the Delivery date permission. Ask an Admin.' };
+    if (!done && !pm.eta) return { ok: false, error: 'You do not have permission to change the Design ETA. Ask an Admin.' };
+  }
   // Changed in the sheet since the dashboard last loaded it? Refuse, so nothing is overwritten without being seen.
   const was = body.before || {};
   if (was.status != null && f.status != null && c.status >= 0) { const cur = CODATA.stageOf(sheet.getRange(row, c.status + 1).getDisplayValue(), '')[0]; if (cur !== was.status && !(was.status === 'To be planned' && cur === 'Awaiting brief')) return { ok: false, error: 'changed', field: 'Design status', now: cur }; }
@@ -1276,7 +1286,7 @@ function issueReport_(b, u) {
 // reported it was allowed to change themselves (an Admin's click must not carry more than that person could do).
 function retryOk_(r, u) {
   if (!r || typeof r !== 'object' || r.action !== 'updateTask' || !r.fields || typeof r.fields !== 'object') return null;
-  const pm = permsOf_(u), adm = isAdminUser_(u), f = {}, may = { status: pm.status || (r.fields.status === 'Under review' && !!r.fields.link && pm.links), link: pm.links, priority: pm.edit, qty: pm.edit, eta: adm, designer: adm };
+  const pm = permsOf_(u), f = {}, may = { status: pm.status || (r.fields.status === 'Under review' && !!r.fields.link && pm.links), link: pm.links, priority: pm.details, qty: pm.details, eta: pm.eta || pm.delivery, designer: pm.assign };
   Object.keys(r.fields).forEach(function (k) { if (may[k]) f[k] = String(r.fields[k]).slice(0, 2000); });
   if (!Object.keys(f).length) return null;
   return { action: 'updateTask', source: String(r.source || '').slice(0, 40), id: String(r.id || '').slice(0, 60), row: Number(r.row) || 0, fields: f };
