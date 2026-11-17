@@ -3471,6 +3471,7 @@
   function drawPerson() {
     const u = (AX.users || []).find((x) => x.email === PR.email);
     const head = document.getElementById('pr-head'), facts = document.getElementById('pr-facts'), act = document.getElementById('pr-actions'), log = document.getElementById('pr-log');
+    const permEl = document.getElementById('pr-perm'); permEl.replaceChildren();
     head.replaceChildren(); facts.replaceChildren(); act.replaceChildren(); log.replaceChildren();
     if (!u) { head.append(el('p', 'co-note', 'Not on the access list.')); return; }
     const who = el('div', 'pr-who');
@@ -3510,7 +3511,7 @@
     // plus which tasks they see and the extra abilities. Saved together; every change is logged.
     if (!locked && u.status === 'Approved') {
       const P0 = u.perms || {}, first = (u.name || u.email).split(' ')[0];
-      const box = el('fieldset', 'pm-box'); box.id = 'pm-box'; box.append(el('legend', '', 'What ' + first + ' can see and do'));
+      const box = el('div', 'pm-box pm-tabs'); box.id = 'pm-box'; const bh = el('div', 'pm-head'); bh.append(el('h3', 'co-h2', 'What ' + first + ' can see and do')); box.append(bh);
       const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty, pricing: !!P0.pricing, status: !!P0.status, briefs: P0.briefs !== false, links: P0.links !== false, eta: !!P0.eta, delivery: !!P0.delivery, assign: !!P0.assign, details: !!P0.details };
       base.pages.add('mine');
       const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty, pr: o.pricing, st: o.status, br: o.briefs, li: o.links, et: o.eta, dl: o.delivery, as: o.assign, dt: o.details });
@@ -3520,7 +3521,7 @@
       const sum = el('p', 'pm-sum');
       // [key, label, what View means, what Edit means (or '' when there is nothing to edit)]
       const ROWS = [['mine', 'My work', 'Their own tasks and to-dos (always on)', ''], ['today', 'Overview', 'Team numbers, Needs attention and charts', ''], ['standup', 'Stand-up', 'Stand-up cards and the Day plan', ''],
-        ['tasks', 'Tasks', 'The task list (what they can edit is set under Task fields below)', ''], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
+        ['tasks', 'Tasks', 'The task list (what they can edit: Tasks tab)', ''], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
         ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', '']];
       const level = (k) => k === 'pricing' ? (st.pricing ? 'edit' : 'hidden') : k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
         : !st.pages.has(k) ? 'hidden' : (k === 'team' && st.team) ? 'edit' : 'view';
@@ -3543,30 +3544,37 @@
         segs.push({ k, btns, hint, vHint, eHint, r });
         r.append(nm, seg); grid.append(r);
       });
-      box.append(sum, grid);
+      // three tabs instead of one long list; the tab stays as you switch people
+      const TABS2 = [['sections', 'Sections'], ['tasks', 'Tasks'], ['abilities', 'Abilities']];
+      PR.tab = TABS2.some((t) => t[0] === PR.tab) ? PR.tab : 'sections';
+      const tabsEl = el('div', 'pm-tabbar'); tabsEl.setAttribute('role', 'tablist');
+      const panels = {}; TABS2.forEach(([k]) => { panels[k] = el('div', 'pm-panel'); panels[k].setAttribute('role', 'tabpanel'); panels[k].hidden = PR.tab !== k; });
+      TABS2.forEach(([k, l]) => { const b = el('button', 'pm-tab' + (PR.tab === k ? ' on' : ''), l); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(PR.tab === k)); b.dataset.tab = k; b.addEventListener('click', () => { PR.tab = k; tabsEl.querySelectorAll('.pm-tab').forEach((x) => { const on = x.dataset.tab === k; x.classList.toggle('on', on); x.setAttribute('aria-selected', String(on)); }); Object.keys(panels).forEach((q) => { panels[q].hidden = q !== k; }); }); tabsEl.append(b); });
+      bh.append(sum); box.append(tabsEl, panels.sections, panels.tasks, panels.abilities);
+      panels.sections.append(grid);
       // which tasks + extra abilities
       const more = el('div', 'pm-more');
       const sc = el('label', 'co-field', 'Tasks they can see'); const scs = el('select', 'co-select'); scs.append(new Option('Only tasks assigned to them (or whose brief they own)', 'own'), new Option('All tasks (others\' tasks too)', 'all')); scs.value = st.scope; sc.append(scs);
       const ownWarn = el('p', 'co-note warn pm-warn', first + ' is not on the team list, so "only tasks assigned to them" would show nothing. Choose All tasks, or add them to the team list first.');
       scs.addEventListener('change', () => { st.scope = scs.value; paint(); });
-      more.append(sc, ownWarn);
+      panels.tasks.append(sc, ownWarn);
       const TF = [['status', 'Task status', 'Change the design status by hand (submitting a link moves work to Under review anyway)'], ['eta', 'Design ETA', 'Reschedule open work'], ['delivery', 'Delivery date', 'Change the date of completed work (its Design ETA)'], ['assign', 'Designer', 'Reassign tasks to someone else'], ['details', 'Brand requirement details', 'Priority and number of creatives']];
       const AB = [ ['briefs', 'Read briefs', 'Open the Creative Brief inside the dashboard'], ['links', 'Submit creative links', 'Paste the finished creative\'s link; it is written to the sheet'], ['load', 'See workload and others\' work', 'Workload estimates and "View as" on My work'], ['export', 'Download data', 'CSV downloads on Tasks, Reports and Brands'], ['fasty', 'Use Fasty', 'The voice and chat assistant']];
       const ab = el('div', 'pm-abs');
       AB.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = st[k]; cb.addEventListener('change', () => { st[k] = cb.checked; paint(); }); const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); ab.append(lab); });
-      more.append(ab);
+      panels.abilities.append(ab);
       // Task fields they may edit, one switch each (written to the sheets; the web app checks every change)
       const tf = el('div', 'pm-abs pm-tf'); tf.append(el('p', 'pm-tf-h', 'Task fields they can edit'));
       TF.forEach(([k, l, hint]) => { const lab = el('label', 'sw'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.k = k; cb.checked = !!st[k]; cb.addEventListener('change', () => { st[k] = cb.checked; paint(); }); const ui = el('span', 'sw-ui'); const tx = el('span', ''); tx.append(el('b', '', l), el('small', 'co-note', hint)); lab.append(cb, ui, tx); tf.append(lab); });
-      more.append(tf); box.append(more);
-      box.append(el('p', 'co-note', 'Only you and Admins: giving access, the activity log and live team activity. Only you: settings. Changes apply within 30 seconds, without signing out.' + (u.custom ? '' : ' Now using the defaults for ' + ROLE_LABEL[u.role] + '.')));
+      panels.tasks.append(tf);
+      const foot = el('div', 'pm-foot'); foot.append(el('p', 'co-note pm-note', 'Only you and Admins: giving access, the activity log and live team activity. Only you: settings. Changes apply within 30 seconds, without signing out.' + (u.custom ? '' : ' Now using the defaults for ' + ROLE_LABEL[u.role] + '.')));
       const row = el('div', 'pm-act');
       const save = el('button', 'co-btn primary', 'Save changes'); save.type = 'button';
       const undo = el('button', 'co-btn', 'Undo changes'); undo.type = 'button'; undo.addEventListener('click', () => { PR.draft = null; drawPerson(); });
       save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty, pricing: st.pricing, status: st.status, briefs: st.briefs, links: st.links, eta: st.eta, delivery: st.delivery, assign: st.assign, details: st.details }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
       row.append(save, undo);
       if (u.custom) { const rs = el('button', 'co-btn ghost', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
-      box.append(row); act.append(box);
+      foot.append(row); box.append(foot); permEl.append(box);
       function paint() {
         segs.forEach(({ k, btns, hint, vHint, eHint, r }) => {
           const lv = level(k); btns.forEach((b) => { const on = b.dataset.v === lv; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
@@ -3580,6 +3588,7 @@
       }
       paint();
     }
+    if (!permEl.childNodes.length) { const e = el('div', 'pm-empty'); e.append(el('h3', 'co-h2', u.owner ? 'The owner has every permission' : u.email === AX.you ? 'This is you' : u.status === 'Pending' ? 'Waiting for approval' : 'No access right now'), el('p', 'co-note', u.owner ? 'Nothing to set here.' : u.email === AX.you ? 'You cannot change your own access; another Admin or the owner can.' : u.status === 'Pending' ? 'Choose an access level and the sections on the left, then Approve. Everything else can be fine-tuned here afterwards.' : 'Give access on the left; what they can see and do is set here afterwards.')); permEl.append(e); }
     if (!PR.log) { log.append(el('p', 'co-note', 'Loading activity…')); return; }
     if (!PR.log.length) { log.append(el('p', 'co-note', 'No activity yet.')); return; }
     const ul = el('ul', 'pr-list');

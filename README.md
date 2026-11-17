@@ -147,7 +147,7 @@ A task whose ETA is moved to a later day (in the sheet or from the dashboard) is
 
 ## Changing access at any time (Access)
 
-Every person with access has a **Permissions** button on the Access page, and a one-line summary of what they can open and edit. It opens a section-by-section list: for each section choose **Hidden**, **View** or (where there is something to edit) **Edit**: Tasks (edit tasks wherever they appear), Team (manage the team list), Brand packages (add, change and close packages). Below it: which tasks they see (only their own, or all), changing design status, reading briefs, submitting creative links, seeing workload and others' work, downloads and Fasty. Save changes applies within 30 seconds without signing them out, can be changed again at any time, and is logged; Reset goes back to the role's defaults.
+Click a person on the Access page to open their window. **Left:** who they are (sign-ins, who approved them), access level and *Revoke access*, and their recent activity (with a link to the full log). **Right:** *What they can see and do*, with a one-line summary on top and three tabs: **Sections** (Hidden, View or Edit for each section, plus Brand packages and Pricing), **Tasks** (which tasks they see, and the task fields they can edit: status, Design ETA, delivery date, designer, requirement details) and **Abilities** (reading briefs, submitting links, workload, downloads, Fasty). *Save changes* stays at the bottom, so nothing needs scrolling to find; unsaved changes survive the 30-second refresh, Undo and Reset to the role's defaults sit beside it, and every change is logged and applies within 30 seconds without signing them out. On a phone the two panes stack.
 
 ## Notes
 
