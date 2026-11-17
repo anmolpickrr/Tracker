@@ -3585,7 +3585,7 @@
       function paint() {
         segs.forEach(({ k, btns, hint, vHint, eHint, r }) => {
           const lv = level(k); btns.forEach((b) => { const on = b.dataset.v === lv; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
-          hint.textContent = lv === 'edit' ? 'Can see and ' + eHint.charAt(0).toLowerCase() + eHint.slice(1) : lv === 'view' ? vHint + (eHint ? ' · view only' : '') : 'Not shown to ' + first;
+          hint.textContent = lv === 'edit' ? 'Can see and ' + eHint.charAt(0).toLowerCase() + eHint.slice(1) : lv === 'view' ? vHint + (eHint ? ' · view only' : '') : 'Not shown to ' + first; hint.title = hint.textContent;
           r.classList.toggle('off', lv === 'hidden');
         });
         const n = SECTIONS.filter(([k]) => st.pages.has(k)).length, edits = [st.status && 'status', st.eta && 'ETA', st.delivery && 'delivery date', st.assign && 'designer', st.details && 'requirement details', st.links && 'links', st.team && 'the team list', st.packages === 'edit' && 'brand packages'].filter(Boolean);

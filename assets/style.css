@@ -3659,3 +3659,18 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
 .pm-panel .pm-grid .pm-gh { padding: 6px 12px; }
 .pm-panel .pm-opt { padding: 4px 11px; }
 @media (max-width: 860px) { .pm-foot .pm-note { display: none; } .pm-foot { padding: 10px 16px 12px; } .pm-head { padding: 18px 56px 10px 16px; } .pm-tabbar, .pm-panel { padding-left: 16px; padding-right: 16px; } }
+/* Sections list: compact one-line rows (the hint is shortened, full text on hover); the last row always clears the Save bar */
+.pm-panel { padding-bottom: 28px; scroll-padding-bottom: 28px; }
+.pm-panel .pm-grid .pm-row { padding: 5px 12px; min-height: 40px; }
+.pm-panel .pm-grid .pm-nm { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.pm-panel .pm-grid .pm-nm b { flex: none; }
+.pm-panel .pm-grid .pm-nm small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-panel .pm-grid .pm-opt { padding: 3px 11px; font-size: 12px; }
+/* a soft edge above the Save bar while there is more to scroll */
+.pr-main .pm-tabs { position: relative; }
+.pm-panel { mask-image: linear-gradient(#000 calc(100% - 22px), transparent); -webkit-mask-image: linear-gradient(#000 calc(100% - 22px), transparent); }
+@media (max-width: 860px) { .pm-panel { mask-image: none; -webkit-mask-image: none; } .pm-panel .pm-grid .pm-nm { display: grid; gap: 1px; } .pm-panel .pm-grid .pm-nm small { white-space: normal; } }
+/* the panel scrolls; its content keeps its full height (a grid squeezed the clipped list instead) */
+.pm-panel { display: block; }
+.pm-panel > * + * { margin-top: 12px; }
+.pm-panel > * { min-height: min-content; }
