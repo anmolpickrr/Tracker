@@ -3591,16 +3591,11 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
 /* ===== Stand-up (Nov 2026): every task listed, cards scroll inside a fixed height ===== */
 [data-draw="standup"] .su { max-height: 640px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 [data-draw="standup"] .su .su-head { position: sticky; top: -1px; z-index: 2; background: var(--panel); padding-bottom: 6px; }
-/* still with the content team: dashed and muted, with the content status */
-.su-item.await { border-left: 3px dashed var(--coral); padding-left: 10px; opacity: .9; }
-.su-item.await .t { color: var(--fg-2); }
-.su-await { grid-column: 1 / -1; justify-self: start; margin-top: 2px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--coral); background: var(--coral-soft); }
-/* writers: every open content task, coloured by its content status; due today or earlier marked */
-.su-ct-list .su-item.ct-hl { border-left: 3px solid var(--muted); padding-left: 10px; }
-.su-ct-list .su-item.cs-pending, .su-ct-list .su-item.cs-tbd { border-left-color: var(--coral); }
-.su-ct-list .su-item.cs-tbp { border-left-color: var(--accent); }
-.su-ct-list .su-item.cs-wip { border-left-color: var(--violet); }
-.su-ct-list .su-item.cs-changes, .su-ct-list .su-item.cs-incomplete-brief { border-left-color: var(--warn); }
-.su-ct-list .su-item.ct-due { background: var(--coral-soft); border-radius: 10px; }
-.su-ct-list .su-item.ct-due .m { color: var(--coral) !important; }
+/* Rows waiting on content and writers' content rows: the card's own status chip on the meta line (same shape, size
+   and colours as the chips under each name); no extra borders or fills. Late and today keep the usual date colours. */
+.su-item .su-chip { grid-column: 1 / -1; justify-self: start; margin-top: 4px; padding: 2px 9px 2px 8px; font-size: 11px; line-height: 1.5; }
+.su-item.await .t, .su-item.await .t b { color: var(--fg-2); }
 [data-draw="standup"] .su::before, [data-draw="standup"] .su::after { z-index: 3; }
+.draw-fail { padding: 12px 14px; border-radius: 12px; background: var(--panel-2); border: 1px dashed var(--line); margin-bottom: 8px; }
+.su-content .su-ct-list .su-item .m.bad { color: var(--bad) !important; } .su-content .su-ct-list .su-item .m.warn { color: var(--warn) !important; }
+:root:not([data-theme="dark"]) .su-content .su-ct-list .su-item .m.bad { color: #b3360c !important; }

@@ -212,11 +212,13 @@ function doGet(e) {
 }
 
 /* All the sheets as JSON text. The cached copy is served only while the sheets are unchanged since it was read. */
-function dataText_(fresh) {
+// maxAge (seconds): also re-read when the cached copy is older than this. Edits the change trigger never sees (other
+// scripts, forms, imports, the Sheets API) and Drive's late "last modified" time then still arrive within minutes.
+function dataText_(fresh, maxAge) {
   const cache = CacheService.getScriptCache();
   const ver = liveVersion_();
   if (!fresh) {
-    const hit = readCache_(cache, ver);
+    const hit = readCache_(cache, ver, maxAge);
     if (hit) return hit;
   }
   const body = JSON.stringify(readAll_(ver));
@@ -321,7 +323,7 @@ function doPost(e) {
     if (body.action === 'packages') return json_(pkgList_());
     if (body.action === 'pricing') return json_(pricingGet_());
     if (body.action === 'settings') { const st = settings_(); return json_({ ok: true, settings: Object.assign({}, st, { chat: st.chat ? 'set' : '' }) }); }
-    if (body.action === 'data') { const pm = permsOf_(user); return text_(pm.scope === 'own' ? ownDataText_(user, !!body.fresh) : dataText_(!!body.fresh)); }
+    if (body.action === 'data') { const pm = permsOf_(user), age = Math.max(30, Math.min(900, Number(body.maxAge) || 0)) || 0; return text_(pm.scope === 'own' ? ownDataText_(user, !!body.fresh, body.maxAge ? age : 0) : dataText_(!!body.fresh, body.maxAge ? age : 0)); }
     if (body.action === 'health') return json_(health_());
     if (body.action === 'users') { let all = null; try { all = JSON.parse(dataText_(false)); } catch (e) { all = null; } return json_({ ok: true, users: users_().list.map(function (u) { return publicUser_(u, all); }), you: user.email, owners: owners_() }); }
     if (body.action === 'audit') return json_(auditRead_(body));
@@ -1751,14 +1753,15 @@ function writeCache_(cache, body, ver) {
   try {
     const parts = {}; const n = Math.ceil(body.length / CHUNK);
     for (let i = 0; i < n; i++) parts['d' + i] = body.slice(i * CHUNK, (i + 1) * CHUNK);
-    parts.meta = n + '|' + ver;
+    parts.meta = n + '|' + ver + '|' + Date.now();
     cache.putAll(parts, CONFIG.cacheSeconds);
   } catch (err) { /* the cache is only a speed-up */ }
 }
-function readCache_(cache, ver) {
+function readCache_(cache, ver, maxAge) {
   const meta = String(cache.get('meta') || '').split('|');
   const n = Number(meta[0] || 0);
   if (!n || meta[1] !== String(ver)) return null;
+  if (maxAge && (!meta[2] || Date.now() - Number(meta[2]) > maxAge * 1000)) return null;
   const keys = []; for (let i = 0; i < n; i++) keys.push('d' + i);
   const got = cache.getAll(keys);
   let s = ''; for (let i = 0; i < n; i++) { if (got['d' + i] == null) return null; s += got['d' + i]; }
@@ -2722,8 +2725,8 @@ function ownMatcher_(user, all) {
   const first = keys.length ? keys[0].split(' ')[0] : '';
   return function (designer, owner) { const d = String(designer == null ? '' : designer).toLowerCase(), o = String(owner == null ? '' : owner).toLowerCase(); return keys.some(function (n) { return d.indexOf(n) >= 0; }) || (!!first && o.split(/[\s,;&\/+|]+/).indexOf(first) >= 0); };
 }
-function ownDataText_(user, fresh) {
-  const all = JSON.parse(dataText_(fresh));
+function ownDataText_(user, fresh, maxAge) {
+  const all = JSON.parse(dataText_(fresh, maxAge));
   const names = [user.name || ''];
   try {
     const team = all.sources && Object.keys(all.sources).map(function (k) { return all.sources[k]; }).filter(function (x) { return x && x.kind === 'team'; })[0];

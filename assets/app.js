@@ -56,7 +56,15 @@
   const visible = (el) => !el.closest('[hidden]');
   function runDraw(name) {
     const fn = draws.get(name); if (!fn) return;
-    document.querySelectorAll('[data-draw="' + name + '"]').forEach((el) => { if (visible(el)) { try { fn(el); } catch (err) { console.error(name, err); } } });
+    document.querySelectorAll('[data-draw="' + name + '"]').forEach((el) => { if (visible(el)) { try { fn(el); } catch (err) { console.error(name, err); drawFailed(el, name, err); } } });
+  }
+  // A part of the page that fails to draw says so (with a way to reload) instead of staying blank, and the cause is
+  // reported to the Issues page so it can be fixed.
+  function drawFailed(el, name, err) {
+    try {
+      if (!el.querySelector(':scope > .draw-fail')) { const d = document.createElement('div'); d.className = 'draw-fail co-note'; d.textContent = 'This part could not be shown. '; const b = document.createElement('button'); b.type = 'button'; b.className = 'co-link'; b.textContent = 'Reload data'; b.addEventListener('click', () => load(true)); d.append(b); el.prepend(d); }
+      if (typeof ISS !== 'undefined' && ISS.report) ISS.report('client|draw|' + name, 'Screen', 'A section could not be drawn: ' + name, String(err && err.stack || err).slice(0, 600));
+    } catch (e) { /* never fail twice */ }
   }
   let raf = 0;
   function renderAll() {
@@ -79,8 +87,12 @@
   // quiet: background calls (the live-activity heartbeat) never sign anyone out; the 30-second check handles that with the right message.
   async function callApi(payload, quiet) {
     let res;
-    try { res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)) }); }
-    catch (e) { ISS.net(false); throw e; }
+    // Every request has a time limit (a laptop waking up or a network switch can leave one hanging for ever, which used
+    // to freeze the live updates until a manual refresh). Loading all the data gets longer than the small checks.
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null, lim = payload.action === 'data' ? 90000 : 30000, tm = ctl ? setTimeout(() => ctl.abort(), lim) : 0;
+    try { res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)), signal: ctl ? ctl.signal : undefined }); }
+    catch (e) { clearTimeout(tm); ISS.net(false); throw (e && e.name === 'AbortError' ? new Error('The web app took too long to answer; trying again shortly.') : e); }
+    clearTimeout(tm);
     ISS.net(true);
     const body = parse(await res.text());
     if (body.ok && window.__liveAct) { const f = payload.fields || {}, W = { updateTask: () => 'Updated ' + (payload.id || 'a task') + ': ' + Object.keys(f).map((k) => k + ' → ' + f[k]).join(', '), noteSave: () => 'Saved a note', noteDelete: () => 'Deleted a note', noteAction: () => 'Updated an action in a note', setMember: () => 'Changed the team list' }; if (W[payload.action]) window.__liveAct('update', W[payload.action]()); }
@@ -102,9 +114,9 @@
     if (A.mode === 'auth' && !A.user) return;
     if (A.mode !== 'auth') { const { url, key } = conn(); if (!url || !key) { S.status = 'unconfigured'; renderAll(); return; } }
     if (S.status !== 'ok') S.status = 'loading';
-    S.refreshing = true; renderAll();
+    S.refreshing = true; S.refreshAt = Date.now(); renderAll();
     try {
-      const body = A.mode === 'auth' ? await callApi({ action: 'data', fresh: !!fresh }) : await keyGet(fresh ? { fresh: '1' } : {});
+      const body = A.mode === 'auth' ? await callApi(Object.assign({ action: 'data', fresh: fresh === true }, fresh === 'recent' ? { maxAge: 90 } : {})) : await keyGet(fresh === true ? { fresh: '1' } : {});
       if (!body.ok) throw new Error(errText(body.error));
       applyData(body);
       if (A.mode === 'auth' && A.user) { DC.put(A.user.email, body); ISS.resolve('client|load|' + A.user.email.split('@')[0]); }
@@ -247,10 +259,13 @@
 
   /* Live sync: every 30 s ask the web app whether a sheet changed (a tiny request), and reload only then.
      A full reload also runs every 10 minutes as a safety net, and on return to the tab. */
-  let checking = false;
+  let checking = false, checkingAt = 0;
   async function checkForChanges() {
+    // a check or reload stuck for over 2 minutes no longer blocks the next ones
+    if (checking && Date.now() - checkingAt > 120000) checking = false;
+    if (S.refreshing && S.refreshAt && Date.now() - S.refreshAt > 150000) S.refreshing = false;
     if (checking || S.refreshing || S.status !== 'ok' || document.visibilityState !== 'visible') return;
-    checking = true;
+    checking = true; checkingAt = Date.now();
     try {
       const body = await probeVer();
       S.checkedAt = new Date();
@@ -276,8 +291,10 @@
     checking = false;
   }
   setInterval(checkForChanges, 30 * 1000);
-  setInterval(() => { if (document.visibilityState === 'visible' && S.status === 'ok') load(false); }, 5 * 60 * 1000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.loadedAt) { if (Date.now() - S.loadedAt > 5 * 60 * 1000) load(false); else checkForChanges(); } });
+  // Safety net every 2 minutes: data at most 90 seconds old, even for edits the change trigger never sees.
+  setInterval(() => { if (document.visibilityState === 'visible' && S.status === 'ok' && !S.refreshing) load('recent'); }, 2 * 60 * 1000);
+  // Back to the tab: anything older than a minute is reloaded (90 seconds at most), otherwise a quick change check.
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.loadedAt) { if (Date.now() - S.loadedAt > 60000 && !S.refreshing) load('recent'); else checkForChanges(); } });
   // Keep the 'checked … ago' line current, and redraw everything when the date changes (overdue and due-today move at midnight).
   let shownDay = new Date().toDateString();
   setInterval(() => { const d = new Date().toDateString(); if (d !== shownDay) { shownDay = d; renderAll(); } else { dash.draw('sync-text'); dash.draw('sync-detail'); } }, 15 * 1000);
@@ -1655,9 +1672,12 @@
       const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = [r.id, r.type, r.stage, r.priority, CO.cls(r)].filter(Boolean).join(' · ');
       d.append(t, m, meta);
       // still with the content team: shown so the day is complete, marked so it is not picked up too early
-      if (r.awaiting) { d.classList.add('await'); const w = document.createElement('span'); w.className = 'su-await'; w.textContent = 'Content ' + (String(r.content_status || 'pending').trim().toUpperCase() === 'CHANGES' ? 'changes' : String(r.content_status || 'pending').trim().toLowerCase()) + ' · pick up when ready'; meta.textContent = [r.id, r.type, r.priority, CO.cls(r)].filter(Boolean).join(' · '); d.append(w); }
+      if (r.awaiting) { d.classList.add('await'); meta.textContent = [r.id, r.type, r.priority, CO.cls(r)].filter(Boolean).join(' · '); const w = csChip(r.content_status, 'Content '); w.title = 'Still with the content team: pick it up once the content is ready'; d.append(w); }
       return d;
     };
+    // A content status as the dashboard's usual status chip (same shape and colours as the chips on top of each card).
+    const CS_CHIP = { PENDING: ['s-warn', 'pending'], TBD: ['s-warn', 'pending'], 'INCOMPLETE BRIEF': ['s-warn', 'incomplete brief'], INCOMPLETE: ['s-warn', 'incomplete brief'], TBP: ['s-content', 'ready to script'], WIP: ['s-lav', 'in progress'], CHANGES: ['s-lav', 'changes'], SHARED: ['s-mute', 'with client'], DONE: ['s-content', 'done'] };
+    const csChip = (cs, pre) => { const k = String(cs || '').trim().toUpperCase().replace(/\s+/g, ' '), m = CS_CHIP[k] || ['s-mute', String(cs || 'pending').toLowerCase()]; const c = document.createElement('span'); c.className = 'chip su-chip ' + m[0]; const lab = (pre || '') + m[1]; c.textContent = lab.charAt(0).toUpperCase() + lab.slice(1); return c; };
     // Every task is listed (the card scrolls inside itself); ready work first, then work waiting on content.
     const section = (title, list) => {
       if (!list.length) return null;
@@ -1670,7 +1690,7 @@
     // Content tasks block on a writer's card: its own count and breakdown, separate from design and editing.
     const CLAB = { PENDING: 'Pending', WIP: 'WIP', CHANGES: 'Changes', 'INCOMPLETE BRIEF': 'Incomplete brief', TBP: 'TBP', TBD: 'TBD' };
     const cline = (r) => {
-      const d = line(r); const m = d.querySelector('.meta'); m.textContent = [r.id, r.type, 'Content: ' + (CLAB[String(r.content_status).trim().toUpperCase()] || r.content_status), r.designers ? 'Design: ' + r.designers : '', CO.cls(r)].filter(Boolean).join(' · ');
+      const d = line(r); d.classList.remove('await'); d.querySelectorAll('.su-chip').forEach((x) => x.remove()); const m = d.querySelector('.meta'); m.textContent = [r.id, r.type, r.designers ? 'Design: ' + r.designers : '', CO.cls(r)].filter(Boolean).join(' · ');
       const mm = d.querySelector('.m'); mm.textContent = r.eta ? 'ETA ' + CO.fmtDate(r.eta) : 'No ETA'; mm.classList.remove('bad', 'warn'); return d;
     };
     function contentBlock(ct, name) {
@@ -1681,7 +1701,7 @@
       if (ct.client.length) { const s2 = document.createElement('span'); s2.className = 'chip s-lav'; s2.textContent = ct.client.length + ' with client'; chips.append(s2); }
       if (ct.hold.length) { const s2 = document.createElement('span'); s2.className = 'chip s-mute'; s2.textContent = ct.hold.length + ' on hold'; chips.append(s2); }
       if (chips.childNodes.length) box.append(chips);
-      if (ct.open.length) { const sec = document.createElement('div'); sec.className = 'su-sec su-ct-list'; const tt = CO.today(); ct.open.slice().sort((a, b) => ((b.eta && b.eta <= tt) - (a.eta && a.eta <= tt)) || (a.eta || '9999').localeCompare(b.eta || '9999')).forEach((r) => { const d0 = cline(r); d0.classList.add('ct-hl', 'cs-' + String(r.content_status || '').trim().toLowerCase().replace(/\s+/g, '-')); if (r.eta && r.eta <= tt) d0.classList.add('ct-due'); sec.append(d0); }); box.append(sec); }
+      if (ct.open.length) { const sec = document.createElement('div'); sec.className = 'su-sec su-ct-list'; const tt = CO.today(); ct.open.slice().sort((a, b) => ((b.eta && b.eta <= tt) - (a.eta && a.eta <= tt)) || (a.eta || '9999').localeCompare(b.eta || '9999')).forEach((r) => { const d0 = cline(r); d0.append(csChip(r.content_status)); const mm = d0.querySelector('.m'); if (r.eta && r.eta < tt) { mm.classList.add('bad'); mm.textContent = CO.diffDays(r.eta, tt) + 'd late'; } else if (r.eta === tt) { mm.classList.add('warn'); mm.textContent = 'Today'; } sec.append(d0); }); box.append(sec); }
       if (!ct.open.length) { const f = document.createElement('p'); f.className = 'su-free'; f.textContent = 'No open content tasks.'; box.append(f); }
       const t = CO.today(), wk = ct.doneIn(CO.addDays(t, -6), t).length;
       if (wk) { const d = document.createElement('p'); d.className = 'su-done'; d.textContent = wk + (wk === 1 ? ' content task' : ' content tasks') + ' completed in the last 7 days (by ETA)'; box.append(d); }
