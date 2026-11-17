@@ -1657,8 +1657,8 @@
     pill(people.length, people.length === 1 ? 'person' : 'people');
     pill(d3.sum(cs, (c) => c.overdue.length), 'overdue', 'bad');
     pill(d3.sum(cs, (c) => c.today.length), 'due today');
-    if (A.mode !== 'auth' || isAdmin()) pill(people.filter((c) => !c.open.length).length, 'free to take work'); // who is free: Admins only
-    if (un) pill(un.open.length, 'unassigned', un.overdue.length ? 'bad' : '');
+    if (A.mode !== 'auth' || isAdmin()) pill(people.filter((c) => !c.all.length).length, 'free to take work'); // who is free: Admins only
+    if (un) pill(un.all.length, 'unassigned', un.overdue.length ? 'bad' : '');
     const cOpen = new Set(cs.flatMap((c) => (c.content ? c.content.open.map((r) => r.uid) : []))).size; pill(cOpen, cOpen === 1 ? 'content task open' : 'content tasks open', 'ct');
   });
   (() => {
@@ -1715,7 +1715,7 @@
       rs.forEach((r) => {
         const recentDone = r.done && r.ddate && r.ddate >= wkAgo && r.ddate <= t;
         if (CO.CLOSED.has(r.stage) && !recentDone) return;
-        if (!r.list.length) { if (r.open) { if (!people.has('Unassigned')) people.set('Unassigned', []); people.get('Unassigned').push(r); } return; }
+        if (!r.list.length) { if (r.open || r.awaiting) { if (!people.has('Unassigned')) people.set('Unassigned', []); people.get('Unassigned').push(r); } return; }
         // Inactive people appear only while they still hold open work, so it can be reassigned.
         r.list.forEach((d) => { if (EF.hidden(d) || (!CO.isActive(d) && !r.open)) return; if (!people.has(d)) people.set(d, []); people.get(d).push(r); });
       });
@@ -1726,45 +1726,51 @@
       if (p.designer && p.designer !== '__none') [...people.keys()].forEach((k) => { if (k !== p.designer) people.delete(k); });
       if (p.designer === '__none') [...people.keys()].forEach((k) => { if (k !== 'Unassigned') people.delete(k); });
       const notLateOrToday = (r) => r.due !== 'overdue' && r.due !== 'today';
+      // Everything assigned counts: ready work and work still with the content team (shown and counted alike, the
+      // latter marked). Overdue and due-today come from the ETA for both.
+      const dueOf = (r) => (r.open ? r.due : !r.eta ? '' : r.eta < t ? 'overdue' : r.eta === t ? 'today' : '');
       const cards = [...people].map(([name, list]) => {
-        const open = list.filter((r) => r.open);
-        return { name, open, overdue: open.filter((r) => r.due === 'overdue').sort(byEta), today: open.filter((r) => r.due === 'today'),
+        const open = list.filter((r) => r.open), aw = list.filter((r) => r.awaiting), all = open.concat(aw);
+        return { name, open, all, overdue: all.filter((r) => dueOf(r) === 'overdue').sort(byEta), today: all.filter((r) => dueOf(r) === 'today'),
           wip: open.filter((r) => r.stage === 'WIP' && notLateOrToday(r)).sort(byEta),
           changes: open.filter((r) => r.stage === 'Changes requested' && notLateOrToday(r)).sort(byEta),
           next: open.filter((r) => r.stage !== 'WIP' && r.stage !== 'Changes requested' && notLateOrToday(r)).sort(byEta),
           review: list.filter((r) => r.shared), done: list.filter((r) => r.done),
-          await: list.filter((r) => r.awaiting).sort(byEta),
+          await: aw.sort(byEta),
           content: CT.writers().includes(name) ? CT.of(name, rs) : null };
       });
       const sort = p.susort || 'urgent';
       cards.sort((a, b) => (a.name === 'Unassigned') - (b.name === 'Unassigned') || (sort === 'name' ? a.name.localeCompare(b.name)
-        : sort === 'load' ? CO.sumQty(b.open) - CO.sumQty(a.open) || a.name.localeCompare(b.name)
-        : b.overdue.length - a.overdue.length || b.today.length - a.today.length || CO.sumQty(b.open) - CO.sumQty(a.open) || a.name.localeCompare(b.name)));
+        : sort === 'load' ? CO.sumQty(b.all) - CO.sumQty(a.all) || a.name.localeCompare(b.name)
+        : b.overdue.length - a.overdue.length || b.today.length - a.today.length || CO.sumQty(b.all) - CO.sumQty(a.all) || a.name.localeCompare(b.name)));
       el.replaceChildren();
       SU.cards = cards;
       dash.draw('su-summary');
       if (!cards.length) { const n = document.createElement('p'); n.className = 'co-note'; n.textContent = 'No active team members match these filters.'; el.append(n); return; }
       cards.forEach((c) => {
-        const cOnly = c.content && CT.contentOnly(c.name) && !c.open.length;
-        const card = document.createElement('article'); card.className = 'su ' + (c.overdue.length ? 'late' : c.open.length || (cOnly && c.content.open.length) ? 'busy' : 'free') + (c.content ? ' has-content' : '');
+        const cOnly = c.content && CT.contentOnly(c.name) && !c.all.length;
+        const card = document.createElement('article'); card.className = 'su ' + (c.overdue.length ? 'late' : c.all.length || (cOnly && c.content.open.length) ? 'busy' : 'free') + (c.content ? ' has-content' : '');
         const head = document.createElement('div'); head.className = 'su-head';
         const nm = document.createElement('span'); nm.className = 'su-name'; nm.append(CO.av(c.name === 'Unassigned' ? '?' : c.name, 'lg' + (c.name === 'Unassigned' ? ' none' : '')), c.name);
         const mem = CO.member(c.name);
         if (mem.role) { const r = document.createElement('span'); r.className = 'su-role'; r.textContent = mem.role; nm.append(r); }
         if (mem.status === 'New' && c.name !== 'Unassigned') { const n = document.createElement('span'); n.className = 'tag-new'; n.textContent = 'New'; nm.append(n); }
         if (mem.status === 'Inactive') { const n = document.createElement('span'); n.className = 'tag-new'; n.textContent = 'Inactive · reassign'; nm.append(n); }
-        const load = document.createElement('span'); load.className = 'su-load'; load.append(CO.num(cOnly ? c.content.open.length : CO.sumQty(c.open))); const sm = document.createElement('small'); sm.textContent = cOnly ? 'content open' : 'open'; load.append(sm);
+        const load = document.createElement('span'); load.className = 'su-load'; load.append(CO.num(cOnly ? c.content.open.length : CO.sumQty(c.all))); const sm = document.createElement('small'); sm.textContent = cOnly ? 'content open' : c.all.length === 1 ? 'task' : 'tasks'; load.title = cOnly ? '' : 'All assigned work: ' + c.open.length + ' ready, ' + c.await.length + ' waiting on content (with reviewers or done not counted)'; load.append(sm);
         head.append(nm, load); card.append(head);
         const stats = document.createElement('div'); stats.className = 'su-stats';
         const st = (n, lab, cls, color) => { if (!n) return; const s = document.createElement('span'); s.className = 'chip ' + cls; if (color) s.style.color = color; s.textContent = n + ' ' + lab; stats.append(s); };
-        st(c.overdue.length, 'overdue', 's-bad'); st(c.today.length, 'due today', 's-warn'); st(c.open.filter((r) => r.stage === 'WIP').length, 'WIP', '', CO.stageColor('WIP'));
-        st(c.open.filter((r) => r.stage === 'To be planned').length, 'TBP', 's-mute'); st(c.await.length, 'waiting on content', 's-content'); st(c.review.length, 'pending approval', 's-lav');
+        // when: overdue and due today; then every open task by status (they add up to the number on the right)
+        st(c.overdue.length, 'overdue', 's-bad'); st(c.today.length, 'due today', 's-warn');
+        st(c.open.filter((r) => r.stage === 'To be planned').length, 'TBP', 's-mute'); st(c.open.filter((r) => r.stage === 'WIP').length, 'WIP', '', CO.stageColor('WIP'));
+        st(c.open.filter((r) => r.stage === 'Changes requested').length, 'Changes', 's-lav'); st(c.open.filter((r) => !['To be planned', 'WIP', 'Changes requested'].includes(r.stage)).length, 'other', 's-mute');
+        st(c.await.length, 'content pending', 's-content'); st(c.review.length, 'pending approval', 's-lav');
         if (stats.childNodes.length) card.append(stats);
         // tasks still with the content team join the day they are due (overdue, today) or wait in their own list
-        const awLate = c.await.filter((r) => r.eta && r.eta < t), awToday = c.await.filter((r) => r.eta === t), awLater = c.await.filter((r) => !r.eta || r.eta > t);
-        [section('Overdue', c.overdue.concat(awLate)), section('Due today', c.today.concat(awToday)), section('WIP', c.wip), section('Changes requested', c.changes), section('Up next', c.next), section('Waiting on content', awLater)].forEach((s) => { if (s) card.append(s); });
-        const onlyContent = c.content && CT.contentOnly(c.name) && !c.open.length && !c.review.length && !c.done.length;
-        if (!c.open.length && !onlyContent) { const f = document.createElement('p'); f.className = 'su-free'; const adm0 = A.mode !== 'auth' || isAdmin(); f.textContent = (c.review.length ? 'No open design work, ' + c.review.length + ' with reviewers.' : 'No open design work.') + (adm0 ? ' Free to take new tasks.' : ''); card.append(f); }
+        const awLater = c.await.filter((r) => !r.eta || r.eta > t);
+        [section('Overdue', c.overdue), section('Due today', c.today), section('WIP', c.wip), section('Changes requested', c.changes), section('Up next', c.next), section('Waiting on content', awLater)].forEach((s) => { if (s) card.append(s); });
+        const onlyContent = c.content && CT.contentOnly(c.name) && !c.all.length && !c.review.length && !c.done.length;
+        if (!c.all.length && !onlyContent) { const f = document.createElement('p'); f.className = 'su-free'; const adm0 = A.mode !== 'auth' || isAdmin(); f.textContent = (c.review.length ? 'No open design work, ' + c.review.length + ' with reviewers.' : 'No open design work.') + (adm0 ? ' Free to take new tasks.' : ''); card.append(f); }
         if (c.done.length) { const d = document.createElement('p'); d.className = 'su-done'; const nd = CO.sumQty(c.done); d.textContent = CO.num(nd) + (nd === 1 ? ' creative' : ' creatives') + ' delivered in the last 7 days (by ETA)'; card.append(d); }
         if (c.content) card.append(contentBlock(c.content, c.name));
         el.append(card);
