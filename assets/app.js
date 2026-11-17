@@ -4333,6 +4333,24 @@
     const drawOn = (svg) => { if (REDUCE || !window.anime) return; const ps = svg.querySelectorAll('path'); ps.forEach((p) => { try { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; } catch (e) { /* not rendered yet */ } }); window.anime({ targets: ps, strokeDashoffset: [window.anime.setDashoffset, 0], easing: 'easeInOutSine', duration: 900, delay: window.anime.stagger(120) }); };
     const press = (el) => { if (REDUCE) return; const M = window.Motion; if (M && M.animate) M.animate(el, { scale: [1, 0.94, 1] }, { type: 'spring', stiffness: 500, damping: 15 }); };
     // Geometric icon stickers and status labels (no faces). "a" = subtle motion: spin, pulse, nudge, float, none.
+    // Tags: one pill shape for priority, category and status (icon + bold label, dark outline), width from the text.
+    const TAG_IC = {
+      dot: (c) => '<circle cx="15" cy="16" r="4.5" fill="' + c + '"/>',
+      flame: (c) => '<path d="M15 7c1 3.5 5 5 5 9.5a5 5 0 0 1-10 0c0-2 1-3.2 2.3-4.3.2 1.4.9 2.3 2 2.6-.6-2.7.2-5.3.7-7.8z" fill="' + c + '"/>',
+      bang: (c) => '<circle cx="15" cy="16" r="7" fill="' + c + '"/><path d="M15 12v5M15 19.6v.4" stroke="#141414" stroke-width="2.2" stroke-linecap="round"/>',
+      star: (c) => '<path d="M15 8.5l2.2 4.6 5 .6-3.7 3.4 1 5-4.5-2.5-4.5 2.5 1-5-3.7-3.4 5-.6z" fill="' + c + '"/>',
+      house: (c) => '<path d="M9.5 16.5L15 11l5.5 5.5V22h-11z" fill="' + c + '"/>',
+      globe: (c) => '<circle cx="15" cy="16" r="6" fill="none" stroke="' + c + '" stroke-width="2"/><path d="M9 16h12M15 10c2 2 2 10 0 12M15 10c-2 2-2 10 0 12" fill="none" stroke="' + c + '" stroke-width="1.6"/>',
+      group: (c) => '<circle cx="12.5" cy="13.5" r="2.6" fill="' + c + '"/><circle cx="18.5" cy="13.5" r="2.6" fill="' + c + '"/><path d="M8 21.5a4.5 4.5 0 0 1 9 0zM14 21.5a4.5 4.5 0 0 1 9 0z" fill="' + c + '"/>',
+      eye: (c) => '<path d="M8 16s3-5 7-5 7 5 7 5-3 5-7 5-7-5-7-5z" fill="none" stroke="' + c + '" stroke-width="2"/><circle cx="15" cy="16" r="2.2" fill="' + c + '"/>',
+      pause: (c) => '<rect x="11" y="11" width="2.8" height="10" rx="1" fill="' + c + '"/><rect x="16.2" y="11" width="2.8" height="10" rx="1" fill="' + c + '"/>',
+      stop: (c) => '<circle cx="15" cy="16" r="6.5" fill="none" stroke="' + c + '" stroke-width="2.2"/><path d="M10.5 20.5l9-9" stroke="' + c + '" stroke-width="2.2"/>',
+      check: (c) => '<path d="M10 16.5l3.3 3.3L20 12.5" fill="none" stroke="' + c + '" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>',
+      q: (c) => '<path d="M12.2 13.3a2.9 2.9 0 1 1 4.3 2.5c-.9.5-1.4 1.1-1.4 2.1" fill="none" stroke="' + c + '" stroke-width="2.2" stroke-linecap="round"/><circle cx="15.1" cy="21" r="1.2" fill="' + c + '"/>',
+      pen: (c) => '<path d="M10 21l1-4 7-7 3 3-7 7z" fill="' + c + '"/>',
+      spark: (c) => '<path d="M15 9c.8 4 2 5.2 6 7-4 1.8-5.2 3-6 7-.8-4-2-5.2-6-7 4-1.8 5.2-3 6-7z" fill="' + c + '"/>'
+    };
+    const T = (txt, bg, fg, ic, dashed) => { const w = Math.round(34 + txt.length * 8.6); return '<svg viewBox="0 0 ' + w + ' 32"><rect x="1.5" y="1.5" width="' + (w - 3) + '" height="29" rx="14.5" fill="' + bg + '" stroke="#141414" stroke-width="2"' + (dashed ? ' stroke-dasharray="4 3"' : '') + '/>' + (TAG_IC[ic] || TAG_IC.dot)(fg) + '<text x="' + (25 + (w - 31) / 2) + '" y="20.6" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-weight="800" font-size="12.5" letter-spacing=".3" fill="' + fg + '">' + txt + '</text></svg>'; };
     const L = (txt, bg, fg) => '<svg viewBox="0 0 84 32"><rect x="1.5" y="1.5" width="81" height="29" rx="14.5" fill="' + bg + '" stroke="#141414" stroke-width="2"/><text x="42" y="21" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-weight="700" font-size="13" fill="' + fg + '">' + txt + '</text></svg>';
     const STK = {
       flower: ['Asterisk', 'spin', '<svg viewBox="0 0 48 48"><rect x="3" y="3" width="42" height="42" rx="11" fill="#ddff00" stroke="#141414" stroke-width="2"/><path d="M24 11v26M11 24h26M15 15l18 18M33 15L15 33" stroke="#141414" stroke-width="5" stroke-linecap="round"/></svg>'],
@@ -4347,12 +4365,29 @@
       coffee: ['Break', 'none', '<svg viewBox="0 0 48 48"><rect x="3" y="3" width="42" height="42" rx="11" fill="#e9e7e1" stroke="#141414" stroke-width="2"/><path d="M13 18h18v8a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8zM31 21h3a3.5 3.5 0 0 1 0 7h-3" fill="none" stroke="#141414" stroke-width="2.4" stroke-linejoin="round"/></svg>'],
       sun: ['Ring', 'spin', '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="19" fill="none" stroke="#2f6bff" stroke-width="7" stroke-dasharray="70 50" stroke-linecap="round"/><circle cx="24" cy="24" r="8" fill="#141414"/></svg>'],
       pin: ['Pin', 'none', '<svg viewBox="0 0 48 48"><path d="M18 5h12l-2 12 6 7H14l6-7zM24 24v19" fill="#141414" stroke="#141414" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></svg>'],
-      fire: ['Urgent', 'pulse', L('URGENT', '#ff6b2c', '#141414')],
-      wow: ['New', 'none', L('NEW', '#ddff00', '#141414')],
-      nice: ['Done', 'none', L('DONE', '#141414', '#ddff00')],
-      cloud: ['Draft', 'none', L('DRAFT', '#e9e7e1', '#141414')]
+      // priority
+      p0: ['Priority P0', 'pulse', T('P0', '#ff4d2e', '#ffffff', 'flame'), 'Priority'],
+      p1: ['Priority P1', 'none', T('P1', '#ff8a3d', '#141414', 'flame'), 'Priority'],
+      p2: ['Priority P2', 'none', T('P2', '#ddff00', '#141414', 'dot'), 'Priority'],
+      p3: ['Priority P3', 'none', T('P3', '#e9e7e1', '#141414', 'dot'), 'Priority'],
+      // category
+      internal: ['Internal', 'none', T('INTERNAL', '#6f50f0', '#ffffff', 'house'), 'Category'],
+      external: ['External', 'none', T('EXTERNAL', '#2f6bff', '#ffffff', 'globe'), 'Category'],
+      vas: ['VAS Group', 'none', T('VAS GROUP', '#141414', '#ddff00', 'group'), 'Category'],
+      client: ['Client', 'none', T('CLIENT', '#f6efe0', '#141414', 'star'), 'Category'],
+      // status
+      fire: ['Urgent', 'pulse', T('URGENT', '#ff6b2c', '#141414', 'flame'), 'Status'],
+      important: ['Important', 'nudge', T('IMPORTANT', '#ffd84d', '#141414', 'bang'), 'Status'],
+      wow: ['New', 'shine', T('NEW', '#ddff00', '#141414', 'spark'), 'Status'],
+      tbd: ['TBD', 'none', T('TBD', '#ffffff', '#141414', 'q', true), 'Status'],
+      review: ['In review', 'none', T('IN REVIEW', '#e6defe', '#3d2a9c', 'eye'), 'Status'],
+      hold: ['On hold', 'none', T('ON HOLD', '#d9dbe0', '#141414', 'pause'), 'Status'],
+      blocked: ['Blocked', 'none', T('BLOCKED', '#2a2a2e', '#ff8a3d', 'stop'), 'Status'],
+      approved: ['Approved', 'none', T('APPROVED', '#3ddc97', '#0d2018', 'check'), 'Status'],
+      nice: ['Done', 'none', T('DONE', '#141414', '#ddff00', 'check'), 'Status'],
+      cloud: ['Draft', 'none', T('DRAFT', '#e9e7e1', '#141414', 'pen'), 'Status']
     };
-    const stickerEl = (k, cls) => { const d = STK[k]; if (!d) return null; const s = mk('span', 'stk stk-' + d[1] + (/^<svg viewBox="0 0 84/.test(d[2]) ? ' stk-label' : '') + (cls ? ' ' + cls : '')); s.innerHTML = d[2]; s.title = d[0]; s.setAttribute('role', 'img'); s.setAttribute('aria-label', d[0] + ' sticker'); return s; };
+    const stickerEl = (k, cls) => { const d = STK[k]; if (!d) return null; const s = mk('span', 'stk stk-' + d[1] + (/^<svg viewBox="0 0 \d+ 32"/.test(d[2]) ? ' stk-label' : '') + (cls ? ' ' + cls : '')); s.innerHTML = d[2]; s.title = d[0]; s.setAttribute('role', 'img'); s.setAttribute('aria-label', d[0] + ' sticker'); return s; };
     // ==highlight== and **bold**, @people and #tags shown as soft pills
     const rich = (txt) => {
       const frag = document.createDocumentFragment();
@@ -4480,7 +4515,8 @@
       tool('Attach files', '<svg viewBox="0 0 24 24"><path d="M20 11l-8.5 8.5a5 5 0 0 1-7-7L13 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L14 7"/></svg>', () => fileIn.click());
       fileIn.addEventListener('change', () => { addFiles([...fileIn.files]); fileIn.value = ''; });
       const tray = mk('div', 'qn-tray'); tray.hidden = true; tray.setAttribute('aria-label', 'Stickers');
-      Object.keys(STK).forEach((k) => { const b = mk('button', 'qn-tray-b'); b.type = 'button'; b.append(stickerEl(k)); b.setAttribute('aria-label', 'Add ' + STK[k][0] + ' sticker'); b.addEventListener('click', () => { if (S2.stickers.includes(k)) S2.stickers = S2.stickers.filter((x) => x !== k); else if (S2.stickers.length < 4) S2.stickers.push(k); else toast('Up to 4 stickers a note.'); paint(); if (b.animate && !REDUCE) b.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.25) rotate(-8deg)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'cubic-bezier(.3,1.6,.5,1)' }); }); tray.append(b); });
+      const trayGroups = {}; ['Priority', 'Category', 'Status', 'Fun'].forEach((gname) => { const gw = mk('div', 'qn-tray-g'); gw.append(mk('span', 'qn-tray-h', gname)); const gl = mk('div', 'qn-tray-l'); gw.append(gl); trayGroups[gname] = gl; tray.append(gw); });
+      Object.keys(STK).forEach((k) => { const b = mk('button', 'qn-tray-b'); b.type = 'button'; b.dataset.k = k; b.append(stickerEl(k)); b.setAttribute('aria-label', 'Add ' + STK[k][0] + ' sticker'); b.addEventListener('click', () => { if (S2.stickers.includes(k)) S2.stickers = S2.stickers.filter((x) => x !== k); else if (S2.stickers.length < 4) S2.stickers.push(k); else toast('Up to 4 stickers a note.'); paint(); if (b.animate && !REDUCE) b.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.25) rotate(-8deg)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'cubic-bezier(.3,1.6,.5,1)' }); }); (trayGroups[STK[k][3] || 'Fun'] || tray).append(b); });
       const extras = mk('div', 'qn-extras');
       const chips = mk('div', 'qn-chips');
       const row = mk('div', 'qn-row');
@@ -4551,7 +4587,7 @@
       function paint() {
         f.className = 'qn-ed c-' + (S2.colour || 'paper') + (f.classList.contains('drop') ? ' drop' : '');
         colours.querySelectorAll('.qn-cdot').forEach((b, i) => { const on = COLOURS[i][0] === S2.colour; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
-        tray.querySelectorAll('.qn-tray-b').forEach((b, i) => b.classList.toggle('on', S2.stickers.includes(Object.keys(STK)[i])));
+        tray.querySelectorAll('.qn-tray-b').forEach((b) => b.classList.toggle('on', S2.stickers.includes(b.dataset.k)));
         extras.replaceChildren();
         if (S2.stickers.length) { const s2 = mk('div', 'qn-stk-row'); S2.stickers.forEach((k) => { const e2 = stickerEl(k, 'sm'); if (e2) s2.append(e2); }); extras.append(s2); }
         const tg = hashtags(ta.value); if (tg.length) { const r2 = mk('div', 'qn-tags'); tg.forEach((t) => r2.append(mk('span', 'qn-ht t' + tagHue(t), '#' + t))); extras.append(r2); }

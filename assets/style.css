@@ -3681,3 +3681,33 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
 .qn-play .qn-grid > .qn-note { margin: 0 !important; }
 .qn-play .qn-grid { padding: 14px 12px 0; margin: -14px -12px 0; }
 .qn-play { overflow-clip-margin: 24px; }
+/* ===== Tags (priority, category, status): one pill family; width follows the label ===== */
+.stk.stk-label { width: auto !important; height: 26px; display: inline-block; }
+.stk.stk-label svg { height: 100%; width: auto; display: block; overflow: visible; }
+.qn-note .stk.on-card.stk-label { width: auto !important; height: 27px; }
+.qn-tray-b:has(.stk-label) { width: auto; padding: 0 6px; }
+.qn-tray { display: grid; gap: 10px; }
+.qn-tray-g { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); align-items: center; gap: 8px; }
+.qn-tray-h { font-size: 11.5px; font-weight: 600; color: var(--fg-2); }
+.qn-tray-l { display: flex; flex-wrap: wrap; gap: 4px; }
+.qn-tray-l:empty, .qn-tray-g:has(.qn-tray-l:empty) { display: none; }
+@media (max-width: 600px) { .qn-tray-g { grid-template-columns: 1fr; gap: 4px; } }
+/* motion with meaning: P0 / Urgent pulse, Important nudges, New shines; still for reduced motion */
+.stk-shine { position: relative; overflow: hidden; border-radius: 999px; }
+@media (prefers-reduced-motion: no-preference) {
+  .stk-shine::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .75) 50%, transparent 65%); transform: translateX(-120%); animation: stk-shine 3.2s ease-in-out infinite; pointer-events: none; }
+  .stk-label.stk-pulse svg { animation: stk-tagpulse 1.8s ease-in-out infinite; transform-origin: 50% 50%; }
+  .stk-label.stk-nudge svg { animation: stk-tagnudge 2.6s ease-in-out infinite; transform-origin: 50% 50%; }
+}
+@keyframes stk-shine { 0%, 55% { transform: translateX(-120%); } 85%, 100% { transform: translateX(120%); } }
+@keyframes stk-tagpulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+@keyframes stk-tagnudge { 0%, 78%, 100% { transform: rotate(0); } 84% { transform: rotate(-4deg); } 90% { transform: rotate(4deg); } 95% { transform: rotate(-2deg); } }
+/* tags keep a visible outline on dark backgrounds */
+:root[data-theme="dark"] .stk-label svg rect { stroke: rgba(255, 255, 255, .6); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .stk-label svg rect { stroke: rgba(255, 255, 255, .6); } }
+/* wide tags sit just inside the card corners instead of hanging past the edge */
+.qn-note .stk.on-card.stk-label.p0 { right: 14px; top: -13px; }
+.qn-note .stk.on-card.stk-label.p1 { left: 14px; bottom: -13px; }
+.qn-note .stk.on-card.stk-label.p2 { left: 22px; top: -13px; }
+.qn-note .stk.on-card.stk-label.p3 { right: 22px; bottom: -13px; }
+.qn-note.pinned .stk.on-card.stk-label.p0 { top: -13px; right: 86px; }
