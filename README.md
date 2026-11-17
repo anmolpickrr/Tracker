@@ -234,7 +234,7 @@ The task panel shows **Manage task** when a person has at least one of these, wi
 
 ## Errors & issues (Admins)
 
-The **Issues** page (Admin menu, with a count of open issues; the bell also shows it) lists everything that went wrong, found automatically. At the top: how many issues need attention (pulsing while any are active), how many were resolved in the last 7 days, and which areas are affected (click an area to filter), with the four steps every issue goes through: detected, shown, fixed, closed. Each issue is a card with its area's colour and icon. Each issue shows the **area**, **what went wrong** (expand *What went wrong*), when it was first and last seen, how many times, who it happened to, and whether it is **Active** or **Resolved** (and by whom).
+The **Issues** page (Admin menu, with a count of open issues; the bell also shows it; Admins by default, and anyone you give it on the Access page: **View** to see issues, **Edit** to also retry, fix and resolve them) lists everything that went wrong, found automatically. At the top: how many issues need attention (pulsing while any are active), how many were resolved in the last 7 days, and which areas are affected (click an area to filter), with the four steps every issue goes through: detected, shown, fixed, closed. Each issue is a card with its area's colour and icon. Each issue shows the **area**, **what went wrong** (expand *What went wrong*), when it was first and last seen, how many times, who it happened to, and whether it is **Active** or **Resolved** (and by whom).
 
 | Area | Found by | Closes by itself when |
 |---|---|---|

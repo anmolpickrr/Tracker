@@ -25,7 +25,7 @@
   // Access management, the activity log and live team activity: the owner and everyone with the Admin role.
   const isAdmin = () => isOwner() || !!(A.user && A.user.role === 'Admin');
   const perm = (k) => A.mode === 'key' || !!(A.user && (A.user.owner || (A.user.perms ? !!A.user.perms[k] : (k === 'edit' ? RANK[A.user.role] >= 2 : k === 'export' || k === 'fasty' ? true : RANK[A.user.role] >= 3))));
-  const pageOk = (t) => { if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access' && t !== 'issues'; if (t === 'access' || t === 'issues') return isAdmin(); if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
+  const pageOk = (t) => { if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access' && t !== 'issues'; if (t === 'access') return isAdmin(); if (t === 'issues' && isAdmin()) return true; if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
 
   const S = { status: 'idle', error: '', tasks: null, team: null, teamRaw: [], sources: {}, generatedAt: null, loadedAt: null };
@@ -175,7 +175,7 @@
   let firstDone = false;
   function afterFirstData() {
     if (firstDone || A.mode !== 'auth' || !A.user) return; firstDone = true;
-    setTimeout(() => { NB.load(); loadHistory(); loadFeed(true); loadSettings(); dash.draw('cal'); checkForChanges(); if (isAdmin()) ISS.load(true); }, 50);
+    setTimeout(() => { NB.load(); loadHistory(); loadFeed(true); loadSettings(); dash.draw('cal'); checkForChanges(); if (pageOk('issues')) ISS.load(true); }, 50);
   }
   /* Integration health from the web app (account, change detection, edit access). Admins only. Best effort. */
   async function loadHealth() {
@@ -220,8 +220,8 @@
   // Only issues this browser reported are closed from here (the web app also allows only those to be closed by non-Admins).
   ISS.resolve = (key) => { if (!ISS.mine.includes(key)) return; ISS.mine = ISS.mine.filter((k) => k !== key); ISS.keep(); issQueue({ key, active: false }); };
   ISS.load = async (force) => {
-    if (A.mode !== 'auth' || !isAdmin() || ISS.busy || (!force && Date.now() - ISS.at < 20000 && ISS.list)) return;
-    ISS.busy = true; if (!AX.users) axRefresh(false); // names of who reported what
+    if (A.mode !== 'auth' || !pageOk('issues') || ISS.busy || (!force && Date.now() - ISS.at < 20000 && ISS.list)) return;
+    ISS.busy = true; if (!AX.users && isAdmin()) axRefresh(false); // names of who reported what
     try { const b = await callApi({ action: 'issues' }, true); if (b.ok) { ISS.list = b.issues; ISS.err = ''; ISS.at = Date.now(); } else ISS.err = errText(b.error); }
     catch (e) { if (!(e instanceof AuthLost)) ISS.err = e.message; }
     ISS.busy = false; ISS.open = (ISS.list || []).filter((x) => x.status === 'Open').length;
@@ -590,7 +590,7 @@
     axTab.hidden = !admin;
     // Pages each person may see (set by the owner on the Access page).
     document.querySelectorAll('.co-tab[data-tab], .btabs .bt[data-tab]').forEach((b) => { if (b.dataset.tab === 'access' || b.dataset.tab === 'notes' || b.dataset.tab === 'mine') return; b.hidden = !pageOk(b.dataset.tab); });
-    { const ib = document.getElementById('iss-badge'); ib.hidden = !(admin && ISS.open); ib.textContent = ISS.open ? ISS.open + ' open' : ''; }
+    { const ib = document.getElementById('iss-badge'); ib.hidden = !(pageOk('issues') && ISS.open); ib.textContent = ISS.open ? ISS.open + ' open' : ''; }
     const badge = axTab.querySelector('.nav-badge'); badge.hidden = !AX.pending; badge.textContent = AX.pending ? AX.pending + ' waiting' : '';
     document.querySelector('.bt-dot').hidden = !(admin && AX.pending);
     const signed = A.mode === 'auth' && !!A.user;
@@ -3379,9 +3379,10 @@
       if (!on && x.resolvedOn) main.append(el('p', 'iss-res2', 'Resolved ' + when(x.resolvedOn) + ' · ' + (x.resolvedBy === 'Automatic check' ? 'the check passed again' : 'by ' + nameOf(x.resolvedBy))));
       const acts = el('div', 'iss-acts2');
       const btn = (t, cls, fn) => { const b = el('button', 'co-btn sm' + (cls ? ' ' + cls : ''), t); b.type = 'button'; b.addEventListener('click', () => fn(b)); acts.append(b); return b; };
-      if (on && x.retry) { let r = null; try { r = JSON.parse(x.retry); } catch (e) { /* ignore */ } if (r && r.action === 'updateTask') { btn('Retry', 'primary', (b) => issRetry(x, b)); acts.append(el('code', 'iss-what2', retryText(r))); } }
-      if (on && ISS_FIX[x.fix]) btn(ISS_FIX[x.fix][0], x.retry ? '' : 'primary', ISS_FIX[x.fix][1]);
-      if (on) btn('Mark resolved', 'ghost', () => issAct(x, 'resolve')); else { btn('Reopen', 'ghost', () => issAct(x, 'reopen')); btn('Remove', 'ghost', () => { if (confirm('Remove this issue from the list?')) issAct(x, 'delete'); }); }
+      const canFix = isAdmin() || perm('issueFix'); // View: see issues; Edit: retry, fix and resolve
+      if (canFix && on && x.retry) { let r = null; try { r = JSON.parse(x.retry); } catch (e) { /* ignore */ } if (r && r.action === 'updateTask') { btn('Retry', 'primary', (b) => issRetry(x, b)); acts.append(el('code', 'iss-what2', retryText(r))); } }
+      if (canFix && on && ISS_FIX[x.fix] && (x.fix !== 'open-pricing' || isAdmin()) && (x.fix !== 'open-health' || pageOk('health'))) btn(ISS_FIX[x.fix][0], x.retry ? '' : 'primary', ISS_FIX[x.fix][1]);
+      if (canFix) { if (on) btn('Mark resolved', 'ghost', () => issAct(x, 'resolve')); else { btn('Reopen', 'ghost', () => issAct(x, 'reopen')); btn('Remove', 'ghost', () => { if (confirm('Remove this issue from the list?')) issAct(x, 'delete'); }); } }
       main.append(acts);
       li.append(issIcon(x.area), main); ul.append(li);
     });
@@ -3390,7 +3391,7 @@
   });
   document.getElementById('iss-refresh').addEventListener('click', () => ISS.load(true));
   // Admins: the open count (sidebar badge, bell) stays current; the page refreshes every minute while open.
-  setInterval(() => { if (A.mode === 'auth' && isAdmin() && document.visibilityState === 'visible') { if (P.tab === 'issues' || Date.now() - ISS.at > 5 * 6e4) ISS.load(true); } }, 6e4);
+  setInterval(() => { if (A.mode === 'auth' && A.user && pageOk('issues') && document.visibilityState === 'visible') { if (P.tab === 'issues' || Date.now() - ISS.at > 5 * 6e4) ISS.load(true); } }, 6e4);
 
   /* ================= Access (admins): requests, people, activity log ================= */
   const AX = { users: null, you: '', log: null, next: null, total: 0, q: '', kind: '', who: '', err: '', busy: false, pending: 0 };
@@ -3423,8 +3424,8 @@
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   /* Section picker: which parts of the dashboard a person can open (one, several or all). A dropdown with checkboxes;
      My work is always included. Used when adding someone, approving a request, giving access back and editing access. */
-  const SECTIONS = [['mine', 'My work'], ['today', 'Overview'], ['standup', 'Stand-up'], ['tasks', 'Tasks'], ['notes', 'Notes'], ['team', 'Team'], ['reports', 'Reports'], ['brands', 'Brands'], ['health', 'Data health']];
-  const DEF_PAGES = (role) => SECTIONS.map((x) => x[0]).filter((k) => role === 'Admin' || k !== 'health');
+  const SECTIONS = [['mine', 'My work'], ['today', 'Overview'], ['standup', 'Stand-up'], ['tasks', 'Tasks'], ['notes', 'Notes'], ['team', 'Team'], ['reports', 'Reports'], ['brands', 'Brands'], ['health', 'Data health'], ['issues', 'Issues']];
+  const DEF_PAGES = (role) => SECTIONS.map((x) => x[0]).filter((k) => role === 'Admin' || (k !== 'health' && k !== 'issues'));
   const samePages = (a, b) => a.length === b.length && a.every((k) => b.includes(k));
   function secPicker(pages, onChange) {
     const d = el('details', 'sec-dd'), sm = el('summary', 'sec-sum'), pan = el('div', 'sec-pan');
@@ -3518,9 +3519,9 @@
     if (!locked && u.status === 'Approved') {
       const P0 = u.perms || {}, first = (u.name || u.email).split(' ')[0];
       const box = el('div', 'pm-box pm-tabs'); box.id = 'pm-box'; const bh = el('div', 'pm-head'); bh.append(el('h3', 'co-h2', 'What ' + first + ' can see and do')); box.append(bh);
-      const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty, pricing: !!P0.pricing, status: !!P0.status, briefs: P0.briefs !== false, links: P0.links !== false, eta: !!P0.eta, delivery: !!P0.delivery, assign: !!P0.assign, details: !!P0.details };
+      const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty, pricing: !!P0.pricing, status: !!P0.status, briefs: P0.briefs !== false, links: P0.links !== false, eta: !!P0.eta, delivery: !!P0.delivery, assign: !!P0.assign, details: !!P0.details, issueFix: !!P0.issueFix };
       base.pages.add('mine');
-      const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty, pr: o.pricing, st: o.status, br: o.briefs, li: o.links, et: o.eta, dl: o.delivery, as: o.assign, dt: o.details });
+      const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty, pr: o.pricing, st: o.status, br: o.briefs, li: o.links, et: o.eta, dl: o.delivery, as: o.assign, dt: o.details, ix: o.issueFix });
       // unsaved changes survive the 30-second refresh of the access list
       const st = PR.draft && PR.draft.email === u.email ? PR.draft.st : Object.assign({}, base, { pages: new Set(base.pages) });
       const snap = () => snapOf(st), start = snapOf(base);
@@ -3528,15 +3529,15 @@
       // [key, label, what View means, what Edit means (or '' when there is nothing to edit)]
       const ROWS = [['mine', 'My work', 'Their own tasks and to-dos (always on)', ''], ['today', 'Overview', 'Team numbers, Needs attention and charts', ''], ['standup', 'Stand-up', 'Stand-up cards and the Day plan', ''],
         ['tasks', 'Tasks', 'The task list (what they can edit: Tasks tab)', ''], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
-        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', '']];
+        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', ''], ['issues', 'Issues', 'Errors and issues found automatically', 'Retry, fix and resolve issues']];
       const level = (k) => k === 'pricing' ? (st.pricing ? 'edit' : 'hidden') : k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
-        : !st.pages.has(k) ? 'hidden' : (k === 'team' && st.team) ? 'edit' : 'view';
+        : !st.pages.has(k) ? 'hidden' : (k === 'team' && st.team) || (k === 'issues' && st.issueFix) ? 'edit' : 'view';
       const setLevel = (k, v) => {
         if (k === 'mine') return;
         if (k === 'pricing') { st.pricing = v === 'edit'; return; }
         if (k === 'packages') { st.packages = v === 'hidden' ? '' : v; if (v !== 'hidden') st.pages.add('brands'); return; }
-        if (v === 'hidden') { st.pages.delete(k); if (k === 'tasks') st.edit = false; if (k === 'team') st.team = false; if (k === 'brands') st.packages = ''; return; }
-        st.pages.add(k); if (k === 'tasks') st.edit = v === 'edit'; if (k === 'team') st.team = v === 'edit';
+        if (v === 'hidden') { st.pages.delete(k); if (k === 'tasks') st.edit = false; if (k === 'team') st.team = false; if (k === 'issues') st.issueFix = false; if (k === 'brands') st.packages = ''; return; }
+        st.pages.add(k); if (k === 'tasks') st.edit = v === 'edit'; if (k === 'team') st.team = v === 'edit'; if (k === 'issues') st.issueFix = v === 'edit';
       };
       const grid = el('div', 'pm-grid'); grid.setAttribute('role', 'table'); grid.setAttribute('aria-label', 'Access by section');
       const gh = el('div', 'pm-gh'); gh.setAttribute('role', 'row'); gh.append(el('span', '', 'Section'), el('span', '', 'Access')); grid.append(gh);
@@ -3577,7 +3578,7 @@
       const row = el('div', 'pm-act');
       const save = el('button', 'co-btn primary', 'Save changes'); save.type = 'button';
       const undo = el('button', 'co-btn', 'Undo changes'); undo.type = 'button'; undo.addEventListener('click', () => { PR.draft = null; drawPerson(); });
-      save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty, pricing: st.pricing, status: st.status, briefs: st.briefs, links: st.links, eta: st.eta, delivery: st.delivery, assign: st.assign, details: st.details }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
+      save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty, pricing: st.pricing, status: st.status, briefs: st.briefs, links: st.links, eta: st.eta, delivery: st.delivery, assign: st.assign, details: st.details, issueFix: st.issueFix }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
       row.append(save, undo);
       if (u.custom) { const rs = el('button', 'co-btn ghost', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
       foot.append(row); box.append(foot); permEl.append(box);
@@ -4188,7 +4189,7 @@
       });
       // Meetings starting within 15 minutes (connected Google Calendar).
       (CAL.events || []).forEach((ev) => { const m = (new Date(ev.start) - Date.now()) / 60000; if (m <= 15 && m > -5) out.unshift({ id: 'mtg-' + ev.id + '-' + ev.start, icon: 'video', tone: 'lime', t: (m > 0 ? 'Starts ' + untilText(ev.start) + ': ' : 'Now: ') + ev.title, s: fmtRange(ev.start, ev.end) + (ev.people.length ? ' · ' + ev.people.length + ' people' : ''), go: () => { if (ev.meet) window.open(ev.meet, '_blank', 'noopener'); else dash.setParams({ tab: 'today' }); } }); });
-      if (isAdmin() && ISS.open) { const top = (ISS.list || []).filter((x) => x.status === 'Open')[0]; out.unshift({ id: 'iss-' + ISS.open + '-' + (top ? top.key + top.last : ''), icon: 'alert', tone: 'bad', t: ISS.open + (ISS.open === 1 ? ' open issue' : ' open issues'), s: top ? top.area + ': ' + top.title : 'See the Issues page', go: () => dash.setParams({ tab: 'issues' }) }); }
+      if (pageOk('issues') && ISS.open) { const top = (ISS.list || []).filter((x) => x.status === 'Open')[0]; out.unshift({ id: 'iss-' + ISS.open + '-' + (top ? top.key + top.last : ''), icon: 'alert', tone: 'bad', t: ISS.open + (ISS.open === 1 ? ' open issue' : ' open issues'), s: top ? top.area + ': ' + top.title : 'See the Issues page', go: () => dash.setParams({ tab: 'issues' }) }); }
       if (isAdmin() && AX.pending) out.unshift({ id: 'access-' + AX.pending + '-' + t, icon: 'user', tone: 'violet', t: AX.pending + (AX.pending === 1 ? ' access request' : ' access requests') + ' waiting', s: 'Approve or reject on the Access page', go: () => dash.setParams({ tab: 'access' }) });
       NB.notes.forEach((n) => {
         if (n.reminder && n.reminder <= nowLocal && n.reminder.slice(0, 10) >= CO.addDays(t, -2) && (n.createdBy === A.user.email || (n.actions || []).some((a) => !a.done && a.email === A.user.email))) out.unshift({ id: 'rem-' + n.id + '-' + n.reminder, icon: 'bell', tone: 'bad', t: 'Reminder: ' + n.title, s: CO.istDateTime(n.reminder + ':00+05:30') + (n.followUps ? ' · ' + n.followUps.slice(0, 60) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } });

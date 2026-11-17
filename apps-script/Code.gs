@@ -39,14 +39,14 @@ function defaultPerms_(role) {
   // Workspace (Nov 2026): everyone except Admins sees and manages only the tasks assigned to them; on those tasks they
   // can change the status, read the brief and submit the creative link. The owner can switch each of these per person,
   // and give access to others' tasks (scope "all").
-  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health' && k !== 'issues'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '', pricing: false, status: false, briefs: true, links: true, eta: false, delivery: false, assign: false, details: false };
+  const p = { pages: PAGE_KEYS.filter(function (k) { return k !== 'health' && k !== 'issues'; }), edit: false, export: true, load: false, team: false, fasty: true, scope: 'own', packages: '', pricing: false, status: false, briefs: true, links: true, eta: false, delivery: false, assign: false, details: false, issueFix: false };
   // Task fields, each switched on per person (Nov 2026): eta = Design ETA of open work, delivery = the date of
   // completed work (its Design ETA), status, assign = designer, details = brand requirement details (priority,
   // number of creatives). Admins have all of them.
   // (Nov 2026) Team members finish a task by submitting its creative link, which moves it to Under review; changing the
   // status by hand, the ETA, the designer and the priority stay with Admins unless the owner switches one on.
   if (role === 'Editor') { p.edit = true; }
-  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; p.pricing = true; p.status = true; p.eta = true; p.delivery = true; p.assign = true; p.details = true; }
+  if (role === 'Admin') { p.pages = PAGE_KEYS.slice(); p.edit = true; p.load = true; p.team = true; p.scope = 'all'; p.pricing = true; p.status = true; p.eta = true; p.delivery = true; p.assign = true; p.details = true; p.issueFix = true; }
   return p;
 }
 function permsOf_(u) {
@@ -54,7 +54,7 @@ function permsOf_(u) {
   if (u.owner || isOwner_(u.email)) { const all = defaultPerms_('Admin'); all.owner = true; all.packages = 'edit'; all.pricing = true; return all; }
   const p = defaultPerms_(u.role), o = u.perms || {};
   if (Array.isArray(o.pages)) p.pages = o.pages.filter(function (k) { return PAGE_KEYS.indexOf(k) >= 0; });
-  ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links', 'eta', 'delivery', 'assign', 'details'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
+  ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links', 'eta', 'delivery', 'assign', 'details', 'issueFix'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') p.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') p.packages = o.packages;
   if (p.pages.indexOf('mine') < 0) p.pages.unshift('mine'); // everyone keeps their own work page
@@ -64,7 +64,7 @@ function cleanPerms_(o) {
   if (!o || typeof o !== 'object') return null;
   const out = {};
   if (Array.isArray(o.pages)) out.pages = o.pages.map(String).filter(function (k, i, a) { return PAGE_KEYS.indexOf(k) >= 0 && a.indexOf(k) === i; });
-  ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links', 'eta', 'delivery', 'assign', 'details'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
+  ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links', 'eta', 'delivery', 'assign', 'details', 'issueFix'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') out.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') out.packages = o.packages;
   return out;
@@ -76,7 +76,9 @@ function allowed_(u, action) {
   const p = permsOf_(u);
   if (action === 'updateTask') return p.status || p.links || p.eta || p.delivery || p.assign || p.details; // each field is checked again in taskWrite_
   if (action === 'brief') return !!p.briefs;
-  if (action === 'issues' || action === 'issueAct') return isAdminUser_(u);
+  // Issues: Admins, or anyone given the section (View) and, to retry and resolve, Edit (issueFix)
+  if (action === 'issues') return isAdminUser_(u) || p.pages.indexOf('issues') >= 0;
+  if (action === 'issueAct') return isAdminUser_(u) || (p.pages.indexOf('issues') >= 0 && !!p.issueFix);
   if (action === 'setMember') return p.team;
   if (action === 'health') return p.pages.indexOf('health') >= 0;
   if (action === 'assist' || action === 'speak') return p.fasty;
@@ -87,7 +89,7 @@ function allowed_(u, action) {
   if (action === 'packageSave' || action === 'packageDelete') return p.packages === 'edit';
   return true;
 }
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Admin', issueAct: 'Admin', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Viewer', issueAct: 'Viewer', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
