@@ -3674,3 +3674,10 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
 .pm-panel { display: block; }
 .pm-panel > * + * { margin-top: 12px; }
 .pm-panel > * { min-height: min-content; }
+/* Stand-up: a card with more below fades softly at its bottom edge (no hard cut through a row) */
+[data-draw="standup"] .su.more-below { -webkit-mask-image: linear-gradient(#000 calc(100% - 56px), transparent); mask-image: linear-gradient(#000 calc(100% - 56px), transparent); }
+[data-draw="standup"] .su { padding-bottom: 18px; }
+/* Notes: a gap-free column layout (cards of any height stack tightly); stickers on the outer edge are not cut */
+.qn-play .qn-grid > .qn-note { margin: 0 !important; }
+.qn-play .qn-grid { padding: 14px 12px 0; margin: -14px -12px 0; }
+.qn-play { overflow-clip-margin: 24px; }

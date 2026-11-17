@@ -1707,6 +1707,8 @@
       if (wk) { const d = document.createElement('p'); d.className = 'su-done'; d.textContent = wk + (wk === 1 ? ' content task' : ' content tasks') + ' completed in the last 7 days (by ETA)'; box.append(d); }
       return box;
     }
+    // a card with more tasks below fades at the bottom until scrolled to the end
+    const suFade = (card) => { const f = () => card.classList.toggle('more-below', card.scrollHeight - card.scrollTop - card.clientHeight > 4); card.addEventListener('scroll', f, { passive: true }); requestAnimationFrame(f); };
     dash.draw('standup', (el) => {
       if (CO.notReady(el, 'box')) return;
       const rs = CO.rows(), t = CO.today(), wkAgo = CO.addDays(t, -6);
@@ -1773,7 +1775,7 @@
         if (!c.all.length && !onlyContent) { const f = document.createElement('p'); f.className = 'su-free'; const adm0 = A.mode !== 'auth' || isAdmin(); f.textContent = (c.review.length ? 'No open design work, ' + c.review.length + ' with reviewers.' : 'No open design work.') + (adm0 ? ' Free to take new tasks.' : ''); card.append(f); }
         if (c.done.length) { const d = document.createElement('p'); d.className = 'su-done'; const nd = CO.sumQty(c.done); d.textContent = CO.num(nd) + (nd === 1 ? ' creative' : ' creatives') + ' delivered in the last 7 days (by ETA)'; card.append(d); }
         if (c.content) card.append(contentBlock(c.content, c.name));
-        el.append(card);
+        el.append(card); suFade(card);
       });
     });
   })();
@@ -3982,7 +3984,8 @@
     const gap = parseFloat(cs.columnGap) || 16, STRETCH = 56; // small bottom differences only: no tall empty space inside a card
     const kids = all.filter((k) => getComputedStyle(k).display !== 'none');
     // .mas-flex cards (Pipeline) may run full width or sit in a column: whichever leaves less empty space.
-    const items = kids.map((k) => ({ k, flex: k.classList.contains('mas-flex'), h: Math.ceil(k.scrollHeight + 2) }));
+    // the height the card takes on screen (a card that scrolls inside a fixed height counts at that height)
+    const items = kids.map((k) => ({ k, flex: k.classList.contains('mas-flex'), h: Math.ceil(/auto|scroll/.test(getComputedStyle(k).overflowY) ? k.getBoundingClientRect().height + 2 : k.scrollHeight + 2) }));
     const planSeg = (seg) => {
       const n = seg.length, hs = seg.map((x) => x.h + gap), fixed = Math.min(cols, n), restN = n - fixed;
       const score = (asg) => { const ch = new Array(cols).fill(0); asg.forEach((col, i) => { ch[col] += hs[i]; }); return Math.max(...ch) * 1000 + asg.reduce((s2, col, i) => s2 + col * (n - i), 0) / 1e3; };
@@ -3995,7 +3998,7 @@
       const off = new Array(cols).fill(0), last = new Array(cols).fill(-1), pos = [];
       seg.forEach((x, i) => { const col = best.asg[i]; pos.push({ x, col, top: off[col], span: hs[i], grow: 0 }); off[col] += hs[i]; last[col] = i; });
       const maxH = n ? Math.max(...off) : 0; let voidPx = 0;
-      last.forEach((i, col) => { const d = maxH - off[col]; if (i < 0) { voidPx += maxH; return; } if (d > 0 && d <= STRETCH) pos[i].grow = d; else voidPx += d; });
+      last.forEach((i, col) => { const d = maxH - off[col]; if (i < 0) { voidPx += maxH; return; } if (d > 0 && d <= STRETCH && !c.classList.contains('qn-grid')) pos[i].grow = d; else voidPx += d; /* notes keep their own height */ });
       return { pos, height: maxH, voidPx };
     };
     const plan = (fullFlex) => {
@@ -4035,7 +4038,7 @@
   const masAll = () => { MAS.queued = false; naFit(); MAS.list.forEach((c) => { if (c.isConnected && c.offsetParent) masLayout(c); }); MAS.mos.forEach((o) => o.takeRecords()); };
   const masQueue = () => { if (MAS.queued) return; MAS.queued = true; requestAnimationFrame(masAll); };
   function masonry(c) {
-    if (!c || MAS.list.includes(c)) return; MAS.list.push(c);
+    if (!c || MAS.list.includes(c)) return; MAS.list = MAS.list.filter((x) => x.isConnected); MAS.list.push(c);
     if (!MAS.ro) MAS.ro = new ResizeObserver(masQueue);
     MAS.ro.observe(c); [...c.children].forEach((k) => MAS.ro.observe(k));
     const mo = new MutationObserver(() => { [...c.children].forEach((k) => MAS.ro.observe(k)); masQueue(); });
@@ -4763,7 +4766,7 @@
       const so = { edited: (a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)), new: (a, b) => String(b.createdAt).localeCompare(String(a.createdAt)), old: (a, b) => String(a.createdAt).localeCompare(String(b.createdAt)), az: (a, b) => String(a.title).localeCompare(String(b.title)) }[F.sort] || ((a, b) => 0);
       const list = filtered().sort((a, b) => (b.pinned - a.pinned) || so(a, b));
       if (!list.length) { const e = mk('div', 'qn-emptybox'); const s = stickerEl('flower', 'big'); if (s) e.append(s); e.append(mk('p', 'qn-empty', st.q || F.tag || F.colour ? 'No notes match these filters.' : st.f === 'all' ? 'No notes yet. Write one above: tag someone with @ to share it, add #tags, stickers, a doodle or files.' : st.f === 'assigned' ? 'Nothing assigned to you.' : st.f === 'reminders' ? 'No reminders set.' : st.f === 'shared' ? 'Nobody has shared a note with you yet.' : st.f === 'team' ? 'No notes from the team yet.' : 'You have not written a note yet.')); el.append(e); return; }
-      const g = mk('div', 'qn-grid'); list.slice(0, st.show).forEach((n, i) => g.append(card(n, i))); el.append(g);
+      const g = mk('div', 'qn-grid'); list.slice(0, st.show).forEach((n, i) => g.append(card(n, i))); el.append(g); masonry(g); // packed columns, no gaps under short notes
       el.append(mk('p', 'qn-count', 'Showing ' + Math.min(st.show, list.length) + ' of ' + list.length + ' notes'));
       if (list.length > st.show) { const m = mk('button', 'co-btn qn-more', 'Show 60 more'); m.type = 'button'; m.addEventListener('click', () => { st.show += 60; dash.draw('qn-board'); }); el.append(m); }
     });
