@@ -3403,7 +3403,7 @@
       const b = await callApi({ action: 'users' });
       if (b.ok) { AX.users = b.users; AX.you = b.you; AX.err = ''; AX.pending = b.users.filter((u) => u.status === 'Pending').length; syncControls(); fillWho(); if (PR.email) drawPerson(); } else AX.err = errText(b.error);
     } catch (e) { if (e instanceof AuthLost) return; AX.err = e.message; }
-    dash.draw('ax-pending'); dash.draw('ax-users');
+    dash.draw('ax-pending'); dash.draw('ax-seg'); dash.draw('ax-users');
     // On the 30-second tick the log is refreshed only while it shows the newest page, so "Load older" is not undone.
     if (withLog || !AX.log || AX.log.length <= 200) axLog(false);
   }
@@ -3639,36 +3639,82 @@
       card.append(info, act); box.append(card);
     });
   });
-  dash.draw('ax-users', (tb) => {
-    tb.replaceChildren();
-    if (!AX.users) { CO.emptyRow(tb, 7, AX.err || 'Loading…'); return; }
+  /* People with access: filter by level or search, then one row per person (no access at the bottom). */
+  const AXU = { lv: '', q: '' };
+  const axLevel = (u) => (u.status !== 'Approved' ? 'none' : u.owner ? 'Admin' : u.role);
+  const SEG = [['', 'Everyone'], ['Admin', 'Admin'], ['Editor', 'Can edit'], ['Viewer', 'View only'], ['none', 'No access']];
+  dash.draw('ax-seg', (box) => {
+    box.replaceChildren();
+    const all = (AX.users || []).filter((u) => u.status !== 'Pending');
+    SEG.forEach(([k, l]) => {
+      const n = k ? all.filter((u) => axLevel(u) === k).length : all.length;
+      if (k === 'none' && !n) return;
+      const b = el('button', 'ax-seg-b' + (AXU.lv === k ? ' on' : '')); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(AXU.lv === k));
+      b.append(el('span', '', l), el('small', '', String(n)));
+      b.addEventListener('click', () => { AXU.lv = AXU.lv === k ? '' : k; dash.draw('ax-seg'); dash.draw('ax-users'); });
+      box.append(b);
+    });
+  });
+  document.getElementById('ax-uq').addEventListener('input', (e) => { AXU.q = e.target.value.trim().toLowerCase(); dash.draw('ax-users'); });
+  const AX_IC = {
+    perm: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+    act: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>',
+    off: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M6.5 6.5l11 11"/></svg>',
+    on: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></svg>'
+  };
+  const axBtn = (cls, ic, txt, tip) => { const b = el('button', 'co-link ax-b ' + cls); b.type = 'button'; b.innerHTML = AX_IC[ic]; b.append(el('span', '', txt)); if (tip) b.title = tip; return b; };
+  dash.draw('ax-users', (box) => {
+    box.replaceChildren();
+    if (!AX.users) { box.append(el('p', 'co-note ax-empty', AX.err || 'Loading…')); return; }
     const order = { Approved: 0, Revoked: 1, Denied: 2 };
-    const list = AX.users.filter((u) => u.status !== 'Pending').sort((a, b) => (order[a.status] - order[b.status]) || (RANK[b.role] - RANK[a.role]) || (a.name || a.email).localeCompare(b.name || b.email));
-    if (!list.length) { CO.emptyRow(tb, 7, 'Nobody yet.'); return; }
+    let list = AX.users.filter((u) => u.status !== 'Pending').sort((a, b) => (order[a.status] - order[b.status]) || ((b.owner ? 9 : RANK[b.role]) - (a.owner ? 9 : RANK[a.role])) || (a.name || a.email).localeCompare(b.name || b.email));
+    if (AXU.lv) list = list.filter((u) => axLevel(u) === AXU.lv);
+    if (AXU.q) list = list.filter((u) => ((u.name || '') + ' ' + u.email + ' ' + (u.team || '')).toLowerCase().includes(AXU.q));
+    if (!list.length) { box.append(el('p', 'co-note ax-empty', AXU.q || AXU.lv ? 'Nobody matches. Clear the search or pick Everyone.' : 'Nobody yet. Add someone above.')); return; }
+    let lastGroup = '';
     list.forEach((u) => {
-      const tr = tb.insertRow();
+      const g = u.status === 'Approved' ? 'in' : 'out';
+      if (g !== lastGroup && g === 'out') box.append(el('div', 'ax-grp', 'No access'));
+      lastGroup = g;
+      const row = el('div', 'ax-row' + (g === 'out' ? ' is-off' : '')); row.dataset.email = u.email;
       const locked = u.owner || u.email === AX.you;
-      CO.td(tr, personLink(u), 'co-nowrap');
-      CO.td(tr, u.email, 'co-nowrap');
-      const rc = tr.insertCell();
-      if (locked || u.status !== 'Approved') rc.textContent = u.owner ? 'Admin' : ROLE_LABEL[u.role] + (u.custom ? ' · custom' : '');
-      else { const s = roleSelect(u.role); s.addEventListener('change', () => setAccess(u.email, { role: s.value }, (u.name || u.email) + ': ' + ROLE_LABEL[s.value])); rc.append(s); }
-      if (u.status === 'Approved' && !u.owner) { const P = u.perms || {}, n = (P.pages || []).length, ed = [P.edit && 'tasks', P.team && 'team', P.packages === 'edit' && 'packages'].filter(Boolean); rc.append(el('small', 'ax-psum', n + '/' + SECTIONS.length + ' sections · ' + (ed.length ? 'edits ' + ed.join(', ') : 'view only') + (P.packages === 'view' ? ' · sees packages' : ''))); }
-      const sc = tr.insertCell(); const chip = el('span', 'chip ' + (u.status === 'Approved' ? 's-ok' : 's-mute'), STATUS_LABEL[u.status]); sc.append(chip);
-      CO.td(tr, when(u.lastSignIn), 'co-nowrap');
-      CO.td(tr, u.decidedBy ? nameOf(u.decidedBy) + ' · ' + when(u.decidedOn) : '—', 'co-nowrap co-muted co-hide-md');
-      const ac = tr.insertCell(); ac.className = 'co-nowrap ax-acts';
-      if (!locked && u.status === 'Approved') { const pb = el('button', 'co-link ax-perm', 'Permissions'); pb.type = 'button'; pb.addEventListener('click', () => openPerson(u.email, true)); ac.append(pb); }
-      const actv = el('button', 'co-link', 'Activity'); actv.type = 'button'; actv.addEventListener('click', () => showActivityOf(u.email)); ac.append(actv);
+      /* who */
+      const who = el('div', 'ax-who-c');
+      const pl = el('button', 'ax-person'); pl.type = 'button'; pl.title = 'Open profile and permissions';
+      const nm2 = el('span', 'ax-nm'); nm2.append(el('b', '', (u.name || u.email.split('@')[0]) + (u.owner ? ' (owner)' : u.email === AX.you ? ' (you)' : '')), el('span', 'ax-mail', u.email));
+      pl.append(avatar(u), nm2); pl.addEventListener('click', () => openPerson(u.email)); who.append(pl);
+      /* access level */
+      const lv = el('div', 'ax-lv-c');
+      if (locked || u.status !== 'Approved') { const pill = el('span', 'ax-pill r-' + (u.owner ? 'Admin' : u.role), u.owner ? 'Admin' : ROLE_LABEL[u.role]); lv.append(pill); }
+      else { const s = roleSelect(u.role); s.classList.add('ax-rsel', 'r-' + u.role); s.addEventListener('change', () => setAccess(u.email, { role: s.value }, (u.name || u.email) + ': ' + ROLE_LABEL[s.value])); lv.append(s); }
+      if (u.custom && u.status === 'Approved' && !u.owner) lv.append(el('span', 'ax-tag', 'Custom'));
+      /* what they can open */
+      const cv = el('div', 'ax-can');
+      if (u.owner) cv.append(el('span', 'ax-can-n', 'Everything'), el('small', '', 'Owner'));
+      else if (u.status === 'Approved') {
+        const P = u.perms || {}, n = (P.pages || []).length, ed = [P.edit && 'tasks', P.team && 'team', P.packages === 'edit' && 'packages'].filter(Boolean);
+        const meter = el('span', 'ax-meter'); meter.style.setProperty('--p', Math.round(n / SECTIONS.length * 100) + '%'); meter.title = (P.pages || []).map((k) => (SECTIONS.find((x) => x[0] === k) || [k, k])[1]).join(', ');
+        cv.append(el('span', 'ax-can-n', n + ' of ' + SECTIONS.length + ' sections'), meter, el('small', 'ax-psum', (ed.length ? 'Edits ' + ed.join(', ') : 'View only') + (P.packages === 'view' ? ' · sees packages' : '')));
+      } else cv.append(el('span', 'ax-can-n co-muted', '—'));
+      /* status + last seen */
+      const st = el('div', 'ax-seen');
+      const chip = el('span', 'ax-st ' + (u.status === 'Approved' ? 's-ok' : 's-mute'), STATUS_LABEL[u.status]); st.append(chip);
+      st.append(el('small', '', u.lastSignIn ? 'Signed in ' + when(u.lastSignIn) : 'Never signed in'));
+      if (u.decidedBy) st.title = 'Decided by ' + nameOf(u.decidedBy) + ' · ' + when(u.decidedOn);
+      /* actions */
+      const ac = el('div', 'ax-acts');
+      if (!locked && u.status === 'Approved') { const pb = axBtn('ax-perm', 'perm', 'Permissions', 'Sections, task fields and abilities'); pb.addEventListener('click', () => openPerson(u.email, true)); ac.append(pb); }
+      const actv = axBtn('ax-actv', 'act', 'Activity', 'Everything ' + (u.name || u.email) + ' changed'); actv.addEventListener('click', () => showActivityOf(u.email)); ac.append(actv);
       if (!locked) {
-        const b = el('button', 'co-link', u.status === 'Approved' ? 'Revoke' : 'Give access again'); b.type = 'button';
-        b.classList.add(u.status === 'Approved' ? 'ax-revoke' : 'ax-restore');
+        const on = u.status === 'Approved';
+        const b = axBtn(on ? 'ax-revoke' : 'ax-restore', on ? 'off' : 'on', on ? 'Revoke' : 'Give access again');
         b.addEventListener('click', () => {
-          if (u.status === 'Approved') { if (confirm('Remove access for ' + (u.name || u.email) + '? They are signed out within 30 seconds, and their past changes stay in the log.')) setAccess(u.email, { status: 'Revoked' }, 'Access removed for ' + (u.name || u.email)); }
+          if (on) { if (confirm('Remove access for ' + (u.name || u.email) + '? They are signed out within 30 seconds, and their past changes stay in the log.')) setAccess(u.email, { status: 'Revoked' }, 'Access removed for ' + (u.name || u.email)); }
           else setAccess(u.email, { status: 'Approved' }, (u.name || u.email) + ' has access again (' + u.role + ')');
         });
         ac.append(b);
       }
+      row.append(who, lv, cv, st, ac); box.append(row);
     });
   });
   dash.draw('ax-log', (tb) => {
@@ -3977,7 +4023,7 @@
   addEventListener('resize', () => requestAnimationFrame(naFit));
   function masLayout(c) {
     const all = [...c.children];
-    all.forEach((k) => { k.style.gridColumn = ''; k.style.gridRowStart = ''; k.style.gridRowEnd = ''; k.style.minHeight = ''; k.classList.remove('mas-wide'); });
+    all.forEach((k) => { k.style.gridColumn = ''; k.style.gridRowStart = ''; k.style.gridRowEnd = ''; k.style.minHeight = ''; k.style.maxHeight = ''; k.classList.remove('mas-wide'); });
     const cs = getComputedStyle(c), cols = cs.gridTemplateColumns.split(' ').filter(Boolean).length;
     if (cols < 2) { c.classList.remove('mas-on'); all.forEach((k) => k.classList.remove('mas-wide')); return; }
     c.classList.add('mas-on');
@@ -3998,7 +4044,17 @@
       const off = new Array(cols).fill(0), last = new Array(cols).fill(-1), pos = [];
       seg.forEach((x, i) => { const col = best.asg[i]; pos.push({ x, col, top: off[col], span: hs[i], grow: 0 }); off[col] += hs[i]; last[col] = i; });
       const maxH = n ? Math.max(...off) : 0; let voidPx = 0;
-      last.forEach((i, col) => { const d = maxH - off[col]; if (i < 0) { voidPx += maxH; return; } if (d > 0 && d <= STRETCH && !c.classList.contains('qn-grid')) pos[i].grow = d; else voidPx += d; /* notes keep their own height */ });
+      const notes = c.classList.contains('qn-grid'); /* notes keep their own height */
+      last.forEach((i, col) => {
+        let d = maxH - off[col]; if (i < 0) { voidPx += maxH; return; } if (d <= 0) return;
+        /* cards in this column that scroll inside a capped height and have rows hidden: grow them (most hidden first) */
+        const inCol = pos.filter((q) => q.col === col);
+        if (!notes) inCol.map((q) => ({ q, more: /auto|scroll/.test(getComputedStyle(q.x.k).overflowY) ? q.x.k.scrollHeight - q.x.k.clientHeight : 0 })).filter((o) => o.more > 8).sort((a2, b2) => b2.more - a2.more)
+          .forEach((o) => { if (d <= 0) return; const g2 = Math.min(d, o.more); o.q.grow = g2; o.q.unc = true; d -= g2; });
+        if (d > 0 && d <= STRETCH && !notes) { pos[i].grow += d; d = 0; }
+        voidPx += d;
+        let t = inCol.length ? inCol[0].top : 0; inCol.forEach((q) => { q.top = t; t += q.span + q.grow; });
+      });
       return { pos, height: maxH, voidPx };
     };
     const plan = (fullFlex) => {
@@ -4032,7 +4088,7 @@
       k.style.gridColumn = q.col < 0 ? '1 / -1' : String(q.col + 1);
       k.style.gridRowStart = String(q.top + 1);
       k.style.gridRowEnd = 'span ' + Math.max(1, q.span + q.grow);
-      if (q.grow) k.style.minHeight = (k.getBoundingClientRect().height + q.grow) + 'px';
+      if (q.grow) { const h0 = k.getBoundingClientRect().height; if (q.unc) k.style.maxHeight = (h0 + q.grow) + 'px'; k.style.minHeight = (h0 + q.grow) + 'px'; }
     });
   }
   const masAll = () => { MAS.queued = false; naFit(); MAS.list.forEach((c) => { if (c.isConnected && c.offsetParent) masLayout(c); }); MAS.mos.forEach((o) => o.takeRecords()); };

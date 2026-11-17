@@ -147,6 +147,8 @@ A task whose ETA is moved to a later day (in the sheet or from the dashboard) is
 
 ## Changing access at any time (Access)
 
+**People with access** lists everyone in one row each: photo, name and email; access level (changed right there); how many sections they can open with a bar and what they can edit; whether they have access and when they last signed in; and *Permissions*, *Activity* and *Revoke* (on smaller screens these become icons). Filter by level with the chips at the top (each shows a count) or search by name or email; people without access are grouped at the bottom. *Add a person* sits above the list in one line: email, level, sections, *Give access*. *How access levels work* explains View only, Can edit and Admin. On a phone each person stacks into a compact card.
+
 Click a person on the Access page to open their window. **Left:** who they are (sign-ins, who approved them), access level and *Revoke access*, and their recent activity (with a link to the full log). **Right:** *What they can see and do*, with a one-line summary on top and three tabs: **Sections** (Hidden, View or Edit for each section, plus Brand packages and Pricing), **Tasks** (which tasks they see, and the task fields they can edit: status, Design ETA, delivery date, designer, requirement details) and **Abilities** (reading briefs, submitting links, workload, downloads, Fasty). *Save changes* stays at the bottom, so nothing needs scrolling to find; unsaved changes survive the 30-second refresh, Undo and Reset to the role's defaults sit beside it, and every change is logged and applies within 30 seconds without signing them out. On a phone the two panes stack.
 
 ## Notes
