@@ -121,7 +121,14 @@ Everyone lands on **My work** showing their own work (the owner lands on the Ove
 
 **Brands** lists every brand with open work, work with a client or deliveries this month or last: open, late, with the client (and the oldest wait), delivered this month against the same working days last month, and the last delivery. Search, sort any column (click or Enter on the header) and click a brand for its tasks.
 
-**Waiting on client** (below it, and where the Overview's *Pending approval* number now leads) opens with how long approvals take: the typical (median) and longest wait, then bars for up to 7 days, 8–14, 15–30 and over 30 days (orange = over 14 days), each with its count and share. Click a bar (or press Enter on it) to list only those tasks; click again for all. Below that it groups everything shared and waiting for approval by brand, longest wait first, with **Download CSV** to send to KAMs. Days are counted from the design ETA, the closest thing the sheets have to a "shared on" date. More than 14 days is marked orange.
+**Waiting on client** (below it, and where the Overview's *Shared with clients* number leads) lists every piece of work that cannot move until a client replies: **creatives shared for approval** (Shared, and No update = no reply after follow-ups) and **briefs shared with the client for sign-off** (design not started, content Shared). Days waiting count from the design ETA; a brief without an ETA counts from its request date.
+
+- **Summary:** items waiting (creatives, briefs and brands), the typical (median) and longest wait, how many have waited over 14 days, how many got no reply after follow-ups, and briefs with the client. Over 14 days, No reply and Briefs are clickable filters.
+- **Age bar:** one bar split into up to 7 days (lime), 8–14 (violet), 15–30 (orange) and over 30 (ink). Each band below it shows its count and share and filters the list.
+- **Toolbar:** All / Creatives / No reply / Briefs, a search (brand, creative, ID or designer), and sorting: longest wait, most waiting, or brand A–Z. The dashboard filters at the top (Internal / External, designer, brand, type) apply too. "Showing x of y" names an active filter, with *Show everything*.
+- **Brands table:** one row per brand with its sheet (External / Internal), how many creatives and briefs are waiting (and how many got no reply), a strip with one square per item coloured by its age (circles are briefs), and the oldest wait. Expand a brand to see each item: title, ID, type and quantity, designer, status (Shared, No reply, Brief with client), the date it has waited since, days waiting and its creative or brief link. Click an item to open the task.
+- **Copy follow-up:** copies a ready-to-send reminder for that brand ("Hi … team, a quick reminder…") listing every pending item with its date and link, to paste into WhatsApp, Slack or email.
+- **Download CSV** has every waiting item with its status, dates, days waiting and link.
 
 ## What team members see
 

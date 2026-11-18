@@ -1584,53 +1584,113 @@
     if (keepFocus) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
   });
 
-  /* Waiting on client: everything shared and waiting for approval, by brand, longest wait first. */
-  const WC = { band: '' };
-  const WAIT_BANDS = [['b7', 'Up to 7 days', (d) => d <= 7], ['b14', '8–14 days', (d) => d > 7 && d <= 14], ['b30', '15–30 days', (d) => d > 14 && d <= 30], ['b99', 'Over 30 days', (d) => d > 30]];
+  /* Waiting on client (Nov 2026 revamp): every client dependency in one place, by brand.
+     Two kinds: creatives shared for approval (Shared, No update) and briefs shared with the client for sign-off
+     (design not started, content SHARED). Days waiting count from the design ETA (the day it was due to be shared);
+     a brief without an ETA counts from its request date. A summary row, one age bar (click a band to filter), then a
+     compact table: one row per brand, expand for each item, and a ready-to-send follow-up message per brand. */
+  const WC = { band: '', kind: '', q: '', sort: 'wait', open: new Set() };
+  const WAIT_BANDS = [['b7', 'Up to 7 days', (d) => d <= 7, 'fresh'], ['b14', '8–14 days', (d) => d > 7 && d <= 14, 'mid'], ['b30', '15–30 days', (d) => d > 14 && d <= 30, 'old'], ['b99', 'Over 30 days', (d) => d > 30, 'stale']];
+  const wcEl = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
   dash.draw('waiting', (el) => {
     if (CO.notReady(el, 'box')) return;
     el.replaceChildren();
-    const t = CO.today(), rows = CO.rows().filter((r) => r.shared);
-    const days = (r) => r.eta && r.eta < t ? CO.diffDays(r.eta, t) : 0;
-    const band = WAIT_BANDS.find((b) => b[0] === WC.band), shown = band ? rows.filter((r) => band[2](days(r))) : rows;
-    const by = new Map(); shown.forEach((r) => { const l = by.get(r.brand) || []; l.push(r); by.set(r.brand, l); });
-    const groups = [...by].map(([brand, list]) => ({ brand, list: list.sort((a, b) => days(b) - days(a)), oldest: Math.max(...list.map(days)) })).sort((a, b) => b.oldest - a.oldest || b.list.length - a.list.length);
-    const over = rows.filter((r) => days(r) > 14).length;
-    const hd = document.createElement('div'); hd.className = 'na-head';
-    const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'Waiting on client'; const n = document.createElement('span'); n.className = 'na-count' + (rows.length ? '' : ' ok'); n.textContent = rows.length; h2.append(n);
-    const note = document.createElement('p'); note.className = 'co-note'; note.textContent = rows.length ? 'Shared and waiting for approval, by brand, longest wait first. Days are counted from the design ETA. ' + over + ' have waited more than 14 days.' : 'Nothing is waiting on a client.'; l.append(h2, note);
-    const dl = document.createElement('button'); dl.type = 'button'; dl.className = 'co-btn dl-csv'; dl.textContent = 'Download CSV'; dl.disabled = !rows.length;
-    dl.addEventListener('click', () => CO.csv('waiting-on-client-' + t + '.csv', ['Brand', 'ID', 'Creative', 'Type', 'Creatives', 'Designer', 'Shared (design ETA)', 'Days waiting', 'Internal / External'], groups.flatMap((g) => g.list.map((r) => [r.brand, r.id, CO.topicText(r), r.type, r.qty || 1, r.list.join(', '), r.eta || '', days(r), CO.cls(r.source)]))));
+    const t = CO.today();
+    const isBrief = (r) => r.awaiting && /client/i.test(r.sub || '');
+    const all = CO.rows().filter((r) => r.shared || isBrief(r));
+    const since = (r) => (r.eta && r.eta < t ? r.eta : isBrief(r) && !r.eta && r.req && r.req < t ? r.req : null);
+    const days = (r) => { const s0 = since(r); return s0 ? CO.diffDays(s0, t) : 0; };
+    const bandOf = (d) => WAIT_BANDS.find((b) => b[2](d));
+    const kindOf = (r) => (isBrief(r) ? 'brief' : r.stage === 'No update' ? 'noreply' : 'creative');
+    const nCre = all.filter((r) => !isBrief(r)).length, nBrief = all.length - nCre, nNo = all.filter((r) => r.stage === 'No update').length;
+    // header
+    const hd = wcEl('div', 'na-head wc-hd'), l = wcEl('div'), h2 = wcEl('h2', 'co-h2', 'Waiting on client'), n = wcEl('span', 'na-count' + (all.length ? '' : ' ok'), String(all.length)); h2.append(n);
+    l.append(h2, wcEl('p', 'co-note', all.length ? 'Work that cannot move until a client replies: creatives shared for approval and briefs shared for sign-off. Days count from the design ETA.' : 'Nothing is waiting on a client.'));
+    const dl = wcEl('button', 'co-btn dl-csv', 'Download CSV'); dl.type = 'button'; dl.disabled = !all.length;
+    dl.addEventListener('click', () => CO.csv('waiting-on-client-' + t + '.csv', ['Brand', 'ID', 'What', 'Creative / topic', 'Type', 'Creatives', 'Designer', 'Status', 'Waiting since', 'Days waiting', 'Link', 'Internal / External'],
+      all.slice().sort((x, y) => x.brand.localeCompare(y.brand) || days(y) - days(x)).map((r) => [r.brand, r.id, isBrief(r) ? 'Brief' : 'Creative', CO.topicText(r), r.type, r.qty || 1, (r.list || []).join(', '), isBrief(r) ? 'Brief with client' : r.stage, since(r) || '', days(r), (isBrief(r) ? r.brief : r.link) || '', CO.cls(r)])));
     hd.append(l, dl); el.append(hd); collapser(el, 'waiting', 'Waiting on client');
-    if (!rows.length) { const fl = filterNote2(); if (fl) { el.append(emptyLine('Nothing for ' + fl + '.'), clearBtn2()); } return; }
-    // How long approvals take: the median and the longest wait, then how many tasks fall in each band (click to filter).
-    const ds = rows.map(days).sort((a, b) => a - b), med = ds[Math.floor((ds.length - 1) / 2)], max = ds[ds.length - 1];
-    const dist = document.createElement('div'); dist.className = 'wd';
-    const sum = document.createElement('p'); sum.className = 'wd-sum'; const mb = document.createElement('b'); mb.textContent = med + (med === 1 ? ' day' : ' days'); const xb = document.createElement('b'); xb.textContent = max + (max === 1 ? ' day' : ' days');
-    if (rows.length === 1) sum.append('1 task, waiting ', xb); else sum.append('Typical wait ', mb, ' (median of ' + rows.length + ' tasks) · longest ', xb);
-    const counts = WAIT_BANDS.map(([k, l, fn]) => ({ k, l, n: rows.filter((r) => fn(days(r))).length, late: k === 'b30' || k === 'b99' })), top = Math.max(1, ...counts.map((c) => c.n));
-    const bars = document.createElement('div'); bars.className = 'wd-bars'; bars.setAttribute('role', 'group'); bars.setAttribute('aria-label', 'Tasks by days waiting: ' + counts.map((c) => c.l + ' ' + c.n).join(', ') + '. Choose a band to list only those tasks.');
-    counts.forEach((c) => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'wd-row' + (c.late ? ' late' : '') + (WC.band === c.k ? ' on' : ''); b.setAttribute('aria-pressed', String(WC.band === c.k)); b.disabled = !c.n && WC.band !== c.k;
-      const lab = document.createElement('span'); lab.className = 'wd-l'; lab.textContent = c.l;
-      const tr = document.createElement('span'); tr.className = 'wd-track'; const fill = document.createElement('i'); fill.style.width = (c.n / top * 100) + '%'; tr.append(fill);
-      const v = document.createElement('b'); v.className = 'wd-v'; v.textContent = c.n; const pc = document.createElement('small'); pc.textContent = Math.round(c.n / rows.length * 100) + '%'; v.append(pc);
-      b.append(lab, tr, v); b.title = c.n + ' tasks waiting ' + c.l.toLowerCase() + (WC.band === c.k ? ' (click again to show all)' : ' (click to list only these)');
-      b.dataset.band = c.k; b.addEventListener('click', () => { WC.band = WC.band === c.k ? '' : c.k; dash.draw('waiting'); const again = document.querySelector('.wd-row[data-band="' + c.k + '"]'); if (again) again.focus(); });
-      bars.append(b);
+    if (!all.length) { const fl = filterNote2(); if (fl) el.append(emptyLine('Nothing for ' + fl + '.'), clearBtn2()); else el.append(wcEl('p', 'wc-empty', 'All clear: no creative or brief is waiting on a client right now.')); return; }
+    // summary row
+    const ds = all.map(days).sort((x, y) => x - y), med = ds[Math.floor((ds.length - 1) / 2)], max = ds[ds.length - 1], over = all.filter((r) => days(r) > 14).length;
+    const brands = new Set(all.map((r) => r.brand)).size, units = all.filter((r) => !isBrief(r)).reduce((x, r) => x + (r.qty || 1), 0);
+    const kpis = wcEl('div', 'wc-kpis');
+    const kpi = (cls, val, label, sub, act) => { const d = wcEl(act ? 'button' : 'div', 'wc-kpi ' + cls); if (act) { d.type = 'button'; d.addEventListener('click', act); } d.append(wcEl('b', '', val), wcEl('span', '', label), wcEl('small', '', sub)); kpis.append(d); };
+    kpi('k-all', String(all.length), all.length === 1 ? 'item waiting' : 'items waiting', [nCre && units + (units === 1 ? ' creative' : ' creatives'), nBrief && nBrief + (nBrief === 1 ? ' brief' : ' briefs'), brands + (brands === 1 ? ' brand' : ' brands')].filter(Boolean).join(' · '));
+    kpi('k-med', med + 'd', 'Typical wait', 'Median · longest ' + max + 'd');
+    kpi('k-over' + (over ? ' hot' : ''), String(over), 'Over 14 days', over ? Math.round(over / all.length * 100) + '% of all waiting' : 'None', over ? () => { WC.band = WC.band === 'o14' ? '' : 'o14'; dash.draw('waiting'); } : null);
+    kpi('k-no' + (nNo ? ' warm' : ''), String(nNo), 'No reply', nNo ? 'after follow-ups' : 'Every client has replied', nNo ? () => { WC.kind = WC.kind === 'noreply' ? '' : 'noreply'; dash.draw('waiting'); } : null);
+    if (nBrief) kpi('k-brief', String(nBrief), nBrief === 1 ? 'Brief with client' : 'Briefs with client', 'Design starts once approved', () => { WC.kind = WC.kind === 'brief' ? '' : 'brief'; dash.draw('waiting'); });
+    el.append(kpis);
+    // age bar: one stacked bar, each band a filter
+    const age = wcEl('div', 'wc-age'), bar = wcEl('div', 'wc-bar'), leg = wcEl('div', 'wc-leg');
+    bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', 'How long items have waited: ' + WAIT_BANDS.map((b) => b[1] + ' ' + all.filter((r) => b[2](days(r))).length).join(', '));
+    WAIT_BANDS.forEach(([k, lab, fn, tone]) => {
+      const c = all.filter((r) => fn(days(r))).length; if (c) { const seg = wcEl('i', 'wc-seg t-' + tone + (WC.band && WC.band !== k ? ' dim' : '')); seg.style.flexGrow = c; seg.title = lab + ': ' + c; bar.append(seg); }
+      const b = wcEl('button', 'wc-lg t-' + tone + (WC.band === k ? ' on' : '')); b.type = 'button'; b.disabled = !c && WC.band !== k; b.setAttribute('aria-pressed', String(WC.band === k)); b.dataset.band = k;
+      b.append(wcEl('i'), wcEl('span', '', lab), wcEl('b', '', String(c)), wcEl('small', '', Math.round(c / all.length * 100) + '%'));
+      b.addEventListener('click', () => { WC.band = WC.band === k ? '' : k; dash.draw('waiting'); const again = document.querySelector('.wc-lg[data-band="' + k + '"]'); if (again) again.focus(); });
+      leg.append(b);
     });
-    dist.append(sum, bars);
-    if (band) { const f = document.createElement('p'); f.className = 'co-note wd-f'; f.textContent = 'Showing ' + shown.length + ' waiting ' + band[1].toLowerCase() + '. '; const all = document.createElement('button'); all.type = 'button'; all.className = 'co-link'; all.textContent = 'Show all ' + rows.length; all.addEventListener('click', () => { WC.band = ''; dash.draw('waiting'); }); f.append(all); dist.append(f); }
-    el.append(dist);
-    const wrap = document.createElement('div'); wrap.className = 'wc-groups';
-    groups.forEach((g, gi) => {
-      const d = document.createElement('details'); d.className = 'wc-group'; if (gi < 3) d.open = true;
-      const sm = document.createElement('summary'); const b = document.createElement('b'); b.textContent = g.brand; const c = document.createElement('span'); c.className = 'co-note'; c.textContent = g.list.length + (g.list.length === 1 ? ' task' : ' tasks'); const o = document.createElement('span'); o.className = 'na-when ' + (g.oldest > 14 ? 'k-late' : 'k-changes'); o.textContent = 'oldest ' + g.oldest + 'd';
-      sm.append(b, c, o); d.append(sm);
-      const ul = document.createElement('ul'); ul.className = 'na-list'; g.list.forEach((r) => ul.append(workRow(r, { waiting: true, noBrand: true, kind: days(r) > 14 ? 'late' : 'changes' }))); d.append(ul);
-      wrap.append(d);
+    age.append(bar, leg); el.append(age);
+    // toolbar: kind, search, sort
+    const tb = wcEl('div', 'wc-tb'), seg = wcEl('div', 'wc-segs'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'What is waiting');
+    [['', 'All', all.length], ['creative', 'Creatives', nCre - nNo], ['noreply', 'No reply', nNo], ['brief', 'Briefs', nBrief]].forEach(([k, lab, c]) => { if (k && !c) return; const b = wcEl('button', 'wc-sg' + (WC.kind === k ? ' on' : '')); b.type = 'button'; b.setAttribute('aria-pressed', String(WC.kind === k)); b.append(wcEl('span', '', lab), wcEl('small', '', String(c))); b.addEventListener('click', () => { WC.kind = k; dash.draw('waiting'); }); seg.append(b); });
+    const q = wcEl('input', 'co-input co-search wc-q'); q.type = 'search'; q.placeholder = 'Search brand, creative or ID'; q.setAttribute('aria-label', 'Search waiting work'); q.value = WC.q;
+    q.addEventListener('input', () => { WC.q = q.value; clearTimeout(WC.qt); WC.qt = setTimeout(() => { dash.draw('waiting'); const again = document.querySelector('.wc-q'); if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); } }, 200); });
+    const so = wcEl('select', 'co-select wc-sort'); so.setAttribute('aria-label', 'Sort brands'); [['wait', 'Longest wait first'], ['count', 'Most waiting first'], ['name', 'Brand A–Z']].forEach(([v, x]) => so.append(new Option(x, v))); so.value = WC.sort; so.addEventListener('change', () => { WC.sort = so.value; dash.draw('waiting'); });
+    tb.append(seg, q, so); el.append(tb);
+    // filter
+    const fq = WC.q.trim().toLowerCase(), band = WAIT_BANDS.find((b) => b[0] === WC.band);
+    const shown = all.filter((r) => (!WC.kind || kindOf(r) === WC.kind || (WC.kind === 'creative' && kindOf(r) === 'creative'))
+      && (!band || band[2](days(r))) && (WC.band !== 'o14' || days(r) > 14)
+      && (!fq || [r.brand, r.id, CO.topicText(r), r.type, (r.list || []).join(' ')].join(' ').toLowerCase().includes(fq)));
+    const by = new Map(); shown.forEach((r) => { const x = by.get(r.brand) || []; x.push(r); by.set(r.brand, x); });
+    const groups = [...by].map(([brand, list]) => ({ brand, list: list.sort((x, y) => days(y) - days(x)), oldest: Math.max(...list.map(days)), cls: [...new Set(list.map((r) => CO.cls(r)))] }))
+      .sort((x, y) => (WC.sort === 'name' ? x.brand.localeCompare(y.brand) : WC.sort === 'count' ? y.list.length - x.list.length || y.oldest - x.oldest : y.oldest - x.oldest || y.list.length - x.list.length));
+    if (WC.band || WC.kind || fq) {
+      const f = wcEl('p', 'co-note wc-f', 'Showing ' + shown.length + ' of ' + all.length + ' (' + groups.length + (groups.length === 1 ? ' brand' : ' brands') + '). ');
+      const clr = wcEl('button', 'co-link', 'Show everything'); clr.type = 'button'; clr.addEventListener('click', () => { WC.band = ''; WC.kind = ''; WC.q = ''; dash.draw('waiting'); }); f.append(clr); el.append(f);
+    }
+    if (!groups.length) { el.append(wcEl('p', 'wc-empty', 'Nothing matches. Try another filter or clear the search.')); return; }
+    // brand table
+    const tbl = wcEl('div', 'wc-tbl'); tbl.setAttribute('role', 'list');
+    const head = wcEl('div', 'wc-th'); ['Brand', 'Waiting', 'Age of each item', 'Oldest', ''].forEach((x) => head.append(wcEl('span', '', x))); tbl.append(head);
+    const follow = (g) => {
+      const lines = g.list.map((r, i) => (i + 1) + '. ' + (isBrief(r) ? 'Brief: ' : '') + CO.topicText(r) + ' (' + r.type + ((r.qty || 1) > 1 ? ' ×' + r.qty : '') + (r.id ? ', ' + r.id : '') + ')' + (since(r) ? ', shared ' + CO.fmtDate(since(r)) : '') + ((isBrief(r) ? r.brief : r.link) && /^https?:/.test(isBrief(r) ? r.brief : r.link) ? '\n   ' + (isBrief(r) ? r.brief : r.link) : ''));
+      return 'Hi ' + g.brand + ' team,\n\nA quick reminder: ' + (g.list.length === 1 ? 'this is' : 'these ' + g.list.length + ' are') + ' waiting for your approval.\n\n' + lines.join('\n') + '\n\nCould you share your approval or any changes, so we can deliver on time? Thank you!';
+    };
+    groups.forEach((g) => {
+      const row = wcEl('div', 'wc-br' + (WC.open.has(g.brand) ? ' open' : '')); row.setAttribute('role', 'listitem');
+      const top = wcEl('div', 'wc-br-top');
+      const tog = wcEl('button', 'wc-tog'); tog.type = 'button'; tog.setAttribute('aria-expanded', String(WC.open.has(g.brand)));
+      const nm = wcEl('span', 'wc-nm'); nm.append(wcEl('b', '', g.brand)); g.cls.forEach((c) => nm.append(wcEl('span', 'wc-src ' + (c === 'External' ? 'ext' : 'int'), c)));
+      tog.append(wcEl('span', 'wc-chev'), nm);
+      const cnt = wcEl('span', 'wc-cnt'); const nb = g.list.filter(isBrief).length, nn = g.list.filter((r) => r.stage === 'No update').length, nc = g.list.length - nb;
+      cnt.append(wcEl('b', '', String(g.list.length)), wcEl('span', '', [nc && (nc === 1 ? 'creative' : 'creatives'), nb && (nb === 1 ? 'brief' : 'briefs')].filter(Boolean).join(' + ')));
+      if (nn) cnt.append(wcEl('em', 'wc-nr', nn + ' no reply'));
+      const strip = wcEl('span', 'wc-strip'); strip.setAttribute('aria-hidden', 'true');
+      g.list.slice(0, 24).forEach((r) => { const d0 = days(r); const dot = wcEl('i', 't-' + bandOf(d0)[3] + (isBrief(r) ? ' br' : '')); dot.title = CO.topicText(r) + ': ' + d0 + 'd'; strip.append(dot); }); if (g.list.length > 24) strip.append(wcEl('small', '', '+' + (g.list.length - 24)));
+      const old = wcEl('span', 'wc-age-pill t-' + bandOf(g.oldest)[3], g.oldest + 'd');
+      const cp = wcEl('button', 'wc-copy'); cp.type = 'button'; cp.title = 'Copy a follow-up message for ' + g.brand + ' with every pending item and its link';
+      cp.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="3"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>'; cp.append(wcEl('span', '', 'Copy follow-up'));
+      cp.addEventListener('click', async () => { const txt = follow(g); try { await navigator.clipboard.writeText(txt); toast('Follow-up for ' + g.brand + ' copied: paste it in WhatsApp, Slack or email'); } catch (e) { window.prompt('Copy this follow-up:', txt); } cp.classList.add('done'); setTimeout(() => cp.classList.remove('done'), 1600); });
+      top.append(tog, cnt, strip, old, cp);
+      tog.addEventListener('click', () => { if (WC.open.has(g.brand)) WC.open.delete(g.brand); else WC.open.add(g.brand); row.classList.toggle('open'); tog.setAttribute('aria-expanded', String(WC.open.has(g.brand))); });
+      const items = wcEl('div', 'wc-items');
+      g.list.forEach((r) => {
+        const d0 = days(r), it = wcEl('div', 'wc-it click'); it.dataset.uid = r.uid; it.tabIndex = 0; it.setAttribute('role', 'button'); it.setAttribute('aria-label', CO.topicText(r) + ', ' + d0 + ' days waiting. Open the task');
+        const w = wcEl('span', 'wc-it-w'); w.append(wcEl('b', '', CO.topicText(r) || '—'), wcEl('small', '', [r.id, r.type + ((r.qty || 1) > 1 ? ' ×' + r.qty : ''), r.list && r.list.length ? r.list.join(', ') : 'Unassigned'].filter(Boolean).join(' · ')));
+        const st = wcEl('span', 'wc-st ' + (isBrief(r) ? 'brief' : r.stage === 'No update' ? 'noreply' : 'shared'), isBrief(r) ? 'Brief with client' : r.stage === 'No update' ? 'No reply' : 'Shared');
+        const when = wcEl('span', 'wc-when', since(r) ? 'since ' + CO.fmtDate(since(r)) : 'no date');
+        const pill = wcEl('span', 'wc-age-pill t-' + bandOf(d0)[3], d0 + 'd');
+        const url = isBrief(r) ? r.brief : r.link, op = wcEl(url && /^https?:/.test(url) ? 'a' : 'span', 'wc-open', url && /^https?:/.test(url) ? (isBrief(r) ? 'Brief ↗' : 'Creative ↗') : 'No link');
+        if (op.tagName === 'A') { op.href = url; op.target = '_blank'; op.rel = 'noopener noreferrer'; } else op.classList.add('none');
+        it.append(w, st, when, pill, op); items.append(it);
+      });
+      row.append(top, items); tbl.append(row);
     });
-    el.append(wrap);
+    el.append(tbl);
   });
 
   /* Reports: turnaround, from the request date to the Design ETA (the delivery date) of work completed in the period. */
