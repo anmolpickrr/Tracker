@@ -2,19 +2,19 @@
 <html lang="en-IN">
 <head>
 <meta charset="utf-8">
-<meta name="co-build" content="20261118f">
+<meta name="co-build" content="20261119a">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Creative Ops Tracker</title>
 <meta name="description" content="Creative Ops: daily stand-up, workload, deliveries and monthly reports from the creative requirement sheets.">
 <meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleusercontent.com; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://accounts.google.com/gsi/ https://www.googleapis.com; frame-src https://accounts.google.com/gsi/ https://docs.google.com blob:; media-src data: blob:; form-action 'none'; base-uri 'none'; object-src 'none'">
-<link rel="icon" href="assets/favicon.svg?v=20261118f" type="image/svg+xml">
+<link rel="icon" href="assets/favicon.svg?v=20261119a" type="image/svg+xml">
 <meta name="theme-color" content="#0f0f0f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Outfit:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=20261118f">
-<script src="assets/theme.js?v=20261118f"></script>
+<link rel="stylesheet" href="assets/style.css?v=20261119a">
+<script src="assets/theme.js?v=20261119a"></script>
 </head>
 <body>
 <div class="boot" id="boot" aria-hidden="true"><div class="boot-lock"><svg class="logo mark boot-mark" viewBox="30 140 452 212" aria-hidden="true"><defs><clipPath id="mk-c-boot"><path d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/></clipPath><linearGradient id="mk-t-boot" x1="0" x2="1"><stop offset="0" class="mk-s0"/><stop offset="1" class="mk-s1"/></linearGradient><linearGradient id="mk-h-boot" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect class="sl sl1" x="-170" y="160" width="300" height="9" rx="4.5" fill="url(#mk-t-boot)"/><rect class="sl sl2" x="-230" y="244" width="360" height="7" rx="3.5" fill="url(#mk-t-boot)"/><rect class="sl sl3 lime" x="-120" y="214" width="220" height="6" rx="3" /><rect class="sl sl4" x="-260" y="350" width="330" height="8" rx="4" fill="url(#mk-t-boot)"/><rect class="lt lt1" x="20" y="176" width="190" height="24" rx="12" fill="url(#mk-t-boot)"/><rect class="lt lt2" x="-150" y="292" width="200" height="24" rx="12" fill="url(#mk-t-boot)"/><path class="lb lb1" d="M434 150H233C212.013 150 195 167.013 195 188C195 208.987 212.013 226 233 226H434C454.987 226 472 208.987 472 188C472 167.013 454.987 150 434 150Z"/><path class="lb lb2" d="M314 266H78C57.0132 266 40 283.013 40 304C40 324.987 57.0132 342 78 342H314C334.987 342 352 324.987 352 304C352 283.013 334.987 266 314 266Z"/><g clip-path="url(#mk-c-boot)"><rect class="mk-shine" x="0" y="140" width="130" height="212" fill="url(#mk-h-boot)"/></g></svg></div></div>
@@ -312,8 +312,8 @@
           <option value="all">All time</option>
           <option value="custom">Custom dates</option>
         </select>
-        <label class="co-range">From <input class="co-input" id="r-from" type="date" min="2020-01-01" max="2099-12-31"></label>
-        <label class="co-range">To <input class="co-input" id="r-to" type="date" min="2020-01-01" max="2099-12-31"></label>
+        <label class="co-range">From <input class="co-input" id="r-from" data-cal-to="r-to" type="date" min="2020-01-01" max="2099-12-31"></label>
+        <label class="co-range">To <input class="co-input" id="r-to" data-cal-from="r-from" type="date" min="2020-01-01" max="2099-12-31"></label>
         <button class="co-btn" id="r-csv" type="button">Download report CSV</button>
       </div>
       <p class="co-note"><b data-draw="r-period">—</b> The filters above apply to every number here.</p>
@@ -645,35 +645,54 @@
       <div class="ed-facts" id="ed-facts" aria-label="Task details"></div>
       <button class="icon-btn ed-x" type="button" id="ed-x" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </header>
-    <section class="ed-brief" id="ed-brief-box" hidden aria-labelledby="ed-brief-h">
-      <div class="ed-sec-h"><b id="ed-brief-h"><i class="ed-step">1</i>Read the brief</b><a class="co-link" id="ed-brief-open" target="_blank" rel="noopener noreferrer" hidden>Open in Google Docs ↗</a></div>
+    <details class="ed-brief" id="ed-brief-box" hidden open>
+      <summary class="ed-sec-h"><b id="ed-brief-h">Brief</b><span class="ed-brief-r"><a class="co-link" id="ed-brief-open" target="_blank" rel="noopener noreferrer" hidden>Open in Google Docs ↗</a><span class="ed-chev" aria-hidden="true"></span></span></summary>
       <div class="ed-brief-body" id="ed-brief"></div>
-    </section>
-    <section class="ed-linkbox" id="ed-link-box" hidden aria-labelledby="ed-link-h">
-      <div class="ed-sec-h"><b id="ed-link-h"><i class="ed-step">2</i>Submit the creative link</b><span class="co-note" id="ed-link-cur"></span></div>
-      <div class="ed-link-row"><input class="co-input" id="ed-link" type="url" inputmode="url" placeholder="Paste the link to the finished creative (https://…)" aria-label="Creative link"><button class="co-btn primary" type="button" id="ed-link-save">Submit link</button></div>
-      <label class="ed-link-rv" id="ed-link-rv-l"><input type="checkbox" id="ed-link-rv" checked> Move the task to <b>Under review</b> when I submit</label>
-      <p class="ed-link-auto" id="ed-link-auto" hidden>Submitting moves this task to <b>Under review</b> for the Creative Head.</p>
-      <div class="ed-file" id="ed-file-wrap">
-        <div class="ed-sec-h sub"><b>Open File</b><span class="co-note" id="ed-file-cur"></span></div>
-        <p class="co-note ed-hint">The original, editable file (PSD, AI, project file or its folder). Saved to the Open File column.</p>
-        <div class="ed-link-row"><input class="co-input" id="ed-file" type="url" inputmode="url" placeholder="Paste the editable file's link (https://…)" aria-label="Open File link"><button class="co-btn" type="button" id="ed-file-save">Save file link</button></div>
+    </details>
+    <section class="ed-deliver" id="ed-deliver" aria-labelledby="ed-deliver-h" hidden>
+      <div class="ed-sec-h"><b id="ed-deliver-h">Links</b><span class="ed-count" id="ed-deliver-n"></span></div>
+      <div class="lk lk-creative" id="ed-link-box" hidden>
+        <div class="lk-head">
+          <span class="lk-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></span>
+          <div class="lk-txt"><b>Creative link</b><span class="lk-cur" id="ed-link-cur"></span></div>
+          <div class="lk-acts"><a class="lk-open" target="_blank" rel="noopener noreferrer" hidden>Open<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11 11 5M6.5 5H11v4.5"/></svg></a><button class="lk-replace" type="button" hidden>Replace</button></div>
+        </div>
+        <div class="lk-form">
+          <div class="ed-link-row"><input class="co-input" id="ed-link" type="url" inputmode="url" placeholder="Paste the finished creative’s link (https://…)" aria-label="Creative link"><button class="co-btn primary" type="button" id="ed-link-save">Submit</button><button class="co-btn lk-cancel" type="button" hidden>Cancel</button></div>
+          <label class="ed-link-rv" id="ed-link-rv-l"><input type="checkbox" id="ed-link-rv" checked> Move the task to <b>Under review</b> when I submit</label>
+          <p class="ed-link-auto" id="ed-link-auto" hidden>Submitting moves this task to <b>Under review</b> for the Creative Head.</p>
+        </div>
       </div>
-    </section>
-    <section class="ed-linkbox ed-content" id="ed-content-box" hidden aria-labelledby="ed-content-h">
-      <div class="ed-sec-h"><b id="ed-content-h"><i class="ed-step">✎</i>Submit the content</b><span class="co-note" id="ed-content-cur"></span></div>
-      <p class="co-note ed-hint">Your script or content doc. Saved to the Creative Brief column, so the designer reads it here.</p>
-      <div class="ed-link-row"><input class="co-input" id="ed-content" type="url" inputmode="url" placeholder="Paste the content link (https://…)" aria-label="Content link"><button class="co-btn primary" type="button" id="ed-content-save">Submit content</button></div>
-      <div class="ed-cst" role="radiogroup" aria-label="Content status after submitting">
-        <span>Then mark the content</span>
-        <label><input type="radio" name="ed-cst" value="Done" checked> <b>Done</b></label>
-        <label><input type="radio" name="ed-cst" value="Shared"> <b>Shared</b> (with the client)</label>
+      <div class="lk lk-file" id="ed-file-wrap" hidden>
+        <div class="lk-head">
+          <span class="lk-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+          <div class="lk-txt"><b>Open File</b><span class="lk-cur" id="ed-file-cur"></span></div>
+          <div class="lk-acts"><a class="lk-open" target="_blank" rel="noopener noreferrer" hidden>Open<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11 11 5M6.5 5H11v4.5"/></svg></a><button class="lk-replace" type="button" hidden>Replace</button></div>
+        </div>
+        <div class="lk-form">
+          <div class="ed-link-row"><input class="co-input" id="ed-file" type="url" inputmode="url" placeholder="Paste the editable file or folder link (https://…)" aria-label="Open File link"><button class="co-btn primary" type="button" id="ed-file-save">Save</button><button class="co-btn lk-cancel" type="button" hidden>Cancel</button></div>
+        </div>
+      </div>
+      <div class="lk lk-content" id="ed-content-box" hidden>
+        <div class="lk-head">
+          <span class="lk-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg></span>
+          <div class="lk-txt"><b>Content</b><span class="lk-cur" id="ed-content-cur"></span></div>
+          <div class="lk-acts"><a class="lk-open" target="_blank" rel="noopener noreferrer" hidden>Open<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11 11 5M6.5 5H11v4.5"/></svg></a><button class="lk-replace" type="button" hidden>Replace</button></div>
+        </div>
+        <div class="lk-form">
+          <div class="ed-link-row"><input class="co-input" id="ed-content" type="url" inputmode="url" placeholder="Paste the script or content doc link (https://…)" aria-label="Content link"><button class="co-btn primary" type="button" id="ed-content-save">Submit</button><button class="co-btn lk-cancel" type="button" hidden>Cancel</button></div>
+          <div class="ed-cst" role="radiogroup" aria-label="Content status after submitting">
+            <span>Mark the content</span>
+            <label><input type="radio" name="ed-cst" value="Done" checked> <b>Done</b></label>
+            <label><input type="radio" name="ed-cst" value="Shared"> <b>Shared</b> with the client</label>
+          </div>
+        </div>
       </div>
     </section>
     <section class="ed-manage" id="ed-manage" aria-labelledby="ed-manage-h">
-    <div class="ed-sec-h"><b id="ed-manage-h">Manage task</b><span class="co-note" id="ed-manage-n">Status, schedule and assignment</span></div>
-    <div class="co-ed-grid">
-      <label class="co-field">Design status
+    <div class="ed-sec-h"><b id="ed-manage-h">Manage task</b><span class="co-note" id="ed-manage-n"></span></div>
+    <div class="co-ed-grid ed-mgrid">
+      <label class="co-field ed-f-status">Design status
         <select class="co-select" id="ed-status">
           <option value="To be planned">TBP: ready to be picked up</option>
           <option value="WIP">WIP: in progress</option>
@@ -687,14 +706,17 @@
           <option value="Deprioritised">DEPRIORITIZED: no longer required</option>
         </select>
       </label>
-      <label class="co-field" id="ed-eta-l">Design ETA<input class="co-input" id="ed-eta" type="date" min="2020-01-01" max="2099-12-31"><span class="ed-quick" id="ed-quick" hidden><button type="button" data-d="0">Today</button><button type="button" data-d="1">Tomorrow</button><button type="button" data-d="w">Next working day</button><button type="button" data-d="7">+1 week</button></span></label>
-      <label class="co-field">Designer<input class="co-input" id="ed-designer" type="text" list="ed-people" maxlength="120" placeholder="Unassigned"></label>
-      <label class="co-field">Priority
+      <label class="co-field ed-f-eta" id="ed-eta-l">Design ETA<input class="co-input" id="ed-eta" type="date" min="2020-01-01" max="2099-12-31"></label>
+      <div class="co-field ed-f-who"><span id="ed-who-l">Designer</span>
+        <input id="ed-designer" type="hidden">
+        <button class="ed-who" type="button" id="ed-who" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="ed-who-l ed-who"></button>
+      </div>
+      <label class="co-field ed-f-pri">Priority
         <select class="co-select" id="ed-priority"><option value="">None</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select>
       </label>
-      <label class="co-field" id="ed-qty-wrap">No. of creatives<input class="co-input" id="ed-qty" type="number" min="1" max="999" step="1"></label>
+      <label class="co-field ed-f-qty" id="ed-qty-wrap">No. of creatives<input class="co-input" id="ed-qty" type="number" min="1" max="999" step="1"></label>
+      <span class="ed-quick ed-f-quick" id="ed-quick" hidden><button type="button" data-d="0">Today</button><button type="button" data-d="1">Tomorrow</button><button type="button" data-d="w">Next working day</button><button type="button" data-d="7">+1 week</button></span>
     </div>
-    <datalist id="ed-people"></datalist>
     <p class="co-note ed-lock" id="ed-lock" hidden>Locked fields need a permission you do not have. Ask an Admin if you need to change them.</p>
     </section>
     <p class="co-note" id="ed-info"></p>
@@ -711,8 +733,8 @@
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/motion@11.11.17/dist/motion.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.min.js" defer></script>
-<script src="assets/config.js?v=20261118f"></script>
-<script src="assets/data.js?v=20261118f"></script>
-<script src="assets/app.js?v=20261118f"></script>
+<script src="assets/config.js?v=20261119a"></script>
+<script src="assets/data.js?v=20261119a"></script>
+<script src="assets/app.js?v=20261119a"></script>
 </body>
 </html>

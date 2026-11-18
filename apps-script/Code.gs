@@ -469,6 +469,9 @@ function updateTask_(body, mine, pm, contentMine) {
     row = hits[0];
   }
 
+  // The whole row in one read (display text and raw values): every check below uses it, instead of a call per cell.
+  const rowRange = sheet.getRange(row, 1, 1, lastCol), rowD = rowRange.getDisplayValues()[0], rowV = rowRange.getValues()[0];
+  const disp = function (ci) { return ci >= 0 ? rowD[ci] : ''; };
   // Check every field first, so a task is never left half-saved.
   if (f.status != null && c.status < 0) return { ok: false, error: 'No design status column found' };
   if (f.eta != null && c.eta < 0) return { ok: false, error: 'No Design ETA column found' };
@@ -488,22 +491,22 @@ function updateTask_(body, mine, pm, contentMine) {
   if (f.cstatus != null && c.cstatus < 0) return { ok: false, error: 'No Content Status column found in this sheet' };
   if (f.cstatus != null && ['Done', 'Shared'].indexOf(String(f.cstatus)) < 0) return { ok: false, error: 'Content status can be set to Done or Shared here.' };
   // Only the person's own tasks (unless they may work on others').
-  if (mine && !mine(sheet.getRange(row, c.designer + 1).getDisplayValue(), c.owner >= 0 ? sheet.getRange(row, c.owner + 1).getDisplayValue() : '')) return { ok: false, error: 'This task is not assigned to you, so you cannot change it. Ask an Admin if you need access.' };
+  if (mine && !mine(disp(c.designer), disp(c.owner))) return { ok: false, error: 'This task is not assigned to you, so you cannot change it. Ask an Admin if you need access.' };
   // The content link (Creative Brief) and content status belong to the task's Content Owner (or an Admin).
-  if (contentMine && (f.brief != null || f.cstatus != null) && !contentMine(c.owner >= 0 ? sheet.getRange(row, c.owner + 1).getDisplayValue() : '')) return { ok: false, error: 'Only the task\'s Content Owner can submit its content link or content status.' };
+  if (contentMine && (f.brief != null || f.cstatus != null) && !contentMine(disp(c.owner))) return { ok: false, error: 'Only the task\'s Content Owner can submit its content link or content status.' };
   // Dates: the Design ETA of open work and the delivery date of completed work are separate permissions.
   if (pm && f.eta != null && c.status >= 0) {
-    const g = CODATA.groupOf(CODATA.stageOf(sheet.getRange(row, c.status + 1).getDisplayValue(), '')[0]), done = g.done || g.group === 'rejected';
+    const g = CODATA.groupOf(CODATA.stageOf(disp(c.status), '')[0]), done = g.done || g.group === 'rejected';
     if (done && !pm.delivery) return { ok: false, error: 'This task is completed: changing its delivery date needs the Delivery date permission. Ask an Admin.' };
     if (!done && !pm.eta) return { ok: false, error: 'You do not have permission to change the Design ETA. Ask an Admin.' };
   }
   // Changed in the sheet since the dashboard last loaded it? Refuse, so nothing is overwritten without being seen.
   const was = body.before || {};
-  if (was.status != null && f.status != null && c.status >= 0) { const cur = CODATA.stageOf(sheet.getRange(row, c.status + 1).getDisplayValue(), '')[0]; if (cur !== was.status && !(was.status === 'To be planned' && cur === 'Awaiting brief')) return { ok: false, error: 'changed', field: 'Design status', now: cur }; }
-  if (was.file != null && f.file != null && c.file >= 0) { const cur = clean_(sheet.getRange(row, c.file + 1).getDisplayValue()); if (cur !== clean_(was.file)) return { ok: false, error: 'changed', field: 'Open File', now: cur }; }
-  if (was.brief != null && f.brief != null && c.brief >= 0) { const cur = clean_(sheet.getRange(row, c.brief + 1).getDisplayValue()); if (cur !== clean_(was.brief)) return { ok: false, error: 'changed', field: 'Creative Brief', now: cur }; }
-  if (was.link != null && f.link != null && c.link >= 0) { const cur = clean_(sheet.getRange(row, c.link + 1).getDisplayValue()); if (cur !== clean_(was.link)) return { ok: false, error: 'changed', field: 'Creative link', now: cur }; }
-  if (was.eta != null && f.eta != null && c.eta >= 0) { const v = sheet.getRange(row, c.eta + 1).getValue(); const cur = v instanceof Date ? Utilities.formatDate(v, IST, 'yyyy-MM-dd') : (CODATA.parseDate(clean_(v)) || ''); if (cur !== was.eta) return { ok: false, error: 'changed', field: 'Design ETA', now: cur }; }
+  if (was.status != null && f.status != null && c.status >= 0) { const cur = CODATA.stageOf(disp(c.status), '')[0]; if (cur !== was.status && !(was.status === 'To be planned' && cur === 'Awaiting brief')) return { ok: false, error: 'changed', field: 'Design status', now: cur }; }
+  if (was.file != null && f.file != null && c.file >= 0) { const cur = clean_(disp(c.file)); if (cur !== clean_(was.file)) return { ok: false, error: 'changed', field: 'Open File', now: cur }; }
+  if (was.brief != null && f.brief != null && c.brief >= 0) { const cur = clean_(disp(c.brief)); if (cur !== clean_(was.brief)) return { ok: false, error: 'changed', field: 'Creative Brief', now: cur }; }
+  if (was.link != null && f.link != null && c.link >= 0) { const cur = clean_(disp(c.link)); if (cur !== clean_(was.link)) return { ok: false, error: 'changed', field: 'Creative link', now: cur }; }
+  if (was.eta != null && f.eta != null && c.eta >= 0) { const v = rowV[c.eta]; const cur = v instanceof Date ? Utilities.formatDate(v, IST, 'yyyy-MM-dd') : (CODATA.parseDate(clean_(v)) || ''); if (cur !== was.eta) return { ok: false, error: 'changed', field: 'Design ETA', now: cur }; }
 
   const statusVal = f.status != null ? statusValue_(sheet, sheet.getRange(row, c.status + 1), c.status, String(f.status)) : null;
 
@@ -511,17 +514,9 @@ function updateTask_(body, mine, pm, contentMine) {
   const changes = [];
   const where = { action: 'Task updated', sheet: sheet.getParent().getName(), tab: sheet.getName(), record: id, row: row };
   const headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
-  const track = function (colIndex, fn) {
-    const cell = sheet.getRange(row, colIndex + 1);
-    const before = cell.getDisplayValue();
-    fn(cell);
-    const after = cell.getDisplayValue();
-    if (before !== after) changes.push(Object.assign({}, where, { field: clean_(headers[colIndex]) || ('Column ' + (colIndex + 1)), before: before, after: after }));
-  };
+  const touched = [];
+  const track = function (colIndex, fn) { fn(sheet.getRange(row, colIndex + 1)); touched.push(colIndex); };
   const written = {};
-  if (f.status != null) {
-    track(c.status, function (cell) { cell.setValue(statusVal); written.status = statusVal; });
-  }
   if (f.designer != null) {
     // Checked before anything is written: a name outside the sheet's dropdown is refused.
     const name = clean_(f.designer).slice(0, 120);
@@ -532,6 +527,9 @@ function updateTask_(body, mine, pm, contentMine) {
       if (!value) return { ok: false, error: '"' + name + '" is not in the sheet\'s designer dropdown' };
     }
     f.designer = value;
+  }
+  if (f.status != null) {
+    track(c.status, function (cell) { cell.setValue(statusVal); written.status = statusVal; });
   }
   if (f.eta != null) {
     track(c.eta, function (cell) {
@@ -557,6 +555,11 @@ function updateTask_(body, mine, pm, contentMine) {
     track(c.cstatus, function (cell) { cell.setValue(v); }); written.cstatus = v;
   }
   if (f.qty != null) { const q = parseInt(f.qty, 10); track(c.qty, function (cell) { cell.setValue(q); }); written.qty = q; }
+  // what each written cell shows now (one read), for the activity log
+  if (touched.length) {
+    const after = sheet.getRange(row, 1, 1, lastCol).getDisplayValues()[0];
+    touched.forEach(function (ci) { if (rowD[ci] !== after[ci]) changes.push(Object.assign({}, where, { field: clean_(headers[ci]) || ('Column ' + (ci + 1)), before: rowD[ci], after: after[ci] })); });
+  }
   return { ok: true, row: row, written: written, changes: changes };
 }
 

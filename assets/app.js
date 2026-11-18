@@ -29,6 +29,11 @@
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
 
   const S = { status: 'idle', error: '', tasks: null, team: null, teamRaw: [], sources: {}, generatedAt: null, loadedAt: null };
+  /* Task saves in flight (uid -> the task as it will be once saved). A refresh that arrives before the sheet has the
+     change keeps showing the saved values, so nothing flickers back; cleared once the sheet confirms (or after 90 s). */
+  const PEND = new Map();
+  const SAVING = new Set();
+  const savingPill = () => requestAnimationFrame(() => document.querySelectorAll('[data-uid]').forEach((e) => e.classList.toggle('is-saving', SAVING.has(e.dataset.uid))));
   // Chart categories in a fixed, validated order (never cycled past the last slot: the tail folds into "Other").
   const colors = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)'];
   const draws = new Map();
@@ -72,6 +77,7 @@
     raf = requestAnimationFrame(() => {
       syncControls();
       draws.forEach((_, name) => runDraw(name));
+      if (SAVING.size) savingPill();
     });
   }
   let lastW = window.innerWidth;
@@ -153,6 +159,7 @@
       S.teamRaw = CODATA.parseTeam(teamKey ? src[teamKey] : null);
       const known = S.teamRaw.flatMap((m) => [m.name].concat(String(m.aliases || '').split(',').map((x) => x.trim()).filter((x) => x.includes(' '))));
       S.tasks = CODATA.buildTasks(keys.map((k) => ({ kind: CODATA.kindOf(k, src[k].kind), rows: CODATA.parseSource(CODATA.kindOf(k, src[k].kind), src[k], k) })), undefined, known);
+      if (PEND.size) { const ign = S.tasks.ignored, now = Date.now(); PEND.forEach((p, uid) => { if (now - p.at > 90000) PEND.delete(uid); }); S.tasks = S.tasks.map((t) => { const p = PEND.get(t.uid); return p ? p.apply(t, p.fields) : t; }); S.tasks.ignored = ign; }
       S.ignored = S.tasks.ignored || [];
       S.team = S.teamRaw;
       S.cols = {}; Object.keys(src).forEach((k) => { S.cols[k] = CODATA.columnsOf(src[k]); });
@@ -3020,6 +3027,127 @@
     });
   })();
 
+  /* ================= Floating panels (calendar, people picker) =================
+     Shown in the top layer (above open windows) and placed under the field, or above it when there is no room.
+     Esc, a click outside or scrolling the page closes it; focus returns to the field. */
+  const FLOAT = { cur: null };
+  function floatOpen(anchor, panel, onClose) {
+    floatClose();
+    panel.classList.add('fl-pan');
+    const canPop = typeof panel.showPopover === 'function';
+    if (canPop) { panel.setAttribute('popover', 'manual'); (anchor.closest('dialog') || document.body).append(panel); panel.showPopover(); }
+    else { panel.style.position = 'fixed'; panel.style.zIndex = '9999'; (anchor.closest('dialog') || document.body).append(panel); }
+    const place = () => {
+      const r = anchor.getBoundingClientRect(), vw = document.documentElement.clientWidth, vh = window.innerHeight, pw = panel.offsetWidth, ph = panel.offsetHeight;
+      let top = r.bottom + 6; if (top + ph > vh - 8 && r.top - ph - 6 > 8) top = r.top - ph - 6; top = Math.max(8, Math.min(top, vh - ph - 8));
+      let left = Math.min(r.left, vw - pw - 8); left = Math.max(8, left);
+      panel.style.top = top + 'px'; panel.style.left = left + 'px';
+    };
+    place(); requestAnimationFrame(place);
+    const outside = (e) => { if (!panel.contains(e.target) && !anchor.contains(e.target)) floatClose(); };
+    const key = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); floatClose(); anchor.focus(); } };
+    // scrolling moves the panel with its field; it closes only once the field has left the screen
+    const scr = (e) => { if (panel.contains(e.target)) return; const r = anchor.getBoundingClientRect(); if (r.bottom < 0 || r.top > window.innerHeight) floatClose(); else place(); };
+    setTimeout(() => { document.addEventListener('pointerdown', outside, true); }, 0);
+    document.addEventListener('keydown', key, true); window.addEventListener('scroll', scr, true); window.addEventListener('resize', place);
+    FLOAT.cur = { panel, anchor, done: () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key, true); window.removeEventListener('scroll', scr, true); window.removeEventListener('resize', place); if (canPop && panel.matches(':popover-open')) panel.hidePopover(); panel.remove(); anchor.setAttribute('aria-expanded', 'false'); if (onClose) onClose(); } };
+    anchor.setAttribute('aria-expanded', 'true');
+    return panel;
+  }
+  function floatClose() { const c = FLOAT.cur; FLOAT.cur = null; if (c) c.done(); }
+
+  /* ================= Calendar (every date field on the dashboard) =================
+     The field still accepts typing; the calendar button (or a click on the field) opens a month view in the dashboard's
+     own style: Monday first, today ringed, the chosen day filled, weekends muted, days outside min/max disabled, a
+     From–To range shaded, and month/year jumps. Picking a day sets the field and fires its usual input/change events. */
+  const cel = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const CALP = { MON: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] };
+  const calIso = (y, m, d) => { const x = new Date(Date.UTC(y, m, d)); return x.toISOString().slice(0, 10); };
+  const calPair = (inp) => { const id = inp.dataset.calFrom || inp.dataset.calTo; return id ? document.getElementById(id) || (inp.parentNode && inp.closest('.cal-range, .co-filters, form, div').querySelector('#' + CSS.escape(id))) : null; };
+  function calOpen(inp, btn) {
+    if (inp.disabled || inp.readOnly && !inp.dataset.calRo) return;
+    if (FLOAT.cur && FLOAT.cur.anchor === btn) { floatClose(); return; }
+    const today = CO.today(), min = inp.min || '0000-01-01', max = inp.max || '9999-12-31';
+    let sel = /^\d{4}-\d{2}-\d{2}$/.test(inp.value) ? inp.value : '', base = sel || (today > max ? max : today < min ? min : today);
+    let vy = +base.slice(0, 4), vm = +base.slice(5, 7) - 1, focus = base, mode = 'days';
+    const pan = cel('div', 'cal-pan'); pan.setAttribute('role', 'dialog'); pan.setAttribute('aria-label', (inp.getAttribute('aria-label') || 'Date') + ': choose a date');
+    const set = (iso) => {
+      inp.value = iso; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
+      floatClose(); btn.focus();
+    };
+    const range = () => { const o = calPair(inp); if (!o || !/^\d{4}-/.test(o.value) || !sel) return null; return inp.dataset.calFrom ? [o.value, sel].sort() : [sel, o.value].sort(); };
+    const paint = () => {
+      pan.replaceChildren();
+      const hd = cel('div', 'cal-hd');
+      const prev = cel('button', 'cal-nav', ''); prev.type = 'button'; prev.setAttribute('aria-label', mode === 'days' ? 'Previous month' : 'Previous year'); prev.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg>';
+      const next = cel('button', 'cal-nav', ''); next.type = 'button'; next.setAttribute('aria-label', mode === 'days' ? 'Next month' : 'Next year'); next.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg>';
+      const ttl = cel('button', 'cal-ttl'); ttl.type = 'button'; ttl.setAttribute('aria-label', mode === 'days' ? 'Choose month and year' : 'Back to days');
+      ttl.append(cel('b', '', mode === 'days' ? CALP.MON[vm] : String(vy)), mode === 'days' ? cel('span', '', String(vy)) : cel('span', '', 'Pick a month'));
+      prev.addEventListener('click', () => { if (mode === 'days') { vm--; if (vm < 0) { vm = 11; vy--; } } else vy--; paint(); });
+      next.addEventListener('click', () => { if (mode === 'days') { vm++; if (vm > 11) { vm = 0; vy++; } } else vy++; paint(); });
+      ttl.addEventListener('click', () => { mode = mode === 'days' ? 'months' : 'days'; paint(); });
+      hd.append(prev, ttl, next); pan.append(hd);
+      if (mode === 'months') {
+        const g = cel('div', 'cal-months');
+        CALP.MON.forEach((m, i) => { const b = cel('button', 'cal-m', m.slice(0, 3)); b.type = 'button'; const first = calIso(vy, i, 1), last = calIso(vy, i + 1, 0); b.disabled = last < min || first > max; if (vy === +today.slice(0, 4) && i === +today.slice(5, 7) - 1) b.classList.add('now'); if (sel && +sel.slice(0, 4) === vy && +sel.slice(5, 7) - 1 === i) b.classList.add('on'); b.addEventListener('click', () => { vm = i; mode = 'days'; paint(); }); g.append(b); });
+        pan.append(g);
+      } else {
+        const wk = cel('div', 'cal-wk'); ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].forEach((d, i) => wk.append(cel('span', i > 4 ? 'we' : '', d))); pan.append(wk);
+        const g = cel('div', 'cal-grid'); g.setAttribute('role', 'grid');
+        const first = new Date(Date.UTC(vy, vm, 1)), lead = (first.getUTCDay() + 6) % 7, rg = range();
+        if (!(focus.slice(0, 7) === calIso(vy, vm, 1).slice(0, 7))) focus = sel && sel.slice(0, 7) === calIso(vy, vm, 1).slice(0, 7) ? sel : calIso(vy, vm, 1);
+        for (let i = 0; i < 42; i++) {
+          const iso = calIso(vy, vm, 1 - lead + i), d = +iso.slice(8, 10), out = iso.slice(5, 7) !== calIso(vy, vm, 1).slice(5, 7), wd = i % 7;
+          const b = cel('button', 'cal-d', String(d)); b.type = 'button'; b.dataset.iso = iso; b.setAttribute('role', 'gridcell');
+          b.setAttribute('aria-label', new Date(iso + 'T00:00:00Z').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }));
+          if (out) b.classList.add('out'); if (wd > 4) b.classList.add('we'); if (iso === today) b.classList.add('now');
+          if (iso === sel) { b.classList.add('on'); b.setAttribute('aria-selected', 'true'); }
+          if (rg && iso >= rg[0] && iso <= rg[1]) { b.classList.add('in'); if (iso === rg[0]) b.classList.add('r0'); if (iso === rg[1]) b.classList.add('r1'); }
+          b.disabled = iso < min || iso > max; b.tabIndex = iso === focus ? 0 : -1;
+          b.addEventListener('click', () => set(iso));
+          g.append(b);
+        }
+        g.addEventListener('keydown', (e) => {
+          const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+          if (!step && !['PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) return;
+          e.preventDefault();
+          const cur = document.activeElement.dataset.iso || focus, dt = new Date(cur + 'T00:00:00Z');
+          if (step) dt.setUTCDate(dt.getUTCDate() + step);
+          else if (e.key === 'PageUp' || e.key === 'PageDown') dt.setUTCMonth(dt.getUTCMonth() + (e.key === 'PageUp' ? -1 : 1));
+          else { const wd2 = (dt.getUTCDay() + 6) % 7; dt.setUTCDate(dt.getUTCDate() + (e.key === 'Home' ? -wd2 : 6 - wd2)); }
+          focus = dt.toISOString().slice(0, 10); vy = dt.getUTCFullYear(); vm = dt.getUTCMonth(); paint();
+          const f = pan.querySelector('.cal-d[data-iso="' + focus + '"]'); if (f) f.focus();
+        });
+        pan.append(g);
+      }
+      const ft = cel('div', 'cal-ft');
+      const chip = (txt, iso) => { if (iso < min || iso > max) return; const b = cel('button', 'cal-q' + (iso === sel ? ' on' : ''), txt); b.type = 'button'; b.addEventListener('click', () => set(iso)); ft.append(b); };
+      chip('Today', today);
+      if (inp.dataset.calQuick != null) { const add = (n) => CO.addDays(today, n); let w = add(1); while ([0, 6].includes(new Date(w + 'T00:00:00Z').getUTCDay())) w = CO.addDays(w, 1); chip('Tomorrow', add(1)); if (w !== add(1)) chip('Next working day', w); chip('+1 week', add(7)); }
+      if (!inp.required && sel) { const c = cel('button', 'cal-clear', 'Clear'); c.type = 'button'; c.addEventListener('click', () => { inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); floatClose(); btn.focus(); }); ft.append(c); }
+      pan.append(ft);
+    };
+    paint();
+    floatOpen(btn, pan);
+    setTimeout(() => { const f = pan.querySelector('.cal-d[tabindex="0"]'); if (f && document.activeElement !== inp) f.focus(); }, 0);
+  }
+  function calEnhance(inp) {
+    if (inp.dataset.cal) return; inp.dataset.cal = '1';
+    const wrap = cel('span', 'cal-field'); inp.parentNode.insertBefore(wrap, inp); wrap.append(inp);
+    const btn = cel('button', 'cal-btn'); btn.type = 'button'; btn.setAttribute('aria-label', 'Open calendar' + (inp.getAttribute('aria-label') ? ': ' + inp.getAttribute('aria-label') : '')); btn.setAttribute('aria-haspopup', 'dialog'); btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.4" class="cal-dot"/></svg>';
+    wrap.append(btn);
+    const sync = () => { btn.disabled = inp.disabled; wrap.classList.toggle('is-off', inp.disabled); wrap.classList.toggle('has-v', !!inp.value); };
+    new MutationObserver(sync).observe(inp, { attributes: true, attributeFilter: ['disabled'] }); inp.addEventListener('input', sync); inp.addEventListener('change', sync); sync();
+    btn.addEventListener('click', () => calOpen(inp, btn));
+    // A mouse click on the field opens it too (typing still works); phones get the dashboard calendar instead of the native wheel.
+    inp.addEventListener('click', (e) => { if (e.pointerType === 'touch' || matchMedia('(pointer: coarse)').matches) e.preventDefault(); calOpen(inp, btn); });
+    inp.addEventListener('keydown', (e) => { if ((e.key === 'ArrowDown' && e.altKey) || e.key === 'F4') { e.preventDefault(); calOpen(inp, btn); } });
+  }
+  const calScan = (root) => (root.querySelectorAll ? root : document).querySelectorAll('input[type="date"]:not([data-cal])').forEach(calEnhance);
+  calScan(document);
+  new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType !== 1) return; if (n.matches && n.matches('input[type="date"]')) calEnhance(n); else if (n.querySelector && n.querySelector('input[type="date"]:not([data-cal])')) calScan(n); }))).observe(document.body, { childList: true, subtree: true });
+
   /* ================= Edit a task (writes back to the sheet) ================= */
   (() => {
     const dlgE = document.getElementById('editor');
@@ -3045,9 +3173,7 @@
       if (![...st.options].some((o) => o.value === dStage)) { const o = new Option(dStage + ' (as in the sheet)', dStage); o.dataset.extra = '1'; o.disabled = true; st.append(o); }
       st.value = dStage;
       $('ed-eta').value = r.eta || ''; $('ed-quick').querySelectorAll('[data-d]').forEach((b) => b.classList.remove('on'));
-      $('ed-designer').value = before.designer;
-      const names = new Set(); (S.team || []).forEach((m) => { if (m.status !== 'Inactive') names.add(m.name); }); S.tasks.forEach((t) => t.designers && t.designers.split(' + ').forEach((d) => names.add(CO.canon(d))));
-      $('ed-people').replaceChildren(...[...names].sort().map((n) => new Option(n)));
+      $('ed-designer').value = before.designer; whoPaint();
       $('ed-priority').value = /^P[0-3]$/.test(r.priority) ? r.priority : '';
       const cols = (S.cols && S.cols[r.src]) || {};
       $('ed-qty-wrap').hidden = !cols.qty; $('ed-qty').value = before.qty;
@@ -3065,8 +3191,8 @@
       const edit = canSt || canDate || canAssign || canDet, resch = canDate;
       $('ed-status').disabled = !canSt; $('ed-qty').disabled = !canDet; if (!canDet) $('ed-priority').disabled = true;
       $('ed-eta').disabled = !canDate; $('ed-eta').title = canDate ? '' : done ? 'You cannot change the delivery date of this task' : 'You cannot change the Design ETA';
-      $('ed-designer').disabled = !canAssign; $('ed-designer').title = canAssign ? '' : 'You cannot reassign this task';
-      $('ed-eta-l').firstChild.textContent = done ? 'Delivery date' : 'Design ETA';
+      $('ed-designer').disabled = !canAssign; $('ed-who').disabled = !canAssign; $('ed-who').title = canAssign ? '' : 'You cannot reassign this task'; whoPaint();
+      $('ed-eta-l').firstChild.textContent = done ? 'Delivery date' : 'Design ETA'; $('ed-who-l').textContent = /video|edit|reel|ugc/i.test(r.type || '') ? 'Editor' : 'Designer';
       $('ed-quick').hidden = !canDate; $('ed-lock').hidden = (canDate && canAssign && canSt && canDet) || !edit;
       // Team members finish work by submitting the link (which moves the task to Under review); the Manage section
       // (status, ETA, designer, priority) shows only for Admins and people the owner gave the status switch.
@@ -3074,11 +3200,65 @@
       $('ed-manage').hidden = !manage; $('ed-save').hidden = !manage;
       $('ed-cancel').textContent = manage ? 'Cancel' : 'Close';
       if (!manage && !canLink) $('ed-msg').textContent = 'View only. Ask an Admin if you need to change this task.';
-      edFacts(r, links);
       wsBrief(r, canBrief); wsLink(r, canLink, canSt);
+      edFacts(r, $('ed-deliver').hidden ? links : null);
+      $('ed-manage-n').textContent = manage ? '' : '';
       $('ed-history').hidden = !(A.mode === 'auth' && isAdmin() && r.id);
       if (dlgE.showModal) dlgE.showModal(); else dlgE.setAttribute('open', '');
     }
+    /* Designer / editor picker: search, photo initials, role, and (Admins only) how much open work each person has. */
+    function whoPaint() {
+      const b = $('ed-who'), v = $('ed-designer').value.trim(), names = v ? v.split(/\s*,\s*/) : [];
+      b.replaceChildren();
+      if (!names.length) { b.classList.add('none'); b.append(CO.av('?', 'none'), el('span', 'ed-who-n', b.disabled ? 'Unassigned' : 'Assign someone')); }
+      else { b.classList.remove('none'); const avs = el('span', 'ed-who-avs'); names.slice(0, 3).forEach((n) => avs.append(CO.av(n))); const m = CO.member(names[0]); b.append(avs, el('span', 'ed-who-n', names.join(', ')), el('span', 'ed-who-role', names.length > 1 ? names.length + ' people' : (m.role || ''))); }
+      b.classList.toggle('changed', !!before && v !== before.designer);
+    }
+    function whoOpen() {
+      const b = $('ed-who'); if (b.disabled) return;
+      if (FLOAT.cur && FLOAT.cur.anchor === b) { floatClose(); return; }
+      const cur = $('ed-designer').value.trim().toLowerCase(), adm = isAdmin();
+      const load = {}; (S.tasks || []).forEach((t) => { if (t.open) (t.list || []).forEach((n) => { load[n] = (load[n] || 0) + 1; }); });
+      const team = (S.team || []).filter((m) => m.status !== 'Inactive' && m.name);
+      const listed = new Set(team.map((m) => m.name.toLowerCase()));
+      const others = [...new Set((S.tasks || []).flatMap((t) => t.list || []).map(CO.canon))].filter((n) => n && n !== 'Unassigned' && !listed.has(n.toLowerCase())).sort();
+      const pan = el('div', 'who-pan'); pan.setAttribute('role', 'dialog'); pan.setAttribute('aria-label', 'Assign to');
+      const q = el('input', 'co-input who-q'); q.type = 'search'; q.placeholder = 'Search people'; q.setAttribute('aria-label', 'Search people'); q.autocomplete = 'off';
+      const ul = el('div', 'who-list'); ul.setAttribute('role', 'listbox');
+      pan.append(q, ul);
+      const pick = (name) => { $('ed-designer').value = name; whoPaint(); floatClose(); b.focus(); };
+      const opt = (name, sub, extra) => {
+        const o = el('button', 'who-opt'); o.type = 'button'; o.setAttribute('role', 'option'); o.dataset.name = name;
+        const on = name.toLowerCase() === cur || (!name && !cur); o.setAttribute('aria-selected', String(on)); if (on) o.classList.add('on');
+        o.append(name ? CO.av(name) : CO.av('?', 'none'), el('span', 'who-nm', name || 'Unassigned'));
+        if (sub) o.append(el('span', 'who-sub', sub)); if (extra) o.append(extra);
+        o.addEventListener('click', () => pick(name)); return o;
+      };
+      const paint = () => {
+        const f = q.value.trim().toLowerCase(), hit = (n, r) => !f || n.toLowerCase().includes(f) || String(r || '').toLowerCase().includes(f);
+        ul.replaceChildren();
+        if (!f) ul.append(opt('', 'Nobody yet'));
+        const tm = team.filter((m) => hit(m.name, m.role)).sort((a, c) => a.name.localeCompare(c.name));
+        if (tm.length) { ul.append(el('p', 'who-h', 'Team')); tm.forEach((m) => { const n = load[m.name] || 0; ul.append(opt(m.name, m.role, adm ? el('span', 'who-load' + (n >= 8 ? ' hi' : !n ? ' free' : ''), n ? n + ' open' : 'Free') : null)); }); }
+        const ot = others.filter((n) => hit(n));
+        if (ot.length) { ul.append(el('p', 'who-h', 'Others in the sheets')); ot.forEach((n) => ul.append(opt(n, 'Not on the team list'))); }
+        if (!ul.querySelector('.who-opt')) ul.append(el('p', 'who-empty', 'Nobody matches "' + q.value.trim() + '".'));
+      };
+      paint();
+      q.addEventListener('input', paint);
+      pan.addEventListener('keydown', (e) => {
+        const os = [...ul.querySelectorAll('.who-opt')]; if (!os.length) return;
+        const i = os.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown') { e.preventDefault(); (os[i + 1] || os[0]).focus(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); if (i <= 0) q.focus(); else os[i - 1].focus(); }
+        else if (e.key === 'Enter' && document.activeElement === q) { e.preventDefault(); os[0].click(); }
+      });
+      floatOpen(b, pan); pan.style.width = Math.max(b.offsetWidth, 280) + 'px';
+      setTimeout(() => { q.focus(); const on = ul.querySelector('.who-opt.on'); if (on) on.scrollIntoView({ block: 'nearest' }); }, 0);
+    }
+    $('ed-who').addEventListener('click', whoOpen);
+    $('ed-who').addEventListener('keydown', (e) => { if (e.key === 'ArrowDown') { e.preventDefault(); whoOpen(); } });
+    dlgE.addEventListener('close', floatClose);
     const openFrom = (e) => {
       if (e.target.closest('a, button, input, select')) return;
       const el = e.target.closest('[data-uid]'); if (el) openEditor(el.dataset.uid);
@@ -3114,47 +3294,64 @@
       if (now.priority !== before.priority && !$('ed-priority').disabled) fields.priority = now.priority;
       if (!$('ed-qty-wrap').hidden && now.qty !== before.qty) fields.qty = now.qty;
       if (!Object.keys(fields).length) { dlgE.close(); return; }
-      $('ed-save').disabled = true; $('ed-save').textContent = 'Saving…'; $('ed-msg').textContent = '';
-      try { await saveFields(r, fields, before); dlgE.close(); }
-      catch (err) {
-        $('ed-msg').textContent = 'Not saved: ' + err.message;
-        $('ed-save').disabled = false; $('ed-save').textContent = 'Save to sheet';
-      }
+      // the change shows at once; the sheet write finishes in the background (Retry on the toast if it fails)
+      dlgE.close(); saveInBackground(r, fields, before);
     });
     // One path for every task change (the editor and the assistant): write to the sheet, show it at once, then reload.
     // was: the values this screen showed when it opened. The web app refuses the change when the sheet has
     // changed since (someone edited it there), so nobody overwrites work they have not seen.
+    /* Optimistic: the change shows everywhere at once (and the window can close), the sheet write runs in the background,
+       and a failure puts the task back as it was with a clear message and a Retry. */
+    function applyLocal(r, fields) {
+      const t = Object.assign({}, r);
+      if (fields.status) { t.stage = fields.status; t.open = CODATA.OPEN_STAGES.includes(fields.status); t.awaiting = false; }
+      if ('eta' in fields) t.eta = fields.eta || null;
+      if ('designer' in fields) { t.designers = fields.designer ? fields.designer.split(/\s*,\s*/).join(' + ') : ''; t.list = fields.designer ? fields.designer.split(/\s*,\s*/) : []; }
+      if ('priority' in fields) t.priority = fields.priority;
+      if (fields.qty) t.qty = Number(fields.qty);
+      if ('link' in fields) t.link = fields.link;
+      if ('file' in fields) t.file = fields.file;
+      if ('brief' in fields) t.brief = fields.brief;
+      if (fields.cstatus) t.content_status = String(fields.cstatus).toUpperCase();
+      Object.assign(t, CODATA.groupOf(t.stage)); if (t.done) { t.ddate = t.eta || t.req; if (t.ddate && t.ddate > CO.today()) t.ddate = CO.today(); t.month = t.ddate ? t.ddate.slice(0, 7) : ''; } else { t.ddate = null; t.month = ''; }
+      return t;
+    }
+    const swap = (uid, t) => { if (S.tasks) { const ign = S.tasks.ignored; S.tasks = S.tasks.map((x) => (x.uid === uid ? t : x)); S.tasks.ignored = ign; } };
     async function saveFields(r, fields, was) {
         const key = 'action|save|' + r.src + ':' + (r.id || r.row), payload = { action: 'updateTask', source: r.src, id: r.id, row: r.row, fields };
         if (was) payload.before = { status: 'status' in fields ? was.status : undefined, link: 'link' in fields ? was.link : undefined, eta: 'eta' in fields ? was.eta : undefined, file: 'file' in fields ? was.file : undefined, brief: 'brief' in fields ? was.brief : undefined };
+        const orig = r, t = applyLocal(r, fields);
+        const mark = { fields, apply: applyLocal, at: Date.now() }; PEND.set(r.uid, mark); swap(r.uid, t); renderAll();
+        SAVING.add(r.uid); savingPill();
         let res;
         try { res = await post(payload); }
         catch (err) {
+          SAVING.delete(r.uid); savingPill();
+          // put the task back as it was, then re-read the sheet (unless the same task was saved again meanwhile)
+          if (PEND.get(r.uid) === mark) { PEND.delete(r.uid); swap(r.uid, orig); renderAll(); if (!(err.body && err.body.error === 'changed')) setTimeout(() => load(true), 300); }
           if (err.body && err.body.error === 'changed') { load(true); throw err; }
           // Saving failed for another reason: keep it on the Issues page with a one-click retry (without the guard,
           // which an Admin retrying later would trip on).
           if (!(err instanceof AuthLost) && !(err.body && /permission|not assigned|forbidden|link must|not a link|only admins/i.test(err.body.error || ''))) ISS.report(key, 'Actions', 'Could not save ' + (r.id || 'row ' + r.row) + ' (' + Object.keys(fields).join(', ') + ')', err.message, { action: 'updateTask', source: r.src, id: r.id, row: r.row, fields });
           throw err;
         }
+        SAVING.delete(r.uid); savingPill();
         ISS.resolve(key);
-        // Show the change at once; the reload that follows confirms it from the sheet.
-        const t = Object.assign({}, r);
-        if (fields.status) { t.stage = fields.status; t.open = CODATA.OPEN_STAGES.includes(fields.status); }
-        if ('eta' in fields) t.eta = fields.eta || null;
-        if ('designer' in fields) t.designers = fields.designer ? fields.designer.split(/\s*,\s*/).join(' + ') : '';
-        if ('priority' in fields) t.priority = fields.priority;
-        if (fields.qty) t.qty = Number(fields.qty);
-        if ('link' in fields) t.link = fields.link;
-        if ('file' in fields) t.file = fields.file;
-        if ('brief' in fields) t.brief = fields.brief;
-        if (fields.cstatus) t.content_status = String(res && res.written && res.written.cstatus || fields.cstatus).toUpperCase();
-        Object.assign(t, CODATA.groupOf(t.stage)); if (t.done) { t.ddate = t.eta || t.req; if (t.ddate && t.ddate > CO.today()) t.ddate = CO.today(); t.month = t.ddate ? t.ddate.slice(0, 7) : ''; } else { t.ddate = null; t.month = ''; }
-        if (res.row) t.row = res.row;
-        S.tasks = S.tasks.map((x) => (x.uid === r.uid ? t : x));
+        // the sheet's own spellings (status, content status) and row, once confirmed
+        if (res.written && res.written.cstatus) { mark.fields = Object.assign({}, fields, { cstatus: res.written.cstatus }); const cur = (S.tasks || []).find((x) => x.uid === r.uid); if (cur) cur.content_status = String(res.written.cstatus).toUpperCase(); }
         renderAll();
-        toast('Saved to the ' + (SHEET[r.src] || 'sheet') + ', row ' + (res.row || r.row) + (res.written && res.written.status ? ' (status "' + res.written.status + '")' : ''));
-        setTimeout(() => load(true), 1500);
+        setTimeout(() => load(true).finally(() => { if (PEND.get(r.uid) === mark) PEND.delete(r.uid); }), 400);
         return res;
+    }
+    /* Run a save after the window has closed: a short "Saving…" note, then "Saved" or the reason with a Retry. */
+    function saveInBackground(r, fields, was, okText) {
+      toast('Saving to the sheet…');
+      return saveFields(r, fields, was).then((res) => { toast(okText || ('Saved to the ' + (SHEET[r.src] || 'sheet') + ', row ' + (res.row || r.row))); return res; },
+        (err) => {
+          const changed = err.body && err.body.error === 'changed';
+          toast('Not saved: ' + err.message + (changed ? ' Reopen the task to see the latest.' : ''), true,
+            changed ? { label: 'Reopen', fn: () => openEditor(r.uid) } : { label: 'Retry', fn: () => { const cur = (S.tasks || []).find((x) => x.uid === r.uid) || r; saveInBackground(cur, fields, null, okText); } });
+        });
     }
     TASK_SAVE = saveFields;
 
@@ -3233,31 +3430,54 @@
     const meName = () => (A.user && (myDesigner() || A.user.name)) || '';
     const amOwner = (r) => !!meName() && CT.owns(r, meName());
     const amDesigner = (r) => !!meName() && (r.list || []).some((n) => n.toLowerCase() === meName().toLowerCase());
+    /* Links: each one is a row. Missing = highlighted, with its input open. Added = a quiet row with the link's
+       address, Open and Replace (Replace opens the input). */
+    const prettyUrl = (u) => { try { const x = new URL(u), h = x.hostname.replace(/^www\./, ''); const kind = /docs\.google\.com\/document/.test(u) ? 'Google Doc' : /docs\.google\.com\/spreadsheets/.test(u) ? 'Google Sheet' : /docs\.google\.com\/presentation/.test(u) ? 'Google Slides' : /drive\.google\.com\/(drive\/(u\/\d+\/)?folders|open\?id)/.test(u) ? 'Drive folder' : /drive\.google\.com\/file/.test(u) ? 'Drive file' : /figma\.com/.test(u) ? 'Figma' : /canva\.com/.test(u) ? 'Canva' : h; return kind; } catch (e) { return 'Link'; } };
+    function lkState(box, url, empty, extra) {
+      const has = /^https?:\/\//i.test(url || '');
+      box.classList.toggle('is-set', has); box.classList.toggle('is-missing', !has); box.classList.remove('is-editing');
+      const cur = box.querySelector('.lk-cur'); cur.replaceChildren();
+      if (has) { cur.append(el('span', 'lk-kind', prettyUrl(url)), el('span', 'lk-url', url.replace(/^https?:\/\/(www\.)?/, ''))); cur.title = url; } else { cur.textContent = empty; cur.removeAttribute('title'); }
+      if (extra) cur.append(extra);
+      const op = box.querySelector('.lk-open'); op.hidden = !has; if (has) op.href = url;
+      box.querySelector('.lk-replace').hidden = !has; box.querySelector('.lk-cancel').hidden = true;
+      const inp = box.querySelector('.lk-form input[type="url"]'); inp.value = '';
+    }
+    function lkCount() {
+      const rows = [...$('ed-deliver').querySelectorAll('.lk')].filter((x) => !x.hidden), n = rows.filter((x) => x.classList.contains('is-set')).length;
+      $('ed-deliver').hidden = !rows.length;
+      const c = $('ed-deliver-n'); c.textContent = rows.length ? (n === rows.length ? 'All added' : n + ' of ' + rows.length + ' added') : ''; c.classList.toggle('done', !!rows.length && n === rows.length);
+    }
+    $('ed-deliver').addEventListener('click', (e) => {
+      const box = e.target.closest('.lk'); if (!box) return;
+      if (e.target.closest('.lk-replace')) { box.classList.add('is-editing'); box.querySelector('.lk-cancel').hidden = false; const i = box.querySelector('.lk-form input[type="url"]'); i.focus(); }
+      else if (e.target.closest('.lk-cancel')) { box.classList.remove('is-editing'); box.querySelector('.lk-cancel').hidden = true; box.querySelector('.lk-form input[type="url"]').value = ''; $('ed-msg').textContent = ''; }
+    });
     function wsContent(r, can) {
       const box = $('ed-content-box'), adm = A.mode !== 'auth' || isAdmin();
       box.hidden = !can || !r.id || !(adm || amOwner(r));
       if (box.hidden) return;
-      const cur = $('ed-content-cur'); cur.replaceChildren();
-      if (/^https?:\/\//i.test(r.brief || '')) { const a = el('a', 'co-link', 'Open the current content ↗'); a.href = r.brief; a.target = '_blank'; a.rel = 'noopener noreferrer'; cur.append(a); }
-      else cur.textContent = r.content_status ? 'Content: ' + r.content_status : 'Not submitted yet';
-      $('ed-content').value = ''; $('ed-content-save').textContent = /^https?:/i.test(r.brief || '') ? 'Update content' : 'Submit content';
-      const cs = String(r.content_status || '').trim().toUpperCase(); box.querySelector('input[value="' + (cs === 'SHARED' ? 'Shared' : 'Done') + '"]').checked = true;
+      const cs = String(r.content_status || '').trim().toUpperCase();
+      const chip = cs ? el('span', 'lk-st' + (cs === 'DONE' ? ' ok' : ''), cs.charAt(0) + cs.slice(1).toLowerCase()) : null;
+      lkState(box, r.brief, r.brief && !/^https?:/i.test(r.brief) ? 'Written in the sheet, no link yet' : 'Not submitted yet', chip);
+      $('ed-content-save').textContent = /^https?:/i.test(r.brief || '') ? 'Replace' : 'Submit';
+      box.querySelector('input[value="' + (cs === 'SHARED' ? 'Shared' : 'Done') + '"]').checked = true;
     }
     function wsLink(r, can, canSt) {
       const box = $('ed-link-box'), adm = A.mode !== 'auth' || isAdmin();
       // content writers who are not the designer see only their content step
       box.hidden = !can || !r.id || (!adm && amOwner(r) && !amDesigner(r) && CT.contentOnly(meName()));
+      $('ed-file-wrap').hidden = box.hidden;
       wsContent(r, can);
-      { const fc = $('ed-file-cur'); fc.replaceChildren(); if (/^https?:\/\//i.test(r.file || '')) { const a = el('a', 'co-link', 'Open the current file ↗'); a.href = r.file; a.target = '_blank'; a.rel = 'noopener noreferrer'; fc.append(a); } else fc.textContent = 'Not added yet'; $('ed-file').value = ''; $('ed-file-save').textContent = r.file ? 'Update file link' : 'Save file link'; }
-      if (box.hidden) return;
-      const cur = $('ed-link-cur'); cur.replaceChildren();
-      if (r.link && /^https?:\/\//i.test(r.link)) { const a = el('a', 'co-link', 'Open the current link ↗'); a.href = r.link; a.target = '_blank'; a.rel = 'noopener noreferrer'; cur.append(a); }
-      else cur.textContent = 'Not submitted yet';
-      $('ed-link').value = ''; $('ed-link').placeholder = r.link ? 'Paste a new link to replace it (https://…)' : 'Paste the link to the finished creative (https://…)';
-      $('ed-link-save').textContent = r.link ? 'Update link' : 'Submit link';
-      // Submitting a finished creative moves open work to Under review (if they may change the status).
-      const rv = canSt && r.open; $('ed-link-rv-l').hidden = !rv; $('ed-link-rv').checked = rv;
-      $('ed-link-auto').hidden = !(r.open && !canSt); box.dataset.auto = r.open && !canSt ? '1' : '';
+      lkState($('ed-file-wrap'), r.file, 'Not added yet: the editable PSD, AI or project file'); $('ed-file-save').textContent = r.file ? 'Replace' : 'Save';
+      if (!box.hidden) {
+        lkState(box, r.link, r.open ? 'Not submitted yet' : 'No link in the sheet');
+        $('ed-link-save').textContent = r.link ? 'Replace' : 'Submit';
+        // Submitting a finished creative moves open work to Under review (if they may change the status).
+        const rv = canSt && r.open; $('ed-link-rv-l').hidden = !rv; $('ed-link-rv').checked = rv;
+        $('ed-link-auto').hidden = !(r.open && !canSt); box.dataset.auto = r.open && !canSt ? '1' : '';
+      }
+      lkCount();
     }
     $('ed-link-save').addEventListener('click', async () => {
       const r = current; if (!r) return;
@@ -3265,10 +3485,8 @@
       if (!/^https:\/\/\S+\.\S+/i.test(v)) { $('ed-msg').textContent = 'Paste a full link that starts with https://'; $('ed-link').focus(); return; }
       if (v === before.link) { $('ed-msg').textContent = 'That is already the link in the sheet.'; return; }
       const fields = { link: v }; if ((!$('ed-link-rv-l').hidden && $('ed-link-rv').checked) || $('ed-link-box').dataset.auto) fields.status = 'Under review';
-      const b = $('ed-link-save'), was = b.textContent; b.disabled = true; b.textContent = 'Submitting…'; $('ed-msg').textContent = '';
-      try { await saveFields(r, fields, before); dlgE.close(); toast(fields.status ? 'Link submitted and moved to Under review' : 'Link submitted'); }
-      catch (err) { $('ed-msg').textContent = 'Not submitted: ' + err.message; }
-      b.disabled = false; b.textContent = was;
+      $('ed-msg').textContent = ''; dlgE.close();
+      saveInBackground(r, fields, before, fields.status ? 'Link submitted and moved to Under review' : 'Link submitted');
     });
     $('ed-link').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('ed-link-save').click(); } });
     // One handler for the other two links: the editable file (Open File) and the content (Creative Brief + content status).
@@ -3278,10 +3496,8 @@
       if (!/^https:\/\/\S+\.\S+/i.test(v)) { $('ed-msg').textContent = 'Paste a full link that starts with https://'; $(inputId).focus(); return; }
       const fields = Object.assign({ [field]: v }, extra ? extra() : {});
       if (v === before[field] && !extra) { $('ed-msg').textContent = 'That is already the link in the sheet.'; return; }
-      const b = $(btnId), was = b.textContent; b.disabled = true; b.textContent = 'Saving…'; $('ed-msg').textContent = '';
-      try { await saveFields(r, fields, before); dlgE.close(); toast(label(fields)); }
-      catch (err) { $('ed-msg').textContent = 'Not saved: ' + err.message; }
-      b.disabled = false; b.textContent = was;
+      $('ed-msg').textContent = ''; dlgE.close();
+      saveInBackground(r, fields, before, label(fields));
     });
     linkSave('ed-file-save', 'ed-file', 'file', () => 'Open File link saved to the sheet');
     linkSave('ed-content-save', 'ed-content', 'brief', (f) => 'Content submitted and marked ' + f.cstatus, () => ({ cstatus: (document.querySelector('input[name="ed-cst"]:checked') || {}).value || 'Done' }));

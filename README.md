@@ -207,6 +207,17 @@ One price per creative type (as written in the sheets' Creative Type column), in
 
 ## Working on a task without opening the sheet (task panel)
 
+**Layout (Nov 2026).** The task window has four parts: the header (brand, type, topic, and status, due date and designer as small facts); the **Brief** (collapsible, with *Open in Google Docs*); **Links**; and **Manage task**. *Links* lists the **Creative link**, **Open File** and **Content** as one row each, with a count such as "1 of 3 added". A link that is missing is highlighted, with its input already open. A link that is already there is a quiet row showing what it is (Google Doc, Drive folder, Figma…) and its address, with **Open** and **Replace**; Replace opens the input, and Cancel puts it back.
+
+**Assigning.** The Designer (or Editor, for video work) field is a picker: search by name or role, people from the team list with their role, then anyone else named in the sheets, and *Unassigned*. Admins also see how many open tasks each person has ("Free", "3 open"). Arrow keys and Enter work.
+
+**Saving is instant.** *Save to sheet*, *Submit*, *Save* and *Replace* close the window at once and the change shows everywhere straight away, with a short "Saving to the sheet…" note and a soft pulse on the task. "Saved" follows once the sheet confirms (it now reads each task's row in one go instead of cell by cell). If it fails, the task goes back to how it was and the note says why, with **Retry** (or **Reopen** when someone changed the same cell in the sheet meanwhile); failures are also kept on the Issues page. A refresh that arrives while a save is in flight keeps showing the new values.
+
+**Who can change what.** Status, Design ETA / delivery date, designer, priority and number of creatives are for Admins and for the people you give each of those permissions on the Access page; everyone else sees them as read-only facts, and the web app refuses them too (Fasty included). Submitting links follows the *Links* permission (team members submit their own work).
+
+**Calendar.** Every date field (task ETA, Reports' From and To, brand packages, custom ranges) opens the dashboard's own calendar from its calendar button or a click on the field; typing a date still works. Monday comes first, today is marked in violet, the chosen day is filled, weekends are muted, and days outside the allowed range are crossed out. Click the month to jump between months and years. Reports shade the From–To range. *Today* and *Clear* sit at the bottom. Keyboard: arrows move by day or week, Page Up/Down by month, Enter picks, Esc closes.
+
+
 Click any task to open its panel. At the top: where the task is, its title and a row of facts (status, due date and whether it is late, designer, priority, and its links). Then two steps:
 
 1. **Read the brief.** The Google Doc in the task's **Creative Brief** cell shows inside the panel (title, text, lists, tables and images; scripts and outside content are removed). *Open in Google Docs* opens the original. The web app reads the Doc as its own Google account through the built-in Drive service and the Docs export link, so no Google Cloud API needs switching on; the Doc must be readable by that account (share it as Viewer, or keep briefs in a shared drive it can see), otherwise the panel says so and the link still works. A brief typed straight into the cell shows as text; other links open in a new tab.
