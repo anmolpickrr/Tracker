@@ -4108,3 +4108,87 @@ button.wc-kpi:hover { border-color: var(--fg-2); transform: translateY(-1px); }
 .wc-th span { text-align: left; }
 .wc-br-top > .wc-copy { justify-self: end; }
 @media (max-width: 1100px) { .wc-br-top { grid-template-columns: minmax(0, 1fr) auto auto; } }
+
+/* ===== Issues (Nov 2026 redesign): one summary line, chips, compact rows that say what it means ===== */
+.iss-card { --k-people: var(--bad); --k-data: var(--orange); --k-system: var(--muted); }
+.iss-sum { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 10px; margin-bottom: 14px; }
+.iss-sum-main, .iss-sum-side { display: grid; align-content: start; gap: 4px; padding: 16px 18px; border-radius: 18px; background: var(--sunken); }
+.iss-sum-main { grid-template-columns: auto minmax(0, 1fr); column-gap: 14px; align-items: center; }
+.iss-sum-main > b { grid-row: span 2; font: 700 40px/1 var(--font-display); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.iss-sum-main.is-open > b { color: var(--bad); } .iss-sum-main.is-clear > b { color: var(--ok); }
+.iss-sum-main > span { font-size: 14px; font-weight: 600; }
+.iss-imp { display: flex; flex-wrap: wrap; gap: 6px; }
+.iss-imp-c { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--panel); font-size: 12px; color: var(--fg-2); }
+.iss-imp-c i { width: 8px; height: 8px; border-radius: 50%; background: var(--k); }
+.iss-imp-c b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.iss-imp-c.zero { opacity: .55; }
+.k-people { --k: var(--k-people); } .k-data { --k: var(--k-data); } .k-system { --k: var(--k-system); }
+.iss-sum-side > b { font: 700 26px/1 var(--font-display); color: var(--ok); font-variant-numeric: tabular-nums; }
+.iss-sum-side > span { font-size: 13px; font-weight: 600; } .iss-sum-side > small { font-size: 11.5px; color: var(--muted); }
+.iss-how { margin-top: 4px; font-size: 12px; }
+.iss-how > summary { list-style: none; cursor: pointer; display: inline; font-size: 12px; }
+.iss-how > summary::-webkit-details-marker { display: none; }
+.iss-how ol { margin: 8px 0 0; padding-left: 1.2em; display: grid; gap: 3px; color: var(--fg-2); }
+.iss-flow { display: none !important; }
+/* toolbar + chips */
+.iss-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.iss-bar .iss-search { flex: 1 1 16rem; }
+.iss-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.iss-chip { --ac: var(--fg-2); display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font: 500 12.5px/1 var(--font-body); cursor: pointer; }
+.iss-chip:first-child { padding-left: 12px; }
+.iss-chip b { font-weight: 700; font-size: 11.5px; padding: 2px 7px; border-radius: 999px; background: var(--sunken); color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.iss-chip:hover { border-color: var(--fg-2); }
+.iss-chip.on { background: var(--fg); border-color: var(--fg); color: var(--bg); } .iss-chip.on b { background: var(--accent); color: var(--accent-ink); }
+.iss-chip .iss-ic.sm { width: 20px; height: 20px; }
+.iss-f { margin: -4px 0 10px; }
+/* rows */
+.iss-list2 { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.iss-card .iss-item { grid-template-columns: auto minmax(0, 1fr); gap: 14px; padding: 14px 16px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line-2); box-shadow: none !important; transform: none !important; animation: none; }
+.iss-card .iss-item::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--k); }
+.iss-card .iss-item.done::before { background: var(--line); }
+.iss-card .iss-item.open.k-people { border-color: color-mix(in srgb, var(--bad) 30%, var(--line-2)); }
+.iss-card .iss-item:hover { border-color: var(--fg-2); }
+.iss-card .iss-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.iss-card .iss-title { font-size: 14px; font-weight: 600; }
+.iss-card .iss-pill { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11px; font-weight: 600; background: color-mix(in srgb, var(--k) 13%, transparent); color: var(--k); }
+.iss-card .iss-pill i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.iss-card .iss-item.k-system .iss-pill { color: var(--fg-2); }
+.iss-card .iss-pill.done { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok); }
+.iss-what3 { margin: 4px 0 0; display: grid; gap: 2px; font-size: 13px; color: var(--fg-2); }
+.iss-todo { color: var(--fg); font-weight: 500; }
+.iss-todo::before { content: "→ "; color: var(--violet); font-weight: 700; }
+.iss-card .iss-meta { margin-top: 8px; gap: 6px; }
+.iss-card .iss-m { height: 22px; padding: 0 8px; font-size: 11.5px; border-radius: 999px; background: var(--sunken); }
+.iss-card .iss-det2 { margin-top: 6px; font-size: 12px; }
+.iss-card .iss-det2 > summary { color: var(--muted); }
+.iss-card .iss-acts2 { margin-top: 10px; gap: 6px; }
+.iss-card .iss-acts2 .co-btn.sm { height: 32px; padding: 0 14px; font-size: 12.5px; }
+.iss-card .iss-what2 { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+@media (max-width: 760px) { .iss-sum { grid-template-columns: minmax(0, 1fr); } .iss-card .iss-item { padding: 12px; gap: 10px; } .iss-card .iss-h { flex-wrap: wrap; } }
+.iss-card > .co-card-head { display: none; }
+.iss-sum { align-items: stretch; } .iss-sum > * { margin: 0 !important; align-self: stretch; }
+.iss-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+.iss-card .iss-foot .iss-meta { flex: 1 1 auto; margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.iss-card .iss-foot .iss-acts2 { margin: 0 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.iss-techb { height: 22px; padding: 0 8px; border: 0; border-radius: 999px; background: none; color: var(--muted); font: 500 11.5px/1 var(--font-body); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.iss-techb:hover { color: var(--fg); }
+.iss-tech { margin: 8px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--sunken); font: 12px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-2); }
+.iss-tech[hidden] { display: none; }
+.iss-card .iss-what2 { order: -1; }
+
+/* ===== Filters (Nov 2026): what is applied is unmistakable ===== */
+.co-select.is-set, :root[data-theme="light"] .co-select.is-set, :root[data-theme="dark"] .co-select.is-set { border-color: var(--violet) !important; background-color: var(--violet-soft) !important; color: var(--violet) !important; font-weight: 600; box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet) 14%, transparent); }
+:root[data-theme="dark"] .co-select.is-set { color: #c9c2ff !important; }
+.co-f[hidden] { display: none !important; }
+.co-search:not(:placeholder-shown), .wc-q:not(:placeholder-shown), #iss-q:not(:placeholder-shown) { border-color: var(--violet) !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet) 12%, transparent); }
+.filters-toggle.has-f { border-color: var(--violet); color: var(--violet); }
+.filters-toggle b:not(:empty) { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--violet); color: #fff; font-size: 11px; }
+.f-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex-basis: 100%; margin-top: 8px; }
+.f-chips[hidden] { display: none; }
+.f-chips-l { font-size: 12px; font-weight: 600; color: var(--muted); margin-right: 2px; }
+.f-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 6px 0 12px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--violet) 45%, var(--line)); background: var(--violet-soft); color: var(--fg); font: 500 12.5px/1 var(--font-body); cursor: pointer; }
+.f-chip small { font-size: 11px; color: var(--violet); font-weight: 600; }
+.f-chip b { font-weight: 600; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.f-chip i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-style: normal; font-size: 14px; line-height: 1; color: var(--violet); background: var(--panel); }
+.f-chip:hover { border-color: var(--violet); } .f-chip:hover i { background: var(--violet); color: #fff; }
+.f-clear { font-size: 12px; }

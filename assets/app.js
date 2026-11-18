@@ -12,6 +12,12 @@
   try { Object.assign(P, JSON.parse(LS.get('co.view', '{}'))); } catch (e) { /* ignore */ }
   let TASK_SAVE = null; // set by the task editor; also used by the assistant
   const TABS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health', 'issues', 'access'];
+  /* The page filters (Sheet, Designer, Brand, Type) each section uses. A filter a section does not use is hidden there and
+     never applied (My work is always the signed-in person's own work, so a Designer filter left on elsewhere cannot empty it). */
+  const FKEYS = ['src', 'designer', 'brand', 'type'];
+  const FILTER_USE = { mine: ['src', 'brand', 'type'], today: FKEYS, standup: FKEYS, tasks: FKEYS, team: FKEYS, reports: FKEYS, brands: FKEYS, health: FKEYS, notes: [], issues: [], access: [] };
+  const fUsed = (tab) => FILTER_USE[tab] || FKEYS;
+  const fActive = (p) => fUsed(p.tab || 'today').filter((k) => p[k]);
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
   const CFG = window.CO_CONFIG || {};
   const RANK = { Viewer: 1, Editor: 2, Admin: 3 };
@@ -95,7 +101,7 @@
     let res;
     // Every request has a time limit (a laptop waking up or a network switch can leave one hanging for ever, which used
     // to freeze the live updates until a manual refresh). Loading all the data gets longer than the small checks.
-    const ctl = typeof AbortController === 'function' ? new AbortController() : null, lim = payload.action === 'data' ? 90000 : 30000, tm = ctl ? setTimeout(() => ctl.abort(), lim) : 0;
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null, lim = payload.action === 'data' ? 90000 : /^(updateTask|noteSave|packageSave|setMember|setAccess)$/.test(payload.action) ? 60000 : 30000, tm = ctl ? setTimeout(() => ctl.abort(), lim) : 0;
     try { res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)), signal: ctl ? ctl.signal : undefined }); }
     catch (e) { clearTimeout(tm); ISS.net(false); throw (e && e.name === 'AbortError' ? new Error('The web app took too long to answer; trying again shortly.') : e); }
     clearTimeout(tm);
@@ -125,6 +131,7 @@
       const body = A.mode === 'auth' ? await callApi(Object.assign({ action: 'data', fresh: fresh === true }, fresh === 'recent' ? { maxAge: 90 } : {})) : await keyGet(fresh === true ? { fresh: '1' } : {});
       if (!body.ok) throw new Error(errText(body.error));
       applyData(body);
+      S.loadFails = 0;
       if (A.mode === 'auth' && A.user) { DC.put(A.user.email, body); ISS.resolve('client|load|' + A.user.email.split('@')[0]); }
       loadHealth();
       if (P.tab === 'access') axRefresh(true);
@@ -142,7 +149,8 @@
       }
       if (S.status !== 'ok') S.status = 'error';
       else S.staleError = S.error;
-      if (A.mode === 'auth' && A.user && !/could not reach the web app/i.test(S.error)) ISS.report('client|load|' + A.user.email.split('@')[0], 'Sync', 'Tasks could not be loaded for ' + (A.user.name || A.user.email).split(' ')[0], S.error, null, 'retry-sync');
+      S.loadFails = (S.loadFails || 0) + 1;
+      if (S.loadFails >= 2 && A.mode === 'auth' && A.user && !/could not reach the web app/i.test(S.error)) ISS.report('client|load|' + A.user.email.split('@')[0], 'Sync', 'Tasks could not be loaded for ' + (A.user.name || A.user.email).split(' ')[0], S.error, null, 'retry-sync');
     }
     S.refreshing = false; S.cached = false;
     renderAll();
@@ -401,7 +409,7 @@
     // rows(): tasks with the page filters applied. rows(true): every task (briefings and reminders ignore filters).
     const rows = (unfiltered) => {
       const a = all(); if (!a) return null;
-      const p = unfiltered ? { src: '', designer: '', brand: '', type: '' } : dash.params(), tm = team();
+      const p0 = dash.params(), use = fUsed(p0.tab || 'today'), p = unfiltered ? { src: '', designer: '', brand: '', type: '' } : { src: use.includes('src') ? p0.src : '', designer: use.includes('designer') ? p0.designer : '', brand: use.includes('brand') ? p0.brand : '', type: use.includes('type') ? p0.type : '' }, tm = team();
       const key = [p.src, p.designer, p.brand, p.type, today()].join('|');
       if (memo.rows === a && memo.team === tm && memo.key === key) return memo.out;
       const t = today(), out = [];
@@ -631,8 +639,12 @@
     document.querySelectorAll('.bt[data-tab]').forEach((b) => { if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     document.getElementById('bt-more').toggleAttribute('aria-current', !['today', document.querySelector('.btabs .bt[data-tab="mine"]') ? 'mine' : 'standup', 'tasks', 'notes'].includes(tab));
     document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes' || tab === 'issues';
-    ['src', 'designer', 'brand', 'type'].forEach((k) => { const el = document.querySelector('.co-f[data-param="' + k + '"]'); if (el) el.classList.toggle('is-set', !!p[k]); });
-    document.getElementById('f-reset').hidden = !(p.src || p.designer || p.brand || p.type);
+    { const use = fUsed(tab), act = fActive(Object.assign({}, p, { tab }));
+      FKEYS.forEach((k) => { const el = document.querySelector('.co-f[data-param="' + k + '"]'); if (el) { el.hidden = !use.includes(k); el.classList.toggle('is-set', use.includes(k) && !!p[k]); } });
+      document.getElementById('f-reset').hidden = true; // "Clear all" lives with the chips
+      fChips(act, p); }
+    // section filters that are not on their default stand out the same way
+    [['#t-stage', 'active'], ['#team-who', 'active']].forEach(([sel, d]) => { const el = document.querySelector(sel); if (el) el.classList.toggle('is-set', !!el.value && el.value !== d); });
     document.querySelectorAll('[data-rchart]').forEach((b) => b.setAttribute('aria-pressed', String((p.rchart || 'total') === b.dataset.rchart)));
     const meta = PAGES[tab]; document.title = meta[0] + ' · Creative Ops Tracker';
     const val = (sel, v) => { const el = document.querySelector(sel); if (el && el !== document.activeElement) el.value = v; };
@@ -738,6 +750,21 @@
     setMember(name, 'Active', role); e.target.reset(); document.getElementById('add-msg').textContent = '';
   });
   let toastTimer = 0;
+  /* "Filtering by" chips under the filter bar: what is on, on this page, each removable in one click. */
+  const F_LABEL = { src: 'Sheet', designer: 'Designer', brand: 'Brand', type: 'Type' };
+  function fChips(act, p) {
+    let box = document.getElementById('f-chips');
+    if (!box) { box = document.createElement('div'); box.id = 'f-chips'; box.className = 'f-chips'; box.setAttribute('aria-live', 'polite'); document.getElementById('filter-bar').append(box); }
+    box.replaceChildren(); box.hidden = !act.length; if (!act.length) return;
+    const lab = document.createElement('span'); lab.className = 'f-chips-l'; lab.textContent = 'Filtering by'; box.append(lab);
+    act.forEach((k) => {
+      const v = p[k], txt = k === 'src' ? (v === 'Paid' ? 'External (client)' : 'Internal (marketing)') : k === 'designer' && v === '__none' ? 'Unassigned' : v;
+      const c = document.createElement('button'); c.type = 'button'; c.className = 'f-chip'; c.setAttribute('aria-label', 'Remove filter ' + F_LABEL[k] + ': ' + txt);
+      const a = document.createElement('small'); a.textContent = F_LABEL[k]; const b = document.createElement('b'); b.textContent = txt; const x = document.createElement('i'); x.setAttribute('aria-hidden', 'true'); x.textContent = '×';
+      c.append(a, b, x); c.addEventListener('click', () => dash.setParams({ [k]: '' })); box.append(c);
+    });
+    { const all = document.createElement('button'); all.type = 'button'; all.className = 'co-link f-clear'; all.textContent = act.length > 1 ? 'Clear all' : 'Clear'; all.addEventListener('click', () => dash.setParams({ src: '', designer: '', brand: '', type: '' })); box.append(all); }
+  }
   function toast(text, bad, action) {
     let t = document.querySelector('.co-toast');
     if (!t) { t = document.createElement('div'); t.className = 'co-toast'; t.setAttribute('role', 'status'); document.body.append(t); }
@@ -801,7 +828,7 @@
   });
   dash.draw('top-av', (el) => { el.replaceChildren(); if (A.user) { const a = CO.av(A.user.name || A.user.email); a.title = (A.user.name || A.user.email) + (isOwner() ? '' : ' · ' + roleText(A.user)); el.append(a); } });
   dash.draw('page-sub', (el) => { const s = PAGES[curTab()][1]; el.textContent = typeof s === 'function' ? s() : s; });
-  dash.draw('filter-count', (el) => { const p = dash.params(); const n = ['src', 'designer', 'brand', 'type'].filter((k) => p[k]).length; el.textContent = n ? String(n) : ''; });
+  dash.draw('filter-count', (el) => { const n = fActive(dash.params()).length; el.textContent = n ? String(n) : ''; el.closest('button').classList.toggle('has-f', !!n); });
   dash.draw('me-card', (el) => {
     el.replaceChildren(); if (!A.user) return;
     const w = document.createElement('span'); w.className = 'su-who';
@@ -1457,7 +1484,7 @@
     li.append(when); return li;
   };
   const mondayOf = (iso) => { let d = iso; while (new Date(d + 'T00:00:00Z').getUTCDay() !== 1) d = CO.addDays(d, -1); return d; };
-  const filterNote2 = () => { const p = dash.params(); return [p.src ? CO.cls(p.src) : '', p.designer === '__none' ? 'Unassigned' : p.designer, p.brand, p.type].filter(Boolean).join(', '); };
+  const filterNote2 = () => { const p = dash.params(), u = fUsed(p.tab || 'today'); return [u.includes('src') && p.src ? CO.cls(p.src) : '', u.includes('designer') ? (p.designer === '__none' ? 'Unassigned' : p.designer) : '', u.includes('brand') ? p.brand : '', u.includes('type') ? p.type : ''].filter(Boolean).join(', '); };
   const clearBtn2 = () => { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-btn'; b.textContent = 'Clear filters'; b.addEventListener('click', () => dash.setParams({ src: '', designer: '', brand: '', type: '' })); return b; };
   const card = (title, note, count) => { const c = document.createElement('section'); c.className = 'co-card'; const hd = document.createElement('div'); hd.className = 'na-head'; const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = title; if (count != null) { const n = document.createElement('span'); n.className = 'na-count' + (count ? '' : ' ok'); n.textContent = count; h2.append(n); } const p = document.createElement('p'); p.className = 'co-note'; p.textContent = note; l.append(h2, p); hd.append(l); c.append(hd); return c; };
   const emptyLine = (text) => { const p = document.createElement('p'); p.className = 'mw-empty'; p.textContent = text; return p; };
@@ -3222,7 +3249,9 @@
       if (window.__liveAct) window.__liveAct('open', 'Opened task ' + EDITING.label);
       if (['status', 'eta', 'delivery', 'assign', 'details', 'links'].some(perm)) setTimeout(checkForChanges, 50);
       const list = r.designers ? [...new Set(r.designers.split(' + ').map(CO.canon))] : [];
-      before = { status: r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1), link: r.link || '', file: r.file || '', brief: r.brief || '' };
+      // the status the window shows (Design Status): a task still waiting on its brief is TBP there, so assigning it
+      // never sends a status change nobody made
+      before = { status: r.awaiting ? 'To be planned' : r.stage, eta: r.eta || '', designer: list.join(', '), priority: r.priority || '', qty: String(r.qty || 1), link: r.link || '', file: r.file || '', brief: r.brief || '' };
       $('ed-where').textContent = CO.cls(r) + ' · ' + (SHEET[r.src] || r.source) + (r.row ? ' · row ' + r.row : '') + (r.id ? ' · ' + r.id : '');
       $('ed-title').textContent = r.brand + ' · ' + r.type;
       $('ed-topic').textContent = CO.topicText(r);
@@ -3384,7 +3413,11 @@
         const mark = { fields, apply: applyLocal, at: Date.now() }; PEND.set(r.uid, mark); swap(r.uid, t); renderAll();
         SAVING.add(r.uid); savingPill();
         let res;
-        try { res = await post(payload); }
+        // A busy sheet, a slow answer or a network blip is retried by itself (twice, after 1.5 s and 4 s); the web app
+        // treats a value already in the sheet as saved, so a retry after a slow first answer is safe.
+        const temp = (e) => !(e instanceof AuthLost) && (e instanceof TypeError || /busy|try again|took too long|timed? ?out|failed to fetch|network|load failed|temporarily|unavailable|Service error|Internal error/i.test(String(e && e.message || e))) && !(e.body && e.body.error === 'changed');
+        const tryPost = async () => { for (let i = 0; ; i++) { try { return await post(payload); } catch (e) { if (i >= 2 || !temp(e)) throw e; if (i === 0) toast('Google Sheets is busy, still saving…'); await new Promise((w) => setTimeout(w, i ? 4000 : 1500)); } } };
+        try { res = await tryPost(); }
         catch (err) {
           SAVING.delete(r.uid); savingPill();
           // put the task back as it was, then re-read the sheet (unless the same task was saved again meanwhile)
@@ -3605,64 +3638,87 @@
   const issArea = (a) => ISS_AREA[a] || ['#9a978f', 'M12 3 2 20h20L12 3zM12 10v4M12 17h.01'];
   const issIcon = (a, cls) => { const [c, d] = issArea(a), w = el('span', 'iss-ic' + (cls ? ' ' + cls : '')); w.style.setProperty('--ac', c); w.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>'; return w; };
   const ISS_RF = document.getElementById('iss-refresh'); // the Check now button lives in the toolbar (kept across redraws)
+  /* What an issue means and what to do, in plain words (the raw text stays under "Technical details"). */
+  const ISS_EXPLAIN = [
+    [/^Could not save/, 'A change made on the dashboard did not reach the sheet.', 'Retry it (shown below), or mark it resolved if the sheet is already right.', 'people'],
+    [/^Request failed: updateTask/, 'The web app stopped while saving a task change.', 'Saves now retry by themselves. Mark resolved once new saves go through.', 'people'],
+    [/^Request failed/, 'The web app hit an error while answering a request.', 'Usually temporary. If it keeps coming back, check the technical details.', 'system'],
+    [/could not be loaded for/, 'This person\'s dashboard could not load the tasks.', 'Usually a network hiccup. Reload from the sheets; it closes itself on their next good load.', 'people'],
+    [/not counted in packages/, 'Some delivered work could not be matched to a brand package.', 'Open Brands to check the package types and dates.', 'data'],
+    [/Duplicate task IDs/, 'Two rows in a sheet share the same Creative_ID.', 'Give each row its own ID in the sheet; the dashboard cannot save to these rows until then.', 'data'],
+    [/^Error on the dashboard/, 'Something on a screen failed to draw.', 'Usually harmless after a reload. Check the details if it repeats.', 'system'],
+    [/Data checks failed|Maintenance failed|Background/i, 'A background check could not finish.', 'It runs again every 10 minutes and closes itself once it passes.', 'system']
+  ];
+  const issExplain = (x) => { const m = ISS_EXPLAIN.find((e) => e[0].test(x.title)); return m ? { what: m[1], todo: m[2], impact: m[3] } : { what: String(x.details || '').split(/(?<=\.)\s/)[0].slice(0, 160), todo: '', impact: x.area === 'Actions' || x.area === 'Sync' ? 'people' : x.area === 'Data' || x.area === 'Packages' ? 'data' : 'system' }; };
+  const IMPACT = { people: ['Affects people', 'Someone could not do what they tried'], data: ['Data', 'The sheets need a fix'], system: ['System', 'Background or temporary'] };
   dash.draw('issues', (box) => {
     box.replaceChildren();
     if (!ISS.list) { box.append(el('p', 'co-note', ISS.err || 'Loading issues…')); if (!ISS.busy) ISS.load(); return; }
     const L = ISS.list, open = L.filter((x) => x.status === 'Open'), wk = Date.now() - 7 * 864e5, fixed7 = L.filter((x) => x.status !== 'Open' && x.resolvedOn && new Date(x.resolvedOn) > wk);
-    const areas = [...new Set(L.map((x) => x.area))].sort(), auto = fixed7.filter((x) => x.resolvedBy === 'Automatic check').length;
-    // summary: what is open now, what was fixed this week, which areas are affected
-    const hero = el('div', 'iss-hero');
-    const tile = (cls, n, label, sub) => { const t = el('div', 'iss-tile2 ' + cls); const top = el('div', 'iss-t-top'); top.append(el('span', 'iss-t-dot'), el('span', 'iss-t-l', label)); t.append(top, el('b', 'iss-t-n', String(n)), el('span', 'iss-t-s', sub)); return t; };
-    hero.append(tile(open.length ? 'is-open' : 'is-clear', open.length, open.length ? 'Need attention' : 'All clear', open.length ? (open.length === 1 ? '1 issue is active' : open.length + ' issues are active') : 'Nothing is failing right now'),
-      tile('is-fixed', fixed7.length, 'Resolved in 7 days', auto ? auto + ' closed by the checks themselves' : 'Closed by the checks or an Admin'));
-    const at = el('div', 'iss-tile2 is-areas'); const atop = el('div', 'iss-t-top'); atop.append(el('span', 'iss-t-l', 'Where')); at.append(atop);
-    const byArea = areas.map((a) => [a, open.filter((x) => x.area === a).length]).filter((x) => x[1]).sort((a, b) => b[1] - a[1]);
-    const al = el('div', 'iss-area-list');
-    if (!byArea.length) al.append(el('span', 'iss-t-s', 'No area has open issues'));
-    byArea.forEach(([a, n]) => { const b = el('button', 'iss-area-pill'); b.type = 'button'; b.style.setProperty('--ac', issArea(a)[0]); b.append(issIcon(a, 'sm'), el('span', '', a), el('b', '', String(n))); b.addEventListener('click', () => { ISS.area = ISS.area === a ? '' : a; ISS.f = 'open'; dash.draw('issues'); }); al.append(b); });
-    at.append(al); hero.append(at);
-    box.append(hero);
-    const flow = el('ol', 'iss-flow'); flow.setAttribute('aria-label', 'How issues are handled');
-    [['Detected', 'by every screen and a check every 10 minutes'], ['Shown', 'here, with a count in the menu and the bell'], ['Fixed', 'with Retry or the fix button on each issue'], ['Closed', 'when its check passes again, or by an Admin']].forEach(([t, d]) => { const li = el('li'); li.append(el('b', '', t), el('span', '', d)); flow.append(li); });
-    box.append(flow);
+    const auto = fixed7.filter((x) => /Automatic/.test(x.resolvedBy || '')).length;
+    const canFix = isAdmin() || perm('issueFix');
+    // summary: one line that says what matters
+    const sum = el('div', 'iss-sum');
+    const big = el('div', 'iss-sum-main ' + (open.length ? 'is-open' : 'is-clear'));
+    big.append(el('b', '', String(open.length)), el('span', '', open.length ? (open.length === 1 ? 'issue needs attention' : 'issues need attention') : 'All clear: nothing is failing'));
+    const imp = el('div', 'iss-imp');
+    Object.entries(IMPACT).forEach(([k, [lab, tip]]) => { const n = open.filter((x) => issExplain(x).impact === k).length; const c = el('span', 'iss-imp-c k-' + k + (n ? '' : ' zero')); c.title = tip; c.append(el('i'), el('b', '', String(n)), document.createTextNode(' ' + lab)); imp.append(c); });
+    big.append(imp);
+    const fx = el('div', 'iss-sum-side'); fx.append(el('b', '', String(fixed7.length)), el('span', '', 'resolved this week'), el('small', '', auto ? auto + ' closed themselves when their check passed' : 'by the checks or an Admin'));
+    const how = el('details', 'iss-how'); const hs = el('summary', 'co-link', 'How this works'); const hl = el('ol');
+    [['Found', 'by every screen, and a check every 10 minutes'], ['Shown', 'here, with a count in the menu and the bell'], ['Fixed', 'with Retry or the fix button on the issue'], ['Closed', 'by itself when its check passes, or by an Admin']].forEach(([t, d]) => { const li = el('li'); li.append(el('b', '', t), document.createTextNode(' ' + d)); hl.append(li); });
+    how.append(hs, hl); fx.append(how);
+    sum.append(big, fx); box.append(sum);
     if (ISS.err) box.append(el('p', 'co-note warn', 'Could not refresh: ' + ISS.err));
-    // toolbar
+    // toolbar: status tabs, area chips (with counts), search, Check now
     const fl = el('div', 'iss-bar');
     const seg = el('div', 'pm-seg iss-seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', 'Show');
     [['open', 'Active', open.length], ['resolved', 'Resolved', L.length - open.length], ['all', 'All', L.length]].forEach(([v, t, n]) => { const b = el('button', 'pm-opt' + (ISS.f === v ? ' on' : '')); b.type = 'button'; b.append(document.createTextNode(t + ' '), el('small', '', String(n))); b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(ISS.f === v)); b.addEventListener('click', () => { ISS.f = v; dash.draw('issues'); }); seg.append(b); });
-    const as = el('select', 'co-select iss-asel'); as.setAttribute('aria-label', 'Area'); as.append(new Option('All areas', ''), ...areas.map((a) => new Option(a, a))); as.value = areas.includes(ISS.area) ? ISS.area : ''; as.addEventListener('change', () => { ISS.area = as.value; dash.draw('issues'); });
     const sw = el('label', 'iss-search'); sw.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>';
-    const q = el('input', 'co-input'); q.type = 'search'; q.placeholder = 'Search issues, IDs, people'; q.value = ISS.q; q.setAttribute('aria-label', 'Search issues'); q.id = 'iss-q'; sw.append(q);
+    const q = el('input', 'co-input'); q.type = 'search'; q.placeholder = 'Search issues, task IDs, people'; q.value = ISS.q; q.setAttribute('aria-label', 'Search issues'); q.id = 'iss-q'; sw.append(q);
     q.addEventListener('input', () => { clearTimeout(ISS.qt); ISS.qt = setTimeout(() => { ISS.q = q.value; dash.draw('issues'); const n = document.getElementById('iss-q'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 250); });
-    fl.append(seg, as, sw, ISS_RF); box.append(fl);
+    fl.append(seg, sw, ISS_RF); box.append(fl);
+    const inView = L.filter((x) => ISS.f === 'all' || (ISS.f === 'open' ? x.status === 'Open' : x.status !== 'Open'));
+    const areas = [...new Set(inView.map((x) => x.area))].map((a) => [a, inView.filter((x) => x.area === a).length]).sort((x, y) => y[1] - x[1]);
+    if (areas.length > 1 || ISS.area) {
+      const chips = el('div', 'iss-chips'); chips.setAttribute('role', 'group'); chips.setAttribute('aria-label', 'Area');
+      const chip = (a, n, lab) => { const b = el('button', 'iss-chip' + (ISS.area === a ? ' on' : '')); b.type = 'button'; b.setAttribute('aria-pressed', String(ISS.area === a)); if (a) { b.style.setProperty('--ac', issArea(a)[0]); b.append(issIcon(a, 'sm')); } b.append(el('span', '', lab), el('b', '', String(n))); b.addEventListener('click', () => { ISS.area = a; dash.draw('issues'); }); chips.append(b); };
+      chip('', inView.length, 'All areas'); areas.forEach(([a, n]) => chip(a, n, a));
+      if (ISS.area && !areas.some((x) => x[0] === ISS.area)) chip(ISS.area, 0, ISS.area);
+      box.append(chips);
+    }
     const qq = ISS.q.trim().toLowerCase();
-    const rows = L.filter((x) => (ISS.f === 'all' || (ISS.f === 'open' ? x.status === 'Open' : x.status !== 'Open')) && (!ISS.area || x.area === ISS.area) && (!qq || (x.area + ' ' + x.title + ' ' + x.details + ' ' + x.by).toLowerCase().includes(qq)));
+    const rows = inView.filter((x) => (!ISS.area || x.area === ISS.area) && (!qq || (x.area + ' ' + x.title + ' ' + x.details + ' ' + x.by).toLowerCase().includes(qq)))
+      .sort((x, y) => ((x.status === 'Open') === (y.status === 'Open') ? 0 : x.status === 'Open' ? -1 : 1) || (['people', 'data', 'system'].indexOf(issExplain(x).impact) - ['people', 'data', 'system'].indexOf(issExplain(y).impact)) || String(y.last || '').localeCompare(String(x.last || '')));
+    if (ISS.area || qq) { const f = el('p', 'co-note iss-f', 'Showing ' + rows.length + ' of ' + inView.length + (ISS.area ? ' in ' + ISS.area : '') + (qq ? ' matching "' + ISS.q.trim() + '"' : '') + '. '); const c = el('button', 'co-link', 'Clear'); c.type = 'button'; c.addEventListener('click', () => { ISS.area = ''; ISS.q = ''; dash.draw('issues'); }); f.append(c); box.append(f); }
     if (!rows.length) {
       const e = el('div', 'iss-empty'); e.append(el('b', '', ISS.f === 'open' && !qq && !ISS.area ? 'Nothing needs attention' : 'No issues match'), el('span', '', ISS.f === 'open' && !qq && !ISS.area ? 'Every check passed. New problems appear here within a minute.' : 'Try another filter or clear the search.'));
       box.append(e); return;
     }
     const ul = el('ul', 'iss-list2');
-    rows.slice(0, 200).forEach((x, i) => {
-      const on = x.status === 'Open', li = el('li', 'iss-item' + (on ? ' open' : ' done')); li.style.setProperty('--ac', issArea(x.area)[0]); li.style.setProperty('--i', String(Math.min(i, 12)));
-      const st = el('span', 'iss-pill ' + (on ? 'open' : 'done')); st.append(el('i', ''), document.createTextNode(on ? 'Active' : 'Resolved'));
+    rows.slice(0, 200).forEach((x) => {
+      const on = x.status === 'Open', ex = issExplain(x), li = el('li', 'iss-item k-' + ex.impact + (on ? ' open' : ' done')); li.style.setProperty('--ac', issArea(x.area)[0]);
       const main = el('div', 'iss-main');
-      const h = el('div', 'iss-h'); h.append(el('b', 'iss-title', x.title), st); main.append(h);
+      const h = el('div', 'iss-h'); h.append(el('b', 'iss-title', x.title));
+      const st = el('span', 'iss-pill ' + (on ? 'open' : 'done')); st.append(el('i', ''), document.createTextNode(on ? IMPACT[ex.impact][0] : 'Resolved')); h.append(st);
+      main.append(h);
+      if (ex.what) { const w = el('p', 'iss-what3'); w.append(el('span', '', ex.what)); const todo = /^Could not save/.test(x.title) && !(canFix && x.retry) ? 'Open the task and save it again, or mark it resolved if the sheet is already right.' : ex.todo; if (on && todo) w.append(el('span', 'iss-todo', todo)); main.append(w); }
       const meta = el('div', 'iss-meta');
       const mchip = (t, cls) => meta.append(el('span', 'iss-m' + (cls ? ' ' + cls : ''), t));
       mchip(x.area, 'area');
       mchip(on ? 'last seen ' + agoText(x.last) : 'first seen ' + when(x.first));
       if (x.count > 1) mchip('seen ' + x.count + '×', 'count');
-      if (x.by && x.by !== 'Automatic check' && x.by !== 'schedule' && x.by !== 'web app') { const who = el('span', 'iss-m who'); who.append(avatar({ name: nameOf(x.by), email: x.by }, 'xs'), document.createTextNode(nameOf(x.by))); meta.append(who); } else if (x.by) mchip('automatic check', 'auto');
-      main.append(meta);
-      if (x.details) { const d = el('details', 'iss-det2'); const sm = el('summary', '', 'What went wrong'); d.append(sm, el('p', '', CO.maskText(x.details))); main.append(d); }
-      if (!on && x.resolvedOn) main.append(el('p', 'iss-res2', 'Resolved ' + when(x.resolvedOn) + ' · ' + (x.resolvedBy === 'Automatic check' ? 'the check passed again' : 'by ' + nameOf(x.resolvedBy))));
+      if (x.by && x.by !== 'Automatic check' && x.by !== 'schedule' && x.by !== 'web app') { const who = el('span', 'iss-m who'); who.append(avatar({ name: nameOf(x.by), email: x.by }, 'xs'), document.createTextNode(nameOf(x.by))); meta.append(who); } else if (x.by) mchip('found automatically', 'auto');
+      const foot = el('div', 'iss-foot'); foot.append(meta); main.append(foot);
+      if (!on && x.resolvedOn) main.append(el('p', 'iss-res2', 'Resolved ' + when(x.resolvedOn) + ' · ' + (/Automatic/.test(x.resolvedBy || '') ? 'the check passed again' : 'by ' + nameOf(x.resolvedBy))));
+      let tech = null; if (x.details) { const tb = el('button', 'iss-techb', 'Technical details'); tb.type = 'button'; tb.setAttribute('aria-expanded', 'false'); tech = el('pre', 'iss-tech', CO.maskText(x.details)); tech.hidden = true; tb.addEventListener('click', () => { tech.hidden = !tech.hidden; tb.setAttribute('aria-expanded', String(!tech.hidden)); }); meta.append(tb); }
       const acts = el('div', 'iss-acts2');
       const btn = (t, cls, fn) => { const b = el('button', 'co-btn sm' + (cls ? ' ' + cls : ''), t); b.type = 'button'; b.addEventListener('click', () => fn(b)); acts.append(b); return b; };
-      const canFix = isAdmin() || perm('issueFix'); // View: see issues; Edit: retry, fix and resolve
       if (canFix && on && x.retry) { let r = null; try { r = JSON.parse(x.retry); } catch (e) { /* ignore */ } if (r && r.action === 'updateTask') { btn('Retry', 'primary', (b) => issRetry(x, b)); acts.append(el('code', 'iss-what2', retryText(r))); } }
       if (canFix && on && ISS_FIX[x.fix] && (x.fix !== 'open-pricing' || isAdmin()) && (x.fix !== 'open-health' || pageOk('health'))) btn(ISS_FIX[x.fix][0], x.retry ? '' : 'primary', ISS_FIX[x.fix][1]);
       if (canFix) { if (on) btn('Mark resolved', 'ghost', () => issAct(x, 'resolve')); else { btn('Reopen', 'ghost', () => issAct(x, 'reopen')); btn('Remove', 'ghost', () => { if (confirm('Remove this issue from the list?')) issAct(x, 'delete'); }); } }
-      main.append(acts);
+      if (acts.childNodes.length) foot.append(acts);
+      if (tech) main.append(tech);
       li.append(issIcon(x.area), main); ul.append(li);
     });
     box.append(ul);

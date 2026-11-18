@@ -336,7 +336,7 @@ function doPost(e) {
     return json_(write_(body, user));
   } catch (err) {
     try { if (!transient_(err && err.message || err)) issueLog_('Server', 'Request failed: ' + clean_(body.action || 'unknown'), String(err && err.message || err), 'web app'); } catch (e2) { /* never fail twice */ }
-    return json_({ ok: false, error: String(err && err.message || err) });
+    return json_({ ok: false, error: plainError_(String(err && err.message || err)) });
   }
 }
 
@@ -348,7 +348,8 @@ function keyPost_(body) {
 
 function write_(body, user) {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(15000)) return { ok: false, error: 'busy, try again' };
+  // every write is one at a time; wait up to 25 s for the one before (the dashboard retries a busy answer by itself)
+  if (!lock.tryLock(25000)) return { ok: false, error: 'busy, try again' };
   try {
     let out;
     if (body.action === 'setMember') out = setMember_(body);
@@ -502,11 +503,12 @@ function updateTask_(body, mine, pm, contentMine) {
   }
   // Changed in the sheet since the dashboard last loaded it? Refuse, so nothing is overwritten without being seen.
   const was = body.before || {};
-  if (was.status != null && f.status != null && c.status >= 0) { const cur = CODATA.stageOf(disp(c.status), '')[0]; if (cur !== was.status && !(was.status === 'To be planned' && cur === 'Awaiting brief')) return { ok: false, error: 'changed', field: 'Design status', now: cur }; }
-  if (was.file != null && f.file != null && c.file >= 0) { const cur = clean_(disp(c.file)); if (cur !== clean_(was.file)) return { ok: false, error: 'changed', field: 'Open File', now: cur }; }
-  if (was.brief != null && f.brief != null && c.brief >= 0) { const cur = clean_(disp(c.brief)); if (cur !== clean_(was.brief)) return { ok: false, error: 'changed', field: 'Creative Brief', now: cur }; }
-  if (was.link != null && f.link != null && c.link >= 0) { const cur = clean_(disp(c.link)); if (cur !== clean_(was.link)) return { ok: false, error: 'changed', field: 'Creative link', now: cur }; }
-  if (was.eta != null && f.eta != null && c.eta >= 0) { const v = rowV[c.eta]; const cur = v instanceof Date ? Utilities.formatDate(v, IST, 'yyyy-MM-dd') : (CODATA.parseDate(clean_(v)) || ''); if (cur !== was.eta) return { ok: false, error: 'changed', field: 'Design ETA', now: cur }; }
+  const asDesign = function (st) { return st === 'Awaiting brief' ? 'To be planned' : st; };
+  if (was.status != null && f.status != null && c.status >= 0) { const cur = asDesign(CODATA.stageOf(disp(c.status), '')[0]); if (cur !== asDesign(was.status) && cur !== f.status) return { ok: false, error: 'changed', field: 'Design status', now: cur }; }
+  if (was.file != null && f.file != null && c.file >= 0) { const cur = clean_(disp(c.file)); if (cur !== clean_(was.file) && cur !== clean_(f.file)) return { ok: false, error: 'changed', field: 'Open File', now: cur }; }
+  if (was.brief != null && f.brief != null && c.brief >= 0) { const cur = clean_(disp(c.brief)); if (cur !== clean_(was.brief) && cur !== clean_(f.brief)) return { ok: false, error: 'changed', field: 'Creative Brief', now: cur }; }
+  if (was.link != null && f.link != null && c.link >= 0) { const cur = clean_(disp(c.link)); if (cur !== clean_(was.link) && cur !== clean_(f.link)) return { ok: false, error: 'changed', field: 'Creative link', now: cur }; }
+  if (was.eta != null && f.eta != null && c.eta >= 0) { const v = rowV[c.eta]; const cur = v instanceof Date ? Utilities.formatDate(v, IST, 'yyyy-MM-dd') : (CODATA.parseDate(clean_(v)) || ''); if (cur !== was.eta && cur !== String(f.eta)) return { ok: false, error: 'changed', field: 'Design ETA', now: cur }; }
 
   const statusVal = f.status != null ? statusValue_(sheet, sheet.getRange(row, c.status + 1), c.status, String(f.status)) : null;
 
@@ -2499,6 +2501,14 @@ function maintenance_() {
 const UPDATE_SRC = 'https://raw.githubusercontent.com/anmolpickrr/Tracker/main/apps-script/';
 // Google's own services sometimes answer "busy" or "unavailable" for a few seconds (HTTP 429, 500, 502, 503, 504,
 // timeouts). These are not faults in the dashboard: they are retried, and only reported when they keep happening.
+/* Google's own error text, said plainly for the person who saw it (the Issues page keeps the original). */
+function plainError_(m) {
+  if (/violates the data validation/i.test(m)) return 'The sheet\'s dropdown in that column does not accept this value. Pick one of its options, or add it to the dropdown in the sheet. (' + m.slice(0, 160) + ')';
+  if (/protected cell|protected range|trying to edit a protected/i.test(m)) return 'That column is protected in the sheet, so the dashboard cannot write to it. In the sheet, let the dashboard\'s Google account edit it (Data → Protect sheets and ranges).';
+  if (/do not have permission|don.t have permission|access denied/i.test(m)) return 'The dashboard\'s Google account cannot edit this sheet. Share the sheet with it as an editor.';
+  if (transient_(m)) return 'Google Sheets was busy for a moment. The dashboard retries by itself; if it keeps happening, try again in a minute.';
+  return m;
+}
 function transient_(m) { return /HTTP (429|500|502|503|504)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|DEADLINE_EXCEEDED|Service (is currently )?unavailable|temporarily|try again|timed? ?out|Address unavailable|Service error|Internal error|backendError|rateLimit/i.test(String(m || '')); }
 // Run fn up to 3 times while it fails with a temporary error (waits 2 s, then 6 s).
 function withRetry_(fn) { let last; for (let i = 0; i < 3; i++) { try { return fn(); } catch (e) { last = e; if (!transient_(e && e.message || e) || i === 2) throw e; Utilities.sleep(i ? 6000 : 2000); } } throw last; }

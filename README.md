@@ -218,7 +218,7 @@ One price per creative type (as written in the sheets' Creative Type column), in
 
 **Assigning.** The Designer (or Editor, for video work) field is a picker: search by name or role, people from the team list with their role, then anyone else named in the sheets, and *Unassigned*. Admins also see how many open tasks each person has ("Free", "3 open"). Arrow keys and Enter work.
 
-**Saving is instant.** *Save to sheet*, *Submit*, *Save* and *Replace* close the window at once and the change shows everywhere straight away, with a short "Saving to the sheet…" note and a soft pulse on the task. "Saved" follows once the sheet confirms (it now reads each task's row in one go instead of cell by cell). If it fails, the task goes back to how it was and the note says why, with **Retry** (or **Reopen** when someone changed the same cell in the sheet meanwhile); failures are also kept on the Issues page. A refresh that arrives while a save is in flight keeps showing the new values.
+**Saving is instant.** *Save to sheet*, *Submit*, *Save* and *Replace* close the window at once and the change shows everywhere straight away, with a short "Saving to the sheet…" note and a soft pulse on the task. "Saved" follows once the sheet confirms (it now reads each task's row in one go instead of cell by cell). If it fails, the task goes back to how it was and the note says why, with **Retry** (or **Reopen** when someone changed the same cell in the sheet meanwhile); failures are also kept on the Issues page. A refresh that arrives while a save is in flight keeps showing the new values. Saving is reliable: a busy sheet, a slow answer or a network blip is retried automatically (twice) with "Google Sheets is busy, still saving…"; a retry after a slow first answer is safe, because the web app treats a value already in the sheet as saved. Only the fields you changed are sent (a task still waiting on its brief is TBP in Design Status, so assigning it never sends a status change). A real change made in the sheet meanwhile is still caught and offered as *Reopen*.
 
 **Who can change what.** Status, Design ETA / delivery date, designer, priority and number of creatives are for Admins and for the people you give each of those permissions on the Access page; everyone else sees them as read-only facts, and the web app refuses them too (Fasty included). Submitting links follows the *Links* permission (team members submit their own work).
 
@@ -254,6 +254,8 @@ The task panel shows **Manage task** when a person has at least one of these, wi
 
 ## Errors & issues (Admins)
 
+**Layout (Nov 2026).** A summary line first: how many issues need attention, split by who they affect (**Affects people**: someone could not do what they tried; **Data**: the sheets need a fix; **System**: background or temporary), and how many were resolved this week. Below: Active / Resolved / All, a search and *Check now*, then area chips with counts (click to filter). Each issue says **what it means** and **what to do** in plain words, with its area, when it was last seen, how often and who it happened to, and its actions (Retry, the fix button, Mark resolved) on the same line. The raw error is under *Technical details*. *How this works* explains the cycle: found, shown, fixed, closed.
+
 The **Issues** page (Admin menu, with a count of open issues; the bell also shows it; Admins by default, and anyone you give it on the Access page: **View** to see issues, **Edit** to also retry, fix and resolve them) lists everything that went wrong, found automatically. At the top: how many issues need attention (pulsing while any are active), how many were resolved in the last 7 days, and which areas are affected (click an area to filter), with the four steps every issue goes through: detected, shown, fixed, closed. Each issue is a card with its area's colour and icon. Each issue shows the **area**, **what went wrong** (expand *What went wrong*), when it was first and last seen, how many times, who it happened to, and whether it is **Active** or **Resolved** (and by whom).
 
 | Area | Found by | Closes by itself when |
@@ -273,9 +275,17 @@ The **Issues** page (Admin menu, with a count of open issues; the bell also show
 
 **What to do with an issue:** *Retry* (failed saves) shows exactly what it will write (for example *SRA2353: status → WIP*), writes it and resolves the issue. *Reload from the sheets*, *Open Data health*, *Open Brands* and *Open Pricing* take you to the fix. *Mark resolved* closes it by hand; *Reopen* and *Remove* are on resolved issues. Filters: Open / Resolved / All, area and search. The page refreshes every minute; the same problem is counted again instead of listed twice. A retry only ever carries the fields the person who hit the problem was allowed to change. Issues are kept in a hidden *Issues* tab of the access spreadsheet.
 
-## Look and feel
+## Design language (every section, every change)
 
-One visual language across every section: a soft field of the theme's colours behind the page, frosted-glass cards with a light edge, violet-to-blue buttons and selected tabs, cool accents (green, cyan, blue) alongside lime, orange and violet, consistent pills, inputs with a blue focus ring, and small motion that answers what you do (hover, press, open). Light and dark themes both follow it; motion stops for people who turn on *reduce motion*.
+One product, not features added over time. Every new section, control or change follows these rules (the Overview is the reference):
+
+- **Colours:** violet (primary actions, selection, "this is applied"), lime #ddff00 (one bright highlight: today, counts on a selected tab, success moments), orange (needs attention soon), red (late or broken, sparingly), ink and warm greys (text, surfaces, structure). No gradients, no glass, no decorative colour. Light and dark mode are designed together; every colour is a theme token.
+- **Shapes and spacing:** cards with large rounded corners, pill buttons, chips and inputs, quiet sunken panels for secondary groups, an 8-pixel spacing rhythm, no empty space left by layout.
+- **Hierarchy:** one clear summary first (the number that matters, said in words), then filters, then the detail. What needs action is highlighted; what is fine stays quiet. Existing things (links, values) are shown plainly with an option to change them; missing things are the ones that stand out.
+- **Filters:** the page filters (Sheet, Designer, Brand, Type) apply to the data pages that use them and are hidden where they do not (My work never uses Designer; Notes, Issues and Access have none). Anything applied is violet-filled and listed under **Filtering by** with one-click removal and Clear all; a page's own filters (status, members shown, search) are highlighted the same way when they are not on their default.
+- **Feedback:** every action answers at once (saves show immediately, with Saving… then Saved, or a plain reason and Retry). Errors say what happened and what to do, in plain words; technical text stays one click away.
+- **Permissions:** people only see the controls they may use; the web app checks every write again.
+- **Quality floor:** works on phones (no sideways scrolling), keyboard and screen-reader friendly, reduced motion respected, tested in both themes.
 
 ## Rescheduling and reassigning (Admins only)
 
