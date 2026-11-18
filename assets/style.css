@@ -3821,3 +3821,10 @@ button.dp-flag:hover { background: color-mix(in srgb, var(--fg) 10%, transparent
 .su-head > .su-name { flex: 1 1 auto; min-width: 0; }
 .su-head > .su-load { flex: none; }
 .su-name { overflow-wrap: anywhere; }
+/* Day plan cards: the bottom row never clips; a long status shortens with … and Internal/External stays whole */
+.dp-tk-r3 { flex-wrap: nowrap; overflow: visible; }
+.dp-tk-r3 > .dp-st { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.dp-st-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-tk-r3 > .dp-src { flex: none; }
+.dp-tk-r1 .dp-flag2 { flex: none; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+.dp-st::before { flex: none; }

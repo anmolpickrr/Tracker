@@ -1929,6 +1929,9 @@
     if (r) { t.dataset.uid = x.uid; t.tabIndex = 0; t.setAttribute('role', 'button'); t.setAttribute('aria-label', [x.brand, x.id, x.type, DP_FINE[x.now] || x.now].filter(Boolean).join(', ') + '. Open to edit'); }
     const r1 = dpEl('div', 'dp-tk-r1');
     r1.append(dpEl('b', 'dp-brand', x.brand || 'No brand'));
+    /* New / Picked up sits beside the brand, so the bottom row only holds status + Internal/External and never clips */
+    if (x.isNew) r1.append(dpEl('span', 'dp-flag2', 'New'));
+    else if (x.picked && x.ph !== 'done') r1.append(dpEl('span', 'dp-flag2', 'Picked up'));
     const go = dpEl('span', 'dp-go'); go.setAttribute('aria-hidden', 'true'); go.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 11.5 11.5 4.5M6 4.5h5.5V10"/></svg>'; r1.append(go);
     const r2 = dpEl('div', 'dp-tk-r2');
     if (x.id) r2.append(dpEl('span', 'dp-id', x.id));
@@ -1936,10 +1939,9 @@
     if (x.late) { const l = dpEl('span', 'dp-late', x.late + 'd late'); l.title = x.late + ' days past the ETA'; r2.append(l); }
     const desc = dpEl('p', 'dp-desc', dpWords(x.topic, 4) || '—'); if (x.topic) desc.title = x.topic;
     const r3 = dpEl('div', 'dp-tk-r3');
-    r3.append(dpEl('span', 'dp-st', x.ph === 'moved' ? 'Moved to ' + CO.fmtDate(x.eta) : x.now === 'Reassigned' && x.to ? 'Now with ' + x.to.split(',')[0].split(' ')[0] : DP_FINE[x.now] || x.now));
+    const stTxt = x.ph === 'moved' ? 'Moved to ' + CO.fmtDate(x.eta) : x.now === 'Reassigned' && x.to ? 'Now with ' + x.to.split(',')[0].split(' ')[0] : DP_FINE[x.now] || x.now;
+    const st = dpEl('span', 'dp-st'); st.append(dpEl('span', 'dp-st-t', stTxt)); st.title = stTxt; r3.append(st);
     r3.append(dpEl('span', 'dp-src ' + (x.cls === 'External' ? 'ext' : 'int'), x.cls === 'External' ? 'External' : 'Internal'));
-    if (x.isNew) r3.append(dpEl('span', 'dp-flag2', 'New'));
-    else if (x.picked && x.ph !== 'done') r3.append(dpEl('span', 'dp-flag2', 'Picked up'));
     t.append(r1, r2, desc, r3);
     return t;
   }
