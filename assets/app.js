@@ -1676,8 +1676,8 @@
       return d;
     };
     // A content status as the dashboard's usual status chip (same shape and colours as the chips on top of each card).
-    const CS_CHIP = { PENDING: ['s-warn', 'pending'], TBD: ['s-warn', 'pending'], 'INCOMPLETE BRIEF': ['s-warn', 'incomplete brief'], INCOMPLETE: ['s-warn', 'incomplete brief'], TBP: ['s-content', 'ready to script'], WIP: ['s-lav', 'in progress'], CHANGES: ['s-lav', 'changes'], SHARED: ['s-mute', 'with client'], DONE: ['s-content', 'done'] };
-    const csChip = (cs, pre) => { const k = String(cs || '').trim().toUpperCase().replace(/\s+/g, ' '), m = CS_CHIP[k] || ['s-mute', String(cs || 'pending').toLowerCase()]; const c = document.createElement('span'); c.className = 'chip su-chip ' + m[0]; const lab = (pre || '') + m[1]; c.textContent = lab.charAt(0).toUpperCase() + lab.slice(1); return c; };
+    const CS_CHIP = { 'UNDER REVIEW': ['s-warn', 'under review'], 'INCOMPLETE BRIEF': ['s-warn', 'incomplete brief'], INCOMPLETE: ['s-warn', 'incomplete brief'], TBP: ['s-content', 'ready to script'], WIP: ['s-lav', 'in progress'], CHANGES: ['s-lav', 'changes'], SHARED: ['s-mute', 'with client'], DONE: ['s-content', 'done'] };
+    const csChip = (cs, pre) => { const k = String(cs || '').trim().toUpperCase().replace(/\s+/g, ' '), m = CS_CHIP[k] || ['s-mute', String(cs || 'not set').toLowerCase()]; const c = document.createElement('span'); c.className = 'chip su-chip ' + m[0]; const lab = (pre || '') + m[1]; c.textContent = lab.charAt(0).toUpperCase() + lab.slice(1); return c; };
     // Every task is listed (the card scrolls inside itself); ready work first, then work waiting on content.
     const section = (title, list) => {
       if (!list.length) return null;
@@ -1688,7 +1688,7 @@
     };
     const byEta = (a, b) => (a.eta || '9999').localeCompare(b.eta || '9999');
     // Content tasks block on a writer's card: its own count and breakdown, separate from design and editing.
-    const CLAB = { PENDING: 'Pending', WIP: 'WIP', CHANGES: 'Changes', 'INCOMPLETE BRIEF': 'Incomplete brief', TBP: 'TBP', TBD: 'TBD' };
+    const CLAB = { 'UNDER REVIEW': 'Under review', WIP: 'WIP', CHANGES: 'Changes', 'INCOMPLETE BRIEF': 'Incomplete brief', TBP: 'TBP' };
     const cline = (r) => {
       const d = line(r); d.classList.remove('await'); d.querySelectorAll('.su-chip').forEach((x) => x.remove()); const m = d.querySelector('.meta'); m.textContent = [r.id, r.type, r.designers ? 'Design: ' + r.designers : '', CO.cls(r)].filter(Boolean).join(' · ');
       const mm = d.querySelector('.m'); mm.textContent = r.eta ? 'ETA ' + CO.fmtDate(r.eta) : 'No ETA'; mm.classList.remove('bad', 'warn'); return d;
@@ -2633,13 +2633,13 @@
   /* ================= Content tasks (briefs, scripts, content) =================
      Counted separately from design and editing, never mixed with creatives. A content task belongs to everyone named in
      its Content Owner cell ("Anmol, Jahanvi" counts for both). Content Status decides where it is:
-       open (the writer's bucket): PENDING, WIP, CHANGES, INCOMPLETE BRIEF, TBP, TBD
+       open (the writer's bucket): UNDER REVIEW, WIP, CHANGES, INCOMPLETE BRIEF, TBP
        with the client: SHARED      completed: DONE (dated by Design ETA, else request date, never later than today)
        on hold: HOLD                 blank: not a content task
      Content writers: Jahanvi and Gul (content only), anyone with the "Content Writer" role, and the Creative Head
      (Anmol), who also does design work. Dropped tasks (Deprioritised) are not open content work. */
   const CT = (() => {
-    const OPEN = ['PENDING', 'WIP', 'CHANGES', 'INCOMPLETE BRIEF', 'TBP', 'TBD'];
+    const OPEN = ['UNDER REVIEW', 'WIP', 'CHANGES', 'INCOMPLETE BRIEF', 'TBP'];
     const ONLY = ['jahanvi', 'gul'], ALSO = ['anmol'];
     const first = (n) => String(n || '').toLowerCase().trim().split(/\s+/)[0];
     const isHead = (name) => /creative head/i.test(EF.role(name)) || ALSO.includes(first(name));
@@ -2705,8 +2705,7 @@
         if (CT.isHead(w)) { const r2 = document.createElement('span'); r2.className = 'su-role'; r2.textContent = 'also design'; nm.append(' ', r2); }
         const num = (v, cls) => { const c = CO.td(tr, CO.num(v), 'n' + (cls ? ' ' + cls : '')); return c; };
         num(ct.open.length, ct.open.length ? 'ct-open' : '');
-        ['PENDING', 'WIP', 'CHANGES', 'INCOMPLETE BRIEF'].forEach((k) => num((ct.by[k] || []).length));
-        num((ct.by.TBP || []).length + (ct.by.TBD || []).length);
+        ['UNDER REVIEW', 'WIP', 'CHANGES', 'INCOMPLETE BRIEF', 'TBP'].forEach((k) => num((ct.by[k] || []).length));
         num(ct.client.length); num(ct.hold.length);
         const dm = ct.doneIn(m + '-01', mEnd); num(dm.length); num(ct.doneIn(pf, pt).length);
         ct.open.forEach((r) => total.open.add(r.uid)); dm.forEach((r) => total.done.add(r.uid));

@@ -65,7 +65,7 @@
       return {
         src: key || kind, row: rowNums[i] || null,
         id: v(r, 'id'), req_date: parseDate(v(r, 'req')), req_text: v(r, 'req'), type: v(r, 'type'), brand: v(r, 'brand'), topic: v(r, 'topic'),
-        channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: v(r, 'cstatus'),
+        channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: csNorm(v(r, 'cstatus')),
         eta: parseDate(v(r, 'eta')), eta_text: v(r, 'eta'), creative_link: v(r, 'link'), design_status: v(r, 'dstatus'), designer: v(r, 'designer'),
         open_file: v(r, 'file'), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')),
         qty: qn > 0 ? qn : null
@@ -101,6 +101,9 @@
   }
 
   /* ---------- Status ---------- */
+  /* Content Status renamed in both sheets (Nov 2026): PENDING is now UNDER REVIEW, and TBD (Internal) is now TBP.
+     Older rows that still say PENDING or TBD read as the new names, so every label matches the sheets. */
+  const csNorm = (s0) => { const u = clean(s0).toUpperCase().replace(/\s+/g, ' '); return u === 'PENDING' ? 'UNDER REVIEW' : u === 'TBD' ? 'TBP' : s0; };
   const title = (s) => s.toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase());
   /* Status definitions from the Creative Head (Nov 2026). Design Status is the primary field; Content Status only decides
      whether a task that design has not started is ready to be picked up. Every task gets exactly one stage:
@@ -113,11 +116,11 @@
        DONE                                         = Delivered  delivered and approved                COMPLETED work
        REJECTED                                     = Rejected  delivered, rejected by client          COMPLETED work (bandwidth),
                                                                                                         not an approved delivery
-       TBP (or blank) + content PENDING / INCOMPLETE BRIEF / TBP / WIP / SHARED / CHANGES
+       TBP (or blank) + content UNDER REVIEW / INCOMPLETE BRIEF / TBP / WIP / SHARED / CHANGES
                                                     = Awaiting brief  the brief is not approved yet (sub-status says why)
        HOLD, or not started + content HOLD          = Hold
        DEPRIORITIZED                                = Deprioritised  no longer required */
-  const BRIEF = { 'PENDING': 'Brief pending discussion', 'TBD': 'Brief pending discussion', 'INCOMPLETE BRIEF': 'Incomplete brief', 'INCOMPLETE': 'Incomplete brief',
+  const BRIEF = { 'UNDER REVIEW': 'Brief under review', 'IN REVIEW': 'Brief under review', 'INCOMPLETE BRIEF': 'Incomplete brief', 'INCOMPLETE': 'Incomplete brief',
     'TBP': 'Brief ready for scripting', 'WIP': 'Brief in progress', 'SHARED': 'Brief with client', 'CHANGES': 'Brief changes requested' };
   function stageOf(ds0, cs0) {
     const ds = clean(ds0).toUpperCase(), cs = clean(cs0).toUpperCase();
@@ -298,7 +301,7 @@
       if (G.done && !des.length) flags.push('Completed, no designer');
       if (G.done && !/^https?:/i.test(clean(r.creative_link))) flags.push('Completed, no creative link');
       if (!dsU && !csU) flags.push('Design and content status blank');
-      if ((G.done || G.shared || G.review) && ['PENDING', 'INCOMPLETE BRIEF', 'TBD'].includes(csU)) flags.push('Design finished but brief not approved');
+      if ((G.done || G.shared || G.review) && ['UNDER REVIEW', 'INCOMPLETE BRIEF', 'TBP'].includes(csU)) flags.push('Design finished but brief not approved');
       if (!clean(r.brand)) flags.push('No brand');
       if (!idU) flags.push('No Creative_ID');
       else if (source === 'Paid' ? !/^SRAP\d/.test(idU) : !/^SRA\d/.test(idU)) flags.push(source === 'Paid' ? 'ID should start with SRAP (External sheet)' : 'ID should start with SRA (Internal sheet)');

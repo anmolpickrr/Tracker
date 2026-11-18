@@ -265,7 +265,7 @@ Changing a task's **ETA** or **who it is assigned to** is for Admins (and the ow
 
 ## Content tasks (briefs, scripts, content)
 
-Counted separately from design and editing, never mixed with creatives. A content task belongs to everyone named in its **Content Owner** cell (shared cells such as "Anmol, Jahanvi" count for each). **Content Status** decides where it is: **open** (in the writer's bucket) = PENDING, WIP, CHANGES, INCOMPLETE BRIEF, TBP, TBD; **with the client** = SHARED; **completed** = DONE, dated by the Design ETA (else the request date, never later than today); **on hold** = HOLD. Dropped (Deprioritised) tasks are not open content work.
+Counted separately from design and editing, never mixed with creatives. A content task belongs to everyone named in its **Content Owner** cell (shared cells such as "Anmol, Jahanvi" count for each). **Content Status** decides where it is: **open** (in the writer's bucket) = UNDER REVIEW, WIP, CHANGES, INCOMPLETE BRIEF, TBP; **with the client** = SHARED; **completed** = DONE, dated by the Design ETA (else the request date, never later than today); **on hold** = HOLD. Dropped (Deprioritised) tasks are not open content work.
 
 Content writers: Jahanvi and Gul (content only: they appear under Content tasks, not in design counts or workload unless they hold open design work), anyone with the *Content Writer* role, and the Creative Head (Anmol), whose own design work also shows in Stand-up, Team and workload. Shown in Stand-up (a Content tasks block per writer, plus the total open), Team › Content tasks (open, by status, with client, on hold, completed this and last month) and My work.
 
@@ -364,10 +364,12 @@ Design Status is the primary field. Content Status only decides whether a task w
 | NO UPDATE | No update | **Shared** work: no reply despite follow-ups. Never overdue, not an approved delivery |
 | DONE | Delivered | **Completed**, approved |
 | REJECTED | Rejected | **Completed** for bandwidth and productivity (the time was spent), **not** an approved delivery; a redo is a new task |
-| TBP or blank, content PENDING / INCOMPLETE BRIEF / TBP / WIP / SHARED / CHANGES | Awaiting brief (says which: pending discussion, incomplete brief, ready for scripting, brief in progress, brief with client, brief changes requested) | The brief isn't approved, so not design workload and never overdue. The Content Owner's work |
+| TBP or blank, content UNDER REVIEW / INCOMPLETE BRIEF / TBP / WIP / SHARED / CHANGES | Awaiting brief (says which: brief under review, incomplete brief, ready for scripting, brief in progress, brief with client, brief changes requested) | The brief isn't approved, so not design workload and never overdue. The Content Owner's work |
 | HOLD, or design not started and content HOLD | Hold | Parked, never overdue |
 | DEPRIORITIZED | Deprioritised | No longer required |
 | anything else | shown as typed, flagged in Data health | Open |
+
+Content Status names match the sheets: **Under review** (was Pending, both sheets) and **TBP** (Internal's TBD is now TBP). Rows that still say Pending or TBD, such as older tabs, are read as the new names.
 
 **Units:** status counts (open, overdue, shared, under review, awaiting brief) are **tasks**; completed output (this month, reports, per designer per day) is **creatives** (the *No. of Creatives* quantity, 1 per task if blank). The Overview's *Completed this month* shows how many were approved and how many rejected.
 

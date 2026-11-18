@@ -1848,7 +1848,7 @@ function testRead() {
       return {
         src: key || kind, row: rowNums[i] || null,
         id: v(r, 'id'), req_date: parseDate(v(r, 'req')), req_text: v(r, 'req'), type: v(r, 'type'), brand: v(r, 'brand'), topic: v(r, 'topic'),
-        channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: v(r, 'cstatus'),
+        channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: csNorm(v(r, 'cstatus')),
         eta: parseDate(v(r, 'eta')), eta_text: v(r, 'eta'), creative_link: v(r, 'link'), design_status: v(r, 'dstatus'), designer: v(r, 'designer'),
         open_file: v(r, 'file'), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')),
         qty: qn > 0 ? qn : null
@@ -1884,6 +1884,9 @@ function testRead() {
   }
 
   /* ---------- Status ---------- */
+  /* Content Status renamed in both sheets (Nov 2026): PENDING is now UNDER REVIEW, and TBD (Internal) is now TBP.
+     Older rows that still say PENDING or TBD read as the new names, so every label matches the sheets. */
+  const csNorm = (s0) => { const u = clean(s0).toUpperCase().replace(/\s+/g, ' '); return u === 'PENDING' ? 'UNDER REVIEW' : u === 'TBD' ? 'TBP' : s0; };
   const title = (s) => s.toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase());
   /* Status definitions from the Creative Head (Nov 2026). Design Status is the primary field; Content Status only decides
      whether a task that design has not started is ready to be picked up. Every task gets exactly one stage:
@@ -1896,11 +1899,11 @@ function testRead() {
        DONE                                         = Delivered  delivered and approved                COMPLETED work
        REJECTED                                     = Rejected  delivered, rejected by client          COMPLETED work (bandwidth),
                                                                                                         not an approved delivery
-       TBP (or blank) + content PENDING / INCOMPLETE BRIEF / TBP / WIP / SHARED / CHANGES
+       TBP (or blank) + content UNDER REVIEW / INCOMPLETE BRIEF / TBP / WIP / SHARED / CHANGES
                                                     = Awaiting brief  the brief is not approved yet (sub-status says why)
        HOLD, or not started + content HOLD          = Hold
        DEPRIORITIZED                                = Deprioritised  no longer required */
-  const BRIEF = { 'PENDING': 'Brief pending discussion', 'TBD': 'Brief pending discussion', 'INCOMPLETE BRIEF': 'Incomplete brief', 'INCOMPLETE': 'Incomplete brief',
+  const BRIEF = { 'UNDER REVIEW': 'Brief under review', 'IN REVIEW': 'Brief under review', 'INCOMPLETE BRIEF': 'Incomplete brief', 'INCOMPLETE': 'Incomplete brief',
     'TBP': 'Brief ready for scripting', 'WIP': 'Brief in progress', 'SHARED': 'Brief with client', 'CHANGES': 'Brief changes requested' };
   function stageOf(ds0, cs0) {
     const ds = clean(ds0).toUpperCase(), cs = clean(cs0).toUpperCase();
@@ -2081,7 +2084,7 @@ function testRead() {
       if (G.done && !des.length) flags.push('Completed, no designer');
       if (G.done && !/^https?:/i.test(clean(r.creative_link))) flags.push('Completed, no creative link');
       if (!dsU && !csU) flags.push('Design and content status blank');
-      if ((G.done || G.shared || G.review) && ['PENDING', 'INCOMPLETE BRIEF', 'TBD'].includes(csU)) flags.push('Design finished but brief not approved');
+      if ((G.done || G.shared || G.review) && ['UNDER REVIEW', 'INCOMPLETE BRIEF', 'TBP'].includes(csU)) flags.push('Design finished but brief not approved');
       if (!clean(r.brand)) flags.push('No brand');
       if (!idU) flags.push('No Creative_ID');
       else if (source === 'Paid' ? !/^SRAP\d/.test(idU) : !/^SRA\d/.test(idU)) flags.push(source === 'Paid' ? 'ID should start with SRAP (External sheet)' : 'ID should start with SRA (Internal sheet)');
@@ -2177,7 +2180,7 @@ const ASSIST_SYSTEM = [
   'Actions: you can open sections, apply filters, open a task and, for Editors and Admins, change a task\'s status, ETA, designer or priority. Before any change, say exactly what you will change and ask "Shall I go ahead?". Only call update_task after the person clearly says yes in their latest message. The dashboard also shows a confirm button; if they cancel, accept it. Navigation and filters need no confirmation.',
   '',
   'Dashboard guide (use this to explain features and processes):',
-  '- Status meanings (Creative Head, Nov 2026). Design Status is the primary field. TBP = ready to be picked up (To be planned). WIP = in progress. CHANGES = shared and revisions requested (Changes requested). These three are OPEN work: workload, and overdue when the Design ETA has passed. UNDER REVIEW = the team finished it, the Creative Head has not reviewed it yet (Under review; not workload, never overdue). SHARED = with the client or another team for approval (shown as Shared). NO UPDATE = shared, no reply despite follow-ups; counted as SHARED work. DONE = delivered and approved (Delivered). REJECTED = delivered, then rejected by the client; counts as COMPLETED work for bandwidth but is NOT an approved delivery; a redo is a new task. Completed work = DONE + REJECTED. HOLD = on hold. DEPRIORITIZED = no longer required. When design has not started (TBP or blank), Content Status decides readiness: DONE (brief approved) = ready to pick up; PENDING (discussion), INCOMPLETE BRIEF, TBP (ready for final scripting), WIP (brief in progress), SHARED (brief with the client) and CHANGES (brief changes) = Awaiting brief, not design workload and never overdue; content HOLD = Hold. Content Owner prepares the brief. Creative_ID: SRAP = External (Paid) sheet, SRA = Internal (Marketing) sheet. A task with no designer is Unassigned and is never counted for any person.',
+  '- Status meanings (Creative Head, Nov 2026). Design Status is the primary field. TBP = ready to be picked up (To be planned). WIP = in progress. CHANGES = shared and revisions requested (Changes requested). These three are OPEN work: workload, and overdue when the Design ETA has passed. UNDER REVIEW = the team finished it, the Creative Head has not reviewed it yet (Under review; not workload, never overdue). SHARED = with the client or another team for approval (shown as Shared). NO UPDATE = shared, no reply despite follow-ups; counted as SHARED work. DONE = delivered and approved (Delivered). REJECTED = delivered, then rejected by the client; counts as COMPLETED work for bandwidth but is NOT an approved delivery; a redo is a new task. Completed work = DONE + REJECTED. HOLD = on hold. DEPRIORITIZED = no longer required. When design has not started (TBP or blank), Content Status decides readiness: DONE (brief approved) = ready to pick up; UNDER REVIEW (brief under review; was PENDING), INCOMPLETE BRIEF, TBP (ready for final scripting; Internal TBD is now TBP), WIP (brief in progress), SHARED (brief with the client) and CHANGES (brief changes) = Awaiting brief, not design workload and never overdue; content HOLD = Hold. Content Owner prepares the brief. Creative_ID: SRAP = External (Paid) sheet, SRA = Internal (Marketing) sheet. A task with no designer is Unassigned and is never counted for any person.',
   '- Data comes live from two Google Sheets: the Paid (client) sheet, shown everywhere as External, and the Marketing team sheet, shown as Internal. Edits in the sheets appear within about 30 seconds.',
   '- Statuses on the dashboard: To be planned, WIP, Changes requested, Under review, Shared, No update, Awaiting brief, Hold, Delivered, Rejected, Deprioritised. Open = to be planned + WIP + changes requested. Overdue = open with a Design ETA before today. Creatives = the "No. of Creatives" quantity (1 per task if blank). Completed work (Delivered + Rejected) is dated by Delivered On, else the Design ETA.',
   '- Overview: headline numbers (open, overdue, due today, in progress, under review, delivered this month with change vs the same days of last month), Needs attention list, Meetings (their Google Calendar), Unassigned queue, Pipeline, Delivery trend and Top brands (each graph has Day, Week, Month, Quarter, Year and Custom buttons), Workload by designer, Coming up.',
