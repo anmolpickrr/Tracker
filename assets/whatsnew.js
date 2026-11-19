@@ -19,11 +19,12 @@ window.CO_WHATSNEW = [
   },
   {
     id: '2026-11-20-whatsnew', date: '2026-11-20', kind: 'new', who: 'all', go: 'whatsnew', title: 'What\'s new, for everyone',
-    what: 'A What\'s new tab in the menu: every update to the dashboard, explained in one place, for every role.',
+    what: 'Every update to the dashboard, explained in one place, for every role.',
     does: 'Lists new features, improvements and fixes, newest first, with what each does and how to use it. Updates for parts of the dashboard you do not have say who they are for.',
-    how: 'Open What\'s new in the menu, or the sparkle button at the top right. A count in the menu (and a lime dot on the button) means something is new for you. Pick an update to read it; use the arrow keys to move between them, and Open to go straight to the feature.',
-    changed: 'It used to be a side panel that showed only some updates; it is now its own page that everyone can open.'
+    how: 'Click the sparkle icon at the top right. When something is new, the icon glows and a small note pops out of it; click "See what\'s new" or dismiss it. Use the arrow keys to move between updates and Open to go to a feature.',
+    changed: 'It lives behind the icon at the top right, not in the menu, and the note never covers your work.'
   },
+
 
   {
     id: '2026-11-19-brief-tabs', date: '2026-11-19', kind: 'fixed', who: 'perm:briefs', go: 'tasks', title: 'Briefs show the right tab for each task',
@@ -61,17 +62,18 @@ window.CO_WHATSNEW = [
     changed: 'My work is never emptied by a Designer filter left on elsewhere, and Notes, Issues and Access have no filter bar.'
   },
   {
-    id: '2026-11-19-issues', date: '2026-11-19', kind: 'improved', who: 'page:issues', go: 'issues', title: 'Issues page, clearer',
-    what: 'A redesigned Issues page that says what each problem means and what to do.',
-    does: 'Shows how many issues need attention and who they affect, with area filters and the fix button on each issue.',
-    how: 'Open Issues from the menu. Use Retry or the fix button on an issue; Mark resolved once it is sorted.',
-    changed: 'Technical error text moved under "Technical details"; the summary is in plain words.'
+    id: '2026-11-19-issues', date: '2026-11-20', kind: 'improved', who: 'page:issues', go: 'issues', title: 'Issues, grouped by what to do',
+    what: 'The Issues page now sorts problems into three groups: Needs your action, Fix in the sheets or settings, and Fixing itself.',
+    does: 'Each issue is one short row that names the task and shows what it tried to save (for example "Status → Under review"), with Retry or the fix next to it.',
+    how: 'Click a group at the top to see only that group. Use Retry on a row, or "Retry all" for every failed save at once. Click a row for the full explanation. Temporary errors are folded away under Fixing itself.',
+    changed: 'Before, every problem was a large card with technical wording and a long code line.'
   },
+
   {
     id: '2026-11-19-waiting', date: '2026-11-19', kind: 'new', who: 'page:brands', go: 'brands', title: 'Waiting on client, rebuilt',
     what: 'Everything that cannot move until a client replies: creatives shared for approval and briefs shared for sign-off.',
     does: 'Shows how long each item has waited, which brands have the oldest waits and who has not replied, with filters and search.',
-    how: 'Open Brands. Click a brand to see its items. Use "Copy follow-up" to copy a ready-to-send reminder with every pending item and link.',
+    how: 'Open Brands: it is at the top of the page. Click a brand to see its items. Use "Copy follow-up" to copy a ready-to-send reminder with every pending item and link.',
     changed: 'Replaces the long list of brand boxes with one compact table and an age bar.'
   },
   {

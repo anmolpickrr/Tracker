@@ -3716,8 +3716,30 @@
   document.getElementById('btn-new').addEventListener('click', wnOpen);
   // leaving the tab: next visit starts fresh (entrance motion again, "New for you" for anything newer)
   window.addEventListener('hashchange', () => { if (location.hash !== '#whatsnew') WN.entered = false; });
-  // once per visit: a short note when there is something new (never a pop-up over your work)
-  setInterval(() => { if (WN.toasted || !A.user || S.status !== 'ok') { wnPaint(); return; } const n = wnPaint(); WN.toasted = true; if (n && P.tab !== 'whatsnew') toast(n === 1 ? '1 new update to the dashboard' : n + ' new updates to the dashboard', false, { label: "See what's new", fn: wnOpen }); }, 4000);
+  /* A small callout from the sparkle button when something is new: points at the button, names the newest update,
+     never takes focus or blocks the page. It closes on "See what's new", on ×, or by itself after 12 seconds; the
+     button keeps pulsing and its dot stays until the updates are read. */
+  function wnCallout(items) {
+    if (document.querySelector('.wn-pop') || P.tab === 'whatsnew') return;
+    const btn = document.getElementById('btn-new'); if (!btn || !btn.offsetParent) return;
+    const pop = wnEl('div', 'wn-pop'); pop.setAttribute('role', 'status'); pop.setAttribute('aria-live', 'polite');
+    const head = wnEl('div', 'wn-pop-h'); head.append(wnEl('span', 'wn-pop-spark', '✦'), wnEl('b', '', items.length === 1 ? 'New on the dashboard' : items.length + ' new updates'));
+    const x = wnEl('button', 'wn-pop-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Dismiss'); head.append(x);
+    const t = wnEl('p', 'wn-pop-t', items[0].title + (items.length > 1 ? ' and ' + (items.length - 1) + ' more' : ''));
+    const go = wnEl('button', 'wn-pop-go', "See what's new"); go.type = 'button';
+    pop.append(head, t, go); document.body.append(pop);
+    const place = () => { const r = btn.getBoundingClientRect(), w = pop.offsetWidth; pop.style.top = (r.bottom + 12) + 'px'; pop.style.left = Math.max(12, Math.min(r.left + r.width / 2 - w + 34, document.documentElement.clientWidth - w - 12)) + 'px'; pop.style.setProperty('--ax', (r.left + r.width / 2 - parseFloat(pop.style.left)) + 'px'); };
+    place(); window.addEventListener('resize', place);
+    const close = () => { pop.classList.add('out'); window.removeEventListener('resize', place); setTimeout(() => pop.remove(), 220); };
+    x.addEventListener('click', close); go.addEventListener('click', () => { close(); wnOpen(); });
+    let tm = setTimeout(close, 12000); pop.addEventListener('mouseenter', () => clearTimeout(tm)); pop.addEventListener('mouseleave', () => { tm = setTimeout(close, 4000); });
+  }
+  setInterval(() => {
+    const n = wnPaint(); document.getElementById('btn-new').classList.toggle('has-new', !!n);
+    if (WN.toasted || !A.user || S.status !== 'ok') return;
+    WN.toasted = true; if (!n) return;
+    const seen = wnSeen(); wnCallout(wnItems().filter((x) => !seen.has(x.id)));
+  }, 3000);
   window.CO_whatsnew = { open: wnOpen, items: wnItems, unseen: () => wnPaint() };
 
   /* ================= Start ================= */
@@ -3760,91 +3782,121 @@
   const issArea = (a) => ISS_AREA[a] || ['#9a978f', 'M12 3 2 20h20L12 3zM12 10v4M12 17h.01'];
   const issIcon = (a, cls) => { const [c, d] = issArea(a), w = el('span', 'iss-ic' + (cls ? ' ' + cls : '')); w.style.setProperty('--ac', c); w.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>'; return w; };
   const ISS_RF = document.getElementById('iss-refresh'); // the Check now button lives in the toolbar (kept across redraws)
-  /* What an issue means and what to do, in plain words (the raw text stays under "Technical details"). */
-  const ISS_EXPLAIN = [
-    [/^Could not save/, 'A change made on the dashboard did not reach the sheet.', 'Retry it (shown below), or mark it resolved if the sheet is already right.', 'people'],
-    [/^Request failed: updateTask/, 'The web app stopped while saving a task change.', 'Saves now retry by themselves. Mark resolved once new saves go through.', 'people'],
-    [/^Request failed/, 'The web app hit an error while answering a request.', 'Usually temporary. If it keeps coming back, check the technical details.', 'system'],
-    [/could not be loaded for/, 'This person\'s dashboard could not load the tasks.', 'Usually a network hiccup. Reload from the sheets; it closes itself on their next good load.', 'people'],
-    [/not counted in packages/, 'Some delivered work could not be matched to a brand package.', 'Open Brands to check the package types and dates.', 'data'],
-    [/Duplicate task IDs/, 'Two rows in a sheet share the same Creative_ID.', 'Give each row its own ID in the sheet; the dashboard cannot save to these rows until then.', 'data'],
-    [/^Error on the dashboard/, 'Something on a screen failed to draw.', 'Usually harmless after a reload. Check the details if it repeats.', 'system'],
-    [/Data checks failed|Maintenance failed|Background/i, 'A background check could not finish.', 'It runs again every 10 minutes and closes itself once it passes.', 'system']
-  ];
-  const issExplain = (x) => { const m = ISS_EXPLAIN.find((e) => e[0].test(x.title)); return m ? { what: m[1], todo: m[2], impact: m[3] } : { what: String(x.details || '').split(/(?<=\.)\s/)[0].slice(0, 160), todo: '', impact: x.area === 'Actions' || x.area === 'Sync' ? 'people' : x.area === 'Data' || x.area === 'Packages' ? 'data' : 'system' }; };
-  const IMPACT = { people: ['Affects people', 'Someone could not do what they tried'], data: ['Data', 'The sheets need a fix'], system: ['System', 'Background or temporary'] };
+  /* ================= Issues (Nov 2026 redesign): grouped by what you need to do =================
+     Three lanes: Needs your action (failed saves: Retry), Fix in the sheets or settings (data, packages, Google
+     settings), Fixing itself (temporary server and screen errors). Each issue is one compact row: a plain headline
+     naming the task, what it tried to save, who and when, and its action on the right; click the row for the full
+     explanation and technical details. Failed saves can be retried all at once. */
+  const ISS_LANE = {
+    action: ['Needs your action', 'Changes that did not reach the sheet. Retry them, or resolve if the sheet is already right.'],
+    sheet: ['Fix in the sheets or settings', 'Something in the sheets or a Google setting needs a change; each says what.'],
+    auto: ['Fixing itself', 'Temporary errors. The dashboard retries and closes these on its own.']
+  };
+  const issLane = (x) => (x.retry || /^Could not save/.test(x.title) || x.area === 'Actions' ? 'action' : /^(Data|Packages|Creative brief|Web app)$/.test(x.area) || x.fix === 'open-health' || x.fix === 'open-brands' || x.fix === 'open-pricing' ? 'sheet' : 'auto');
+  const ISS_F = { status: 'Status', eta: 'Design ETA', designer: 'Designer', link: 'Creative link', file: 'Open File', brief: 'Content', cstatus: 'Content status', priority: 'Priority', qty: 'Creatives' };
+  const issRetryOf = (x) => { try { const r = JSON.parse(x.retry || ''); return r && r.action === 'updateTask' && r.fields ? r : null; } catch (e) { return null; } };
+  const issVal = (k, v) => (v === '' || v == null ? '(blank)' : k === 'eta' ? CO.fmtDate(String(v)) : /^https?:\/\//.test(String(v)) ? String(v).replace(/^https?:\/\/(www\.)?/, '').slice(0, 34) + (String(v).length > 40 ? '…' : '') : String(v));
+  function issHead(x) {
+    const r = issRetryOf(x), id = (r && r.id) || ((x.title.match(/\b(SRAP?\d+[_\d]*)\b/) || [])[1]);
+    const t = id && (S.tasks || []).find((y) => y.id === id);
+    const ctx = t ? t.brand + ' · ' + CO.topicText(t).slice(0, 48) : '';
+    if (/^Could not save/.test(x.title)) return { h: (id || 'A task') + ' didn\'t save', ctx, what: 'A change made on the dashboard did not reach the sheet.' };
+    if (/^Request failed: updateTask/.test(x.title)) return { h: 'A task save stopped on the server', ctx: '', what: 'The web app stopped while saving. Saves now retry by themselves; resolve this once new saves go through.' };
+    if (/^Request failed: (\w+)/.test(x.title)) return { h: 'The web app hit an error (' + x.title.replace(/^Request failed: /, '') + ')', ctx: '', what: 'Usually temporary. If it keeps coming back, check the technical details.' };
+    const m = x.title.match(/^Tasks could not be loaded for (.+)$/); if (m) return { h: m[1] + '\'s dashboard couldn\'t load tasks', ctx: '', what: 'Usually a network hiccup. It closes itself on their next good load.' };
+    if (/Duplicate task IDs/.test(x.title)) return { h: x.title, ctx: '', what: 'Give each row its own ID in the sheet; the dashboard cannot save to these rows until then.' };
+    if (/not counted in packages/.test(x.title)) return { h: x.title, ctx: '', what: 'Some delivered work could not be matched to a brand package. Check the package types and dates on Brands.' };
+    if (/^Error on the dashboard/.test(x.title)) return { h: 'A screen failed to draw', ctx: '', what: 'Usually harmless after a reload. Check the details if it repeats.' };
+    return { h: x.title, ctx: '', what: String(x.details || '').split(/(?<=\.)\s/)[0].slice(0, 180) };
+  }
+  async function issRetryAll(list, btn) {
+    if (!list.length) return;
+    if (!confirm('Retry ' + list.length + (list.length === 1 ? ' save' : ' saves') + ' in the sheet?\n\n' + list.map((x) => '• ' + retryText(issRetryOf(x))).join('\n'))) return;
+    btn.disabled = true; let ok = 0, bad = 0;
+    for (const x of list) {
+      btn.textContent = 'Retrying ' + (ok + bad + 1) + ' of ' + list.length + '…';
+      const r = issRetryOf(x);
+      try { const t = (S.tasks || []).find((y) => y.src === r.source && y.id === r.id); if (t && TASK_SAVE) await TASK_SAVE(t, r.fields); else await post({ action: 'updateTask', source: r.source, id: r.id, row: r.row, fields: r.fields }); await post({ action: 'issueAct', key: x.key, act: 'resolve' }); ok++; } catch (e) { bad++; }
+    }
+    toast(ok + ' saved' + (bad ? ', ' + bad + ' still failing (they stay in the list)' : '. All resolved.'), !!bad);
+    ISS.load(true);
+  }
+  async function issResolveAll(list, btn) { if (!list.length || !confirm('Mark ' + list.length + ' issues resolved?')) return; btn.disabled = true; for (const x of list) { try { await post({ action: 'issueAct', key: x.key, act: 'resolve' }); } catch (e) { /* next */ } } toast('Marked resolved'); ISS.load(true); }
+  ISS.exp = ISS.exp || new Set(); ISS.lane = ISS.lane || ''; ISS.showAuto = !!ISS.showAuto;
   dash.draw('issues', (box) => {
     box.replaceChildren();
     if (!ISS.list) { box.append(el('p', 'co-note', ISS.err || 'Loading issues…')); if (!ISS.busy) ISS.load(); return; }
     const L = ISS.list, open = L.filter((x) => x.status === 'Open'), wk = Date.now() - 7 * 864e5, fixed7 = L.filter((x) => x.status !== 'Open' && x.resolvedOn && new Date(x.resolvedOn) > wk);
-    const auto = fixed7.filter((x) => /Automatic/.test(x.resolvedBy || '')).length;
     const canFix = isAdmin() || perm('issueFix');
-    // summary: one line that says what matters
-    const sum = el('div', 'iss-sum');
-    const big = el('div', 'iss-sum-main ' + (open.length ? 'is-open' : 'is-clear'));
-    big.append(el('b', '', String(open.length)), el('span', '', open.length ? (open.length === 1 ? 'issue needs attention' : 'issues need attention') : 'All clear: nothing is failing'));
-    const imp = el('div', 'iss-imp');
-    Object.entries(IMPACT).forEach(([k, [lab, tip]]) => { const n = open.filter((x) => issExplain(x).impact === k).length; const c = el('span', 'iss-imp-c k-' + k + (n ? '' : ' zero')); c.title = tip; c.append(el('i'), el('b', '', String(n)), document.createTextNode(' ' + lab)); imp.append(c); });
-    big.append(imp);
-    const fx = el('div', 'iss-sum-side'); fx.append(el('b', '', String(fixed7.length)), el('span', '', 'resolved this week'), el('small', '', auto ? auto + ' closed themselves when their check passed' : 'by the checks or an Admin'));
-    const how = el('details', 'iss-how'); const hs = el('summary', 'co-link', 'How this works'); const hl = el('ol');
-    [['Found', 'by every screen, and a check every 10 minutes'], ['Shown', 'here, with a count in the menu and the bell'], ['Fixed', 'with Retry or the fix button on the issue'], ['Closed', 'by itself when its check passes, or by an Admin']].forEach(([t, d]) => { const li = el('li'); li.append(el('b', '', t), document.createTextNode(' ' + d)); hl.append(li); });
-    how.append(hs, hl); fx.append(how);
-    sum.append(big, fx); box.append(sum);
+    // lanes: the summary and the filter in one
+    const lanes = el('div', 'is-lanes');
+    ['action', 'sheet', 'auto'].forEach((k) => {
+      const n = open.filter((x) => issLane(x) === k).length, b = el('button', 'is-lane k-' + k + (ISS.lane === k ? ' on' : '') + (n ? '' : ' zero'));
+      b.type = 'button'; b.setAttribute('aria-pressed', String(ISS.lane === k));
+      b.append(el('b', '', String(n)), el('span', 'is-lane-t', ISS_LANE[k][0]), el('small', '', k === 'action' ? (n ? 'Retry or resolve' : 'Nothing waiting on you') : k === 'sheet' ? (n ? 'Each says what to change' : 'Sheets look fine') : (n ? 'Closes on its own' : 'All quiet')));
+      b.addEventListener('click', () => { ISS.lane = ISS.lane === k ? '' : k; ISS.f = 'open'; if (k === 'auto') ISS.showAuto = true; dash.draw('issues'); });
+      lanes.append(b);
+    });
+    const done = el('div', 'is-done'); done.append(el('b', '', String(fixed7.length)), el('span', '', 'resolved in the last 7 days'));
+    lanes.append(done); box.append(lanes);
     if (ISS.err) box.append(el('p', 'co-note warn', 'Could not refresh: ' + ISS.err));
-    // toolbar: status tabs, area chips (with counts), search, Check now
+    // toolbar
     const fl = el('div', 'iss-bar');
     const seg = el('div', 'pm-seg iss-seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', 'Show');
     [['open', 'Active', open.length], ['resolved', 'Resolved', L.length - open.length], ['all', 'All', L.length]].forEach(([v, t, n]) => { const b = el('button', 'pm-opt' + (ISS.f === v ? ' on' : '')); b.type = 'button'; b.append(document.createTextNode(t + ' '), el('small', '', String(n))); b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(ISS.f === v)); b.addEventListener('click', () => { ISS.f = v; dash.draw('issues'); }); seg.append(b); });
     const sw = el('label', 'iss-search'); sw.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>';
-    const q = el('input', 'co-input'); q.type = 'search'; q.placeholder = 'Search issues, task IDs, people'; q.value = ISS.q; q.setAttribute('aria-label', 'Search issues'); q.id = 'iss-q'; sw.append(q);
+    const q = el('input', 'co-input'); q.type = 'search'; q.placeholder = 'Search by task ID, brand or person'; q.value = ISS.q; q.setAttribute('aria-label', 'Search issues'); q.id = 'iss-q'; sw.append(q);
     q.addEventListener('input', () => { clearTimeout(ISS.qt); ISS.qt = setTimeout(() => { ISS.q = q.value; dash.draw('issues'); const n = document.getElementById('iss-q'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 250); });
     fl.append(seg, sw, ISS_RF); box.append(fl);
-    const inView = L.filter((x) => ISS.f === 'all' || (ISS.f === 'open' ? x.status === 'Open' : x.status !== 'Open'));
-    const areas = [...new Set(inView.map((x) => x.area))].map((a) => [a, inView.filter((x) => x.area === a).length]).sort((x, y) => y[1] - x[1]);
-    if (areas.length > 1 || ISS.area) {
-      const chips = el('div', 'iss-chips'); chips.setAttribute('role', 'group'); chips.setAttribute('aria-label', 'Area');
-      const chip = (a, n, lab) => { const b = el('button', 'iss-chip' + (ISS.area === a ? ' on' : '')); b.type = 'button'; b.setAttribute('aria-pressed', String(ISS.area === a)); if (a) { b.style.setProperty('--ac', issArea(a)[0]); b.append(issIcon(a, 'sm')); } b.append(el('span', '', lab), el('b', '', String(n))); b.addEventListener('click', () => { ISS.area = a; dash.draw('issues'); }); chips.append(b); };
-      chip('', inView.length, 'All areas'); areas.forEach(([a, n]) => chip(a, n, a));
-      if (ISS.area && !areas.some((x) => x[0] === ISS.area)) chip(ISS.area, 0, ISS.area);
-      box.append(chips);
-    }
     const qq = ISS.q.trim().toLowerCase();
-    const rows = inView.filter((x) => (!ISS.area || x.area === ISS.area) && (!qq || (x.area + ' ' + x.title + ' ' + x.details + ' ' + x.by).toLowerCase().includes(qq)))
-      .sort((x, y) => ((x.status === 'Open') === (y.status === 'Open') ? 0 : x.status === 'Open' ? -1 : 1) || (['people', 'data', 'system'].indexOf(issExplain(x).impact) - ['people', 'data', 'system'].indexOf(issExplain(y).impact)) || String(y.last || '').localeCompare(String(x.last || '')));
-    if (ISS.area || qq) { const f = el('p', 'co-note iss-f', 'Showing ' + rows.length + ' of ' + inView.length + (ISS.area ? ' in ' + ISS.area : '') + (qq ? ' matching "' + ISS.q.trim() + '"' : '') + '. '); const c = el('button', 'co-link', 'Clear'); c.type = 'button'; c.addEventListener('click', () => { ISS.area = ''; ISS.q = ''; dash.draw('issues'); }); f.append(c); box.append(f); }
-    if (!rows.length) {
-      const e = el('div', 'iss-empty'); e.append(el('b', '', ISS.f === 'open' && !qq && !ISS.area ? 'Nothing needs attention' : 'No issues match'), el('span', '', ISS.f === 'open' && !qq && !ISS.area ? 'Every check passed. New problems appear here within a minute.' : 'Try another filter or clear the search.'));
-      box.append(e); return;
-    }
-    const ul = el('ul', 'iss-list2');
-    rows.slice(0, 200).forEach((x) => {
-      const on = x.status === 'Open', ex = issExplain(x), li = el('li', 'iss-item k-' + ex.impact + (on ? ' open' : ' done')); li.style.setProperty('--ac', issArea(x.area)[0]);
-      const main = el('div', 'iss-main');
-      const h = el('div', 'iss-h'); h.append(el('b', 'iss-title', x.title));
-      const st = el('span', 'iss-pill ' + (on ? 'open' : 'done')); st.append(el('i', ''), document.createTextNode(on ? IMPACT[ex.impact][0] : 'Resolved')); h.append(st);
-      main.append(h);
-      if (ex.what) { const w = el('p', 'iss-what3'); w.append(el('span', '', ex.what)); const todo = /^Could not save/.test(x.title) && !(canFix && x.retry) ? 'Open the task and save it again, or mark it resolved if the sheet is already right.' : ex.todo; if (on && todo) w.append(el('span', 'iss-todo', todo)); main.append(w); }
-      const meta = el('div', 'iss-meta');
-      const mchip = (t, cls) => meta.append(el('span', 'iss-m' + (cls ? ' ' + cls : ''), t));
-      mchip(x.area, 'area');
-      mchip(on ? 'last seen ' + agoText(x.last) : 'first seen ' + when(x.first));
-      if (x.count > 1) mchip('seen ' + x.count + '×', 'count');
-      if (x.by && x.by !== 'Automatic check' && x.by !== 'schedule' && x.by !== 'web app') { const who = el('span', 'iss-m who'); who.append(avatar({ name: nameOf(x.by), email: x.by }, 'xs'), document.createTextNode(nameOf(x.by))); meta.append(who); } else if (x.by) mchip('found automatically', 'auto');
-      const foot = el('div', 'iss-foot'); foot.append(meta); main.append(foot);
-      if (!on && x.resolvedOn) main.append(el('p', 'iss-res2', 'Resolved ' + when(x.resolvedOn) + ' · ' + (/Automatic/.test(x.resolvedBy || '') ? 'the check passed again' : 'by ' + nameOf(x.resolvedBy))));
-      let tech = null; if (x.details) { const tb = el('button', 'iss-techb', 'Technical details'); tb.type = 'button'; tb.setAttribute('aria-expanded', 'false'); tech = el('pre', 'iss-tech', CO.maskText(x.details)); tech.hidden = true; tb.addEventListener('click', () => { tech.hidden = !tech.hidden; tb.setAttribute('aria-expanded', String(!tech.hidden)); }); meta.append(tb); }
+    const rows = L.filter((x) => (ISS.f === 'all' || (ISS.f === 'open' ? x.status === 'Open' : x.status !== 'Open')) && (!ISS.lane || issLane(x) === ISS.lane) && (!qq || (x.area + ' ' + x.title + ' ' + x.details + ' ' + x.by + ' ' + issHead(x).ctx).toLowerCase().includes(qq)));
+    if (ISS.lane || qq) { const f = el('p', 'co-note iss-f', 'Showing ' + rows.length + (ISS.lane ? ' in "' + ISS_LANE[ISS.lane][0] + '"' : '') + (qq ? ' matching "' + ISS.q.trim() + '"' : '') + '. '); const c = el('button', 'co-link', 'Show all'); c.type = 'button'; c.addEventListener('click', () => { ISS.lane = ''; ISS.q = ''; dash.draw('issues'); }); f.append(c); box.append(f); }
+    if (!rows.length) { const e = el('div', 'iss-empty'); e.append(el('b', '', ISS.f === 'open' && !qq && !ISS.lane ? 'Nothing needs attention' : 'No issues match'), el('span', '', ISS.f === 'open' && !qq && !ISS.lane ? 'Every check passed. New problems appear here within a minute.' : 'Try another filter or clear the search.')); box.append(e); return; }
+    // one row per issue
+    const row = (x) => {
+      const on = x.status === 'Open', hd = issHead(x), r = issRetryOf(x), li = el('li', 'iss-item is-row' + (on ? ' open' : ' done') + (ISS.exp.has(x.key) ? ' exp' : '')); li.style.setProperty('--ac', issArea(x.area)[0]);
+      const top = el('div', 'is-top');
+      const tog = el('button', 'is-tog'); tog.type = 'button'; tog.setAttribute('aria-expanded', String(ISS.exp.has(x.key)));
+      const main = el('span', 'is-main'); const hl = el('span', 'is-hl'); hl.append(el('b', 'is-h', hd.h)); if (!on) hl.append(el('span', 'is-done-pill', 'Resolved')); main.append(hl);
+      const sub = el('span', 'is-sub'); if (hd.ctx) sub.append(el('span', 'is-ctx', hd.ctx));
+      if (r) Object.keys(r.fields).forEach((k) => { const c = el('span', 'is-chg'); c.append(el('small', '', ISS_F[k] || k), el('span', '', '→ ' + issVal(k, r.fields[k]))); sub.append(c); });
+      if (sub.childNodes.length) main.append(sub);
+      const meta = el('span', 'is-meta'); const who = x.by && !/^(Automatic check|schedule|web app)$/.test(x.by) ? nameOf(x.by) : 'Found automatically';
+      meta.append(el('span', '', who), el('span', '', on ? agoText(x.last) : 'resolved ' + when(x.resolvedOn)));
+      if (x.count > 1) meta.append(el('span', 'is-count', x.count + ' times'));
+      main.append(meta);
+      tog.append(issIcon(x.area), main, el('span', 'is-chev'));
+      tog.addEventListener('click', () => { if (ISS.exp.has(x.key)) ISS.exp.delete(x.key); else ISS.exp.add(x.key); li.classList.toggle('exp'); tog.setAttribute('aria-expanded', String(ISS.exp.has(x.key))); });
       const acts = el('div', 'iss-acts2');
-      const btn = (t, cls, fn) => { const b = el('button', 'co-btn sm' + (cls ? ' ' + cls : ''), t); b.type = 'button'; b.addEventListener('click', () => fn(b)); acts.append(b); return b; };
-      if (canFix && on && x.retry) { let r = null; try { r = JSON.parse(x.retry); } catch (e) { /* ignore */ } if (r && r.action === 'updateTask') { btn('Retry', 'primary', (b) => issRetry(x, b)); acts.append(el('code', 'iss-what2', retryText(r))); } }
-      if (canFix && on && ISS_FIX[x.fix] && (x.fix !== 'open-pricing' || isAdmin()) && (x.fix !== 'open-health' || pageOk('health'))) btn(ISS_FIX[x.fix][0], x.retry ? '' : 'primary', ISS_FIX[x.fix][1]);
+      const btn = (t, cls, fn) => { const b = el('button', 'co-btn sm' + (cls ? ' ' + cls : ''), t); b.type = 'button'; b.addEventListener('click', (e) => { e.stopPropagation(); fn(b); }); acts.append(b); return b; };
+      if (canFix && on && r) btn('Retry', 'primary', (b) => issRetry(x, b));
+      if (canFix && on && ISS_FIX[x.fix] && (x.fix !== 'open-pricing' || isAdmin()) && (x.fix !== 'open-health' || pageOk('health'))) btn(ISS_FIX[x.fix][0], r ? '' : 'primary', ISS_FIX[x.fix][1]);
       if (canFix) { if (on) btn('Mark resolved', 'ghost', () => issAct(x, 'resolve')); else { btn('Reopen', 'ghost', () => issAct(x, 'reopen')); btn('Remove', 'ghost', () => { if (confirm('Remove this issue from the list?')) issAct(x, 'delete'); }); } }
-      if (acts.childNodes.length) foot.append(acts);
-      if (tech) main.append(tech);
-      li.append(issIcon(x.area), main); ul.append(li);
+      top.append(tog); if (acts.childNodes.length) top.append(acts); li.append(top);
+      const more = el('div', 'is-more');
+      more.append(el('p', 'is-what', hd.what));
+      if (r) { const p = el('p', 'is-retry'); p.append(el('b', '', 'Retry will save: '), document.createTextNode(Object.keys(r.fields).map((k) => (ISS_F[k] || k) + ' → ' + (r.fields[k] === '' ? '(blank)' : r.fields[k])).join(' · '))); more.append(p); }
+      const facts = el('p', 'is-facts', [x.area, 'first seen ' + when(x.first), on ? 'last seen ' + when(x.last) : 'resolved ' + when(x.resolvedOn) + (x.resolvedBy ? ' by ' + (/Automatic/.test(x.resolvedBy) ? 'its check' : nameOf(x.resolvedBy)) : '')].join(' · ')); more.append(facts);
+      if (x.details) more.append(el('pre', 'iss-tech', CO.maskText(x.details)));
+      li.append(more);
+      return li;
+    };
+    const groups = ISS.f === 'open' ? ['action', 'sheet', 'auto'].filter((k) => !ISS.lane || ISS.lane === k) : [''];
+    groups.forEach((k) => {
+      const list = k ? rows.filter((x) => issLane(x) === k) : rows; if (!list.length) return;
+      const g = el('section', 'is-group' + (k ? ' k-' + k : ''));
+      if (k) {
+        const gh = el('div', 'is-gh'); const ht = el('div'); ht.append(el('h3', '', ISS_LANE[k][0] + ' · ' + list.length), el('p', 'co-note', ISS_LANE[k][1])); gh.append(ht);
+        const retryable = list.filter((x) => issRetryOf(x));
+        if (k === 'action' && canFix && retryable.length > 1) { const b = el('button', 'co-btn sm primary', 'Retry all ' + retryable.length); b.type = 'button'; b.addEventListener('click', () => issRetryAll(retryable, b)); gh.append(b); }
+        if (k === 'auto' && canFix && list.length > 1) { const b = el('button', 'co-btn sm', 'Resolve all ' + list.length); b.type = 'button'; b.addEventListener('click', () => issResolveAll(list, b)); gh.append(b); }
+        if (k === 'auto' && !ISS.lane && rows.some((x) => issLane(x) !== 'auto')) { const t = el('button', 'co-link is-show', ISS.showAuto ? 'Hide' : 'Show'); t.type = 'button'; t.addEventListener('click', () => { ISS.showAuto = !ISS.showAuto; dash.draw('issues'); }); gh.append(t); }
+        g.append(gh);
+      }
+      const autoOpen = ISS.showAuto || !rows.some((x) => issLane(x) !== 'auto'); // nothing else to do: show them
+      if (!(k === 'auto' && !ISS.lane && !autoOpen)) { const ul = el('ul', 'iss-list2 is-list'); list.slice(0, 200).forEach((x) => ul.append(row(x))); g.append(ul); }
+      box.append(g);
     });
-    box.append(ul);
-    if (rows.length > 200) box.append(el('p', 'co-note', 'Showing the latest 200 of ' + rows.length + '. Narrow with the filters.'));
   });
   document.getElementById('iss-refresh').addEventListener('click', () => ISS.load(true));
   // Admins: the open count (sidebar badge, bell) stays current; the page refreshes every minute while open.
