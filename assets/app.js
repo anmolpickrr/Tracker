@@ -11,11 +11,11 @@
   const P = Object.assign({}, DEFAULTS);
   try { Object.assign(P, JSON.parse(LS.get('co.view', '{}'))); } catch (e) { /* ignore */ }
   let TASK_SAVE = null; // set by the task editor; also used by the assistant
-  const TABS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health', 'issues', 'access'];
+  const TABS = ['mine', 'today', 'standup', 'tasks', 'notes', 'whatsnew', 'team', 'reports', 'brands', 'health', 'issues', 'access'];
   /* The page filters (Sheet, Designer, Brand, Type) each section uses. A filter a section does not use is hidden there and
      never applied (My work is always the signed-in person's own work, so a Designer filter left on elsewhere cannot empty it). */
   const FKEYS = ['src', 'designer', 'brand', 'type'];
-  const FILTER_USE = { mine: ['src', 'brand', 'type'], today: FKEYS, standup: FKEYS, tasks: FKEYS, team: FKEYS, reports: FKEYS, brands: FKEYS, health: FKEYS, notes: [], issues: [], access: [] };
+  const FILTER_USE = { mine: ['src', 'brand', 'type'], today: FKEYS, standup: FKEYS, tasks: FKEYS, team: FKEYS, reports: FKEYS, brands: FKEYS, health: FKEYS, notes: [], issues: [], access: [], whatsnew: [] };
   const fUsed = (tab) => FILTER_USE[tab] || FKEYS;
   const fActive = (p) => fUsed(p.tab || 'today').filter((k) => p[k]);
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
@@ -31,7 +31,7 @@
   // Access management, the activity log and live team activity: the owner and everyone with the Admin role.
   const isAdmin = () => isOwner() || !!(A.user && A.user.role === 'Admin');
   const perm = (k) => A.mode === 'key' || !!(A.user && (A.user.owner || (A.user.perms ? !!A.user.perms[k] : (k === 'edit' ? RANK[A.user.role] >= 2 : k === 'export' || k === 'fasty' ? true : RANK[A.user.role] >= 3))));
-  const pageOk = (t) => { if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access' && t !== 'issues'; if (t === 'access') return isAdmin(); if (t === 'issues' && isAdmin()) return true; if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
+  const pageOk = (t) => { if (t === 'whatsnew') return true; /* What's new is for everyone, whatever their role */ if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access' && t !== 'issues'; if (t === 'access') return isAdmin(); if (t === 'issues' && isAdmin()) return true; if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
 
   const S = { status: 'idle', error: '', tasks: null, team: null, teamRaw: [], sources: {}, generatedAt: null, loadedAt: null };
@@ -642,7 +642,7 @@
     document.querySelectorAll('.co-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     document.querySelectorAll('.bt[data-tab]').forEach((b) => { if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     document.getElementById('bt-more').toggleAttribute('aria-current', !['today', document.querySelector('.btabs .bt[data-tab="mine"]') ? 'mine' : 'standup', 'tasks', 'notes'].includes(tab));
-    document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes' || tab === 'issues';
+    document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes' || tab === 'issues' || tab === 'whatsnew';
     { const use = fUsed(tab), act = fActive(Object.assign({}, p, { tab }));
       FKEYS.forEach((k) => { const el = document.querySelector('.co-f[data-param="' + k + '"]'); if (el) { el.hidden = !use.includes(k); el.classList.toggle('is-set', use.includes(k) && !!p[k]); } });
       document.getElementById('f-reset').hidden = true; // "Clear all" lives with the chips
@@ -810,6 +810,7 @@
     mine: ['My work', 'Your overdue work, what is due today, what is next and what you delivered this week.'],
     today: ['Overview', () => 'What needs attention today.'],
     brands: ['Brands', 'Every brand at a glance, and the work waiting on clients.'],
+    whatsnew: ['What\'s new', 'Every update to the dashboard: what changed, what it does and how to use it.'],
     notes: ['Notes', 'Quick notes for the team: tag people with @ to share, assign them and set reminders.'],
     standup: ['Daily stand-up', 'One card per active designer: what is late, due today, in progress and up next.'],
     tasks: ['Tasks', 'Every task from both sheets. Click a row to open or edit it.'],
@@ -3605,54 +3606,118 @@
     $('ed-content').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('ed-content-save').click(); } });
   })();
 
-  /* ================= What's new =================
-     Every update, newest first (assets/whatsnew.js). Each person sees only updates for parts they can use; what they
-     have seen is remembered on this device per person; a lime dot on the button marks unseen updates. */
-  const WN = { f: '', toasted: false };
+  /* ================= What's new (its own tab, for everyone) =================
+     Every update (assets/whatsnew.js), newest first. Everyone sees every update; one about a part someone cannot open
+     says who it is for and has no Open button. What each person has seen is remembered on this device; unseen updates
+     show a lime count in the menu and a dot on the top button. Motion: one staggered entrance, a smooth swap when an
+     update is picked, a counting number in the hero; all switched off with reduced motion. */
+  const WN = { f: '', sel: '', toasted: false, fresh: new Set(), entered: false };
   const wnEl = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
   const wnKey = () => 'co.wnSeen.' + ((A.user && A.user.email) || 'anon');
   const wnSeen = () => { try { return new Set(JSON.parse(LS.get(wnKey(), '[]')) || []); } catch (e) { return new Set(); } };
-  const wnFor = (it) => { const w = it.who || 'all'; if (w === 'all') return true; if (w === 'admin') return isAdmin(); if (w.startsWith('page:')) return pageOk(w.slice(5)); if (w.startsWith('perm:')) return isAdmin() || perm(w.slice(5)); return true; };
-  const wnItems = () => (window.CO_WHATSNEW || []).filter(wnFor).sort((a, b) => b.date.localeCompare(a.date));
+  const wnCan = (it) => { const w = it.who || 'all'; if (w === 'all') return true; if (w === 'admin') return isAdmin(); if (w.startsWith('page:')) return pageOk(w.slice(5)); if (w.startsWith('perm:')) return isAdmin() || perm(w.slice(5)); return true; };
+  const WN_WHO = { 'page:issues': 'For people with Issues', 'page:access': 'For Admins', 'perm:assign': 'For people who assign tasks', 'perm:briefs': 'For people who read briefs', 'page:brands': 'For people with Brands', 'page:notes': 'For people with Notes', admin: 'For Admins' };
+  const wnItems = () => (window.CO_WHATSNEW || []).slice().sort((a, b) => b.date.localeCompare(a.date));
   const WN_KIND = { new: ['New', 'k-new'], improved: ['Improved', 'k-imp'], fixed: ['Fixed', 'k-fix'] };
+  const WN_IC = {
+    what: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>',
+    does: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></svg>',
+    how: '<svg viewBox="0 0 24 24"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V10m0-1.5a1.5 1.5 0 0 1 3 0V11m0-1a1.5 1.5 0 0 1 3 0v4.5a6 6 0 0 1-6 6h-1a6 6 0 0 1-4.7-2.3L4 14.4a1.6 1.6 0 0 1 2.4-2.1L9 14"/></svg>',
+    changed: '<svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>'
+  };
+  const RM = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const anim = (el, kf, o) => { if (RM() || !el) return; try { if (window.Motion && window.Motion.animate) window.Motion.animate(el, kf, Object.assign({ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }, o || {})); else el.animate(Object.fromEntries ? kf : kf, Object.assign({ duration: 350, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }, o && o.delay ? { delay: o.delay * 1000 } : {})); } catch (e) { /* motion is optional */ } };
   function wnPaint() {
     const seen = wnSeen(), unseen = wnItems().filter((x) => !seen.has(x.id)).length;
     const d = document.querySelector('#btn-new .wn-dot'); if (d) d.hidden = !unseen;
-    const b = document.getElementById('btn-new'); if (b) { b.title = unseen ? "What's new (" + unseen + ' new)' : "What's new"; b.setAttribute('aria-label', b.title); b.hidden = !(A.user || A.mode !== 'auth'); }
+    const b = document.getElementById('btn-new'); if (b) { b.title = unseen ? "What's new (" + unseen + ' new)' : "What's new"; b.setAttribute('aria-label', b.title); }
+    document.querySelectorAll('.wn-badge').forEach((x) => { x.hidden = !unseen; x.textContent = unseen ? unseen + ' new' : ''; });
     return unseen;
   }
-  function wnDraw(fresh) {
-    const all = wnItems(), tabs = document.querySelector('#whatsnew [data-draw="wn-tabs"]'), list = document.querySelector('#whatsnew [data-draw="wn-list"]');
-    tabs.replaceChildren();
-    [['', 'All'], ['new', 'New'], ['improved', 'Improved'], ['fixed', 'Fixed']].forEach(([k, l]) => { const n = k ? all.filter((x) => x.kind === k).length : all.length; if (k && !n) return; const b = wnEl('button', 'wn-tab' + (WN.f === k ? ' on' : '')); b.type = 'button'; b.setAttribute('aria-pressed', String(WN.f === k)); b.append(wnEl('span', '', l), wnEl('small', '', String(n))); b.addEventListener('click', () => { WN.f = k; wnDraw(fresh); }); tabs.append(b); });
-    list.replaceChildren();
-    const rows = all.filter((x) => !WN.f || x.kind === WN.f);
-    if (!rows.length) { list.append(wnEl('p', 'co-note', 'Nothing here yet.')); return; }
-    let day = '';
-    rows.forEach((it) => {
-      if (it.date !== day) { day = it.date; list.append(wnEl('h3', 'wn-day', CO.fmtDate(it.date, true))); }
-      const card = wnEl('article', 'wn-item'), kd = WN_KIND[it.kind] || WN_KIND.improved;
-      const h = wnEl('div', 'wn-ih'); h.append(wnEl('span', 'wn-kind ' + kd[1], kd[0]), wnEl('b', 'wn-title', it.title)); if (fresh.has(it.id)) h.append(wnEl('span', 'wn-fresh', 'New for you'));
-      card.append(h);
-      const dl = wnEl('dl', 'wn-dl');
-      [["What's new", it.what], ['What it does', it.does], ['How to use it', it.how], ['What changed', it.changed]].forEach(([t, v]) => { if (!v) return; dl.append(wnEl('dt', '', t), wnEl('dd', '', v)); });
-      card.append(dl);
-      if (it.go && TABS.includes(it.go) && pageOk(it.go)) { const g = wnEl('button', 'co-btn sm wn-go', 'Open ' + (PAGES[it.go] ? PAGES[it.go][0] : it.go)); g.type = 'button'; g.addEventListener('click', () => { document.getElementById('whatsnew').close(); dash.setParams({ tab: it.go }); }); card.append(g); }
-      list.append(card);
+  function wnDetail(it, box) {
+    box.replaceChildren();
+    if (!it) { box.append(wnEl('p', 'co-note', 'Pick an update to read about it.')); return; }
+    const kd = WN_KIND[it.kind] || WN_KIND.improved, can = wnCan(it);
+    const top = wnEl('div', 'wnd-top'); top.append(wnEl('span', 'wn-kind ' + kd[1], kd[0]), wnEl('span', 'wnd-date', CO.fmtDate(it.date, true)));
+    if (it.who && it.who !== 'all') top.append(wnEl('span', 'wn-for', WN_WHO[it.who] || 'For some roles'));
+    box.append(top, wnEl('h2', 'wnd-title', it.title));
+    const secs = wnEl('div', 'wnd-secs');
+    [['what', "What's new", it.what], ['does', 'What it does', it.does], ['how', 'How to use it', it.how], ['changed', 'What changed', it.changed]].forEach(([k, t, v], i) => {
+      if (!v) return; const sec = wnEl('section', 'wnd-sec s-' + k); const ic = wnEl('span', 'wnd-ic'); ic.innerHTML = WN_IC[k]; sec.append(ic); const tx = wnEl('div'); tx.append(wnEl('h3', '', t), wnEl('p', '', v)); sec.append(tx); secs.append(sec);
+      anim(sec, { opacity: [0, 1], transform: ['translateY(8px)', 'none'] }, { delay: 0.04 * i });
     });
+    box.append(secs);
+    const foot = wnEl('div', 'wnd-foot');
+    if (it.go && TABS.includes(it.go) && pageOk(it.go) && can) { const g = wnEl('button', 'co-btn primary wnd-go', 'Open ' + (PAGES[it.go] ? PAGES[it.go][0] : it.go)); g.type = 'button'; g.addEventListener('click', () => dash.setParams({ tab: it.go })); foot.append(g); }
+    else if (!can) foot.append(wnEl('p', 'co-note wnd-cant', 'This one is for a part of the dashboard you do not have. Ask an Admin if you need it.'));
+    const list = wnShown(), i = list.findIndex((x) => x.id === it.id);
+    const nav = wnEl('div', 'wnd-nav');
+    [['prev', 'Newer', i - 1], ['next', 'Older', i + 1]].forEach(([k, l, j]) => { const b = wnEl('button', 'co-btn sm wnd-' + k, l); b.type = 'button'; b.disabled = j < 0 || j >= list.length; b.addEventListener('click', () => wnPick(list[j].id, true)); nav.append(b); });
+    foot.append(nav); box.append(foot);
   }
-  function wnOpen() {
-    const dlg = document.getElementById('whatsnew'), seen = wnSeen(), all = wnItems();
-    const fresh = new Set(all.filter((x) => !seen.has(x.id)).map((x) => x.id));
-    WN.f = ''; wnDraw(fresh);
-    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+  const wnShown = () => wnItems().filter((x) => !WN.f || x.kind === WN.f);
+  function wnPick(id, focus) {
+    WN.sel = id;
+    document.querySelectorAll('.wnc').forEach((c) => { const on = c.dataset.id === id; c.classList.toggle('on', on); c.setAttribute('aria-pressed', String(on)); });
+    const box = document.querySelector('.wnd-in'); if (!box) return;
+    const it = wnItems().find((x) => x.id === id);
+    if (matchMedia('(max-width: 900px)').matches) { const c = document.querySelector('.wnc[data-id="' + CSS.escape(id) + '"]'); document.querySelectorAll('.wnc-more').forEach((m) => m.remove()); if (c) { const m = wnEl('div', 'wnc-more'); wnDetail(it, m); c.after(m); anim(m, { opacity: [0, 1], transform: ['translateY(-6px)', 'none'] }); if (focus) c.scrollIntoView({ block: 'nearest', behavior: RM() ? 'auto' : 'smooth' }); } return; }
+    wnDetail(it, box); anim(box, { opacity: [0.4, 1], transform: ['translateX(10px)', 'none'] });
+    if (focus) { const c = document.querySelector('.wnc[data-id="' + CSS.escape(id) + '"]'); if (c) { c.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest', behavior: RM() ? 'auto' : 'smooth' }); } }
+  }
+  dash.draw('wn-page', (root) => {
+    if (WN.entered && !WN.dirty && root.childElementCount) return; // not data-driven: no redraw on every data refresh
+    WN.dirty = false;
+    const all = wnItems(), seen = wnSeen();
+    if (!WN.entered) WN.fresh = new Set(all.filter((x) => !seen.has(x.id)).map((x) => x.id));
+    root.replaceChildren();
+    // hero: the one bold moment
+    const hero = wnEl('section', 'wnh co-card'); const hl = wnEl('div', 'wnh-l');
+    const newN = WN.fresh.size, last = all[0];
+    hl.append(wnEl('span', 'wnh-eyebrow', newN ? newN + (newN === 1 ? ' update' : ' updates') + ' new for you' : "You're all caught up"));
+    const big = wnEl('h2', 'wnh-title'); big.append(document.createTextNode('Fresh on the dashboard'), wnEl('span', 'wnh-spark', '✦')); hl.append(big);
+    hl.append(wnEl('p', 'wnh-sub', 'Every change to the dashboard in plain words: what it is, what it does and how to use it.'));
+    if (last) { const lb = wnEl('button', 'wnh-latest'); lb.type = 'button'; lb.append(wnEl('small', '', 'Latest'), wnEl('b', '', last.title), wnEl('span', 'wnh-arrow', '')); lb.addEventListener('click', () => wnPick(last.id, true)); hl.append(lb); }
+    const hr = wnEl('div', 'wnh-r');
+    const stat = (n, l, cls) => { const d = wnEl('div', 'wnh-stat ' + (cls || '')); const b = wnEl('b', '', '0'); b.dataset.to = String(n); d.append(b, wnEl('span', '', l)); hr.append(d); };
+    const days14 = CO.addDays(CO.today(), -14);
+    stat(all.filter((x) => x.date >= days14).length, 'updates in 2 weeks', 'big'); stat(all.filter((x) => x.kind === 'new').length, 'new features', 'k-new'); stat(all.filter((x) => x.kind === 'improved').length, 'improvements', 'k-imp'); stat(all.filter((x) => x.kind === 'fixed').length, 'fixes', 'k-fix');
+    hero.append(hl, hr); root.append(hero);
+    // filters
+    const bar = wnEl('div', 'wn-bar'); const tabs = wnEl('div', 'wn-tabs'); tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', 'Show');
+    [['', 'Everything'], ['new', 'New'], ['improved', 'Improved'], ['fixed', 'Fixed']].forEach(([k, l]) => { const n = k ? all.filter((x) => x.kind === k).length : all.length; const b = wnEl('button', 'wn-tab' + (WN.f === k ? ' on' : '')); b.type = 'button'; b.setAttribute('aria-pressed', String(WN.f === k)); b.append(wnEl('span', '', l), wnEl('small', '', String(n))); b.addEventListener('click', () => { WN.f = k; WN.sel = ''; WN.dirty = true; dash.draw('wn-page'); const L = document.querySelectorAll('.wnc'); L.forEach((c, i) => anim(c, { opacity: [0, 1], transform: ['translateY(8px)', 'none'] }, { delay: Math.min(i, 8) * 0.03 })); }); tabs.append(b); });
+    bar.append(tabs, wnEl('span', 'co-note wn-kbd', 'Tip: ↑ ↓ to move between updates')); root.append(bar);
+    // timeline + detail
+    const grid = wnEl('div', 'wn-grid'), tl = wnEl('div', 'wn-tl'), det = wnEl('aside', 'wn-det co-card'), din = wnEl('div', 'wnd-in'); det.append(din); det.setAttribute('aria-live', 'polite');
+    const rows = wnShown(); let day = '';
+    rows.forEach((it, i) => {
+      if (it.date !== day) { day = it.date; const dh = wnEl('div', 'wn-day'); dh.append(wnEl('i'), wnEl('span', '', CO.fmtDate(it.date, true))); tl.append(dh); }
+      const kd = WN_KIND[it.kind] || WN_KIND.improved;
+      const c = wnEl('button', 'wnc ' + kd[1] + (WN.fresh.has(it.id) ? ' fresh' : '')); c.type = 'button'; c.dataset.id = it.id;
+      const h = wnEl('span', 'wnc-h'); h.append(wnEl('span', 'wn-kind ' + kd[1], kd[0])); if (WN.fresh.has(it.id)) h.append(wnEl('span', 'wn-fresh', 'New for you')); if (it.who && it.who !== 'all') h.append(wnEl('span', 'wn-for', WN_WHO[it.who] || 'For some roles'));
+      c.append(h, wnEl('b', 'wnc-t', it.title), wnEl('span', 'wnc-s', it.what));
+      c.addEventListener('click', () => wnPick(it.id, false));
+      c.addEventListener('keydown', (e) => { const L = wnShown(), j = L.findIndex((x) => x.id === it.id); if (e.key === 'ArrowDown' && L[j + 1]) { e.preventDefault(); wnPick(L[j + 1].id, true); } if (e.key === 'ArrowUp' && L[j - 1]) { e.preventDefault(); wnPick(L[j - 1].id, true); } });
+      tl.append(c);
+      if (!WN.entered) anim(c, { opacity: [0, 1], transform: ['translateY(12px)', 'none'] }, { delay: Math.min(i, 10) * 0.04 });
+    });
+    if (!rows.length) tl.append(wnEl('p', 'co-note', 'Nothing here yet.'));
+    grid.append(tl, det); root.append(grid);
+    // count up the hero numbers once
+    root.querySelectorAll('.wnh-stat b').forEach((b) => { const to = +b.dataset.to; if (RM() || WN.entered) { b.textContent = String(to); return; } const t0 = performance.now(); const step = (t) => { const k = Math.min(1, (t - t0) / 700); b.textContent = String(Math.round(to * (1 - Math.pow(1 - k, 3)))); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); });
+    if (!WN.entered) { anim(hero, { opacity: [0, 1], transform: ['translateY(10px) scale(.99)', 'none'] }); }
+    const pick = rows.find((x) => x.id === WN.sel) || rows[0];
+    if (pick) { WN.sel = pick.id; setTimeout(() => wnPick(pick.id, false), 0); }
+    WN.entered = true;
+    // reading the page marks everything seen (the "New for you" marks stay until you leave)
     LS.set(wnKey(), JSON.stringify([...new Set([...seen, ...all.map((x) => x.id)])])); wnPaint();
-  }
+  });
+  const wnOpen = () => dash.setParams({ tab: 'whatsnew' });
   document.getElementById('btn-new').addEventListener('click', wnOpen);
-  document.getElementById('wn-x').addEventListener('click', () => document.getElementById('whatsnew').close());
-  document.getElementById('whatsnew').addEventListener('click', (e) => { if (e.target.id === 'whatsnew') e.currentTarget.close(); });
-  // once per visit: a short note when there is something new for you (never a pop-up over your work)
-  setInterval(() => { if (WN.toasted || !A.user || S.status !== 'ok') { wnPaint(); return; } const n = wnPaint(); WN.toasted = true; if (n) toast(n === 1 ? '1 new update to the dashboard' : n + ' new updates to the dashboard', false, { label: "See what's new", fn: wnOpen }); }, 4000);
+  // leaving the tab: next visit starts fresh (entrance motion again, "New for you" for anything newer)
+  window.addEventListener('hashchange', () => { if (location.hash !== '#whatsnew') WN.entered = false; });
+  // once per visit: a short note when there is something new (never a pop-up over your work)
+  setInterval(() => { if (WN.toasted || !A.user || S.status !== 'ok') { wnPaint(); return; } const n = wnPaint(); WN.toasted = true; if (n && P.tab !== 'whatsnew') toast(n === 1 ? '1 new update to the dashboard' : n + ' new updates to the dashboard', false, { label: "See what's new", fn: wnOpen }); }, 4000);
   window.CO_whatsnew = { open: wnOpen, items: wnItems, unseen: () => wnPaint() };
 
   /* ================= Start ================= */

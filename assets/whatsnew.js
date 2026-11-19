@@ -18,12 +18,13 @@ window.CO_WHATSNEW = [
     changed: 'Link details from the sheets are prepared in the background every 10 minutes. After a save, all open dashboards share one fresh copy of the data instead of each reading the sheets.'
   },
   {
-    id: '2026-11-20-whatsnew', date: '2026-11-20', kind: 'new', who: 'all', title: 'What\'s new',
-    what: 'This panel. Every update to the dashboard, explained in one place.',
-    does: 'Lists new features, improvements and fixes, newest first, with what each does and how to use it. You only see the updates for parts of the dashboard you can use.',
-    how: 'Click the sparkle button at the top right. A lime dot means there is something you have not seen yet. Filter by New, Improved or Fixed, and use "Open" to go straight to the feature.',
-    changed: 'No more separate messages to explain changes: everything is written here as it ships.'
+    id: '2026-11-20-whatsnew', date: '2026-11-20', kind: 'new', who: 'all', go: 'whatsnew', title: 'What\'s new, for everyone',
+    what: 'A What\'s new tab in the menu: every update to the dashboard, explained in one place, for every role.',
+    does: 'Lists new features, improvements and fixes, newest first, with what each does and how to use it. Updates for parts of the dashboard you do not have say who they are for.',
+    how: 'Open What\'s new in the menu, or the sparkle button at the top right. A count in the menu (and a lime dot on the button) means something is new for you. Pick an update to read it; use the arrow keys to move between them, and Open to go straight to the feature.',
+    changed: 'It used to be a side panel that showed only some updates; it is now its own page that everyone can open.'
   },
+
   {
     id: '2026-11-19-brief-tabs', date: '2026-11-19', kind: 'fixed', who: 'perm:briefs', go: 'tasks', title: 'Briefs show the right tab for each task',
     what: 'When one brief Doc has a tab for each script, the task window shows the tab for that task\'s ID.',
