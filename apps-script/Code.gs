@@ -242,10 +242,49 @@ function readAll_(ver) {
   return out;
 }
 
+/* Link cells often show a label ("Meta - Polo (SRAP23)") with the address behind it: a hyperlink, a Drive file chip or
+   =HYPERLINK(). The address is what the dashboard needs, so for these columns it is read from behind the label. */
+const LINK_HEAD_ = /^(creative link|open file|creative brief)$/;
+function cellLink_(rich, formula) {
+  if (rich) {
+    try { const u = rich.getLinkUrl(); if (u) return u; } catch (e) { /* no single link */ }
+    try { const runs = rich.getRuns(); for (let i = 0; i < runs.length; i++) { const u = runs[i].getLinkUrl(); if (u) return u; } } catch (e) { /* no runs */ }
+  }
+  const m = String(formula || '').match(/^=\s*HYPERLINK\(\s*"([^"]+)"/i);
+  return m ? m[1] : '';
+}
+function linkFill_(sheet, values, headers) {
+  const n = values.length - 1; if (n < 1) return;
+  headers.forEach(function (h, j) {
+    if (!LINK_HEAD_.test(clean_(h).toLowerCase())) return;
+    const rg = sheet.getRange(2, j + 1, n, 1);
+    let rich = null, form = null;
+    try { rich = rg.getRichTextValues(); } catch (e) { rich = null; }
+    try { form = rg.getFormulas(); } catch (e) { form = null; }
+    for (let i = 0; i < n; i++) {
+      const shown = String(values[i + 1][j] || '').trim();
+      if (!shown || /^https?:\/\//i.test(shown)) continue;
+      const u = cellLink_(rich && rich[i] && rich[i][0], form && form[i] && form[i][0]);
+      if (/^https?:\/\//i.test(u)) values[i + 1][j] = u;
+    }
+  });
+}
+// one cell: its link address when it has one, else what it shows
+function cellUrl_(cell) {
+  const shown = clean_(cell.getDisplayValue());
+  if (!shown || /^https?:\/\//i.test(shown)) return shown;
+  let rich = null, f = '';
+  try { rich = cell.getRichTextValue(); } catch (e) { rich = null; }
+  try { f = cell.getFormula(); } catch (e) { f = ''; }
+  const u = cellLink_(rich, f);
+  return /^https?:\/\//i.test(u) ? u : shown;
+}
+
 function readTab_(s) {
   const sheet = openTab_(s);
   const values = sheet.getDataRange().getDisplayValues();
   const headers = values.length ? values[0] : [];
+  linkFill_(sheet, values, headers); // only the Creative Link, Open File and Creative Brief columns
   const rows = [], rowNums = [];
   for (let i = 1; i < values.length; i++) {
     const r = values[i];
@@ -505,9 +544,9 @@ function updateTask_(body, mine, pm, contentMine) {
   const was = body.before || {};
   const asDesign = function (st) { return st === 'Awaiting brief' ? 'To be planned' : st; };
   if (was.status != null && f.status != null && c.status >= 0) { const cur = asDesign(CODATA.stageOf(disp(c.status), '')[0]); if (cur !== asDesign(was.status) && cur !== f.status) return { ok: false, error: 'changed', field: 'Design status', now: cur }; }
-  if (was.file != null && f.file != null && c.file >= 0) { const cur = clean_(disp(c.file)); if (cur !== clean_(was.file) && cur !== clean_(f.file)) return { ok: false, error: 'changed', field: 'Open File', now: cur }; }
-  if (was.brief != null && f.brief != null && c.brief >= 0) { const cur = clean_(disp(c.brief)); if (cur !== clean_(was.brief) && cur !== clean_(f.brief)) return { ok: false, error: 'changed', field: 'Creative Brief', now: cur }; }
-  if (was.link != null && f.link != null && c.link >= 0) { const cur = clean_(disp(c.link)); if (cur !== clean_(was.link) && cur !== clean_(f.link)) return { ok: false, error: 'changed', field: 'Creative link', now: cur }; }
+  if (was.file != null && f.file != null && c.file >= 0) { const cur = clean_(cellUrl_(sheet.getRange(row, c.file + 1))); if (cur !== clean_(was.file) && cur !== clean_(f.file)) return { ok: false, error: 'changed', field: 'Open File', now: cur }; }
+  if (was.brief != null && f.brief != null && c.brief >= 0) { const cur = clean_(cellUrl_(sheet.getRange(row, c.brief + 1))); if (cur !== clean_(was.brief) && cur !== clean_(f.brief)) return { ok: false, error: 'changed', field: 'Creative Brief', now: cur }; }
+  if (was.link != null && f.link != null && c.link >= 0) { const cur = clean_(cellUrl_(sheet.getRange(row, c.link + 1))); if (cur !== clean_(was.link) && cur !== clean_(f.link)) return { ok: false, error: 'changed', field: 'Creative link', now: cur }; }
   if (was.eta != null && f.eta != null && c.eta >= 0) { const v = rowV[c.eta]; const cur = v instanceof Date ? Utilities.formatDate(v, IST, 'yyyy-MM-dd') : (CODATA.parseDate(clean_(v)) || ''); if (cur !== was.eta && cur !== String(f.eta)) return { ok: false, error: 'changed', field: 'Design ETA', now: cur }; }
 
   const statusVal = f.status != null ? statusValue_(sheet, sheet.getRange(row, c.status + 1), c.status, String(f.status)) : null;

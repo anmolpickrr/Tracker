@@ -3530,7 +3530,7 @@
       const has = /^https?:\/\//i.test(url || '');
       box.classList.toggle('is-set', has); box.classList.toggle('is-missing', !has); box.classList.remove('is-editing');
       const cur = box.querySelector('.lk-cur'); cur.replaceChildren();
-      if (has) { cur.append(el('span', 'lk-kind', prettyUrl(url)), el('span', 'lk-url', url.replace(/^https?:\/\/(www\.)?/, ''))); cur.title = url; } else { cur.textContent = empty; cur.removeAttribute('title'); }
+      if (has) { cur.append(el('span', 'lk-kind', prettyUrl(url)), el('span', 'lk-url', url.replace(/^https?:\/\/(www\.)?/, ''))); cur.title = url; } else if (String(url || '').trim()) { cur.append(el('span', '', 'Text only in the sheet, no link: '), el('span', 'lk-url', '“' + String(url).trim() + '”')); cur.title = String(url).trim(); } else { cur.textContent = empty; cur.removeAttribute('title'); }
       if (extra) cur.append(extra);
       const op = box.querySelector('.lk-open'); op.hidden = !has; if (has) op.href = url;
       box.querySelector('.lk-replace').hidden = !has; box.querySelector('.lk-cancel').hidden = true;
@@ -3552,7 +3552,7 @@
       if (box.hidden) return;
       const cs = String(r.content_status || '').trim().toUpperCase();
       const chip = cs ? el('span', 'lk-st' + (cs === 'DONE' ? ' ok' : ''), cs.charAt(0) + cs.slice(1).toLowerCase()) : null;
-      lkState(box, r.brief, r.brief && !/^https?:/i.test(r.brief) ? 'Written in the sheet, no link yet' : 'Not submitted yet', chip);
+      lkState(box, r.brief, 'Not submitted yet', chip);
       $('ed-content-save').textContent = /^https?:/i.test(r.brief || '') ? 'Replace' : 'Submit';
       box.querySelector('input[value="' + (cs === 'SHARED' ? 'Shared' : 'Done') + '"]').checked = true;
     }
