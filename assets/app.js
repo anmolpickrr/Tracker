@@ -4186,7 +4186,7 @@
   let presTick = 0;
   setInterval(() => { presTick++; const fast = ['today', 'access'].includes(curTab()); if (fast || presTick % 3 === 0) pollPresence(); }, 5 * 1000);
   // A colour per person, from the brand palette, so they are recognisable at a glance.
-  const HUES = ['#6037d7', '#ff5a26', '#2f8fa0', '#7a8c00', '#c2410c', '#685bc7', '#0f9d8a', '#b8357a'];
+  const HUES = ['#6037d7', '#b83d12', '#24707e', '#5c6a00', '#c2410c', '#5a4abd', '#0b7566', '#b8357a']; // deep enough for white initials (4.5:1)
   const hueOf = (email) => { let h = 0; for (const c of String(email)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return HUES[h % HUES.length]; };
   const identity = (p, size) => {
     const w = document.createElement('span'); w.className = 'la-id' + (size ? ' ' + size : ''); w.style.setProperty('--hue', hueOf(p.email));
