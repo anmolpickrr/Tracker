@@ -619,14 +619,22 @@ function brief_(body, user) {
   const pm = permsOf_(user);
   if (!isAdminUser_(user) && pm.scope !== 'all' && !ownMatcher_(user)(sheet.getRange(row, c.designer + 1).getDisplayValue(), c.owner >= 0 ? sheet.getRange(row, c.owner + 1).getDisplayValue() : '')) return { ok: false, error: 'This task is not assigned to you.' };
   if (c.brief < 0) return { ok: false, error: 'No Creative Brief column in this sheet.' };
-  const cell = sheet.getRange(row, c.brief + 1), rich = cell.getRichTextValue();
-  let url = clean_(rich && rich.getLinkUrl() ? rich.getLinkUrl() : cell.getDisplayValue());
+  let url = clean_(cellUrl_(sheet.getRange(row, c.brief + 1))); // a label with the link behind it counts as the link
   const m = url.match(/^https:\/\/docs\.google\.com\/document\/(?:u\/\d+\/)?d\/([A-Za-z0-9_-]{20,})/);
   if (!url) return { ok: true, empty: true };
   if (!/^https?:\/\//i.test(url)) return { ok: true, text: url }; // a brief typed into the cell
   if (!m) return { ok: true, url: url, kind: /drive\.google\.com|docs\.google\.com/.test(url) ? 'google' : 'link' };
-  const cache = CacheService.getScriptCache(), key = 'brief:' + m[1], hit = cache.get(key);
-  if (hit) return { ok: true, url: url, kind: 'doc', title: hit.split('\u0000')[0], html: hit.split('\u0000')[1] };
+  // Docs with a tab per script: the tab named in the link (…?tab=t.xxxx), else the tab whose title has this task's ID.
+  const auth0 = { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true };
+  // The tab titled with this task's ID wins (tab titles carry the script IDs); then the tab in the link; then the first.
+  const linkTab = (url.match(/[?&#]tab=(t\.[A-Za-z0-9_-]+)/) || [])[1] || '';
+  let tab = '', tabTitle = '', tabHow = '';
+  const t = docTabFor_(m[1], id, auth0);
+  if (t.tab) { tab = t.tab; tabTitle = t.title; tabHow = 'title'; } else if (linkTab) { tab = linkTab; tabHow = 'link'; } else tabHow = t.how;
+  const openUrl = tab ? 'https://docs.google.com/document/d/' + m[1] + '/edit?tab=' + tab : url;
+  const cache = CacheService.getScriptCache(), key = 'brief:' + m[1] + (tab ? ':' + tab : ''), hit = cache.get(key);
+  const tabInfo = { tab: tab, tabTitle: tabTitle, tabHow: tabHow };
+  if (hit) return Object.assign({ ok: true, url: openUrl, kind: 'doc', id: m[1], title: hit.split('\u0000')[0], html: hit.split('\u0000')[1] }, tabInfo);
   // Read the Doc as the web app's account. The Drive service (DriveApp) and the Docs export link need no Google Cloud
   // API switched on (the Drive REST API answered 403 where it is not enabled); the REST API is only a last resort.
   const auth = { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true };
@@ -635,17 +643,45 @@ function brief_(body, user) {
   // which opens with the viewer's Google account.
   let title = '', why = '';
   try {
-    const res = UrlFetchApp.fetch('https://docs.google.com/document/d/' + m[1] + '/export?format=html', auth), code = res.getResponseCode();
+    const res = UrlFetchApp.fetch('https://docs.google.com/document/d/' + m[1] + '/export?format=html' + (tab ? '&tab=' + tab : ''), auth), code = res.getResponseCode();
     if (code === 200 && !/<title>\s*Google Docs\s*<\/title>[\s\S]*accounts\.google/i.test(res.getContentText().slice(0, 4000))) {
       let html = res.getContentText(); const t = html.match(/<title>([^<]*)<\/title>/i); try { title = DriveApp.getFileById(m[1]).getName(); } catch (e) { title = t ? t[1] : ''; }
       const b = html.match(/<body[^>]*>([\s\S]*)<\/body>/i); html = (b ? b[1] : html).slice(0, 400000); title = title || 'Creative brief';
       try { cache.put(key, title + '\u0000' + html, 600); } catch (e) { /* too large to cache */ }
-      return { ok: true, url: url, kind: 'doc', id: m[1], title: title, html: html };
+      return Object.assign({ ok: true, url: openUrl, kind: 'doc', id: m[1], title: title, html: html }, tabInfo);
     }
     why = 'export ' + code;
   } catch (e) { why = String(e.message || e); }
   try { title = DriveApp.getFileById(m[1]).getName(); } catch (e) { why += '; Drive: ' + String(e.message || e).slice(0, 120); }
-  return { ok: true, url: url, kind: 'doc', id: m[1], title: title, noAccess: true, why: why, error: 'The dashboard\'s Google account cannot read this Doc, so it is shown with your own Google account below.' };
+  return Object.assign({ ok: true, url: openUrl, kind: 'doc', id: m[1], title: title, noAccess: true, why: why }, tabInfo, { error: 'The dashboard\'s Google account cannot read this Doc, so it is shown with your own Google account below.' });
+}
+
+/* The tab of a Google Doc whose title names this task (e.g. "SRAP591 : 4th ugc"), read with the Docs API using the
+   read-only Drive access the web app already has. { tab, title } when found; { how } says why not. Cached 10 minutes. */
+function docTabFor_(docId, taskId, auth) {
+  const cache = CacheService.getScriptCache(), key = 'doctabs:' + docId;
+  let tabs = null; const hit = cache.get(key);
+  if (hit) { try { tabs = JSON.parse(hit); } catch (e) { tabs = null; } }
+  if (!tabs) {
+    try {
+      const res = UrlFetchApp.fetch('https://docs.googleapis.com/v1/documents/' + docId + '?includeTabsContent=true&fields=tabs(tabProperties(tabId,title),childTabs(tabProperties(tabId,title),childTabs(tabProperties(tabId,title))))', auth);
+      if (res.getResponseCode() !== 200) {
+        const txt = res.getContentText(), proj = (txt.match(/project[s/ ]+(\d{6,})/) || [])[1];
+        // the Docs API is off for the web app's Google Cloud project: one issue for the owner, with the switch
+        if (/has not been used|is disabled|SERVICE_DISABLED|accessNotConfigured/i.test(txt)) { try { issueLog_('Creative brief', 'Turn on the Google Docs API to show the right tab of each brief', 'Brief Docs with a tab per task (for example "SRAP591 : 4th ugc") need the Google Docs API to find the tab for each task ID. It is off for the web app\'s Google Cloud project. Turn it on once' + (proj ? ': https://console.cloud.google.com/apis/library/docs.googleapis.com?project=' + proj : ' in that project\'s APIs & Services') + '. Until then, a tab linked in the sheet (a link ending in ?tab=…) is still shown.', 'web app', { key: 'brief|docs-api' }); } catch (e) { /* never fail the brief */ } }
+        return { how: 'api ' + res.getResponseCode() };
+      }
+      tabs = [];
+      const walk = function (list) { (list || []).forEach(function (t) { if (t.tabProperties) tabs.push({ id: t.tabProperties.tabId, title: t.tabProperties.title || '' }); walk(t.childTabs); }); };
+      walk(JSON.parse(res.getContentText()).tabs);
+      try { issueResolveKey_('brief|docs-api', 'Automatic check'); } catch (e) { /* ignore */ }
+      try { cache.put(key, JSON.stringify(tabs), 600); } catch (e) { /* ignore */ }
+    } catch (e) { return { how: 'api ' + String(e.message || e).slice(0, 80) }; }
+  }
+  if (tabs.length < 2) return { how: 'single' };
+  const re = new RegExp('(^|[^A-Za-z0-9])' + String(taskId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![0-9])', 'i');
+  const hits = tabs.filter(function (t) { return re.test(t.title); });
+  return hits.length ? { tab: hits[0].id, title: hits[0].title } : { how: 'nomatch' };
 }
 
 function taskColumns_(kind, head) {

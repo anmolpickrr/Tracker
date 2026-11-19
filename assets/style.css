@@ -4236,3 +4236,4 @@ button.wc-kpi:hover { border-color: var(--fg-2); transform: translateY(-1px); }
 .co-kpi.hero::after { display: none; }
 .co-kpi.is-bad { background: color-mix(in srgb, var(--orange) 7%, var(--panel)) !important; }
 :root[data-theme="dark"] .co-kpi.is-bad { background: color-mix(in srgb, var(--orange) 9%, #1a1a1f) !important; }
+.ed-brief-tip { margin: 0 0 10px !important; padding: 8px 12px; border-radius: 10px; background: var(--sunken); font-size: 12px; }

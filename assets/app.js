@@ -3495,14 +3495,16 @@
           // Google's own preview, opened with the viewer's Google account (the person assigned can read their brief)
           const id = b.id || ((b.url || '').match(/\/d\/([A-Za-z0-9_-]{20,})/) || [])[1];
           if (b.kind === 'doc' && id) {
-            const f = document.createElement('iframe'); f.className = 'ed-brief-frame'; f.src = 'https://docs.google.com/document/d/' + id + '/preview'; f.title = 'Creative brief'; f.loading = 'lazy'; f.referrerPolicy = 'no-referrer';
+            const f = document.createElement('iframe'); f.className = 'ed-brief-frame'; f.src = 'https://docs.google.com/document/d/' + id + '/preview' + (b.tab ? '?tab=' + encodeURIComponent(b.tab) : ''); f.title = 'Creative brief'; f.loading = 'lazy'; f.referrerPolicy = 'no-referrer';
             const wrap = el('div', 'ed-brief-embed'); if (b.title) wrap.append(el('p', 'ed-brief-title', b.title)); wrap.append(f, el('p', 'co-note', 'Shown with your Google account. If it stays blank, open it in Google Docs.'));
             body.replaceChildren(wrap); return;
           }
           note(b.error || 'The brief could not be read here. Open it in Google Docs.', 'warn'); return;
         }
         if (b.kind !== 'doc') { note('This brief is not a Google Doc, so it opens in a new tab.'); return; }
-        const doc = cleanBrief(b.html || ''); if (b.title) doc.prepend(el('p', 'ed-brief-title', b.title));
+        const doc = cleanBrief(b.html || ''); if (b.title) doc.prepend(el('p', 'ed-brief-title', b.title + (b.tabTitle ? ' › ' + b.tabTitle : '')));
+        // a Doc with a tab per script: say which tab, or how to point the sheet at the right one
+        if (!b.tab && b.tabHow === 'nomatch') doc.prepend(el('p', 'co-note ed-brief-tip', 'This Doc has several tabs and none is named with ' + r.id + ', so its first tab is shown. Name the tab with the ID, or link the tab in the sheet.'));
         if (!doc.textContent.trim()) { note('The brief is empty.'); return; }
         doc.className = 'ed-brief-doc'; body.replaceChildren(doc);
       }).catch((e) => { if (seq === BR.seq && !(e instanceof AuthLost)) note('The brief could not be loaded: ' + e.message, 'warn'); });
