@@ -222,9 +222,17 @@ function dataText_(fresh, maxAge) {
   if (!fresh) {
     const hit = readCache_(cache, ver, maxAge);
     if (hit) return hit;
+    // Someone is already reading the sheets for this version: wait for that copy (up to 20 s) instead of reading again,
+    // so a save does not make every open dashboard read the sheets at the same moment.
+    const b0 = Number(cache.get('building:' + ver) || 0);
+    if (b0 && Date.now() - b0 < 30000) {
+      for (let i = 0; i < 40; i++) { Utilities.sleep(500); const h2 = readCache_(cache, ver, 0); if (h2) return h2; if (!cache.get('building:' + ver)) break; }
+    }
   }
+  try { cache.put('building:' + ver, String(Date.now()), 60); } catch (e) { /* only a speed-up */ }
   const body = JSON.stringify(readAll_(ver));
   writeCache_(cache, body, ver);
+  try { cache.remove('building:' + ver); } catch (e) { /* ignore */ }
   return body;
 }
 
@@ -233,7 +241,7 @@ function readAll_(ver) {
   Object.keys(CONFIG.sources).forEach(function (name) {
     const s = CONFIG.sources[name];
     try {
-      out.sources[name] = readTab_(s);
+      out.sources[name] = readTab_(s, name);
       out.sources[name].kind = kindOf_(name);
     } catch (err) {
       out.sources[name] = { error: String(err && err.message || err), optional: !!s.optional, kind: kindOf_(name) };
@@ -253,21 +261,58 @@ function cellLink_(rich, formula) {
   const m = String(formula || '').match(/^=\s*HYPERLINK\(\s*"([^"]+)"/i);
   return m ? m[1] : '';
 }
-function linkFill_(sheet, values, headers) {
-  const n = values.length - 1; if (n < 1) return;
-  headers.forEach(function (h, j) {
-    if (!LINK_HEAD_.test(clean_(h).toLowerCase())) return;
-    const rg = sheet.getRange(2, j + 1, n, 1);
-    let rich = null, form = null;
-    try { rich = rg.getRichTextValues(); } catch (e) { rich = null; }
-    try { form = rg.getFormulas(); } catch (e) { form = null; }
-    for (let i = 0; i < n; i++) {
-      const shown = String(values[i + 1][j] || '').trim();
-      if (!shown || /^https?:\/\//i.test(shown)) continue;
-      const u = cellLink_(rich && rich[i] && rich[i][0], form && form[i] && form[i][0]);
-      if (/^https?:\/\//i.test(u)) values[i + 1][j] = u;
-    }
+/* The link map: for each task tab, the cells whose label hides a link ({ row: { col: [label, url] } }). Built by the
+   10-minute job (linkMapBuild_), kept in the script cache for 6 hours, and applied to every data read in no time. A link
+   is used only while the cell still shows the same label, so a stale map never shows a wrong link. */
+function linkMapKey_(name) { return 'lkmap:' + name; }
+function linkMapGet_(name) {
+  try {
+    const c = CacheService.getScriptCache(), n = Number(c.get(linkMapKey_(name) + ':n') || 0); if (!n) return null;
+    const keys = []; for (let i = 0; i < n; i++) keys.push(linkMapKey_(name) + ':' + i);
+    const got = c.getAll(keys); let str = ''; for (let i = 0; i < n; i++) { if (got[keys[i]] == null) return null; str += got[keys[i]]; }
+    return JSON.parse(str);
+  } catch (e) { return null; }
+}
+function linkApply_(name, values) {
+  const map = linkMapGet_(name); if (!map) return 0;
+  let n = 0;
+  Object.keys(map).forEach(function (r) {
+    const row = values[Number(r) - 1]; if (!row) return;
+    const cols = map[r]; Object.keys(cols).forEach(function (j) { const lab = cols[j][0], url = cols[j][1]; if (String(row[j] || '').trim() === lab) { row[j] = url; n++; } });
   });
+  return n;
+}
+function linkMapBuild_() {
+  let changed = false;
+  Object.keys(CONFIG.sources).forEach(function (name) {
+    if (kindOf_(name) === 'team') return;
+    try {
+      const sheet = openTab_(CONFIG.sources[name]), lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn(); if (lastRow < 2) return;
+      const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0], map = {};
+      head.forEach(function (h, j) {
+        if (!LINK_HEAD_.test(clean_(h).toLowerCase())) return;
+        const rg = sheet.getRange(2, j + 1, lastRow - 1, 1), shown = rg.getDisplayValues();
+        if (!shown.some(function (x) { const v = String(x[0] || '').trim(); return v && !/^https?:\/\//i.test(v); })) return; // only plain addresses here
+        let rich = null, form = null;
+        try { rich = rg.getRichTextValues(); } catch (e) { rich = null; }
+        try { form = rg.getFormulas(); } catch (e) { form = null; }
+        for (let i = 0; i < shown.length; i++) {
+          const lab = String(shown[i][0] || '').trim(); if (!lab || /^https?:\/\//i.test(lab)) continue;
+          const u = cellLink_(rich && rich[i] && rich[i][0], form && form[i] && form[i][0]);
+          if (/^https?:\/\//i.test(u)) { const r = String(i + 2); (map[r] = map[r] || {})[j] = [lab, u]; }
+        }
+      });
+      const str = JSON.stringify(map), c = CacheService.getScriptCache(), old = linkMapGet_(name);
+      const parts = {}, CH = 90000, n = Math.max(1, Math.ceil(str.length / CH));
+      for (let i = 0; i < n; i++) parts[linkMapKey_(name) + ':' + i] = str.slice(i * CH, (i + 1) * CH);
+      parts[linkMapKey_(name) + ':n'] = String(n);
+      c.putAll(parts, 21600);
+      if (JSON.stringify(old) !== str) changed = true;
+    } catch (e) { console.log('link map ' + name + ': ' + e); }
+  });
+  // new or changed links: dashboards pick them up on their next check
+  if (changed) { clearCache_(); bumpVersion_(); }
+  return changed;
 }
 // one cell: its link address when it has one, else what it shows
 function cellUrl_(cell) {
@@ -280,11 +325,12 @@ function cellUrl_(cell) {
   return /^https?:\/\//i.test(u) ? u : shown;
 }
 
-function readTab_(s) {
+function readTab_(s, name) {
   const sheet = openTab_(s);
   const values = sheet.getDataRange().getDisplayValues();
   const headers = values.length ? values[0] : [];
-  linkFill_(sheet, values, headers); // only the Creative Link, Open File and Creative Brief columns
+  // links behind labels come from the map the 10-minute job keeps (reading cell formatting here made every sync slow)
+  if (name) linkApply_(name, values);
   const rows = [], rowNums = [];
   for (let i = 1; i < values.length; i++) {
     const r = values[i];
@@ -1345,6 +1391,7 @@ function prefs_(b, u) {
 /* Runs every 10 minutes (setup installs it). Sends the 10:00 and 18:00 IST emails once a day each, and note reminders when due. */
 function remindersTick() {
   TEAM_MEMO_ = null;
+  try { linkMapBuild_(); } catch (e) { console.log('link map: ' + e); }
   try { maintenance_(); persistent_('jobs|maint', false); issueResolveKey_('Background jobs|Maintenance failed'); } catch (e) { console.log('maintenance: ' + e); try { if (persistent_('jobs|maint', true, transient_(e.message || e) ? 3 : 1)) issueLog_('Background jobs', 'Maintenance failed', String(e.message || e), 'schedule'); } catch (e2) { /* ignore */ } }
   if (!authOn_() || !hasAccessBook_()) return;
   const now = new Date(), day = Utilities.formatDate(now, IST, 'yyyy-MM-dd');

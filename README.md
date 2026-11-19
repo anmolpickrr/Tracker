@@ -279,6 +279,16 @@ The **Issues** page (Admin menu, with a count of open issues; the bell also show
 
 **What to do with an issue:** *Retry* (failed saves) shows exactly what it will write (for example *SRA2353: status → WIP*), writes it and resolves the issue. *Reload from the sheets*, *Open Data health*, *Open Brands* and *Open Pricing* take you to the fix. *Mark resolved* closes it by hand; *Reopen* and *Remove* are on resolved issues. Filters: Open / Resolved / All, area and search. The page refreshes every minute; the same problem is counted again instead of listed twice. A retry only ever carries the fields the person who hit the problem was allowed to change. Issues are kept in a hidden *Issues* tab of the access spreadsheet.
 
+## What's new
+
+The sparkle button at the top right opens **What's new**: every update to the dashboard, newest first, grouped by date and filterable by New, Improved and Fixed. Each update explains **what's new**, **what it does**, **how to use it** and **what changed**, with a button that opens the feature. People only see updates for parts of the dashboard they can use (Issues and Access updates go to people with those sections, assigning to people who may assign). A lime dot on the button marks updates not seen yet, and once per visit a short note offers to show them; opening the panel marks them seen (remembered per person on each device).
+
+**Every release adds an entry** to `assets/whatsnew.js` (id, date, kind, who, title, and the four explanations), written in plain words for the people using the dashboard.
+
+## Loading and syncing
+
+The page shows the last data it had at once, then refreshes in the background. A load that fails retries by itself (after 4, 8, 16 and 32 seconds, then every minute) and says so; a refresh that fails while data is on screen is retried on the next 30-second check, so a manual reload is never needed. On the web app, data requests only read the sheets' text: the links behind labels are prepared by the 10-minute job, and after a save all open dashboards share one fresh copy instead of each reading the sheets.
+
 ## Design language (every section, every change)
 
 One product, not features added over time. Every new section, control or change follows these rules (the Overview is the reference):

@@ -131,7 +131,7 @@
       const body = A.mode === 'auth' ? await callApi(Object.assign({ action: 'data', fresh: fresh === true }, fresh === 'recent' ? { maxAge: 90 } : {})) : await keyGet(fresh === true ? { fresh: '1' } : {});
       if (!body.ok) throw new Error(errText(body.error));
       applyData(body);
-      S.loadFails = 0;
+      S.loadFails = 0; clearTimeout(S.retryT);
       if (A.mode === 'auth' && A.user) { DC.put(A.user.email, body); ISS.resolve('client|load|' + A.user.email.split('@')[0]); }
       loadHealth();
       if (P.tab === 'access') axRefresh(true);
@@ -150,6 +150,9 @@
       if (S.status !== 'ok') S.status = 'error';
       else S.staleError = S.error;
       S.loadFails = (S.loadFails || 0) + 1;
+      // Never stuck: a page that could not load retries by itself (4 s, 8 s, 16 s, 32 s, then every minute);
+      // a page showing older data retries on the next 30-second check.
+      if (S.status === 'error' && !(err instanceof AuthLost)) { const wait = Math.min(60000, 4000 * Math.pow(2, Math.min(4, S.loadFails - 1))); clearTimeout(S.retryT); S.retryT = setTimeout(() => { if (S.status === 'error' && !S.refreshing) load(false); }, wait); S.error += ' Trying again in ' + Math.round(wait / 1000) + ' seconds.'; }
       if (S.loadFails >= 2 && A.mode === 'auth' && A.user && !/could not reach the web app/i.test(S.error)) ISS.report('client|load|' + A.user.email.split('@')[0], 'Sync', 'Tasks could not be loaded for ' + (A.user.name || A.user.email).split(' ')[0], S.error, null, 'retry-sync');
     }
     S.refreshing = false; S.cached = false;
@@ -279,6 +282,7 @@
     // a check or reload stuck for over 2 minutes no longer blocks the next ones
     if (checking && Date.now() - checkingAt > 120000) checking = false;
     if (S.refreshing && S.refreshAt && Date.now() - S.refreshAt > 150000) S.refreshing = false;
+    if (S.status === 'ok' && S.staleError && !S.refreshing && document.visibilityState === 'visible') { load('recent'); return; } // the last refresh failed: try again now
     if (checking || S.refreshing || S.status !== 'ok' || document.visibilityState !== 'visible') return;
     checking = true; checkingAt = Date.now();
     try {
@@ -3433,7 +3437,8 @@
         // the sheet's own spellings (status, content status) and row, once confirmed
         if (res.written && res.written.cstatus) { mark.fields = Object.assign({}, fields, { cstatus: res.written.cstatus }); const cur = (S.tasks || []).find((x) => x.uid === r.uid); if (cur) cur.content_status = String(res.written.cstatus).toUpperCase(); }
         renderAll();
-        setTimeout(() => load(true).finally(() => { if (PEND.get(r.uid) === mark) PEND.delete(r.uid); }), 400);
+        // the web app cleared its copy when it saved, so a normal load reads the sheet once and shares it with everyone
+        setTimeout(() => load(false).finally(() => { if (PEND.get(r.uid) === mark) PEND.delete(r.uid); }), 400);
         return res;
     }
     /* Run a save after the window has closed: a short "Saving…" note, then "Saved" or the reason with a Retry. */
@@ -3599,6 +3604,56 @@
     $('ed-file').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('ed-file-save').click(); } });
     $('ed-content').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('ed-content-save').click(); } });
   })();
+
+  /* ================= What's new =================
+     Every update, newest first (assets/whatsnew.js). Each person sees only updates for parts they can use; what they
+     have seen is remembered on this device per person; a lime dot on the button marks unseen updates. */
+  const WN = { f: '', toasted: false };
+  const wnEl = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+  const wnKey = () => 'co.wnSeen.' + ((A.user && A.user.email) || 'anon');
+  const wnSeen = () => { try { return new Set(JSON.parse(LS.get(wnKey(), '[]')) || []); } catch (e) { return new Set(); } };
+  const wnFor = (it) => { const w = it.who || 'all'; if (w === 'all') return true; if (w === 'admin') return isAdmin(); if (w.startsWith('page:')) return pageOk(w.slice(5)); if (w.startsWith('perm:')) return isAdmin() || perm(w.slice(5)); return true; };
+  const wnItems = () => (window.CO_WHATSNEW || []).filter(wnFor).sort((a, b) => b.date.localeCompare(a.date));
+  const WN_KIND = { new: ['New', 'k-new'], improved: ['Improved', 'k-imp'], fixed: ['Fixed', 'k-fix'] };
+  function wnPaint() {
+    const seen = wnSeen(), unseen = wnItems().filter((x) => !seen.has(x.id)).length;
+    const d = document.querySelector('#btn-new .wn-dot'); if (d) d.hidden = !unseen;
+    const b = document.getElementById('btn-new'); if (b) { b.title = unseen ? "What's new (" + unseen + ' new)' : "What's new"; b.setAttribute('aria-label', b.title); b.hidden = !(A.user || A.mode !== 'auth'); }
+    return unseen;
+  }
+  function wnDraw(fresh) {
+    const all = wnItems(), tabs = document.querySelector('#whatsnew [data-draw="wn-tabs"]'), list = document.querySelector('#whatsnew [data-draw="wn-list"]');
+    tabs.replaceChildren();
+    [['', 'All'], ['new', 'New'], ['improved', 'Improved'], ['fixed', 'Fixed']].forEach(([k, l]) => { const n = k ? all.filter((x) => x.kind === k).length : all.length; if (k && !n) return; const b = wnEl('button', 'wn-tab' + (WN.f === k ? ' on' : '')); b.type = 'button'; b.setAttribute('aria-pressed', String(WN.f === k)); b.append(wnEl('span', '', l), wnEl('small', '', String(n))); b.addEventListener('click', () => { WN.f = k; wnDraw(fresh); }); tabs.append(b); });
+    list.replaceChildren();
+    const rows = all.filter((x) => !WN.f || x.kind === WN.f);
+    if (!rows.length) { list.append(wnEl('p', 'co-note', 'Nothing here yet.')); return; }
+    let day = '';
+    rows.forEach((it) => {
+      if (it.date !== day) { day = it.date; list.append(wnEl('h3', 'wn-day', CO.fmtDate(it.date, true))); }
+      const card = wnEl('article', 'wn-item'), kd = WN_KIND[it.kind] || WN_KIND.improved;
+      const h = wnEl('div', 'wn-ih'); h.append(wnEl('span', 'wn-kind ' + kd[1], kd[0]), wnEl('b', 'wn-title', it.title)); if (fresh.has(it.id)) h.append(wnEl('span', 'wn-fresh', 'New for you'));
+      card.append(h);
+      const dl = wnEl('dl', 'wn-dl');
+      [["What's new", it.what], ['What it does', it.does], ['How to use it', it.how], ['What changed', it.changed]].forEach(([t, v]) => { if (!v) return; dl.append(wnEl('dt', '', t), wnEl('dd', '', v)); });
+      card.append(dl);
+      if (it.go && TABS.includes(it.go) && pageOk(it.go)) { const g = wnEl('button', 'co-btn sm wn-go', 'Open ' + (PAGES[it.go] ? PAGES[it.go][0] : it.go)); g.type = 'button'; g.addEventListener('click', () => { document.getElementById('whatsnew').close(); dash.setParams({ tab: it.go }); }); card.append(g); }
+      list.append(card);
+    });
+  }
+  function wnOpen() {
+    const dlg = document.getElementById('whatsnew'), seen = wnSeen(), all = wnItems();
+    const fresh = new Set(all.filter((x) => !seen.has(x.id)).map((x) => x.id));
+    WN.f = ''; wnDraw(fresh);
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    LS.set(wnKey(), JSON.stringify([...new Set([...seen, ...all.map((x) => x.id)])])); wnPaint();
+  }
+  document.getElementById('btn-new').addEventListener('click', wnOpen);
+  document.getElementById('wn-x').addEventListener('click', () => document.getElementById('whatsnew').close());
+  document.getElementById('whatsnew').addEventListener('click', (e) => { if (e.target.id === 'whatsnew') e.currentTarget.close(); });
+  // once per visit: a short note when there is something new for you (never a pop-up over your work)
+  setInterval(() => { if (WN.toasted || !A.user || S.status !== 'ok') { wnPaint(); return; } const n = wnPaint(); WN.toasted = true; if (n) toast(n === 1 ? '1 new update to the dashboard' : n + ' new updates to the dashboard', false, { label: "See what's new", fn: wnOpen }); }, 4000);
+  window.CO_whatsnew = { open: wnOpen, items: wnItems, unseen: () => wnPaint() };
 
   /* ================= Start ================= */
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (TABS.includes(h) && h !== P.tab) dash.setParams({ tab: h }); });
