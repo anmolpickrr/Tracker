@@ -4,6 +4,13 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-20-notes-assignees', date: '2026-11-20', kind: 'new', who: 'page:notes', go: 'notes', title: 'Edit notes assigned to you',
+    what: 'If a note is assigned to you, you can now edit it, not only tick your item.',
+    does: 'You can change its text, checklist, reminder, colour and files, and tag more people (they can then see it). Who can see it and who it is assigned to stay as the author set them, and only the author can delete it.',
+    how: 'Open a note under "Assigned to me" and click Edit. Write your own notes the same way as always: a note is personal until you tag someone with @ or assign it, and then those people see it too.',
+    changed: 'Before, only the person who wrote a note could change it.'
+  },
+  {
     id: '2026-11-20-sync', date: '2026-11-20', kind: 'fixed', who: 'all', title: 'Faster syncing, and the page never gets stuck',
     what: 'Updates reach your screen much faster, and a page that cannot load now recovers by itself.',
     does: 'The web app no longer does slow work on every refresh. When the sheets are busy, the dashboard tries again on its own instead of waiting for you to reload.',

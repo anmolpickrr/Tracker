@@ -279,6 +279,10 @@ The **Issues** page (Admin menu, with a count of open issues; the bell also show
 
 **What to do with an issue:** *Retry* (failed saves) shows exactly what it will write (for example *SRA2353: status → WIP*), writes it and resolves the issue. *Reload from the sheets*, *Open Data health*, *Open Brands* and *Open Pricing* take you to the fix. *Mark resolved* closes it by hand; *Reopen* and *Remove* are on resolved issues. Filters: Open / Resolved / All, area and search. The page refreshes every minute; the same problem is counted again instead of listed twice. A retry only ever carries the fields the person who hit the problem was allowed to change. Issues are kept in a hidden *Issues* tab of the access spreadsheet.
 
+## Who can change a note
+
+Everyone can write notes. A note is **personal** until you tag someone with @ or assign it; those people then see it too (Everyone can see shares it with the whole team). The **author** can change and delete it. **Anyone it is assigned to** can edit it too: text, checklist, reminder, colour and files, and tag more people; who can see it and who it is assigned to stay as the author set them, and only the author (or the owner) deletes it. The web app checks all of this on every save.
+
 ## What's new
 
 The sparkle button at the top right opens **What's new**: every update to the dashboard, newest first, grouped by date and filterable by New, Improved and Fixed. Each update explains **what's new**, **what it does**, **how to use it** and **what changed**, with a button that opens the feature. People only see updates for parts of the dashboard they can use (Issues and Access updates go to people with those sections, assigning to people who may assign). A lime dot on the button marks updates not seen yet, and once per visit a short note offers to show them; opening the panel marks them seen (remembered per person on each device).

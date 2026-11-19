@@ -4988,13 +4988,15 @@
         if (S2.reminder) { const x = mk('button', 'qn-opt qn-clear', 'No reminder'); x.type = 'button'; x.addEventListener('click', () => { S2.reminder = ''; paint(); close(); }); pan.append(x); }
       });
       const share = mk('label', 'qn-share'); const scb = document.createElement('input'); scb.type = 'checkbox'; scb.checked = S2.team; scb.addEventListener('change', () => { S2.team = scb.checked; paint(); }); share.append(scb, mk('span', '', 'Everyone can see'));
+      const asA = !!(n && n.asAssignee); // editing a note assigned to me: visibility and assignees stay the author's
+      if (asA) { scb.disabled = true; share.title = 'Who can see this note stays as ' + first(nameOf2(n.createdBy)) + ' set it'; share.classList.add('locked'); }
       const vis = mk('span', 'qn-vis');
       const acts = mk('div', 'qn-acts');
       const save = mk('button', 'co-btn primary qn-save', n ? 'Save' : 'Add note'); save.type = 'submit';
       if (n) {
         const del = mk('button', 'icon-btn qn-del'); del.type = 'button'; del.setAttribute('aria-label', 'Move to trash'); del.title = 'Move to trash (restore within 30 days)'; del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
         del.addEventListener('click', async () => { if (!confirm('Move this note to the trash? It disappears for everyone it was shared with; you can restore it from Trash for 30 days.')) return; st.busy = true; try { const r = await callApi({ action: 'noteDelete', id: n.id }); if (!r.ok) throw new Error(r.error || 'Not deleted'); st.notes = st.notes.filter((x) => x.id !== n.id); st.trash = null; draftSet(n.id, null); toast('Moved to trash · restore it from Trash'); done(null); } catch (e) { toast(e.message, true); } st.busy = false; });
-        acts.append(del);
+        if (n.canDelete !== false) acts.append(del);
       }
       // Discard: throw away what is being written (and its saved draft) and start fresh
       const discard = mk('button', 'co-btn ghost qn-discard', n ? 'Discard changes' : 'Discard'); discard.type = 'button';
@@ -5009,6 +5011,7 @@
       row.append(assignDd, remindDd, share, vis, acts);
       const bar = mk('div', 'qn-edbar'); bar.append(colours, tools);
       f.append(bar, field, tray, extras, chips, row, fileIn);
+      if (asA) f.prepend(mk('p', 'qn-asg-note', 'Assigned to you: you can edit this note and tag people. Who can see it and who it is assigned to stay as ' + first(nameOf2(n.createdBy)) + ' set them.'));
       // files: pick, paste (Ctrl/Cmd+V) or drop
       async function addFiles(list) {
         list = list.filter(Boolean); if (!list.length) return;
@@ -5041,10 +5044,11 @@
         if (S2.doodle) { const dw = mk('div', 'qn-dwrap'); dw.append(doodleSvg(S2.doodle)); const ed2 = mk('button', 'qn-mini', 'Edit doodle'); ed2.type = 'button'; ed2.addEventListener('click', () => openPad(S2.doodle, (d) => { S2.doodle = d; paint(); })); const rm = mk('button', 'qn-mini', 'Remove'); rm.type = 'button'; rm.addEventListener('click', () => { S2.doodle = null; paint(); }); dw.append(ed2, rm); extras.append(dw); }
         extras.hidden = !extras.childElementCount;
         chips.replaceChildren();
-        S2.assign.forEach((a) => { const c = mk('span', 'qn-chip as'); c.append(CO.av(a.name), mk('span', '', a.name)); const x = mk('button', 'qn-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Remove ' + a.name); x.addEventListener('click', () => { S2.assign = S2.assign.filter((y) => y.email !== a.email); paint(); }); c.append(x); chips.append(c); });
+        S2.assign.forEach((a) => { const c = mk('span', 'qn-chip as'); c.append(CO.av(a.name), mk('span', '', a.name)); const x = mk('button', 'qn-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Remove ' + a.name); x.addEventListener('click', () => { S2.assign = S2.assign.filter((y) => y.email !== a.email); paint(); }); if (!asA) c.append(x); chips.append(c); });
         if (S2.reminder) { const c = mk('span', 'qn-chip rm'); c.innerHTML = ICON_BELL; c.append(mk('span', '', remindText(S2.reminder))); const x = mk('button', 'qn-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Remove reminder'); x.addEventListener('click', () => { S2.reminder = ''; paint(); }); c.append(x); chips.append(c); }
         chips.hidden = !chips.childElementCount;
         assignDd.btn.querySelector('.qn-dd-l').textContent = S2.assign.length ? 'Assigned · ' + S2.assign.length : 'Assign';
+        if (asA) { assignDd.btn.disabled = true; assignDd.btn.title = 'Only ' + first(nameOf2(n.createdBy)) + ' changes who it is assigned to'; }
         remindDd.btn.querySelector('.qn-dd-l').textContent = S2.reminder ? 'Reminder set' : 'Remind';
         const tg2 = tagged(), who = new Set([...tg2.map((p) => p.email), ...S2.assign.map((a) => a.email)]);
         vis.textContent = S2.team ? 'Everyone with access can see this' : who.size ? 'Visible to you, ' + [...who].map((e) => first(nameOf2(e))).slice(0, 3).join(', ') + (who.size > 3 ? ' +' + (who.size - 3) : '') + ' and Admins' : 'Only you and Admins can see this';

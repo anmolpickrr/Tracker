@@ -1221,9 +1221,11 @@ function memberCanSee_(n, u) {
 }
 // The owner and Admins see every note on the team (Creative Head, Nov 2026); everyone is told so in the composer.
 function canSeeNote_(n, u) { return !n.deleted && (memberCanSee_(n, u) || isAdminUser_(u)); }
-// The author changes a note (and the owner, for notes shared with them as before); notes seen only as Admin are
-// read-only. Assignees tick their own item (noteAction).
-function canEditNote_(n, u) { return n.createdBy === u.email || (isOwner_(u.email) && memberCanSee_(n, u)); }
+// Who may change a note: its author, anyone it is assigned to (an action item in their name), and the owner for notes
+// shared with them. Notes seen only as Admin are read-only. Only the author (or the owner) deletes it.
+const isNoteAssignee_ = function (n, u) { return (n.actions || []).some(function (a) { return a && String(a.email || '').toLowerCase() === u.email; }); };
+function canDeleteNote_(n, u) { return n.createdBy === u.email || (isOwner_(u.email) && memberCanSee_(n, u)); }
+function canEditNote_(n, u) { return canDeleteNote_(n, u) || (memberCanSee_(n, u) && isNoteAssignee_(n, u)); }
 function allNotes_() {
   if (!hasAccessBook_()) return [];
   const sh = notesSheet_(), last = sh.getLastRow();
@@ -1233,7 +1235,7 @@ function allNotes_() {
 }
 function publicNote_(n, u) {
   const o = Object.assign({}, n); delete o.row; delete o.reminderSent; delete o.deleted;
-  o.canEdit = canEditNote_(n, u);
+  o.canEdit = canEditNote_(n, u); o.canDelete = canDeleteNote_(n, u); o.asAssignee = o.canEdit && !o.canDelete;
   if (!memberCanSee_(n, u)) o.viaAdmin = true; // visible only because they are an Admin
   return o;
 }
@@ -1303,7 +1305,16 @@ function noteSave_(b, u) {
   }
   const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
   if (!cur || cur.deleted) return { ok: false, error: 'This note no longer exists.' };
-  if (!canEditNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note (or the owner, if it is shared with them) can change it.' };
+  if (!canEditNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note, the people it is assigned to, or the owner can change it.' };
+  // An assignee edits the note itself (text, checklist, reminder, colour, files) and can tag more people; who can see
+  // it and who it is assigned to stay as the author set them (their own item is ticked as before).
+  if (!canDeleteNote_(cur, u)) {
+    n.visibility = cur.visibility; n.sharedWith = cur.sharedWith || [];
+    n.actions = (cur.actions || []).map(function (a) { const m = (n.actions || []).filter(function (x) { return x && x.id === a.id; })[0]; return m && String(a.email || '').toLowerCase() === u.email ? Object.assign({}, a, { done: !!m.done, doneBy: m.done ? (a.done ? a.doneBy : u.email) : '', doneAt: m.done ? (a.done ? a.doneAt : new Date().toISOString()) : '' }) : a; });
+    const had = {}; (cur.mentions || []).forEach(function (x) { if (x && x.email) had[String(x.email).toLowerCase()] = 1; });
+    n.mentions = (cur.mentions || []).concat((n.mentions || []).filter(function (x) { return x && x.email && !had[String(x.email).toLowerCase()]; }));
+    if (n.visibility === 'private' && n.mentions.length) n.visibility = 'people';
+  }
   if (b.updatedAt && cur.updatedAt && b.updatedAt !== cur.updatedAt) return { ok: false, error: 'stale', note: publicNote_(cur, u) };
   // A changed reminder time is sent again.
   const sent = n.reminder && n.reminder === cur.reminder ? cur.reminderSent : '';
@@ -1317,7 +1328,7 @@ function noteSave_(b, u) {
 function noteDelete_(b, u) {
   const cur = allNotes_().filter(function (x) { return x.id === String(b.id); })[0];
   if (!cur || cur.deleted) return { ok: false, error: 'This note no longer exists.' };
-  if (!canEditNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note (or the owner, if it is shared with them) can delete it.' };
+  if (!canDeleteNote_(cur, u)) return { ok: false, error: 'Only the person who wrote this note (or the owner) can delete it.' };
   const sh = notesSheet_();
   sh.getRange(cur.row, 19, 1, 2).setValues([[true, u.email]]);
   sh.getRange(cur.row, 27).setValue(new Date());

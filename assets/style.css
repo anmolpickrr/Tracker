@@ -4273,3 +4273,5 @@ dialog.wn::backdrop { background: rgba(10, 10, 12, .35); }
 .wn-dl dd { margin: 0; color: var(--fg); }
 .wn-go { justify-self: start; }
 @media (max-width: 560px) { dialog.wn { border-radius: 22px 22px 0 0; margin: auto 0 0; height: 92dvh; width: 100vw; } .wn-dl { grid-template-columns: minmax(0, 1fr); gap: 2px; } .wn-dl dd { margin-bottom: 6px; } }
+.qn-asg-note { margin: 0 0 8px; padding: 8px 12px; border-radius: 12px; background: var(--violet-soft); color: var(--violet-text); font-size: 12px; font-weight: 500; }
+.qn-share.locked { opacity: .6; cursor: not-allowed; }
