@@ -4,6 +4,13 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-22-sounds', date: '2026-11-22', kind: 'new', who: 'all', title: 'Mentions, announcements and soft sounds',
+    what: 'Tag teammates from the bell, from any notification and from What\'s new. Notifications now arrive with a gentle animation, and optional sounds.',
+    does: 'Each kind has its own colour and sound: reminders, mentions, task updates, achievements (awards) and announcements. New ones ring the bell and slide in a small card you can open or dismiss. Admins can send an announcement to everyone. Studio has an optional radio: soft, endless instrumental music made live.',
+    how: 'Click the bell, then Mention to tag people, or the @ on any notification to share it. In What\'s new, use Share with a teammate. Sounds stay off until you say yes. Change them any time under bell > Sounds & music (volume, which kinds, the radio).',
+    changed: 'Sounds and music never play without your permission, and the radio only plays on the Studio page when you press play.'
+  },
+  {
     id: '2026-11-22-studio', date: '2026-11-22', kind: 'new', who: 'all', go: 'studio', title: 'Studio: your character and the Hall of Fame',
     what: 'A new Studio page where the team is celebrated, and a clay-toy character for everyone that becomes your avatar across the dashboard.',
     does: 'Build your character (skin, face, hair, outfit, glasses, headwear and the tools of your craft, like headphones, a tablet or a clapperboard), or turn a photo into one with Gemini. The retro TV shows awards from the Creative Head and last week\'s stars, worked out from the sheets. You also get the podium, the awards wall, the whole crew and a reel of fresh deliveries.',

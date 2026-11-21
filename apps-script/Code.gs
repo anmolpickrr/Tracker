@@ -94,7 +94,7 @@ function allowed_(u, action) {
   if (action === 'packageSave' || action === 'packageDelete') return p.packages === 'edit';
   return true;
 }
-const NEEDS = { studio: 'Viewer', charImage: 'Viewer', charMake: 'Viewer', profileSave: 'Viewer', awardSave: 'Viewer', awardDelete: 'Viewer', cheer: 'Viewer', me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Viewer', issueAct: 'Viewer', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { inbox: 'Viewer', soundPrefs: 'Viewer', notifySend: 'Viewer', studio: 'Viewer', charImage: 'Viewer', charMake: 'Viewer', profileSave: 'Viewer', awardSave: 'Viewer', awardDelete: 'Viewer', cheer: 'Viewer', me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Viewer', issueAct: 'Viewer', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -422,6 +422,7 @@ function doPost(e) {
     if (body.action === 'directory') return json_({ ok: true, people: users_().list.filter(function (u) { return u.status === 'Approved'; }).map(function (u) { return { email: u.email, name: displayName_(u), photo: photo_(u.photo) }; }) });
     if (body.action === 'notes') return json_(notesList_(user));
     if (body.action === 'studio') return json_(studio_(user));
+    if (body.action === 'inbox') return json_(inbox_(user));
     if (body.action === 'charImage') return json_(charImage_(body));
     if (body.action === 'charMake') return json_(charMake_(body, user));
     if (body.action === 'signout') { audit_([{ who: user.email, role: user.role, action: 'Signed out' }]); return json_({ ok: true }); }
@@ -475,6 +476,8 @@ function write_(body, user) {
     else if (body.action === 'awardSave') out = awardSave_(body, user);
     else if (body.action === 'awardDelete') out = awardDelete_(body, user);
     else if (body.action === 'cheer') out = cheer_(body, user);
+    else if (body.action === 'soundPrefs') out = soundPrefs_(body, user);
+    else if (body.action === 'notifySend') out = notifySend_(body, user);
     else if (body.action === 'prefs') out = prefs_(body, user);
     else if (body.action === 'saveSettings') out = saveSettings_(body, user);
     else out = { ok: false, error: 'unknown_action' };
@@ -2922,16 +2925,17 @@ function ownDataText_(user, fresh, maxAge) {
    Performer, Best Creative…) and cheers. Kept in the access book: Profiles, Character images (the picture in pieces,
    like note files), Awards and Cheers. A photo sent to make a character is never stored; only the picture made from it,
    once its owner saves it. */
-const PROF_HEAD = ['Email', 'Team name', 'Character', 'Image', 'Tagline', 'Updated'];
+const PROF_HEAD = ['Email', 'Team name', 'Character', 'Image', 'Tagline', 'Updated', 'Prefs'];
 const CIMG_HEAD = ['Image', 'Piece', 'Pieces', 'Data', 'By', 'At'];
 const AWARD_HEAD = ['ID', 'Who', 'Title', 'Tag', 'Note', 'Link', 'Until', 'By', 'At', 'Deleted'];
 const CHEER_HEAD = ['Key', 'Email', 'At'];
-function studioTab_(name, head) { const ss = accessBook_(); let sh = ss.getSheetByName(name); if (!sh) { sh = ss.insertSheet(name); sh.appendRow(head); sh.setFrozenRows(1); if (name === 'Character images') sh.hideSheet(); } return sh; }
+function studioTab_(name, head) { const ss = accessBook_(); let sh = ss.getSheetByName(name); if (!sh) { sh = ss.insertSheet(name); sh.appendRow(head); sh.setFrozenRows(1); if (name === 'Character images' || name === 'Notify') sh.hideSheet(); } else if (sh.getLastColumn() < head.length) { while (sh.getMaxColumns() < head.length) sh.insertColumnAfter(sh.getMaxColumns()); sh.getRange(1, 1, 1, head.length).setValues([head]); } return sh; }
 function studioRows_(name, head) { const sh = studioTab_(name, head), last = sh.getLastRow(); return { sh: sh, rows: last < 2 ? [] : sh.getRange(2, 1, last - 1, head.length).getValues() }; }
 function studio_(u) {
   const pr = studioRows_('Profiles', PROF_HEAD).rows.map(function (r) { return { email: String(r[0]).toLowerCase(), who: String(r[1] || ''), char: parseJson_(r[2], null), img: String(r[3] || ''), tagline: String(r[4] || ''), updated: iso_(r[5]) }; }).filter(function (x) { return x.email; });
   const p = permsOf_(u), page = isAdminUser_(u) || p.pages.indexOf('studio') >= 0;
-  const out = { ok: true, profiles: pr, canAward: isAdminUser_(u) };
+  const mineRow = studioRows_('Profiles', PROF_HEAD).rows.filter(function (r) { return String(r[0]).toLowerCase() === u.email; })[0];
+  const out = { ok: true, profiles: pr, canAward: isAdminUser_(u), myPrefs: mineRow ? parseJson_(mineRow[6], null) : null };
   if (!page) return out;
   const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd');
   out.awards = studioRows_('Awards', AWARD_HEAD).rows.filter(function (r) { return r[0] && !(r[9] === true || String(r[9]) === 'TRUE'); }).map(function (r) {
@@ -2953,7 +2957,7 @@ function charImage_(b) {
 }
 function profileSave_(b, u) {
   const P = studioRows_('Profiles', PROF_HEAD), sh = P.sh, i = P.rows.findIndex(function (r) { return String(r[0]).toLowerCase() === u.email; });
-  const cur = i >= 0 ? P.rows[i] : [u.email, '', '', '', '', ''];
+  const cur = i >= 0 ? P.rows[i] : [u.email, '', '', '', '', '', ''];
   let who = clean_(b.who).slice(0, 80);
   if (who && !ownMatcher_(u)(who, '')) who = ''; // only your own name on the team list
   const ch = b.char && typeof b.char === 'object' ? JSON.stringify(b.char).slice(0, 3000) : String(cur[2] || '');
@@ -2968,7 +2972,7 @@ function profileSave_(b, u) {
     for (let k = 0; k < n; k++) rows.push([img, k + 1, n, full.slice(k * PC, (k + 1) * PC), u.email, now]);
     const ish = studioTab_('Character images', CIMG_HEAD); ish.getRange(ish.getLastRow() + 1, 1, rows.length, CIMG_HEAD.length).setValues(rows);
   }
-  const row = [u.email, who || String(cur[1] || '') || clean_(u.name).slice(0, 80), ch, img, safe_(String(b.tagline != null ? b.tagline : cur[4] || '').slice(0, 80)), new Date()];
+  const row = [u.email, who || String(cur[1] || '') || clean_(u.name).slice(0, 80), ch, img, safe_(String(b.tagline != null ? b.tagline : cur[4] || '').slice(0, 80)), new Date(), String(cur[6] || '')];
   if (i >= 0) sh.getRange(i + 2, 1, 1, PROF_HEAD.length).setValues([row]); else sh.appendRow(row);
   return { ok: true, profile: { email: u.email, who: row[1], char: parseJson_(ch, null), img: img, tagline: row[4] }, changes: [{ action: 'Character updated', sheet: 'Profiles', record: u.email, details: img && img !== String(cur[3] || '') ? 'new picture' : '' }] };
 }
@@ -2981,6 +2985,7 @@ function awardSave_(b, u) {
   const A = studioRows_('Awards', AWARD_HEAD), id = clean_(b.id), i = id ? A.rows.findIndex(function (r) { return String(r[0]) === id; }) : -1;
   const row = [i >= 0 ? id : 'W' + Utilities.formatDate(new Date(), IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 6), safe_(who), safe_(title), tag, safe_(clean_(b.note).slice(0, 240)), link, until, u.email, i >= 0 ? A.rows[i][8] : new Date(), ''];
   if (i >= 0) A.sh.getRange(i + 2, 1, 1, AWARD_HEAD.length).setValues([row]); else A.sh.appendRow(row);
+  if (i < 0) { try { notifyAdd_(u.email, 'all', 'achievement', who + ' won ' + title + (row[4] ? ': ' + row[4] : '') + '.', { tab: 'studio', title: title }); } catch (e) { /* the award still stands */ } }
   return { ok: true, id: row[0], changes: [{ action: i >= 0 ? 'Award changed' : 'Award given', sheet: 'Awards', record: who, details: title + (until ? ' until ' + until : '') }] };
 }
 function awardDelete_(b, u) {
@@ -3027,4 +3032,44 @@ function charMake_(b, u) {
   }
   try { issueLog_('Studio', 'Photo characters could not be made', 'Gemini answered: ' + last, u.email, { key: 'studio|charmake' }); } catch (e) { /* ignore */ }
   return { ok: false, error: 'The character could not be made (' + last + ').' };
+}
+
+
+/* ================= Sounds and notifications (Nov 2026) =================
+   Sound and music choices follow each person to every device (Profiles, Prefs column). The Notify tab holds what people
+   send each other from the dashboard: mentions (to chosen people, with a link to what they are about), announcements
+   (Admins, to everyone) and achievements (an award, to everyone). The rest of the bell is worked out on each screen. */
+function soundPrefs_(b, u) {
+  const p = b.prefs && typeof b.prefs === 'object' ? b.prefs : {}, keep = { asked: !!p.asked, notify: !!p.notify, music: !!p.music, vol: Math.max(0, Math.min(1, Number(p.vol) || 0)), mvol: Math.max(0, Math.min(1, Number(p.mvol) || 0)), types: {} };
+  ['reminder', 'mention', 'task', 'achievement', 'announcement'].forEach(function (k) { keep.types[k] = !(p.types && p.types[k] === false); });
+  const P = studioRows_('Profiles', PROF_HEAD), i = P.rows.findIndex(function (r) { return String(r[0]).toLowerCase() === u.email; });
+  if (i >= 0) P.sh.getRange(i + 2, 7).setValue(JSON.stringify(keep)); else P.sh.appendRow([u.email, clean_(u.name).slice(0, 80), '', '', '', new Date(), JSON.stringify(keep)]);
+  return { ok: true, prefs: keep };
+}
+const NOTIFY_HEAD = ['ID', 'At', 'From', 'To', 'Type', 'Text', 'Ref'];
+function notifyAdd_(from, to, type, text, ref) {
+  const sh = studioTab_('Notify', NOTIFY_HEAD), id = 'N' + Utilities.formatDate(new Date(), IST, 'yyMMddHHmm') + '-' + Utilities.getUuid().slice(0, 6);
+  sh.appendRow([id, new Date(), from, Array.isArray(to) ? to.join(',') : to, type, safe_(String(text).slice(0, 400)), ref ? JSON.stringify(ref).slice(0, 400) : '']);
+  return id;
+}
+function notifySend_(b, u) {
+  const type = b.type === 'announcement' ? 'announcement' : 'mention', text = clean_(b.text).slice(0, 400);
+  if (!text) return { ok: false, error: 'Write a message.' };
+  if (type === 'announcement' && !isAdminUser_(u)) return { ok: false, error: 'Only Admins can send announcements to everyone.' };
+  const ok = {}; users_().list.forEach(function (x) { if (x.status === 'Approved') ok[x.email] = 1; });
+  const to = type === 'announcement' ? 'all' : (Array.isArray(b.to) ? b.to : []).map(function (e) { return String(e).toLowerCase().trim(); }).filter(function (e, i, a) { return ok[e] && e !== u.email && a.indexOf(e) === i; }).slice(0, 30);
+  if (to !== 'all' && !to.length) return { ok: false, error: 'Tag at least one person with access to the dashboard.' };
+  const ref = b.ref && typeof b.ref === 'object' ? { tab: clean_(b.ref.tab).slice(0, 20), id: clean_(b.ref.id).slice(0, 80), title: clean_(b.ref.title).slice(0, 120) } : null;
+  const id = notifyAdd_(u.email, to, type, text, ref);
+  return { ok: true, id: id, changes: [{ action: type === 'announcement' ? 'Announcement sent' : 'Mention sent', sheet: 'Notify', record: to === 'all' ? 'everyone' : to.join(', '), details: text.slice(0, 120) }] };
+}
+function inbox_(u) {
+  const sh = studioTab_('Notify', NOTIFY_HEAD), last = sh.getLastRow(); if (last < 2) return { ok: true, items: [] };
+  const from = Math.max(2, last - 400), cut = Date.now() - 30 * 864e5, names = {};
+  users_().list.forEach(function (x) { names[x.email] = displayName_(x); });
+  const items = sh.getRange(from, 1, last - from + 1, NOTIFY_HEAD.length).getValues().filter(function (r) {
+    if (!r[0] || !(r[1] instanceof Date) || r[1].getTime() < cut) return false;
+    const to = String(r[3]); return to === 'all' || to.split(',').indexOf(u.email) >= 0 || String(r[2]).toLowerCase() === u.email;
+  }).map(function (r) { const by = String(r[2]).toLowerCase(); return { id: String(r[0]), at: r[1].toISOString(), from: by, fromName: names[by] || by, to: String(r[3]) === 'all' ? 'all' : 'some', mine: by === u.email, type: String(r[4]), text: String(r[5]), ref: parseJson_(r[6], null) }; });
+  return { ok: true, items: items.reverse().slice(0, 100) };
 }

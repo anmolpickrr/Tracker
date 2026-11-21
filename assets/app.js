@@ -3676,6 +3676,7 @@
     const foot = wnEl('div', 'wnd-foot');
     if (it.go && TABS.includes(it.go) && pageOk(it.go) && can) { const g = wnEl('button', 'co-btn primary wnd-go', 'Open ' + (PAGES[it.go] ? PAGES[it.go][0] : it.go)); g.type = 'button'; g.addEventListener('click', () => dash.setParams({ tab: it.go })); foot.append(g); }
     else if (!can) foot.append(wnEl('p', 'co-note wnd-cant', 'This one is for a part of the dashboard you do not have. Ask an Admin if you need it.'));
+    if (A.mode === 'auth' && A.user) { const sh = wnEl('button', 'co-btn wnd-share', 'Share with a teammate'); sh.type = 'button'; sh.addEventListener('click', () => msgCompose({ tab: 'whatsnew', id: it.id, title: it.title })); foot.append(sh); }
     const list = wnShown(), i = list.findIndex((x) => x.id === it.id);
     const nav = wnEl('div', 'wnd-nav');
     [['prev', 'Newer', i - 1], ['next', 'Older', i + 1]].forEach(([k, l, j]) => { const b = wnEl('button', 'co-btn sm wnd-' + k, l); b.type = 'button'; b.disabled = j < 0 || j >= list.length; b.addEventListener('click', () => wnPick(list[j].id, true)); nav.append(b); });
@@ -4701,6 +4702,7 @@
 
   /* ================= Daily briefings and notifications (IST) ================= */
   const ICONS = {
+    mega: 'M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1zM15 9a3 3 0 0 1 0 6M18 6a7 7 0 0 1 0 12', trophy: 'M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8M10 17h4', send: 'M22 2L11 13M22 2l-7 20-4-9-9-4z',
     sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
     moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
     user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1',
@@ -4777,6 +4779,63 @@
   });
 
   /* Notification centre: briefings, access requests, note reminders, action items, mentions. */
+  /* ================= Messages: mentions, announcements, achievements (Nov 2026) =================
+     People tag each other from the bell (Write), from any notification (Mention) and from What's New (Share). Admins
+     can send an announcement to everyone; awards arrive as achievements. Kept by the web app (Notify tab). */
+  const MSG = { items: [], at: 0, busy: false, people: null };
+  MSG.load = async (force) => {
+    if (A.mode !== 'auth' || !A.user || MSG.busy || (!force && Date.now() - MSG.at < 60000)) return;
+    MSG.busy = true; try { const b = await callApi({ action: 'inbox' }, true); if (b.ok) { MSG.items = b.items || []; MSG.at = Date.now(); } } catch (e) { /* next time */ }
+    MSG.busy = false; try { NT.arrivals(); } catch (e) { /* still starting */ } dash.draw('np-list'); syncControls();
+  };
+  setInterval(() => { if (document.visibilityState === 'visible') MSG.load(); }, 20000);
+  const msgPeople = async () => { if (MSG.people) return MSG.people; try { const b = await post({ action: 'directory' }); MSG.people = (b.people || []).filter((x) => A.user && x.email !== A.user.email).sort((a, b2) => String(a.name || a.email).localeCompare(String(b2.name || b2.email))); } catch (e) { MSG.people = []; } return MSG.people; };
+  // Where a message points: a page, an update in What's new, a task
+  const msgGo = (ref) => {
+    if (!ref || !ref.tab) return;
+    if (ref.tab === 'whatsnew' && ref.id) { dash.setParams({ tab: 'whatsnew' }); setTimeout(() => { try { wnPick(ref.id, true); } catch (e) { /* gone */ } }, 300); return; }
+    if (ref.tab === 'tasks' && ref.id) { const r = (CO.rows(true) || []).find((x) => x.id === ref.id); if (r) { document.dispatchEvent(new CustomEvent('co-open-task', { detail: r.uid })); return; } }
+    if (TABS.includes(ref.tab) && pageOk(ref.tab)) dash.setParams({ tab: ref.tab });
+  };
+  /* Compose: pick people (or everyone, Admins), write, send. ref: what it is about. */
+  async function msgCompose(ref, preset) {
+    let d = document.getElementById('msg-dlg');
+    if (!d) { d = document.createElement('dialog'); d.id = 'msg-dlg'; d.className = 'co-dialog msg-dlg'; d.setAttribute('aria-label', 'Mention someone'); document.body.append(d); }
+    const W = { to: new Set(preset || []), all: false, text: '', q: '' };
+    const people = await msgPeople();
+    const mk = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+    const paint = () => {
+      d.replaceChildren();
+      const h = mk('div', 'msg-h'); h.append(mk('h2', '', W.all ? 'Announcement to everyone' : 'Mention someone'));
+      const x = mk('button', 'stu-x'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; x.addEventListener('click', () => d.close()); h.append(x); d.append(h);
+      if (ref && ref.title) { const r = mk('p', 'msg-ref'); r.append(mk('small', '', 'About'), mk('b', '', ref.title)); d.append(r); }
+      if (isAdmin()) { const l = mk('label', 'sw msg-all'); const i = document.createElement('input'); i.type = 'checkbox'; i.checked = W.all; i.addEventListener('change', () => { W.all = i.checked; paint(); }); l.append(i, mk('span', 'sw-ui'), mk('span', '', 'Send to everyone as an announcement')); d.append(l); }
+      if (!W.all) {
+        const chips = mk('div', 'msg-chips');
+        [...W.to].forEach((e) => { const p = people.find((y) => y.email === e); const c = mk('button', 'msg-chip'); c.type = 'button'; c.append(CO.av(p ? p.name : e), mk('span', '', '@' + (p && p.name ? p.name.split(' ')[0] : e)), mk('i', '', '×')); c.setAttribute('aria-label', 'Remove ' + (p ? p.name : e)); c.addEventListener('click', () => { W.to.delete(e); paint(); }); chips.append(c); });
+        const q = mk('input', 'co-input msg-q'); q.placeholder = W.to.size ? 'Add someone else…' : 'Type a name to tag…'; q.value = W.q; q.setAttribute('aria-label', 'Tag people');
+        const list = mk('div', 'msg-list');
+        const fill = () => { list.replaceChildren(); const qq = W.q.trim().toLowerCase(); people.filter((p) => !W.to.has(p.email) && (!qq || (p.name + ' ' + p.email).toLowerCase().includes(qq))).slice(0, qq ? 8 : 6).forEach((p) => { const b = mk('button', 'msg-pick'); b.type = 'button'; b.append(CO.av(p.name || p.email), mk('span', '', p.name || p.email)); b.addEventListener('click', () => { W.to.add(p.email); W.q = ''; paint(); setTimeout(() => { const n = d.querySelector('.msg-q'); if (n) n.focus(); }, 0); }); list.append(b); }); };
+        q.addEventListener('input', () => { W.q = q.value; fill(); });
+        q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const f = list.querySelector('.msg-pick'); if (f) f.click(); } });
+        chips.append(q); d.append(chips, list); fill();
+      }
+      const ta = mk('textarea', 'co-input msg-text'); ta.rows = 3; ta.maxLength = 400; ta.placeholder = W.all ? 'What should everyone know?' : 'Write a short note…'; ta.value = W.text; ta.addEventListener('input', () => { W.text = ta.value; }); d.append(ta);
+      const f = mk('div', 'msg-f'); const cancel = mk('button', 'co-btn ghost', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', () => d.close());
+      const send = mk('button', 'co-btn primary', W.all ? 'Send to everyone' : 'Send'); send.type = 'button';
+      send.addEventListener('click', async () => {
+        if (!W.all && !W.to.size) { toast('Tag at least one person.', true); return; }
+        if (!W.text.trim()) { toast('Write a message.', true); return; }
+        send.disabled = true;
+        try { await post({ action: 'notifySend', type: W.all ? 'announcement' : 'mention', to: [...W.to], text: W.text.trim(), ref: ref || null }); d.close(); toast(W.all ? 'Announcement sent to everyone' : 'Sent to ' + [...W.to].map((e) => { const p = people.find((y) => y.email === e); return p && p.name ? p.name.split(' ')[0] : e; }).join(', ')); MSG.load(true); }
+        catch (e) { send.disabled = false; toast('Not sent: ' + e.message, true); }
+      });
+      f.append(cancel, send); d.append(f);
+    };
+    paint(); if (!d.open) d.showModal(); setTimeout(() => { const n = d.querySelector('.msg-q') || d.querySelector('.msg-text'); if (n) n.focus(); }, 30);
+  }
+  window.CO_msg = { compose: msgCompose, load: MSG.load, state: MSG };
+
   const NT = (() => {
     const panel = document.getElementById('np');
     let seen = []; try { seen = JSON.parse(LS.get('co.seen', '[]')) || []; } catch (e) { seen = []; }
@@ -4820,18 +4879,57 @@
         (n.actions || []).forEach((a) => { if (!a.done && a.email === A.user.email && (!a.due || a.due <= CO.addDays(t, 1))) out.push({ id: 'act-' + n.id + '-' + a.id + '-' + (a.due || ''), icon: 'check', tone: a.due && a.due < t ? 'bad' : '', t: /^as-/.test(a.id || '') ? (n.createdBy === A.user.email ? 'Your note: ' : (n.createdByName || n.createdBy).split(' ')[0] + ' assigned you: ') + n.title : a.text, s: /^as-/.test(a.id || '') ? 'Tick it off on the note when done' : 'Action item · ' + n.title + (a.due ? ' · due ' + CO.fmtDate(a.due) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } }); });
         if (n.createdBy !== A.user.email && (n.mentions || []).some((m) => m.email === A.user.email) && n.updatedAt && Date.now() - new Date(n.updatedAt) < 3 * 864e5) out.push({ id: 'men-' + n.id + '-' + n.updatedAt, icon: 'at', tone: 'violet', t: (n.createdByName || n.createdBy) + ' mentioned you', s: n.title, go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } });
       });
+      // Messages: mentions, announcements and achievements (newest first, last 30 days)
+      MSG.items.filter((m) => !m.mine).forEach((m) => {
+        const ty = m.type === 'announcement' ? ['mega', 'lime', 'Announcement from ' + m.fromName] : m.type === 'achievement' ? ['trophy', 'lime', 'Achievement'] : ['at', 'violet', m.fromName + ' mentioned you'];
+        out.unshift({ id: 'msg-' + m.id, kind: m.type === 'mention' ? 'mention' : m.type, icon: ty[0], tone: ty[1], t: ty[2], s: m.text + (m.ref && m.ref.title ? ' · ' + m.ref.title : '') + ' · ' + agoText(m.at), at: m.at, go: () => msgGo(m.ref || (m.type === 'achievement' ? { tab: 'studio' } : null)), ref: m.ref });
+      });
+      out.forEach((i) => { if (!i.kind) i.kind = /^(rem|act|od|due|brief|mtg)-/.test(i.id) ? 'reminder' : /^men-/.test(i.id) ? 'mention' : 'task'; });
       return out;
     };
     const unread = () => items().filter((i) => !seen.includes(i.id)).length;
+    /* New arrivals: a soft sound for its type (if the person allowed sounds), the bell rings and a small card slides in.
+       What was already there when the page opened stays quiet. */
+    const PRIO = ['achievement', 'mention', 'announcement', 'reminder', 'task'];
+    let heard = null; const fresh = new Set();
+    const arrivals = () => {
+      if (A.mode !== 'auth' || !A.user || CO.status() !== 'ok') return;
+      const list = items().filter((i) => !seen.includes(i.id));
+      if (!heard) { heard = new Set(list.map((i) => i.id)); return; }
+      const nu = list.filter((i) => !heard.has(i.id)); if (!nu.length) return;
+      nu.forEach((i) => { heard.add(i.id); fresh.add(i.id); });
+      nu.sort((a, b) => PRIO.indexOf(a.kind) - PRIO.indexOf(b.kind));
+      const top = nu[0];
+      if (window.CO_SOUND) { if (!window.CO_SOUND.prefs().asked) setTimeout(() => window.CO_SOUND.ask('notify').then((ok) => { if (ok) window.CO_SOUND.play(top.kind); }), 600); else window.CO_SOUND.play(top.kind); }
+      const bell = document.getElementById('btn-bell'); bell.classList.remove('ring'); void bell.offsetWidth; bell.classList.add('ring');
+      pop(top, nu.length - 1);
+      syncControls(); dash.draw('np-list');
+    };
+    function pop(i, more) {
+      document.querySelectorAll('.np-pop').forEach((x) => x.remove());
+      const c = document.createElement('div'); c.className = 'np-pop k-' + i.kind; c.setAttribute('role', 'status');
+      const ic = document.createElement('span'); ic.className = 'np-ico ' + (i.tone || ''); ic.append(svgIcon(ICONS[i.icon] || ICONS.bell));
+      const tx = document.createElement('div'); tx.className = 'np-pop-tx'; const a = document.createElement('b'); a.textContent = i.t; const z = document.createElement('span'); z.textContent = i.s; tx.append(a, z);
+      if (more > 0) { const m = document.createElement('small'); m.textContent = '+' + more + ' more in the bell'; tx.append(m); }
+      const go = document.createElement('button'); go.type = 'button'; go.className = 'co-btn sm primary'; go.textContent = 'Open'; go.addEventListener('click', () => { markRead(i.id); c.remove(); i.go(); });
+      const x = document.createElement('button'); x.type = 'button'; x.className = 'np-pop-x'; x.setAttribute('aria-label', 'Dismiss'); x.textContent = '×'; x.addEventListener('click', () => c.remove());
+      c.append(ic, tx, go, x); document.body.append(c); requestAnimationFrame(() => c.classList.add('in'));
+      let t = setTimeout(() => { c.classList.remove('in'); setTimeout(() => c.remove(), 400); }, 7000);
+      c.addEventListener('mouseenter', () => clearTimeout(t)); c.addEventListener('mouseleave', () => { t = setTimeout(() => { c.classList.remove('in'); setTimeout(() => c.remove(), 400); }, 2500); });
+    }
     const markRead = (id) => { if (!seen.includes(id)) { seen.push(id); save(); syncControls(); dash.draw('np-list'); } };
     dash.draw('np-list', (el) => {
       el.replaceChildren(); const list = items();
       if (!list.length) { const e = document.createElement('p'); e.className = 'np-empty'; e.textContent = 'You are all caught up.'; el.append(e); return; }
       list.forEach((i) => {
+        const row = document.createElement('div'); row.className = 'np-row k-' + i.kind + (NT.fresh.has(i.id) ? ' fresh' : '');
         const b = document.createElement('button'); b.type = 'button'; b.className = 'np-item' + (seen.includes(i.id) ? '' : ' unread');
-        const ic = document.createElement('span'); ic.className = 'np-ico ' + (i.tone || ''); ic.append(svgIcon(ICONS[i.icon]));
+        const ic = document.createElement('span'); ic.className = 'np-ico ' + (i.tone || ''); ic.append(svgIcon(ICONS[i.icon] || ICONS.bell));
         const tx = document.createElement('span'); const a = document.createElement('div'); a.className = 'np-t'; a.textContent = i.t; const z = document.createElement('div'); z.className = 'np-s'; z.textContent = i.s; tx.append(a, z);
-        b.append(ic, tx); b.addEventListener('click', () => { markRead(i.id); close(); i.go(); }); el.append(b);
+        b.append(ic, tx); b.addEventListener('click', () => { markRead(i.id); close(); i.go(); });
+        const m = document.createElement('button'); m.type = 'button'; m.className = 'np-men'; m.title = 'Mention someone about this'; m.setAttribute('aria-label', 'Mention someone about: ' + i.t); m.append(svgIcon(ICONS.at));
+        m.addEventListener('click', (e) => { e.stopPropagation(); close(); msgCompose(i.ref || { tab: P.tab, title: i.t }); });
+        row.append(b, m); el.append(row);
       });
     });
     const desk = document.getElementById('np-desktop'), mail = document.getElementById('np-email');
@@ -4844,10 +4942,19 @@
       desk.disabled = !('Notification' in window);
       mail.checked = !A.user || A.user.reminders !== false;
       privacy.hidden = !PRS.on;
+      fresh.clear(); MSG.load(true);
+      const sp = document.getElementById('np-sound');
+      if (sp && window.CO_SOUND) {
+        const SP = window.CO_SOUND.prefs(); sp.replaceChildren();
+        const d = document.createElement('details'); d.className = 'snd-det'; const sm = document.createElement('summary');
+        sm.append(Object.assign(document.createElement('b'), { textContent: 'Sounds & music' }), Object.assign(document.createElement('span'), { textContent: (SP.notify ? 'Sounds on' : 'Sounds off') + ' · ' + (SP.music ? 'radio on' : 'radio off') }));
+        const body = document.createElement('div'); d.append(sm, body); window.CO_SOUND.panel(body); body.querySelector('.snd-h').remove(); sp.append(d);
+      }
       dash.draw('np-list');
     };
     document.addEventListener('click', (e) => { if (!panel.hidden && !panel.contains(e.target) && !e.target.closest('#btn-bell')) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panel.hidden) close(); });
+    document.getElementById('np-write').addEventListener('click', () => { close(); msgCompose(null); });
     document.getElementById('np-read').addEventListener('click', () => { items().forEach((i) => { if (!seen.includes(i.id)) seen.push(i.id); }); save(); dash.draw('np-list'); syncControls(); });
     desk.addEventListener('change', async () => {
       if (!desk.checked) { LS.set('co.desktop', null); return; }
@@ -4877,10 +4984,10 @@
         if (document.visibilityState === 'visible' && !document.querySelector('dialog[open]')) openBriefing(k);
       }
       items().filter((i) => /^(rem|mtg)-/.test(i.id)).forEach((i) => { if (alertOnce(i.id, i.t, i.s, i.go)) toast(i.t); });
-      syncControls(); dash.draw('brief-card');
+      syncControls(); dash.draw('brief-card'); arrivals();
     };
     setInterval(tick, 30 * 1000);
-    return { unread, markRead, toggle, close, tick };
+    return { unread, markRead, toggle, close, tick, arrivals, fresh };
   })();
   function istNowKey() { const o = CO.istParts(); return o.year + '-' + o.month + '-' + o.day + 'T' + o.hour + ':' + o.minute; }
 

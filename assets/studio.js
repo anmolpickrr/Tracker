@@ -12,6 +12,28 @@ window.CO_STUDIO = function (api) {
   const btn = (t, c, fn) => { const b = el('button', c, t); b.type = 'button'; if (fn) b.addEventListener('click', fn); return b; };
   const first = (n) => String(n || '').split(' ')[0];
   const reduce = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const SND = window.CO_SOUND;
+  if (SND) {
+    let tm = 0; SND.onSave((p) => { clearTimeout(tm); tm = setTimeout(() => { if (A.mode === 'auth' && A.user) post({ action: 'soundPrefs', prefs: p }).catch(() => { /* saved on this device */ }); }, 800); });
+    SND.on(() => { dash.draw('studio-radio'); });
+    // ask once, a little after the dashboard has loaded, never on top of a window someone is working in
+    const askLater = setInterval(() => { if (!ST.prefsSynced || !A.user) return; clearInterval(askLater); if (SND.prefs().asked) return; setTimeout(function tryAsk() { if (document.querySelector('dialog[open]') || document.hidden) { setTimeout(tryAsk, 15000); return; } SND.ask('notify'); }, 12000); }, 2000);
+  }
+  // Studio radio: play/pause, volume, mute
+  dash.draw('studio-radio', (box) => {
+    if (!SND) { box.replaceChildren(); return; }
+    box.replaceChildren(); const p = SND.prefs(), on = SND.music.playing;
+    const b = btn('', 'stu-radio-btn' + (on ? ' on' : ''), () => SND.music.toggle()); b.setAttribute('aria-label', on ? 'Pause the Studio radio' : 'Play the Studio radio');
+    b.innerHTML = on ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h3v14H8zM13 5h3v14h-3z"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>';
+    const eq = el('span', 'stu-eq' + (on ? ' on' : '')); for (let i = 0; i < 4; i++) eq.append(el('i'));
+    const tx = el('span', 'stu-radio-tx'); tx.append(el('b', '', 'Studio radio'), el('small', '', on ? 'Lo-fi, made live' : p.music ? 'Paused' : 'Off · press play'));
+    const mute = btn('', 'stu-radio-mute', () => SND.music.volume(p.mvol > 0 ? 0 : 0.4)); mute.setAttribute('aria-label', p.mvol > 0 ? 'Mute' : 'Unmute');
+    mute.innerHTML = p.mvol > 0 ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zM16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zM17 9l5 6M22 9l-5 6"/></svg>';
+    const vol = el('input', 'stu-radio-vol'); vol.type = 'range'; vol.min = 0; vol.max = 100; vol.value = Math.round(p.mvol * 100); vol.setAttribute('aria-label', 'Music volume'); vol.addEventListener('input', () => SND.music.volume(vol.value / 100));
+    box.append(b, eq, tx, mute, vol);
+  });
+  // leaving Studio pauses the radio
+  setInterval(() => { const pg = document.getElementById('studio'); if (SND && SND.music.playing && pg && pg.hidden) SND.music.pause(); }, 1000);
 
   /* ---------- awards: the presets and their colours ---------- */
   const TAGS = {
@@ -60,7 +82,12 @@ window.CO_STUDIO = function (api) {
   ST.load = async (force) => {
     if (A.mode !== 'auth' || !A.user || ST.busy || (!force && ST.loaded && Date.now() - ST.at < 300000)) return;
     ST.busy = true;
-    try { const b = await post({ action: 'studio' }); ST.profiles = b.profiles || []; ST.awards = b.awards || []; ST.cheers = b.cheers || {}; ST.canAward = !!b.canAward; ST.loaded = true; ST.at = Date.now(); ST.err = ''; }
+    try {
+      const b = await post({ action: 'studio' }); ST.profiles = b.profiles || []; ST.awards = b.awards || []; ST.cheers = b.cheers || {}; ST.canAward = !!b.canAward; ST.loaded = true; ST.at = Date.now(); ST.err = '';
+      // sound choices follow the person to every device (what they chose on the server wins)
+      if (SND && b.myPrefs && b.myPrefs.asked && !ST.prefsSynced) SND.set(b.myPrefs, false);
+      ST.prefsSynced = true;
+    }
     catch (e) { ST.err = e.message; }
     ST.busy = false; renderAll();
   };
@@ -173,6 +200,7 @@ window.CO_STUDIO = function (api) {
     acts.append(btn(myProf() && (myProf().char || myProf().img) ? 'Edit my character' : 'Make my character', 'co-btn primary', openBuilder));
     if (ST.canAward) acts.append(btn('Give an award', 'co-btn', () => openAward()));
     heroL.append(acts);
+    const radio = el('div', 'stu-radio'); radio.dataset.draw = 'studio-radio'; heroL.append(radio); setTimeout(() => dash.draw('studio-radio'), 0);
     const stage = el('div', 'stu-stage');
     stage.append(tv(false));
     notes.forEach(([k, v, c, r], i) => { const n = el('div', 'stu-note n' + i); n.style.setProperty('--nc', c); n.style.setProperty('--rot', r + 'deg'); n.append(el('small', '', k), el('b', '', v)); stage.append(n); });
