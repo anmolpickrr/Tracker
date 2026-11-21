@@ -4,7 +4,14 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
-    id: '2026-11-22-3d', date: '2026-11-22', kind: 'new', who: 'all', go: 'studio', title: 'Characters in 3D, with dance moves',
+    id: '2026-11-22-hof-widget', date: '2026-11-22', kind: 'improved', who: 'all', title: 'The Hall of Fame, next to the clock',
+    what: 'A tiny animated character beside the clock celebrates whoever won an award or was a star last week, for everyone.',
+    does: 'It rotates every few seconds between award winners (Best Performer, Best Creative and more) and last week\'s stars, each doing a move, with sparkles for awards and a crown for Best Performer.',
+    how: 'Click it to see why they are celebrated, cheer for them, flip through everyone, edit your own character or, for Admins, give an award. Hover it to pause.',
+    changed: 'Studio is no longer in the menu or on the Overview; it is all in this small widget (and the full Hall of Fame page it links to).'
+  },
+  {
+    id: '2026-11-22-3d', date: '2026-11-22', kind: 'new', who: 'all', title: 'Characters in 3D, with dance moves',
     what: 'Your character is now a full 3D figure with hands, shoes and depth, and the Hall of Fame is a 3D desk with a retro computer.',
     does: 'Pick one of six looks (clay, vinyl toy, plush, toon, blocky, bean), trousers, shoes and cartoon gloves, and a signature move from 19 (wave, peace sign, dab, floss, robot, bhangra, moonwalk and more). The tools of your craft float around you: a typewriter for writers, a palette for designers, a camera and clapperboard for editors. Award winners get a crown, a trophy, a spotlight and confetti.',
     how: 'Open Studio. Hover a teammate to see their move, click to try another. On the desk, click the computer\'s knobs to change channel, click the person to change their move, and click the mug to make it jump. Edit yours under Make my character > Look and Moves.',
@@ -18,7 +25,7 @@ window.CO_WHATSNEW = [
     changed: 'Sounds and music never play without your permission, and the radio only plays on the Studio page when you press play.'
   },
   {
-    id: '2026-11-22-studio', date: '2026-11-22', kind: 'new', who: 'all', go: 'studio', title: 'Studio: your character and the Hall of Fame',
+    id: '2026-11-22-studio', date: '2026-11-22', kind: 'new', who: 'all', title: 'Studio: your character and the Hall of Fame',
     what: 'A new Studio page where the team is celebrated, and a clay-toy character for everyone that becomes your avatar across the dashboard.',
     does: 'Build your character (skin, face, hair, outfit, glasses, headwear and the tools of your craft, like headphones, a tablet or a clapperboard), or turn a photo into one with Gemini. The retro TV shows awards from the Creative Head and last week\'s stars, worked out from the sheets. You also get the podium, the awards wall, the whole crew and a reel of fresh deliveries.',
     how: 'Click your name at the bottom left (or Studio > Make my character). Pick parts, press Surprise me for ideas, add a tagline and save. On the TV, turn the knobs to change channel, and press Cheer to say well done.',

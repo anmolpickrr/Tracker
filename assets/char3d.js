@@ -326,18 +326,21 @@ function addFx(scene, f, fx, st) {
   return out;
 }
 
+// small widgets: a crown for Best Performer, nothing heavy
+function miniFx(f, list, st) { const g = new THREE.Group(); if ((list || []).some((x) => x.tag === 'best-performer' || x.crown)) { const cr = crown(st); cr.position.set(0, 0.5, 0); f.J.head.add(cr); } return g; }
 /* ---------- a single live figure (builder, spotlights) ---------- */
 export function view(el, cfg, opts) {
   const o = opts || {}, canvas = document.createElement('canvas'); canvas.className = 'c3d'; el.replaceChildren(canvas);
   const R = renderer(canvas), scene = new THREE.Scene(); scene.environment = env(R); scene.environmentIntensity = 0.6;
-  lights(scene); ground(scene);
-  const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 50); cam.position.set(0, 1.6, o.close ? 5.2 : 7.4); cam.lookAt(0, o.close ? 1.55 : 1.3, 0);
+  lights(scene); if (!o.mini) ground(scene);
+  const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 50); if (o.mini) { cam.position.set(0, 1.4, 5.3); cam.lookAt(0, 1.3, 0); } else { cam.position.set(0, 1.6, o.close ? 5.2 : 7.4); cam.lookAt(0, o.close ? 1.55 : 1.3, 0); }
+  if (o.mini) R.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   let f = null, ring = null, fx = null, move = o.move || 'idle', t0 = performance.now(), last = t0, raf = 0, drag = null, rotY = o.rot || 0.35, alive = true, fxList = o.fx || [];
-  const setCfg = (c) => { if (f) { scene.remove(f.root); disposeTree(f.root); } if (ring) scene.remove(ring); if (fx) scene.remove(fx); f = build(c); scene.add(f.root); ring = propRing(f, o.props === false ? [] : f.cfg.gear, f.cfg.style); scene.add(ring); fx = addFx(scene, f, fxList, f.cfg.style); };
+  const setCfg = (c) => { if (f) { scene.remove(f.root); disposeTree(f.root); } if (ring) scene.remove(ring); if (fx) scene.remove(fx); f = build(c); scene.add(f.root); ring = propRing(f, o.props === false || o.mini ? [] : f.cfg.gear, f.cfg.style); scene.add(ring); fx = o.mini ? miniFx(f, fxList, f.cfg.style) : addFx(scene, f, fxList, f.cfg.style); };
   setCfg(cfg);
   const size = () => { const w = el.clientWidth || 300, h = el.clientHeight || 330; R.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); };
   const ro = new ResizeObserver(size); ro.observe(el); size();
-  canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, r: rotY, moved: false }; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointerdown', (e) => { if (o.mini) return; drag = { x: e.clientX, r: rotY, moved: false }; canvas.setPointerCapture(e.pointerId); });
   canvas.addEventListener('pointermove', (e) => { if (!drag) return; const dx = e.clientX - drag.x; if (Math.abs(dx) > 3) drag.moved = true; rotY = drag.r + dx * 0.012; });
   canvas.addEventListener('pointerup', () => { if (drag && !drag.moved && o.onTap) o.onTap(); drag = null; });
   const loop = (now) => {
@@ -354,7 +357,8 @@ export function view(el, cfg, opts) {
   raf = requestAnimationFrame(loop);
   const api = {
     set(c) { setCfg(c); }, play(m) { move = m || 'idle'; t0 = performance.now(); }, get move() { return move; },
-    fx(list) { fxList = list || []; if (fx) scene.remove(fx); fx = addFx(scene, f, fxList, f.cfg.style); },
+    show(c, m, list) { fxList = list || []; setCfg(c); move = m || 'idle'; t0 = performance.now(); },
+    fx(list) { fxList = list || []; if (fx) scene.remove(fx); fx = o.mini ? miniFx(f, fxList, f.cfg.style) : addFx(scene, f, fxList, f.cfg.style); },
     dispose() { alive = false; cancelAnimationFrame(raf); ro.disconnect(); R.dispose(); R.forceContextLoss && R.forceContextLoss(); }
   };
   return api;

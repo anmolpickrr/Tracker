@@ -31,7 +31,7 @@
   // Access management, the activity log and live team activity: the owner and everyone with the Admin role.
   const isAdmin = () => isOwner() || !!(A.user && A.user.role === 'Admin');
   const perm = (k) => A.mode === 'key' || !!(A.user && (A.user.owner || (A.user.perms ? !!A.user.perms[k] : (k === 'edit' ? RANK[A.user.role] >= 2 : k === 'export' || k === 'fasty' ? true : RANK[A.user.role] >= 3))));
-  const pageOk = (t) => { if (t === 'whatsnew') return true; /* What's new is for everyone, whatever their role */ if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access' && t !== 'issues'; if (t === 'access') return isAdmin(); if (t === 'issues' && isAdmin()) return true; if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
+  const pageOk = (t) => { if (t === 'whatsnew') return true; /* What's new is for everyone, whatever their role */ if (t === 'studio') return A.mode === 'auth' && !!A.user; /* the Hall of Fame is for everyone signed in */ if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access' && t !== 'issues'; if (t === 'access') return isAdmin(); if (t === 'issues' && isAdmin()) return true; if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
 
   const S = { status: 'idle', error: '', tasks: null, team: null, teamRaw: [], sources: {}, generatedAt: null, loadedAt: null };
@@ -3992,7 +3992,7 @@
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   /* Section picker: which parts of the dashboard a person can open (one, several or all). A dropdown with checkboxes;
      My work is always included. Used when adding someone, approving a request, giving access back and editing access. */
-  const SECTIONS = [['mine', 'My work'], ['today', 'Overview'], ['standup', 'Stand-up'], ['tasks', 'Tasks'], ['notes', 'Notes'], ['team', 'Team'], ['reports', 'Reports'], ['brands', 'Brands'], ['studio', 'Studio'], ['health', 'Data health'], ['issues', 'Issues']];
+  const SECTIONS = [['mine', 'My work'], ['today', 'Overview'], ['standup', 'Stand-up'], ['tasks', 'Tasks'], ['notes', 'Notes'], ['team', 'Team'], ['reports', 'Reports'], ['brands', 'Brands'], ['health', 'Data health'], ['issues', 'Issues']];
   const DEF_PAGES = (role) => SECTIONS.map((x) => x[0]).filter((k) => role === 'Admin' || (k !== 'health' && k !== 'issues'));
   const samePages = (a, b) => a.length === b.length && a.every((k) => b.includes(k));
   function secPicker(pages, onChange) {
@@ -4097,7 +4097,7 @@
       // [key, label, what View means, what Edit means (or '' when there is nothing to edit)]
       const ROWS = [['mine', 'My work', 'Their own tasks and to-dos (always on)', ''], ['today', 'Overview', 'Team numbers, Needs attention and charts', ''], ['standup', 'Stand-up', 'Stand-up cards and the Day plan', ''],
         ['tasks', 'Tasks', 'The task list (what they can edit: Tasks tab)', ''], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
-        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['studio', 'Studio', 'Hall of Fame, awards, the crew and cheers (everyone keeps their own character)', ''], ['health', 'Data health', 'Sheet checks and fixes needed', ''], ['issues', 'Issues', 'Errors and issues found automatically', 'Retry, fix and resolve issues']];
+        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', ''], ['issues', 'Issues', 'Errors and issues found automatically', 'Retry, fix and resolve issues']];
       const level = (k) => k === 'pricing' ? (st.pricing ? 'edit' : 'hidden') : k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
         : !st.pages.has(k) ? 'hidden' : (k === 'team' && st.team) || (k === 'issues' && st.issueFix) ? 'edit' : 'view';
       const setLevel = (k, v) => {

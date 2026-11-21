@@ -97,7 +97,7 @@ window.CO_STUDIO = function (api) {
 
   /* ---------- loading ---------- */
   ST.load = async (force) => {
-    if (A.mode !== 'auth' || !A.user || ST.busy || (!force && ST.loaded && Date.now() - ST.at < 300000)) return;
+    if (A.mode !== 'auth' || !A.user || ST.busy || (!force && ST.at && Date.now() - ST.at < (ST.loaded ? 300000 : 60000))) return;
     ST.busy = true;
     try {
       const b = await post({ action: 'studio' }); ST.profiles = b.profiles || []; ST.awards = b.awards || []; ST.cheers = b.cheers || {}; ST.canAward = !!b.canAward; ST.loaded = true; ST.at = Date.now(); ST.err = '';
@@ -105,7 +105,7 @@ window.CO_STUDIO = function (api) {
       if (SND && b.myPrefs && b.myPrefs.asked && !ST.prefsSynced) SND.set(b.myPrefs, false);
       ST.prefsSynced = true;
     }
-    catch (e) { ST.err = e.message; }
+    catch (e) { ST.err = e.message; ST.at = Date.now(); if (/unknown_action/.test(e.message)) { ST.loaded = true; ST.old = true; } } // an older web app: the widget shows your own character until it updates
     ST.busy = false; renderAll();
   };
   setInterval(() => { if (A.mode === 'auth' && A.user && document.visibilityState === 'visible') ST.load(); }, 4000);
@@ -202,7 +202,7 @@ window.CO_STUDIO = function (api) {
   function updateTV(force) {
     if (ST.stage) { const sc = spotCard(); if (force || sc.key !== ST.spotKey) { ST.spotKey = sc.key; ST.stage.spot(sc.card, sc.cfg); } }
     else { const old = document.querySelector('.stu-stage .stu-tv'); if (old) old.replaceWith(tv(false)); else dash.draw('studio'); }
-    dash.draw('studio-strip');
+    dash.draw('studio-strip'); dash.draw('hof');
   }
   function restart() { clearInterval(ST.timer); ST.timer = setInterval(() => { if (document.visibilityState !== 'visible' || reduce()) return; const n = channels().list.length; if (n < 2) return; if (document.querySelector('.stu-tv:hover, .stu-3dstage:hover')) return; ST.ch = (ST.ch + 1) % n; ST.flip = true; updateTV(); }, 8000); }
   restart();
@@ -314,6 +314,87 @@ window.CO_STUDIO = function (api) {
       lane.append(track); fr.append(lane); box.append(fr);
     }
   });
+
+  /* ---------- Hall of Fame widget (top bar, next to the clock) ----------
+     A tiny animated character, no box around it: whoever is being celebrated (awards first, then last week's stars),
+     rotating every few seconds. Click it for the details, a cheer, your own character and (Admins) awards. */
+  const HOF = { i: 0, el: null, fig: null, tx: null, view: null, key: '', timer: 0, pop: null };
+  function hofList() {
+    const { list } = channels(); if (list.length) return list;
+    const me = myDesigner() || (A.user && A.user.name) || 'You', p = myProf();
+    return [{ key: 'hi', kind: 'hi', title: p && (p.char || p.img) ? 'Hall of Fame' : 'Make your character', who: me, line: p && (p.char || p.img) ? 'Awards and weekly stars show up here.' : 'Click to build your 3D character.', tag: 'star' }];
+  }
+  function hofItem() { const L = hofList(); if (HOF.i >= L.length) HOF.i = 0; return { c: L[HOF.i], n: L.length }; }
+  function hofPaint(anim) {
+    if (!HOF.el) return;
+    const { c, n } = hofItem(), p = profOf(c.who) || (c.kind === 'hi' ? myProf() : null), tg = tagOf(c.tag);
+    const color = c.kind === 'award' ? tg[1] : '#ddff00', move = (p && p.char && p.char.move) || (c.kind === 'award' ? 'victory' : c.kind === 'hi' ? 'wave' : 'disco');
+    const cfg = p && p.char ? p.char : MASCOT, fxl = c.kind === 'award' ? [{ tag: c.tag }] : [];
+    const key = c.key + '|' + JSON.stringify(cfg) + (p && p.img ? p.img : '') + (D3 ? '3d' : '');
+    HOF.el.style.setProperty('--hc', color); HOF.el.classList.toggle('is-award', c.kind === 'award');
+    HOF.el.setAttribute('aria-label', 'Hall of Fame: ' + (c.kind === 'hi' ? c.title : c.title + ', ' + c.who) + '. Click for details.');
+    if (key !== HOF.key) {
+      HOF.key = key;
+      if (anim && !reduce()) { HOF.el.classList.remove('swap'); void HOF.el.offsetWidth; HOF.el.classList.add('swap'); }
+      const photo = p && p.img && imgData(p.img);
+      if (D3 && !photo) { if (!HOF.view) { HOF.fig.replaceChildren(); HOF.view = D3.view(HOF.fig, cfg, { mini: true, move, fx: fxl }); } else HOF.view.show(cfg, move, fxl); }
+      else { if (HOF.view) { HOF.view.dispose(); HOF.view = null; } HOF.fig.replaceChildren(); if (photo) { const im = new Image(); im.src = photo; im.alt = ''; HOF.fig.append(im); HOF.fig.classList.add('pic'); } else { HOF.fig.classList.remove('pic'); const snapPic = p && p.snap && imgData(p.snap); if (snapPic) { const im = new Image(); im.src = snapPic; im.alt = ''; HOF.fig.append(im); HOF.fig.classList.add('pic'); } else HOF.fig.innerHTML = CH.svg(Object.assign({}, cfg, { gear: [] }), { anim: !reduce(), noBg: true, label: c.who }); } }
+    }
+    HOF.tag.textContent = c.title; HOF.name.textContent = c.kind === 'hi' ? first(c.who) === 'You' ? 'You' : first(c.who) : c.who;
+    HOF.dots.replaceChildren(); if (n > 1) for (let k = 0; k < Math.min(n, 6); k++) HOF.dots.append(el('i', k === HOF.i % 6 ? 'on' : ''));
+    if (HOF.pop && HOF.pop.isConnected) hofPopPaint();
+  }
+  function hofNext(d) { const n = hofList().length; if (n < 2) return; HOF.i = (HOF.i + (d || 1) + n) % n; hofPaint(true); }
+  dash.draw('hof', (box) => {
+    if (A.mode !== 'auth' || !A.user) { box.replaceChildren(); HOF.el = null; if (HOF.view) { HOF.view.dispose(); HOF.view = null; } HOF.key = ''; return; }
+    if (!ST.loaded) ST.load();
+    if (!HOF.el) {
+      HOF.el = el('button', 'hof-w'); HOF.el.type = 'button';
+      HOF.fig = el('span', 'hof-fig'); const sp = el('span', 'hof-sp'); for (let k = 0; k < 4; k++) sp.append(el('i'));
+      const tx = el('span', 'hof-tx'); HOF.tag = el('small', 'hof-tag'); HOF.name = el('b', 'hof-name'); HOF.dots = el('span', 'hof-dots'); tx.append(HOF.tag, HOF.name, HOF.dots);
+      HOF.el.append(sp, HOF.fig, tx);
+      HOF.el.addEventListener('click', (e) => { e.stopPropagation(); hofPopToggle(); });
+      HOF.el.addEventListener('wheel', (e) => { if (Math.abs(e.deltaY) > 10) { e.preventDefault(); hofNext(e.deltaY > 0 ? 1 : -1); } }, { passive: false });
+      clearInterval(HOF.timer); HOF.timer = setInterval(() => { if (document.hidden || reduce() || (HOF.pop && HOF.pop.isConnected) || (HOF.el && HOF.el.matches(':hover'))) return; hofNext(1); }, 6500);
+      // the 3D figure loads quietly a few seconds after the dashboard opens
+      setTimeout(() => { want3d().then(() => { HOF.key = ''; hofPaint(false); }); }, 2500);
+    }
+    if (HOF.el.parentElement !== box) box.replaceChildren(HOF.el);
+    hofPaint(false);
+  });
+  // details: a small popover under the widget
+  function hofPopToggle() { if (HOF.pop && HOF.pop.isConnected) { hofPopClose(); return; } HOF.pop = el('div', 'hof-pop'); HOF.pop.setAttribute('role', 'dialog'); HOF.pop.setAttribute('aria-label', 'Hall of Fame'); document.body.append(HOF.pop); hofPopPaint(); requestAnimationFrame(() => HOF.pop && HOF.pop.classList.add('in')); }
+  function hofPopClose() { if (HOF.popView) { HOF.popView.dispose(); HOF.popView = null; } if (HOF.pop) HOF.pop.remove(); HOF.pop = null; }
+  document.addEventListener('click', (e) => { if (HOF.pop && !HOF.pop.contains(e.target) && !e.target.closest('.hof-w') && !e.target.closest('dialog')) hofPopClose(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && HOF.pop) hofPopClose(); });
+  function hofPopPaint() {
+    const pop = HOF.pop; if (!pop) return;
+    const r = HOF.el.getBoundingClientRect(); pop.style.top = (r.bottom + 10) + 'px'; pop.style.left = Math.max(12, Math.min(window.innerWidth - 332, r.left + r.width / 2 - 160)) + 'px';
+    const { c, n } = hofItem(), p = profOf(c.who) || (c.kind === 'hi' ? myProf() : null), tg = tagOf(c.tag), cfg = p && p.char ? p.char : MASCOT, move = (p && p.char && p.char.move) || (c.kind === 'award' ? 'victory' : 'wave');
+    if (!HOF.popFig) HOF.popFig = el('div', 'hof-pop-fig');
+    pop.replaceChildren();
+    const photo = p && p.img && imgData(p.img);
+    if (D3 && !photo) { if (!HOF.popView || !HOF.popFig.isConnected) { if (HOF.popView) HOF.popView.dispose(); HOF.popFig.replaceChildren(); HOF.popView = null; } }
+    pop.append(HOF.popFig);
+    if (D3 && !photo) { if (!HOF.popView) HOF.popView = D3.view(HOF.popFig, cfg, { move, fx: c.kind === 'award' ? [{ tag: c.tag }] : [], props: true }); else HOF.popView.show(cfg, move, c.kind === 'award' ? [{ tag: c.tag }] : []); }
+    else { if (HOF.popView) { HOF.popView.dispose(); HOF.popView = null; } HOF.popFig.replaceChildren(figure(p || { char: MASCOT }, { anim: true, label: c.who })); }
+    const tx = el('div', 'hof-pop-tx');
+    const chip = el('span', 'stu-tag', c.title); chip.style.setProperty('--tag', c.kind === 'award' ? tg[1] : '#ddff00'); chip.style.setProperty('--tag-ink', c.kind === 'award' ? tg[2] : '#1e1e1e');
+    tx.append(chip, el('b', 'hof-pop-name', c.kind === 'hi' ? (p && (p.char || p.img) ? 'Nothing to celebrate yet' : 'Make your character') : c.who), el('p', 'hof-pop-line', c.line || ''));
+    const row = el('div', 'hof-pop-row');
+    if (c.kind !== 'hi') row.append(cheerBtn(c.key, true));
+    if (c.link) { const a = el('a', 'stu-link', 'See the creative'); a.href = c.link; a.target = '_blank'; a.rel = 'noopener'; row.append(a); }
+    if (n > 1) { const nav = el('span', 'hof-pop-nav'); const pv = btn('‹', 'hof-arrow', () => hofNext(-1)); pv.setAttribute('aria-label', 'Previous'); const nx = btn('›', 'hof-arrow', () => hofNext(1)); nx.setAttribute('aria-label', 'Next'); nav.append(pv, el('small', '', (HOF.i + 1) + ' of ' + n), nx); row.append(nav); }
+    tx.append(row);
+    const foot = el('div', 'hof-pop-foot');
+    const mine = myProf();
+    foot.append(btn(mine && (mine.char || mine.img) ? 'Edit my character' : 'Make my character', 'co-btn sm primary', () => { hofPopClose(); openBuilder(); }));
+    if (ST.canAward) foot.append(btn('Give an award', 'co-btn sm', () => { hofPopClose(); openAward(); }));
+    foot.append(btn('Hall of Fame', 'co-btn sm ghost', () => { hofPopClose(); dash.setParams({ tab: 'studio' }); }));
+    if (ST.old) foot.append(el('p', 'co-note hof-old', 'The web app is updating; awards appear in a few minutes.'));
+    pop.append(tx, foot);
+  }
+  window.addEventListener('resize', () => { if (HOF.pop) hofPopPaint(); });
 
   /* ---------- Overview strip ---------- */
   dash.draw('studio-strip', (box) => {

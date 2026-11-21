@@ -83,7 +83,6 @@ function allowed_(u, action) {
   if (action === 'issueAct') return isAdminUser_(u) || (p.pages.indexOf('issues') >= 0 && !!p.issueFix);
   // Studio: everyone shows their own character; the page (awards, cheers) follows the section switch; awards are Admins'.
   if (action === 'awardSave' || action === 'awardDelete') return isAdminUser_(u);
-  if (action === 'cheer') return p.pages.indexOf('studio') >= 0;
   if (action === 'setMember') return p.team;
   if (action === 'health') return p.pages.indexOf('health') >= 0;
   if (action === 'assist' || action === 'speak') return p.fasty;
@@ -2933,11 +2932,9 @@ function studioTab_(name, head) { const ss = accessBook_(); let sh = ss.getSheet
 function studioRows_(name, head) { const sh = studioTab_(name, head), last = sh.getLastRow(); return { sh: sh, rows: last < 2 ? [] : sh.getRange(2, 1, last - 1, head.length).getValues() }; }
 function studio_(u) {
   const pr = studioRows_('Profiles', PROF_HEAD).rows.map(function (r) { return { email: String(r[0]).toLowerCase(), who: String(r[1] || ''), char: parseJson_(r[2], null), img: String(r[3] || ''), tagline: String(r[4] || ''), updated: iso_(r[5]), snap: String(r[7] || '') }; }).filter(function (x) { return x.email; });
-  const p = permsOf_(u), page = isAdminUser_(u) || p.pages.indexOf('studio') >= 0;
   const mineRow = studioRows_('Profiles', PROF_HEAD).rows.filter(function (r) { return String(r[0]).toLowerCase() === u.email; })[0];
   const out = { ok: true, profiles: pr, canAward: isAdminUser_(u), myPrefs: mineRow ? parseJson_(mineRow[6], null) : null };
-  if (!page) return out;
-  const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd');
+  const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd'); // the Hall of Fame is for everyone signed in
   out.awards = studioRows_('Awards', AWARD_HEAD).rows.filter(function (r) { return r[0] && !(r[9] === true || String(r[9]) === 'TRUE'); }).map(function (r) {
     const until = r[6] instanceof Date ? Utilities.formatDate(r[6], IST, 'yyyy-MM-dd') : String(r[6] || '');
     return { id: String(r[0]), who: String(r[1]), title: String(r[2]), tag: String(r[3]), note: String(r[4] || ''), link: String(r[5] || ''), until: until, by: String(r[7]).toLowerCase(), at: iso_(r[8]) };
