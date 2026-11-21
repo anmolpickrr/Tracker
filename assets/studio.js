@@ -1,0 +1,398 @@
+/* Studio (Nov 2026): the team's creative corner. Everyone makes a character (built here, or from a photo with Gemini)
+   that appears as their avatar across the dashboard. The Studio page celebrates the work: a retro TV "Hall of Fame"
+   that flips through this week's spotlights (Admins' awards first, then last week's stars, worked out from the
+   sheets), a podium, the awards wall with cheers, the crew and a reel of fresh deliveries. A compact strip of it
+   sits at the top of the Overview. Started by app.js with its helpers (window.CO_STUDIO(api)). */
+window.CO_STUDIO = function (api) {
+  'use strict';
+  const { A, S, dash, CO, post, toast, LS, isAdmin, pageOk, myDesigner, EF, renderAll } = api;
+  const CH = window.CO_CHAR;
+  const ST = { profiles: [], awards: [], cheers: {}, canAward: false, loaded: false, busy: false, at: 0, imgs: new Map(), ch: 0, timer: 0 };
+  const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+  const btn = (t, c, fn) => { const b = el('button', c, t); b.type = 'button'; if (fn) b.addEventListener('click', fn); return b; };
+  const first = (n) => String(n || '').split(' ')[0];
+  const reduce = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- awards: the presets and their colours ---------- */
+  const TAGS = {
+    'best-performer': ['Best Performer', '#ddff00', '#1e1e1e', 'For outstanding work all round'],
+    'best-creative': ['Best Creative', '#685bc7', '#ffffff', 'For the creative everyone is talking about'],
+    'top-contributor': ['Top Contributor', '#ff5a26', '#1e1e1e', 'For carrying the most work'],
+    'rising-star': ['Rising Star', '#e86aa6', '#1e1e1e', 'For growing fast'],
+    'client-favourite': ['Client Favourite', '#8fd3ff', '#1e1e1e', 'For work the client loved'],
+    'speed-star': ['Speed Star', '#f5c542', '#1e1e1e', 'For quick, clean turnarounds'],
+    'team-player': ['Team Player', '#2fb37a', '#1e1e1e', 'For always helping others'],
+    'idea-machine': ['Idea Machine', '#c9b6ff', '#1e1e1e', 'For the best ideas'],
+    custom: ['Your own award', '#f0eee9', '#1e1e1e', 'Name it yourself']
+  };
+  const tagOf = (k) => TAGS[k] || TAGS.custom;
+
+  /* ---------- profiles and faces ---------- */
+  const profOf = (name) => { if (!name) return null; const n = String(name).toLowerCase(); return ST.profiles.find((p) => p.who && p.who.toLowerCase() === n) || ST.profiles.find((p) => p.email === n) || null; };
+  const myProf = () => (A.user ? ST.profiles.find((p) => p.email === A.user.email) || null : null);
+  function imgData(id) {
+    if (!id) return null; if (ST.imgs.has(id)) return ST.imgs.get(id);
+    let v = null; try { v = localStorage.getItem('co.cimg.' + id); } catch (e) { v = null; }
+    if (v) { ST.imgs.set(id, v); return v; }
+    ST.imgs.set(id, null);
+    post({ action: 'charImage', id }).then((b) => { ST.imgs.set(id, b.data); try { localStorage.setItem('co.cimg.' + id, b.data); } catch (e) { /* storage full */ } renderAll(); }).catch(() => { /* shown as built */ });
+    return null;
+  }
+  // A small face for avatars everywhere (null: initials as before)
+  const face = (name) => { const p = profOf(name); if (!p) return null; if (p.img) { const d = imgData(p.img); if (d) return d; } return p.char ? CH.url(p.char, 'head') : null; };
+  window.CO_FACE = face;
+  // The full figure, as an element
+  function figure(p, opts) {
+    const o = opts || {}, w = el('div', 'stu-fig' + (o.cls ? ' ' + o.cls : ''));
+    if (p && p.img && imgData(p.img)) { const im = new Image(); im.src = imgData(p.img); im.alt = o.label || ''; im.decoding = 'async'; w.classList.add('photo'); w.append(im); }
+    else if (p && p.char) w.innerHTML = CH.svg(p.char, { anim: !!o.anim && !reduce(), label: o.label });
+    else {
+      // no character yet: a bright initials card (never a made-up face)
+      const cols = [['#ddff00', '#1e1e1e'], ['#685bc7', '#fff'], ['#ff5a26', '#1e1e1e'], ['#c9b6ff', '#1e1e1e'], ['#8fd3ff', '#1e1e1e'], ['#f5c542', '#1e1e1e']];
+      let h = 0; for (const ch of String(o.label || '?')) h = (h * 31 + ch.charCodeAt(0)) >>> 0; const c = cols[h % cols.length];
+      w.classList.add('ghost'); w.style.setProperty('--gc', c[0]); w.style.setProperty('--gi', c[1]);
+      w.append(el('b', 'stu-ghost-i', String(o.label || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase()));
+    }
+    return w;
+  }
+
+  /* ---------- loading ---------- */
+  ST.load = async (force) => {
+    if (A.mode !== 'auth' || !A.user || ST.busy || (!force && ST.loaded && Date.now() - ST.at < 300000)) return;
+    ST.busy = true;
+    try { const b = await post({ action: 'studio' }); ST.profiles = b.profiles || []; ST.awards = b.awards || []; ST.cheers = b.cheers || {}; ST.canAward = !!b.canAward; ST.loaded = true; ST.at = Date.now(); ST.err = ''; }
+    catch (e) { ST.err = e.message; }
+    ST.busy = false; renderAll();
+  };
+  setInterval(() => { if (A.mode === 'auth' && A.user && document.visibilityState === 'visible') ST.load(); }, 4000);
+
+  /* ---------- the week, from the sheets ---------- */
+  const mondayOf = (iso) => { let d = iso; while (new Date(d + 'T00:00:00Z').getUTCDay() !== 1) d = CO.addDays(d, -1); return d; };
+  function weekStats(from, to) {
+    const rows = (CO.rows() || []).filter((r) => r.done && r.ddate && r.ddate >= from && r.ddate <= to && r.stage !== 'Rejected');
+    const by = new Map();
+    rows.forEach((r) => r.list.forEach((n) => { if (EF.hidden(n)) return; const x = by.get(n) || { name: n, tasks: 0, qty: 0, video: 0, statics: 0, days: new Set(), brands: new Set() }; x.tasks++; x.qty += r.qty || 1; if (CO.VIDEO.test(r.type || '')) x.video += r.qty || 1; else x.statics += r.qty || 1; x.days.add(r.ddate); x.brands.add(r.brand); by.set(n, x); }));
+    return { rows, people: [...by.values()] };
+  }
+  function stars() {
+    const t = CO.today(), m = mondayOf(t), from = CO.addDays(m, -7), to = CO.addDays(m, -1), w = weekStats(from, to), P = w.people;
+    const top = (k) => { const s = P.slice().sort((a, b) => b[k] - a[k] || b.qty - a.qty); return s[0] && s[0][k] > 0 ? s[0] : null; };
+    const out = [];
+    const add = (k, title, x, line) => { if (x) out.push({ key: 'wk:' + from + ':' + k, kind: 'star', title, who: x.name, line, tag: k }); };
+    add('qty', 'Top shipper', top('qty'), (p) => p.qty + ' creatives delivered');
+    add('video', 'Video star', top('video'), (p) => p.video + ' videos delivered');
+    add('statics', 'Design machine', top('statics'), (p) => p.statics + ' statics and designs');
+    const streak = P.slice().sort((a, b) => b.days.size - a.days.size || b.qty - a.qty)[0]; if (streak && streak.days.size >= 3) add('days', 'Every-day shipper', streak, (p) => 'Delivered on ' + p.days.size + ' days');
+    const wide = P.slice().sort((a, b) => b.brands.size - a.brands.size || b.qty - a.qty)[0]; if (wide && wide.brands.size >= 3) add('brands', 'Many-brand hero', wide, (p) => p.brands.size + ' brands served');
+    out.forEach((s) => { const p = P.find((x) => x.name === s.who); s.line = s.line(p); });
+    const podium = P.slice().sort((a, b) => b.qty - a.qty || b.tasks - a.tasks).slice(0, 3);
+    return { from, to, list: out, podium, total: w.rows.reduce((a, r) => a + (r.qty || 1), 0), tasks: w.rows.length };
+  }
+  const span = (a, b) => CO.fmtDate(a) + ' – ' + CO.fmtDate(b);
+
+  /* ---------- cheers ---------- */
+  function cheerBtn(key, small) {
+    const c = ST.cheers[key] || { n: 0, mine: false }, b = btn('', 'stu-cheer' + (c.mine ? ' on' : '') + (small ? ' sm' : ''));
+    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11l4.5-7a1.6 1.6 0 0 1 2.8 1.5L12.5 9H18a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 16.8 20H9a2 2 0 0 1-2-2z"/><path d="M3 11h4v9H3z"/></svg>';
+    const n = el('b', '', c.n ? String(c.n) : ''); b.append(n, el('span', 'stu-cheer-t', c.mine ? 'Cheered' : 'Cheer'));
+    b.setAttribute('aria-pressed', String(!!c.mine)); b.title = c.mine ? 'You cheered this. Click to undo.' : 'Cheer for this';
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation(); const cur = ST.cheers[key] || { n: 0, mine: false, who: [] }, on = !cur.mine;
+      ST.cheers[key] = Object.assign({}, cur, { mine: on, n: Math.max(0, cur.n + (on ? 1 : -1)) });
+      if (on) burst(b); dash.draw('studio'); dash.draw('studio-strip');
+      try { await post({ action: 'cheer', key }); } catch (err) { ST.cheers[key] = cur; toast('Could not cheer: ' + err.message, true); dash.draw('studio'); }
+    });
+    return b;
+  }
+  // a little confetti burst from an element
+  function burst(from, n) {
+    if (reduce()) return; const r = from.getBoundingClientRect(), cols = ['#ddff00', '#685bc7', '#ff5a26', '#e86aa6', '#8fd3ff', '#f5c542'];
+    for (let i = 0; i < (n || 18); i++) {
+      const s = el('i', 'stu-conf'); s.style.left = (r.left + r.width / 2) + 'px'; s.style.top = (r.top + r.height / 2) + 'px'; s.style.background = cols[i % cols.length];
+      const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 80; s.style.setProperty('--dx', Math.cos(a) * d + 'px'); s.style.setProperty('--dy', (Math.sin(a) * d - 40) + 'px'); s.style.setProperty('--r', (Math.random() * 720 - 360) + 'deg');
+      document.body.append(s); setTimeout(() => s.remove(), 1100);
+    }
+  }
+
+  /* ---------- the channels on the TV ---------- */
+  function channels() {
+    const st = stars(), list = [];
+    ST.awards.slice().sort((a, b) => String(b.at).localeCompare(String(a.at))).forEach((a) => list.push({ key: 'aw:' + a.id, kind: 'award', title: a.title, who: a.who, line: a.note || tagOf(a.tag)[3], tag: a.tag, link: a.link }));
+    st.list.forEach((s) => list.push(s));
+    return { list, st };
+  }
+  function tvScreen(ch, i, n) {
+    const scr = el('div', 'stu-scr');
+    if (!ch) { scr.append(el('p', 'stu-scr-empty', 'Hall of Fame'), el('small', 'stu-scr-sub', 'Awards and last week\'s stars show here.')); return scr; }
+    const t = tagOf(ch.tag), p = profOf(ch.who);
+    const fig = figure(p, { anim: true, label: ch.who, cls: 'on-tv' });
+    const tx = el('div', 'stu-scr-tx');
+    const chip = el('span', 'stu-tag', ch.kind === 'award' ? ch.title : ch.title); chip.style.setProperty('--tag', ch.kind === 'award' ? t[1] : '#ddff00'); chip.style.setProperty('--tag-ink', ch.kind === 'award' ? t[2] : '#1e1e1e');
+    tx.append(chip, el('b', 'stu-scr-name', ch.who), el('span', 'stu-scr-line', ch.line || ''));
+    const row = el('div', 'stu-scr-act'); row.append(cheerBtn(ch.key)); if (ch.link) { const a = el('a', 'stu-link', 'See the creative'); a.href = ch.link; a.target = '_blank'; a.rel = 'noopener'; row.append(a); } tx.append(row);
+    scr.append(fig, tx, el('span', 'stu-ch', 'CH ' + String(i + 1).padStart(2, '0') + ' / ' + String(n).padStart(2, '0')));
+    return scr;
+  }
+  function tv(compact) {
+    const { list } = channels(), n = list.length; if (ST.ch >= n) ST.ch = 0;
+    const box = el('div', 'stu-tv' + (compact ? ' compact' : ''));
+    const shell = el('div', 'stu-shell'), bezel = el('div', 'stu-bezel'), glass = el('div', 'stu-glass');
+    glass.append(tvScreen(list[ST.ch], ST.ch, n), el('i', 'stu-scan'));
+    bezel.append(glass); shell.append(bezel);
+    const panel = el('div', 'stu-panel');
+    const knob = (dir, label) => { const k = btn('', 'stu-knob ' + dir, () => { if (!n) return; ST.ch = (ST.ch + (dir === 'next' ? 1 : n - 1)) % n; ST.flip = true; dash.draw('studio'); dash.draw('studio-strip'); restart(); }); k.setAttribute('aria-label', label); return k; };
+    const vents = el('span', 'stu-vents'); for (let i = 0; i < 4; i++) vents.append(el('i'));
+    panel.append(vents, el('span', 'stu-led' + (n ? ' on' : '')), knob('prev', 'Previous spotlight'), knob('next', 'Next spotlight'));
+    shell.append(panel); box.append(shell);
+    if (ST.flip) { glass.classList.add('flip'); ST.flip = false; }
+    return box;
+  }
+  function restart() { clearInterval(ST.timer); ST.timer = setInterval(() => { if (document.visibilityState !== 'visible' || reduce()) return; const n = channels().list.length; if (n < 2) return; if (document.querySelector('.stu-tv:hover')) return; ST.ch = (ST.ch + 1) % n; ST.flip = true; dash.draw('studio'); dash.draw('studio-strip'); }, 7000); }
+  restart();
+
+  /* ---------- Studio page ---------- */
+  const people = () => (S.team || []).filter((m) => m.status !== 'Inactive' && !EF.hidden(m.name)).map((m) => m.name).sort((a, b) => a.localeCompare(b));
+  dash.draw('studio', (box) => {
+    if (A.mode !== 'auth' || !A.user) { box.replaceChildren(); return; }
+    if (!ST.loaded) { box.replaceChildren(el('p', 'co-note', ST.err ? 'Could not load the Studio: ' + ST.err : 'Opening the Studio…')); ST.load(); return; }
+    if (CO.notReady(box, 'box')) return;
+    box.replaceChildren();
+    const { st } = channels(), t = CO.today(), wk = weekStats(mondayOf(t), t);
+    // hero: grid paper, the TV, sticky notes with the week in numbers, a few props
+    const hero = el('section', 'stu-hero');
+    const notes = [
+      ['ctrl + s', wk.rows.reduce((a, r) => a + (r.qty || 1), 0) + ' creatives shipped this week', '#f5e663', -6],
+      ['ctrl + z', (CO.rows() || []).filter((r) => r.open && r.due === 'overdue').length + ' late tasks to rescue', '#685bc7', 5],
+      ['last week', st.total + ' creatives · ' + st.tasks + ' tasks', '#e86aa6', 4],
+      ['crew', ST.profiles.filter((p) => p.char || p.img).length + ' of ' + people().length + ' made their character', '#8fd3ff', -4]
+    ];
+    const heroL = el('div', 'stu-hero-tx');
+    const h = el('h2', 'stu-title'); h.innerHTML = '<span>Hall of</span> <em>fame</em>';
+    heroL.append(h, el('p', 'stu-lead', 'Awards from the Creative Head and last week\'s stars, straight from the sheets. Turn the knobs to switch channel; cheer for anyone.'));
+    const acts = el('div', 'stu-hero-acts');
+    acts.append(btn(myProf() && (myProf().char || myProf().img) ? 'Edit my character' : 'Make my character', 'co-btn primary', openBuilder));
+    if (ST.canAward) acts.append(btn('Give an award', 'co-btn', () => openAward()));
+    heroL.append(acts);
+    const stage = el('div', 'stu-stage');
+    stage.append(tv(false));
+    notes.forEach(([k, v, c, r], i) => { const n = el('div', 'stu-note n' + i); n.style.setProperty('--nc', c); n.style.setProperty('--rot', r + 'deg'); n.append(el('small', '', k), el('b', '', v)); stage.append(n); });
+    const cal = el('div', 'stu-cal'); const d = new Date(); cal.append(el('small', '', d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short' })), el('b', '', d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric' }))); stage.append(cal, el('i', 'stu-mug'));
+    hero.append(heroL, stage); box.append(hero);
+
+    // podium: last week by creatives
+    const pod = el('section', 'stu-sec stu-podium-sec');
+    const ph = el('div', 'stu-sec-h'); ph.append(el('h3', '', 'Last week\'s podium'), el('p', 'co-note', span(st.from, st.to) + ' · by creatives delivered (a shared task counts for each person).')); pod.append(ph);
+    if (!st.podium.length) pod.append(el('p', 'stu-empty', 'Nothing was delivered last week yet.'));
+    else {
+      const pd = el('div', 'stu-podium'); const order = [1, 0, 2];
+      order.forEach((i) => { const x = st.podium[i]; if (!x) return; const c = el('div', 'stu-pod p' + (i + 1)); c.append(figure(profOf(x.name), { anim: i === 0, label: x.name })); const blk = el('div', 'stu-blk'); blk.append(el('span', 'stu-rank', String(i + 1)), el('b', '', first(x.name)), el('small', '', x.qty + ' creatives · ' + x.tasks + ' tasks')); c.append(blk); pd.append(c); });
+      pod.append(pd);
+    }
+    // awards wall
+    const aw = el('section', 'stu-sec');
+    const ah = el('div', 'stu-sec-h'); ah.append(el('h3', '', 'Awards'), el('p', 'co-note', ST.awards.length ? 'Given by the Creative Head. Cheer to say well done.' : 'No awards on the wall yet.')); aw.append(ah);
+    const wall = el('div', 'stu-wall');
+    if (ST.canAward) { const add = btn('', 'stu-swatch add', () => openAward()); add.append(el('span', 'stu-plus', '+'), el('b', '', 'Give an award'), el('small', '', 'Pick a person and a tag')); wall.append(add); }
+    ST.awards.slice().sort((a, b) => String(b.at).localeCompare(String(a.at))).forEach((a, i) => {
+      const tg = tagOf(a.tag), c = el('article', 'stu-swatch'); c.style.setProperty('--tag', tg[1]); c.style.setProperty('--tag-ink', tg[2]);
+      const top = el('div', 'stu-sw-top'); top.append(el('small', 'stu-sw-brand', 'AWARD'), figure(profOf(a.who), { label: a.who, cls: 'mini' }));
+      const code = el('span', 'stu-sw-code', 'CO ' + String(a.at || '').slice(2, 10).replace(/-/g, '') + '-' + String(i + 1).padStart(2, '0'));
+      const bot = el('div', 'stu-sw-bot'); bot.append(code, el('b', 'stu-sw-title', a.title), el('span', 'stu-sw-who', a.who));
+      if (a.note) bot.append(el('p', 'stu-sw-note', a.note));
+      const row = el('div', 'stu-sw-act'); row.append(cheerBtn('aw:' + a.id, true));
+      if (a.link) { const l = el('a', 'stu-link', 'Creative'); l.href = a.link; l.target = '_blank'; l.rel = 'noopener'; row.append(l); }
+      if (ST.canAward) { row.append(btn('Edit', 'co-link', () => openAward(a))); }
+      bot.append(row); c.append(top, bot); wall.append(c);
+    });
+    aw.append(wall);
+    const two = el('div', 'stu-two'); two.append(pod, aw); box.append(two);
+
+    // the crew
+    const crew = el('section', 'stu-sec');
+    const chh = el('div', 'stu-sec-h'); chh.append(el('h3', '', 'The crew'), el('p', 'co-note', 'Everyone\'s character. Hover to say hi; yours has an Edit button.')); crew.append(chh);
+    const grid = el('div', 'stu-crew'), me = myDesigner();
+    const wkBy = new Map(wk.people.map((x) => [x.name, x]));
+    people().forEach((n) => {
+      const p = profOf(n), mine = n === me, c = el('article', 'stu-mate' + (mine ? ' me' : ''));
+      c.append(figure(p, { anim: true, label: n }));
+      const tx = el('div', 'stu-mate-tx'); tx.append(el('b', '', n), el('small', '', String(EF.role(n) || '').replace(/\s*\(not shown\)\s*/i, '') || 'Team'));
+      if (p && p.tagline) tx.append(el('q', 'stu-tagline', p.tagline));
+      const x = wkBy.get(n), meta = el('div', 'stu-mate-meta'); meta.append(el('span', '', x ? x.qty + ' this week' : 'Warming up'));
+      const badges = ST.awards.filter((a) => a.who === n); badges.slice(0, 3).forEach((a) => { const tg = tagOf(a.tag), s = el('span', 'stu-badge', a.title); s.style.setProperty('--tag', tg[1]); s.style.setProperty('--tag-ink', tg[2]); meta.append(s); });
+      tx.append(meta); c.append(tx);
+      if (mine) c.append(btn(p && (p.char || p.img) ? 'Edit' : 'Make yours', 'co-btn sm primary stu-mate-edit', openBuilder));
+      else if (!p) c.append(el('span', 'stu-mate-wait', 'Character coming soon'));
+      grid.append(c);
+    });
+    crew.append(grid); box.append(crew);
+
+    // fresh off the press: deliveries in the last 7 days
+    const fresh = (CO.rows() || []).filter((r) => r.done && r.ddate && r.ddate >= CO.addDays(t, -7) && r.ddate <= t).sort((a, b) => b.ddate.localeCompare(a.ddate)).slice(0, 24);
+    if (fresh.length) {
+      const fr = el('section', 'stu-sec stu-fresh');
+      const fh = el('div', 'stu-sec-h'); fh.append(el('h3', '', 'Fresh off the press'), el('p', 'co-note', 'Delivered in the last 7 days. Hover to pause.')); fr.append(fh);
+      const lane = el('div', 'stu-lane'), track = el('div', 'stu-track');
+      const card = (r) => { const c = el(r.link ? 'a' : 'div', 'stu-print'); if (r.link) { c.href = r.link; c.target = '_blank'; c.rel = 'noopener'; } const k = el('span', 'stu-print-k', r.type || 'Creative'); c.append(k, el('b', '', r.brand), el('span', 'stu-print-t', CO.topicText(r).slice(0, 60))); const w = el('span', 'stu-print-w'); (r.list || []).slice(0, 2).forEach((n) => w.append(CO.av(n))); w.append(el('small', '', (r.list || []).map(first).join(' + ') + ' · ' + (r.ddate === t ? 'today' : CO.fmtDate(r.ddate)))); c.append(w); return c; };
+      fresh.forEach((r) => track.append(card(r))); fresh.forEach((r) => { const c = card(r); c.setAttribute('aria-hidden', 'true'); c.tabIndex = -1; track.append(c); });
+      track.style.setProperty('--dur', Math.max(30, fresh.length * 5) + 's');
+      lane.append(track); fr.append(lane); box.append(fr);
+    }
+  });
+
+  /* ---------- Overview strip ---------- */
+  dash.draw('studio-strip', (box) => {
+    const off = (v) => { box.classList.toggle('off', v); if (v) box.replaceChildren(); return v; };
+    if (off(!(A.mode === 'auth' && A.user && pageOk('studio')))) return;
+    if (!ST.loaded) { ST.load(); off(true); return; }
+    if (CO.status && CO.status() !== 'ok') return;
+    off(false); box.replaceChildren();
+    const { list } = channels();
+    const tx = el('div', 'stu-strip-tx'); tx.append(el('small', '', 'Studio · Hall of Fame'), el('b', '', list.length ? list.length + (list.length === 1 ? ' spotlight' : ' spotlights') + ' this week' : 'Make your character'), el('span', 'co-note', list.length ? 'Awards and last week\'s stars. Cheer for your team.' : 'Build your clay character and see the crew.'));
+    const faces = el('div', 'stu-strip-faces');
+    list.slice(0, 5).forEach((c) => { const f = el('span', 'stu-strip-face'); f.append(figure(profOf(c.who), { label: c.who, cls: 'mini' })); const tg = tagOf(c.tag); const s = el('small', 'stu-badge', c.title); s.style.setProperty('--tag', c.kind === 'award' ? tg[1] : '#ddff00'); s.style.setProperty('--tag-ink', c.kind === 'award' ? tg[2] : '#1e1e1e'); f.append(s); f.title = c.who + ': ' + c.title; faces.append(f); });
+    const go = btn('Open Studio', 'co-btn primary', () => dash.setParams({ tab: 'studio' }));
+    box.append(tv(true), tx, faces, go);
+  });
+
+  /* ---------- character builder ---------- */
+  const BT = [['face', 'Face'], ['hair', 'Hair'], ['style', 'Outfit'], ['gear', 'Gear'], ['scene', 'Colours'], ['photo', 'From a photo']];
+  let B = null;
+  function openBuilder() {
+    const p = myProf(), role = EF.role(myDesigner() || '') || '';
+    B = { char: CH.norm(p && p.char ? p.char : CH.random(role)), image: p && p.img ? imgData(p.img) : null, imgId: p && p.img || '', useImg: !!(p && p.img), tab: 'face', tagline: p ? p.tagline : '', role, photoBusy: false, made: null };
+    let d = document.getElementById('stu-builder');
+    if (!d) { d = el('dialog', 'co-dialog stu-dlg'); d.id = 'stu-builder'; d.setAttribute('aria-label', 'Make your character'); document.body.append(d); d.addEventListener('close', () => { B = null; }); }
+    paintBuilder(); d.showModal();
+  }
+  function paintBuilder() {
+    const d = document.getElementById('stu-builder'); if (!d || !B) return;
+    d.replaceChildren();
+    const head = el('div', 'stu-dlg-h'); head.append(el('h2', '', 'Make your character'), btn('', 'stu-x', () => d.close())); head.lastChild.setAttribute('aria-label', 'Close'); head.lastChild.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    const body = el('div', 'stu-dlg-b');
+    // preview
+    const pv = el('div', 'stu-pv');
+    const fig = el('div', 'stu-fig big' + (B.useImg && B.image ? ' photo' : ''));
+    if (B.useImg && B.image) { const im = new Image(); im.src = B.image; im.alt = 'Your character'; fig.append(im); } else fig.innerHTML = CH.svg(B.char, { anim: !reduce(), label: 'Your character' });
+    const pvAct = el('div', 'stu-pv-act');
+    pvAct.append(btn('Surprise me', 'co-btn', (e) => { B.char = CH.random(B.role); B.useImg = false; burst(e.currentTarget, 10); paintBuilder(); }));
+    if (B.image) pvAct.append(btn(B.useImg ? 'Use the built one' : 'Use my photo one', 'co-btn ghost', () => { B.useImg = !B.useImg; paintBuilder(); }));
+    const tl = el('input', 'co-input stu-tl'); tl.placeholder = 'Your tagline (e.g. "Kerning is my cardio")'; tl.maxLength = 80; tl.value = B.tagline || ''; tl.setAttribute('aria-label', 'Tagline'); tl.addEventListener('input', () => { B.tagline = tl.value; });
+    pv.append(fig, pvAct, tl);
+    // controls
+    const ctl = el('div', 'stu-ctl');
+    const tabs = el('div', 'pm-seg stu-tabs'); tabs.setAttribute('role', 'tablist');
+    BT.forEach(([k, t]) => { const b = btn(t, 'pm-opt' + (B.tab === k ? ' on' : ''), () => { B.tab = k; paintBuilder(); }); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(B.tab === k)); tabs.append(b); });
+    const pane = el('div', 'stu-pane');
+    const set = (k, v) => { B.char[k] = v; B.useImg = false; paintBuilder(); };
+    const group = (title, key, list, crop) => {
+      const g = el('div', 'stu-grp'); g.append(el('h4', '', title)); const w = el('div', 'stu-opts');
+      list.forEach(([v, t]) => { const b = btn('', 'stu-opt' + (B.char[key] === v ? ' on' : ''), () => set(key, v)); const im = new Image(); im.src = CH.url(Object.assign({}, B.char, { [key]: v, gear: crop === 'head' ? [] : B.char.gear }), crop || 'head'); im.alt = ''; b.append(im, el('small', '', t)); b.setAttribute('aria-pressed', String(B.char[key] === v)); w.append(b); });
+      g.append(w); return g;
+    };
+    const swatches = (title, key, list) => {
+      const g = el('div', 'stu-grp'); g.append(el('h4', '', title)); const w = el('div', 'stu-sws');
+      list.forEach((c) => { const b = btn('', 'stu-sw' + (B.char[key] === c ? ' on' : ''), () => set(key, c)); b.style.background = c; b.setAttribute('aria-label', title + ' ' + c); b.setAttribute('aria-pressed', String(B.char[key] === c)); w.append(b); });
+      g.append(w); return g;
+    };
+    const O = CH.OPT;
+    if (B.tab === 'face') pane.append(swatches('Skin', 'skin', O.skin), group('Eyes', 'eyes', O.eyes), group('Mouth', 'mouth', O.mouth), group('Brows', 'brows', O.brows), group('Beard & more', 'face', O.face));
+    if (B.tab === 'hair') pane.append(group('Hairstyle', 'hair', O.hair), swatches('Hair colour', 'hairColor', O.hairColor));
+    if (B.tab === 'style') pane.append(group('Outfit', 'outfit', O.outfit, 'full'), swatches('Outfit colour', 'outfitColor', O.outfitColor), group('Glasses', 'glasses', O.glasses), group('On your head', 'head', O.head));
+    if (B.tab === 'gear') {
+      const g = el('div', 'stu-grp'), sug = CH.gearFor(B.role);
+      g.append(el('h4', '', 'Tools of the trade (up to 3)'), el('p', 'co-note', B.role ? 'Suggested for ' + B.role + ' first.' : 'Pick what you use every day.'));
+      const w = el('div', 'stu-chips');
+      O.gear.slice().sort((a, b) => (sug.includes(b[0]) ? 1 : 0) - (sug.includes(a[0]) ? 1 : 0)).forEach(([v, t]) => {
+        const on = B.char.gear.includes(v), b = btn((sug.includes(v) ? '★ ' : '') + t, 'stu-chip' + (on ? ' on' : ''), () => { const gl = B.char.gear.filter((x) => x !== v); if (!on) { gl.push(v); while (gl.length > 3) gl.shift(); } set('gear', gl); });
+        b.setAttribute('aria-pressed', String(on)); w.append(b);
+      });
+      g.append(w); pane.append(g);
+    }
+    if (B.tab === 'scene') pane.append(swatches('Background', 'bg', O.bg));
+    if (B.tab === 'photo') pane.append(photoPane());
+    ctl.append(tabs, pane);
+    body.append(pv, ctl);
+    const foot = el('div', 'stu-dlg-f');
+    const save = btn('Save my character', 'co-btn primary', async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = 'Saving…';
+      try {
+        const payload = { action: 'profileSave', who: myDesigner() || A.user.name || '', char: B.char, tagline: B.tagline || '' };
+        if (B.useImg && B.made) payload.image = B.made; else if (!B.useImg && B.imgId) payload.image = 'remove';
+        const r = await post(payload);
+        const i = ST.profiles.findIndex((x) => x.email === A.user.email); const np = Object.assign({ email: A.user.email }, r.profile);
+        if (B.useImg && B.made && np.img) { ST.imgs.set(np.img, B.made); try { localStorage.setItem('co.cimg.' + np.img, B.made); } catch (er) { /* full */ } }
+        if (i >= 0) ST.profiles[i] = np; else ST.profiles.push(np);
+        burst(b, 28); toast('Character saved. Say hi to the new you!'); document.getElementById('stu-builder').close(); renderAll();
+      } catch (err) { b.disabled = false; b.textContent = 'Save my character'; toast('Could not save: ' + err.message, true); }
+    });
+    foot.append(el('span', 'co-note', 'Your character is your avatar everywhere on the dashboard.'), btn('Cancel', 'co-btn ghost', () => d.close()), save);
+    d.append(head, body, foot);
+  }
+  function photoPane() {
+    const g = el('div', 'stu-grp stu-photo');
+    g.append(el('h4', '', 'Turn a photo into your character'), el('p', 'co-note', 'Upload a clear, front-facing photo. Gemini (Google) turns it into a clay character that still looks like you, with the outfit, colours and gear you picked. The photo is only sent to make the picture and is not kept. Up to 8 a day.'));
+    const drop = el('label', 'stu-drop'); const inp = el('input'); inp.type = 'file'; inp.accept = 'image/jpeg,image/png,image/webp'; inp.hidden = true;
+    drop.append(inp, el('b', '', B.photoBusy ? 'Making your character… (about 15 seconds)' : 'Choose a photo'), el('small', '', 'JPEG or PNG'));
+    if (B.photoBusy) drop.classList.add('busy');
+    inp.addEventListener('change', async () => {
+      const f = inp.files && inp.files[0]; if (!f) return;
+      B.photoBusy = true; paintBuilder();
+      try {
+        const photo = await shrink(f, 768, 'image/jpeg', 0.86);
+        const desc = { outfit: (CH.OPT.outfit.find((x) => x[0] === B.char.outfit) || [])[1] + ' in ' + colourName(B.char.outfitColor), gear: B.char.gear.map((x) => (CH.OPT.gear.find((y) => y[0] === x) || [])[1]).join(', '), role: B.role, bg: colourName(B.char.bg) };
+        const r = await post({ action: 'charMake', photo, desc });
+        const made = await shrinkUrl('data:' + r.mime + ';base64,' + r.data, 384);
+        if (!B) return; B.made = made; B.image = made; B.useImg = true; B.photoBusy = false; toast('Here you are! ' + (r.left >= 0 ? r.left + ' more today.' : '')); paintBuilder();
+      } catch (e) { if (B) { B.photoBusy = false; paintBuilder(); } toast(e.message, true); }
+    });
+    g.append(drop);
+    if (B.made) { const im = new Image(); im.src = B.made; im.className = 'stu-made'; im.alt = 'Made from your photo'; g.append(im); }
+    return g;
+  }
+  const NAMES = { '#ddff00': 'lime yellow', '#ff5a26': 'bright orange', '#685bc7': 'violet', '#f0eee9': 'off-white', '#1e1e1e': 'charcoal', '#3a7bd5': 'blue', '#2fb37a': 'green', '#f5c542': 'sunny yellow', '#e86aa6': 'pink', '#8fd3ff': 'sky blue', '#c9b6ff': 'lilac', '#ffb38a': 'peach', '#ffd3c2': 'soft peach', '#e8f7a6': 'pale lime' };
+  const colourName = (c) => NAMES[String(c).toLowerCase()] || 'lime yellow';
+  // pictures are made smaller in the browser before they are sent or kept
+  const loadImg = (src) => new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => bad(new Error('That file is not a picture we can read.')); im.src = src; });
+  async function shrink(file, max, type, q) { const url = URL.createObjectURL(file); try { return draw(await loadImg(url), max, type, q); } finally { URL.revokeObjectURL(url); } }
+  async function shrinkUrl(src, max) { const im = await loadImg(src); const w = draw(im, max, 'image/webp', 0.85); return w.startsWith('data:image/webp') ? w : draw(im, max, 'image/jpeg', 0.88); }
+  function draw(im, max, type, q) { const s = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * s); c.height = Math.round(im.naturalHeight * s); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); return c.toDataURL(type, q); }
+
+  /* ---------- award composer (Admins) ---------- */
+  function openAward(a) {
+    let d = document.getElementById('stu-award'); if (!d) { d = el('dialog', 'co-dialog stu-dlg stu-aw'); d.id = 'stu-award'; document.body.append(d); }
+    const W = { id: a ? a.id : '', who: a ? a.who : '', tag: a ? a.tag : 'best-performer', title: a ? a.title : TAGS['best-performer'][0], note: a ? a.note : '', link: a ? a.link : '', until: a ? a.until : CO.addDays(CO.today(), 7) };
+    const paint = () => {
+      d.replaceChildren();
+      const head = el('div', 'stu-dlg-h'); head.append(el('h2', '', a ? 'Edit award' : 'Give an award')); const x = btn('', 'stu-x', () => d.close()); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; head.append(x);
+      const f = el('div', 'stu-aw-b');
+      const tg = tagOf(W.tag), prev = el('div', 'stu-swatch preview'); prev.style.setProperty('--tag', tg[1]); prev.style.setProperty('--tag-ink', tg[2]);
+      const top = el('div', 'stu-sw-top'); top.append(el('small', 'stu-sw-brand', 'AWARD'), figure(profOf(W.who), { label: W.who, cls: 'mini' }));
+      const bot = el('div', 'stu-sw-bot'); bot.append(el('b', 'stu-sw-title', W.title || 'Award'), el('span', 'stu-sw-who', W.who || 'Pick someone')); if (W.note) bot.append(el('p', 'stu-sw-note', W.note)); prev.append(top, bot);
+      const form = el('div', 'stu-aw-form');
+      const lab = (t, c) => { const l = el('label', 'co-field'); l.append(t, c); return l; };
+      const who = el('select', 'co-select'); who.append(new Option('Pick a person', '')); people().forEach((n) => who.append(new Option(n, n))); who.value = W.who; who.addEventListener('change', () => { W.who = who.value; paint(); });
+      const tags = el('div', 'stu-chips'); Object.entries(TAGS).forEach(([k, v]) => { const b = btn(v[0], 'stu-chip tagc' + (W.tag === k ? ' on' : ''), () => { W.tag = k; if (k !== 'custom') W.title = v[0]; else if (Object.values(TAGS).some((t) => t[0] === W.title)) W.title = ''; paint(); }); b.style.setProperty('--tag', v[1]); b.style.setProperty('--tag-ink', v[2]); b.setAttribute('aria-pressed', String(W.tag === k)); tags.append(b); });
+      const title = el('input', 'co-input'); title.maxLength = 40; title.value = W.title; title.placeholder = 'Award name'; title.addEventListener('input', () => { W.title = title.value; prev.querySelector('.stu-sw-title').textContent = W.title || 'Award'; });
+      const note = el('textarea', 'co-input'); note.rows = 2; note.maxLength = 240; note.value = W.note; note.placeholder = 'Why? (shown on the award)'; note.addEventListener('input', () => { W.note = note.value; });
+      const link = el('input', 'co-input'); link.type = 'url'; link.value = W.link; link.placeholder = 'Link to the creative (optional, https://…)'; link.addEventListener('input', () => { W.link = link.value.trim(); });
+      const until = el('div', 'pm-seg'); [['7', '1 week'], ['30', '1 month'], ['', 'Until I remove it']].forEach(([v, t]) => { const val = v ? CO.addDays(CO.today(), +v) : ''; const on = v ? W.until && Math.abs(CO.diffDays(CO.today(), W.until) - +v) <= 1 : !W.until; const b = btn(t, 'pm-opt' + (on ? ' on' : ''), () => { W.until = val; paint(); }); until.append(b); });
+      form.append(lab('Who', who), el('h4', '', 'Award'), tags, lab('Name', title), lab('Why', note), lab('Creative', link), el('h4', '', 'Show it for'), until);
+      f.append(prev, form);
+      const foot = el('div', 'stu-dlg-f');
+      if (a) foot.append(btn('Remove award', 'co-btn ghost danger', async () => { if (!confirm('Remove this award from the wall?')) return; try { await post({ action: 'awardDelete', id: a.id }); ST.awards = ST.awards.filter((y) => y.id !== a.id); d.close(); toast('Award removed'); renderAll(); } catch (e) { toast(e.message, true); } }));
+      const save = btn(a ? 'Save award' : 'Give award', 'co-btn primary', async (e) => {
+        if (!W.who || !W.title.trim()) { toast('Pick a person and name the award.', true); return; }
+        const b = e.currentTarget; b.disabled = true;
+        try { const r = await post(Object.assign({ action: 'awardSave' }, W)); const rec = Object.assign({}, W, { id: r.id, at: a ? a.at : new Date().toISOString() }); ST.awards = ST.awards.filter((y) => y.id !== r.id).concat([rec]); burst(b, 40); d.close(); toast(a ? 'Award saved' : W.title + ' for ' + first(W.who) + '! Everyone can see it now.'); ST.ch = 0; renderAll(); }
+        catch (err) { b.disabled = false; toast(err.message, true); }
+      });
+      foot.append(btn('Cancel', 'co-btn ghost', () => d.close()), save);
+      d.append(head, f, foot);
+    };
+    paint(); d.showModal();
+  }
+  // the person card at the bottom of the sidebar opens the builder
+  document.addEventListener('click', (e) => { const c = e.target.closest('[data-draw="me-card"]'); if (c && A.user) openBuilder(); });
+  window.CO_studio = { open: openBuilder, award: openAward, state: ST, stars };
+  return ST;
+};

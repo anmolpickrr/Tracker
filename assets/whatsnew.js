@@ -4,6 +4,13 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-22-studio', date: '2026-11-22', kind: 'new', who: 'all', go: 'studio', title: 'Studio: your character and the Hall of Fame',
+    what: 'A new Studio page where the team is celebrated, and a clay-toy character for everyone that becomes your avatar across the dashboard.',
+    does: 'Build your character (skin, face, hair, outfit, glasses, headwear and the tools of your craft, like headphones, a tablet or a clapperboard), or turn a photo into one with Gemini. The retro TV shows awards from the Creative Head and last week\'s stars, worked out from the sheets. You also get the podium, the awards wall, the whole crew and a reel of fresh deliveries.',
+    how: 'Click your name at the bottom left (or Studio > Make my character). Pick parts, press Surprise me for ideas, add a tagline and save. On the TV, turn the knobs to change channel, and press Cheer to say well done.',
+    changed: 'Initials avatars are replaced by characters as people make them. Admins give awards (Best Performer, Best Creative, Top Contributor and more) from Studio. The Overview has a small Hall of Fame strip.'
+  },
+  {
     id: '2026-11-21-my-day', date: '2026-11-21', kind: 'new', who: 'page:mine', go: 'mine', title: 'Your day, in five buckets',
     what: 'My work now opens with a breakdown of your day: Done, Under review, In progress, Not picked up and Overdue.',
     does: 'Each bucket shows how many tasks (and creatives) are in it. Click one to see exactly which tasks they are, with their ETA and status.',

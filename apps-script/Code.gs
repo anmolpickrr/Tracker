@@ -28,7 +28,7 @@ const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
  * Everyone else gets a role (View only / Can edit / Admin) whose defaults the owner and Admins can fine-tune per person:
  * which pages they see, and whether they can edit tasks, download data, see workload estimates and other people's
  * work, manage the team list and use Fasty, and whether they see all tasks or only their own. */
-const PAGE_KEYS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'health', 'issues'];
+const PAGE_KEYS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'studio', 'health', 'issues'];
 const OWNER_ONLY = { settings: 1, saveSettings: 1 };
 // The owner and everyone with the Admin role manage access and see the activity log and live team activity.
 const ADMIN_ONLY = { users: 1, setAccess: 1, audit: 1, presence: 1 };
@@ -57,6 +57,7 @@ function permsOf_(u) {
   ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links', 'eta', 'delivery', 'assign', 'details', 'issueFix'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') p.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') p.packages = o.packages;
+  if (Array.isArray(o.pages) && !o.studioSet && p.pages.indexOf('studio') < 0) p.pages.push('studio'); // Studio (Nov 2026) is on until the owner turns it off
   if (p.pages.indexOf('mine') < 0) p.pages.unshift('mine'); // everyone keeps their own work page
   return p;
 }
@@ -64,6 +65,7 @@ function cleanPerms_(o) {
   if (!o || typeof o !== 'object') return null;
   const out = {};
   if (Array.isArray(o.pages)) out.pages = o.pages.map(String).filter(function (k, i, a) { return PAGE_KEYS.indexOf(k) >= 0 && a.indexOf(k) === i; });
+  if (out.pages && o.studioSet === true) out.studioSet = true; // the owner has set this person's sections since Studio arrived
   ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links', 'eta', 'delivery', 'assign', 'details', 'issueFix'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') out.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') out.packages = o.packages;
@@ -79,6 +81,9 @@ function allowed_(u, action) {
   // Issues: Admins, or anyone given the section (View) and, to retry and resolve, Edit (issueFix)
   if (action === 'issues') return isAdminUser_(u) || p.pages.indexOf('issues') >= 0;
   if (action === 'issueAct') return isAdminUser_(u) || (p.pages.indexOf('issues') >= 0 && !!p.issueFix);
+  // Studio: everyone shows their own character; the page (awards, cheers) follows the section switch; awards are Admins'.
+  if (action === 'awardSave' || action === 'awardDelete') return isAdminUser_(u);
+  if (action === 'cheer') return p.pages.indexOf('studio') >= 0;
   if (action === 'setMember') return p.team;
   if (action === 'health') return p.pages.indexOf('health') >= 0;
   if (action === 'assist' || action === 'speak') return p.fasty;
@@ -89,7 +94,7 @@ function allowed_(u, action) {
   if (action === 'packageSave' || action === 'packageDelete') return p.packages === 'edit';
   return true;
 }
-const NEEDS = { me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Viewer', issueAct: 'Viewer', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { studio: 'Viewer', charImage: 'Viewer', charMake: 'Viewer', profileSave: 'Viewer', awardSave: 'Viewer', awardDelete: 'Viewer', cheer: 'Viewer', me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Viewer', issueAct: 'Viewer', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -416,6 +421,9 @@ function doPost(e) {
     if (body.action === 'audit') return json_(auditRead_(body));
     if (body.action === 'directory') return json_({ ok: true, people: users_().list.filter(function (u) { return u.status === 'Approved'; }).map(function (u) { return { email: u.email, name: displayName_(u), photo: photo_(u.photo) }; }) });
     if (body.action === 'notes') return json_(notesList_(user));
+    if (body.action === 'studio') return json_(studio_(user));
+    if (body.action === 'charImage') return json_(charImage_(body));
+    if (body.action === 'charMake') return json_(charMake_(body, user));
     if (body.action === 'signout') { audit_([{ who: user.email, role: user.role, action: 'Signed out' }]); return json_({ ok: true }); }
     // Writes: one at a time, each recorded in the audit log with before and after values.
     return json_(write_(body, user));
@@ -463,6 +471,10 @@ function write_(body, user) {
     else if (body.action === 'packageDelete') out = pkgDelete_(body, user);
     else if (body.action === 'noteAction') out = noteAction_(body, user);
     else if (body.action === 'noteDone') out = noteDone_(body, user);
+    else if (body.action === 'profileSave') out = profileSave_(body, user);
+    else if (body.action === 'awardSave') out = awardSave_(body, user);
+    else if (body.action === 'awardDelete') out = awardDelete_(body, user);
+    else if (body.action === 'cheer') out = cheer_(body, user);
     else if (body.action === 'prefs') out = prefs_(body, user);
     else if (body.action === 'saveSettings') out = saveSettings_(body, user);
     else out = { ok: false, error: 'unknown_action' };
@@ -918,7 +930,7 @@ function setAccess_(body, admin) {
     const name = clean_(body.name).slice(0, 80);
     if (name && !plain_(name)) return { ok: false, error: 'Names cannot start with = + - or @' };
     appendUser_({ email: email, name: name, role: role || 'Viewer', status: status || 'Approved', note: 'Added by ' + admin.email, requestedOn: now, decidedBy: admin.email, decidedOn: now });
-    if (body.perms) { const nu = userByEmail_(email); if (nu) updateUser_(nu, { perms: JSON.stringify(cleanPerms_(body.perms) || {}) }); }
+    if (body.perms) { const nu = userByEmail_(email); if (nu) updateUser_(nu, { perms: JSON.stringify(cleanPerms_(Object.assign({}, body.perms, { studioSet: true })) || {}) }); }
     changes.push(Object.assign({}, base, { action: 'User added by admin', field: 'Access', before: '', after: (role || 'Viewer') + ', ' + (status || 'Approved') }));
     u = userByEmail_(email);
     if ((status || 'Approved') === 'Approved') notifyApproved_(u);
@@ -932,7 +944,7 @@ function setAccess_(body, admin) {
       if (status !== 'Approved') patch.validFrom = now.getTime(); // ends every session they have
     }
     if (body.perms !== undefined) {
-      const np = body.perms === null ? null : cleanPerms_(body.perms);
+      const np = body.perms === null ? null : cleanPerms_(Object.assign({}, body.perms, { studioSet: true }));
       const before = JSON.stringify(permsOf_(u)), after = JSON.stringify(permsOf_(Object.assign({}, u, { perms: np })));
       if (before !== after || (body.perms === null && u.perms)) { patch.perms = np ? JSON.stringify(np) : ''; changes.push(Object.assign({}, base, { action: 'Permissions changed', field: 'Permissions', before: permText_(permsOf_(u)), after: permText_(permsOf_(Object.assign({}, u, { perms: np }))) })); }
     }
@@ -2902,4 +2914,117 @@ function ownDataText_(user, fresh, maxAge) {
   const kept = Object.keys(all.sources || {}).reduce(function (n, k) { const x = all.sources[k]; return n + (x && x.kind !== 'team' && Array.isArray(x.rows) ? x.rows.length : 0); }, 0);
   if (!kept && !teamEntryOf_(user, JSON.parse(dataText_(false)))) all.ownNoMatch = true;
   return JSON.stringify(all);
+}
+
+
+/* ================= Studio (Nov 2026) =================
+   Everyone's character (built in the dashboard, or made from a photo with Gemini), awards the Admins give (Best
+   Performer, Best Creative…) and cheers. Kept in the access book: Profiles, Character images (the picture in pieces,
+   like note files), Awards and Cheers. A photo sent to make a character is never stored; only the picture made from it,
+   once its owner saves it. */
+const PROF_HEAD = ['Email', 'Team name', 'Character', 'Image', 'Tagline', 'Updated'];
+const CIMG_HEAD = ['Image', 'Piece', 'Pieces', 'Data', 'By', 'At'];
+const AWARD_HEAD = ['ID', 'Who', 'Title', 'Tag', 'Note', 'Link', 'Until', 'By', 'At', 'Deleted'];
+const CHEER_HEAD = ['Key', 'Email', 'At'];
+function studioTab_(name, head) { const ss = accessBook_(); let sh = ss.getSheetByName(name); if (!sh) { sh = ss.insertSheet(name); sh.appendRow(head); sh.setFrozenRows(1); if (name === 'Character images') sh.hideSheet(); } return sh; }
+function studioRows_(name, head) { const sh = studioTab_(name, head), last = sh.getLastRow(); return { sh: sh, rows: last < 2 ? [] : sh.getRange(2, 1, last - 1, head.length).getValues() }; }
+function studio_(u) {
+  const pr = studioRows_('Profiles', PROF_HEAD).rows.map(function (r) { return { email: String(r[0]).toLowerCase(), who: String(r[1] || ''), char: parseJson_(r[2], null), img: String(r[3] || ''), tagline: String(r[4] || ''), updated: iso_(r[5]) }; }).filter(function (x) { return x.email; });
+  const p = permsOf_(u), page = isAdminUser_(u) || p.pages.indexOf('studio') >= 0;
+  const out = { ok: true, profiles: pr, canAward: isAdminUser_(u) };
+  if (!page) return out;
+  const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd');
+  out.awards = studioRows_('Awards', AWARD_HEAD).rows.filter(function (r) { return r[0] && !(r[9] === true || String(r[9]) === 'TRUE'); }).map(function (r) {
+    const until = r[6] instanceof Date ? Utilities.formatDate(r[6], IST, 'yyyy-MM-dd') : String(r[6] || '');
+    return { id: String(r[0]), who: String(r[1]), title: String(r[2]), tag: String(r[3]), note: String(r[4] || ''), link: String(r[5] || ''), until: until, by: String(r[7]).toLowerCase(), at: iso_(r[8]) };
+  }).filter(function (a) { return !a.until || a.until >= today; });
+  const ch = {}; studioRows_('Cheers', CHEER_HEAD).rows.forEach(function (r) { const k = String(r[0]); if (!k) return; const c = ch[k] || (ch[k] = { n: 0, mine: false, who: [] }); c.n++; if (String(r[1]).toLowerCase() === u.email) c.mine = true; if (c.who.length < 12) c.who.push(String(r[1]).toLowerCase()); });
+  out.cheers = ch;
+  return out;
+}
+function charImage_(b) {
+  const id = String(b.id || ''); if (!/^I[0-9a-z-]+$/i.test(id)) return { ok: false, error: 'not found' };
+  const hit = CacheService.getScriptCache().get('cimg:' + id); if (hit) return { ok: true, id: id, data: hit };
+  const rows = studioRows_('Character images', CIMG_HEAD).rows.filter(function (r) { return String(r[0]) === id; }).sort(function (a, c) { return Number(a[1]) - Number(c[1]); });
+  if (!rows.length) return { ok: false, error: 'This picture is no longer there.' };
+  const data = rows.map(function (r) { return String(r[3]); }).join('');
+  try { if (data.length < 95000) CacheService.getScriptCache().put('cimg:' + id, data, 21600); } catch (e) { /* too large to cache */ }
+  return { ok: true, id: id, data: data };
+}
+function profileSave_(b, u) {
+  const P = studioRows_('Profiles', PROF_HEAD), sh = P.sh, i = P.rows.findIndex(function (r) { return String(r[0]).toLowerCase() === u.email; });
+  const cur = i >= 0 ? P.rows[i] : [u.email, '', '', '', '', ''];
+  let who = clean_(b.who).slice(0, 80);
+  if (who && !ownMatcher_(u)(who, '')) who = ''; // only your own name on the team list
+  const ch = b.char && typeof b.char === 'object' ? JSON.stringify(b.char).slice(0, 3000) : String(cur[2] || '');
+  let img = String(cur[3] || '');
+  if (b.image === 'remove') img = '';
+  else if (b.image && typeof b.image === 'string') {
+    const data = String(b.image).replace(/^data:image\/(png|jpeg|webp);base64,/, '');
+    if (!/^[A-Za-z0-9+/=]+$/.test(data) || data.length > 400000) return { ok: false, error: 'The picture could not be saved (it should be a small PNG, JPEG or WebP).' };
+    const mime = (String(b.image).match(/^data:(image\/(png|jpeg|webp));/) || [])[1] || 'image/webp';
+    img = 'I' + Utilities.formatDate(new Date(), IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 8);
+    const full = 'data:' + mime + ';base64,' + data, PC = 45000, n = Math.ceil(full.length / PC), rows = [], now = new Date();
+    for (let k = 0; k < n; k++) rows.push([img, k + 1, n, full.slice(k * PC, (k + 1) * PC), u.email, now]);
+    const ish = studioTab_('Character images', CIMG_HEAD); ish.getRange(ish.getLastRow() + 1, 1, rows.length, CIMG_HEAD.length).setValues(rows);
+  }
+  const row = [u.email, who || String(cur[1] || '') || clean_(u.name).slice(0, 80), ch, img, safe_(String(b.tagline != null ? b.tagline : cur[4] || '').slice(0, 80)), new Date()];
+  if (i >= 0) sh.getRange(i + 2, 1, 1, PROF_HEAD.length).setValues([row]); else sh.appendRow(row);
+  return { ok: true, profile: { email: u.email, who: row[1], char: parseJson_(ch, null), img: img, tagline: row[4] }, changes: [{ action: 'Character updated', sheet: 'Profiles', record: u.email, details: img && img !== String(cur[3] || '') ? 'new picture' : '' }] };
+}
+const AWARD_TAGS = ['best-performer', 'best-creative', 'top-contributor', 'rising-star', 'client-favourite', 'speed-star', 'team-player', 'idea-machine', 'custom'];
+function awardSave_(b, u) {
+  const who = clean_(b.who).slice(0, 80), title = clean_(b.title).slice(0, 40), tag = AWARD_TAGS.indexOf(clean_(b.tag)) >= 0 ? clean_(b.tag) : 'custom';
+  if (!who || !title) return { ok: false, error: 'Pick a person and an award.' };
+  const link = clean_(b.link).slice(0, 500); if (link && !/^https:\/\//.test(link)) return { ok: false, error: 'The link should start with https://' };
+  const until = /^\d{4}-\d{2}-\d{2}$/.test(String(b.until || '')) ? String(b.until) : '';
+  const A = studioRows_('Awards', AWARD_HEAD), id = clean_(b.id), i = id ? A.rows.findIndex(function (r) { return String(r[0]) === id; }) : -1;
+  const row = [i >= 0 ? id : 'W' + Utilities.formatDate(new Date(), IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 6), safe_(who), safe_(title), tag, safe_(clean_(b.note).slice(0, 240)), link, until, u.email, i >= 0 ? A.rows[i][8] : new Date(), ''];
+  if (i >= 0) A.sh.getRange(i + 2, 1, 1, AWARD_HEAD.length).setValues([row]); else A.sh.appendRow(row);
+  return { ok: true, id: row[0], changes: [{ action: i >= 0 ? 'Award changed' : 'Award given', sheet: 'Awards', record: who, details: title + (until ? ' until ' + until : '') }] };
+}
+function awardDelete_(b, u) {
+  const A = studioRows_('Awards', AWARD_HEAD), i = A.rows.findIndex(function (r) { return String(r[0]) === clean_(b.id); });
+  if (i < 0) return { ok: false, error: 'This award is no longer there.' };
+  A.sh.getRange(i + 2, 10).setValue(true);
+  return { ok: true, changes: [{ action: 'Award removed', sheet: 'Awards', record: String(A.rows[i][1]), details: String(A.rows[i][2]) }] };
+}
+function cheer_(b, u) {
+  const key = clean_(b.key).slice(0, 120); if (!key) return { ok: false, error: 'Nothing to cheer.' };
+  const C = studioRows_('Cheers', CHEER_HEAD), i = C.rows.findIndex(function (r) { return String(r[0]) === key && String(r[1]).toLowerCase() === u.email; });
+  if (i >= 0) C.sh.deleteRow(i + 2); else C.sh.appendRow([key, u.email, new Date()]);
+  return { ok: true, on: i < 0 };
+}
+/* Photo → character with Gemini's image model (the GEMINI_API_KEY in Script properties, the one Fasty uses).
+   At most 8 a day per person. The photo is only sent to Gemini; nothing is kept until the person saves the result. */
+const CHAR_MODELS = ['gemini-2.5-flash-image', 'gemini-2.5-flash-image-preview', 'gemini-2.0-flash-preview-image-generation'];
+function charMake_(b, u) {
+  const key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) return { ok: false, error: 'Photo characters need a Gemini key. Ask the owner to add GEMINI_API_KEY in the web app\'s Script properties.', setup: true };
+  const photo = String(b.photo || '').replace(/^data:image\/(jpeg|png|webp);base64,/, '');
+  if (!photo || !/^[A-Za-z0-9+/=]+$/.test(photo) || photo.length > 2500000) return { ok: false, error: 'Use a JPEG or PNG photo under 2 MB.' };
+  const cache = CacheService.getScriptCache(), ck = 'charmk:' + u.email + ':' + Utilities.formatDate(new Date(), IST, 'yyyyMMdd'), used = Number(cache.get(ck) || 0);
+  if (used >= 8) return { ok: false, error: 'That is 8 characters today. Try again tomorrow.' };
+  const d = b.desc && typeof b.desc === 'object' ? b.desc : {}, txt = function (x) { return clean_(x).replace(/[^\w ,&'-]/g, '').slice(0, 80); };
+  const prompt = 'Turn the person in this photo into a cute 3D clay toy figurine character, like a collectible vinyl toy: big rounded head, small body, ' +
+    'smooth matte clay texture, soft studio lighting, gentle shadows, friendly expression. Keep them clearly recognisable: same face shape, skin tone, ' +
+    'hairstyle and hair colour, eyebrows, glasses and facial hair as in the photo. Head and shoulders, centred, facing the viewer. ' +
+    (d.outfit ? 'Outfit: ' + txt(d.outfit) + '. ' : '') + (d.gear ? 'With: ' + txt(d.gear) + '. ' : '') + (d.role ? 'They work as a ' + txt(d.role) + '. ' : '') +
+    'Plain solid ' + (txt(d.bg) || 'lime yellow') + ' background. No text, no logos, no frame. Square image.';
+  const req = { contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: (String(b.photo).match(/^data:(image\/\w+);/) || [])[1] || 'image/jpeg', data: photo } }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } };
+  let last = '';
+  for (let i = 0; i < CHAR_MODELS.length; i++) {
+    let res; try { res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + CHAR_MODELS[i] + ':generateContent', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key }, payload: JSON.stringify(req) }); }
+    catch (e) { last = String(e.message || e); continue; }
+    const code = res.getResponseCode(); let out = {}; try { out = JSON.parse(res.getContentText()); } catch (e) { out = {}; }
+    if (code === 404) { last = 'model ' + CHAR_MODELS[i] + ' not available'; continue; }
+    if (code === 429) return { ok: false, error: 'Gemini is busy or the free limit was reached. Try again in a minute.' };
+    if (code !== 200) { last = String((out.error || {}).message || code).slice(0, 160); if (code === 400 || code === 403) break; continue; }
+    const parts = (((out.candidates || [])[0] || {}).content || {}).parts || [], img = parts.filter(function (p) { return p.inlineData && p.inlineData.data; })[0];
+    if (!img) return { ok: false, error: (out.promptFeedback || {}).blockReason ? 'Gemini could not use this photo. Try another one (a clear face, good light).' : 'Gemini did not return a picture. Try again.' };
+    cache.put(ck, String(used + 1), 86400);
+    return { ok: true, mime: img.inlineData.mimeType || 'image/png', data: img.inlineData.data, left: 7 - used };
+  }
+  try { issueLog_('Studio', 'Photo characters could not be made', 'Gemini answered: ' + last, u.email, { key: 'studio|charmake' }); } catch (e) { /* ignore */ }
+  return { ok: false, error: 'The character could not be made (' + last + ').' };
 }

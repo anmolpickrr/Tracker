@@ -470,3 +470,14 @@ apps-script/appsscript.json  its permissions
 The page sets a Content Security Policy: scripts only from this site, jsDelivr (d3) and Google sign-in, and data only from the Apps Script web app.
 
 No build step: edit and push to `main`, and GitHub Pages publishes the site.
+
+## Studio (Nov 2026)
+
+The team's creative corner, controlled per person on the Access page (section **Studio**; on for everyone until the owner turns it off).
+
+- **Characters.** Everyone builds a clay-toy character in the browser (`assets/chars.js`: layered SVG, original artwork). Parts: skin, eyes, mouth, brows, beard/freckles, 12 hairstyles and colours, 7 outfits and colours, glasses, headwear, background, and up to 3 tools of the trade (role-aware suggestions: video editors get headphones and a clapperboard first, designers a tablet and sketchbook, writers a book and coffee). *Surprise me* makes a random one. The character is the person's avatar everywhere (`CO.av`), and initials stay until they make one. Open the builder by clicking your name at the bottom of the sidebar, or from Studio.
+- **From a photo.** The builder's *From a photo* tab sends a downsized photo (768 px) to Google Gemini's image model (`gemini-2.5-flash-image`, with fallbacks) using the `GEMINI_API_KEY` in Script properties (the one Fasty uses). It asks for a clay-toy version that keeps the person recognisable, wearing the outfit, colours and gear they picked. The photo is not stored; the result is shrunk to 384 px WebP and kept only when saved (hidden *Character images* tab, in pieces). Limit: 8 a day per person.
+- **Hall of Fame.** A clay retro TV (cream in Light mode, charcoal in Dark) flips through spotlights every 7 seconds, and its knobs switch channel. It shows active awards first, then **last week's stars** worked out from the sheets for the last full Monday–Sunday: Top shipper (creatives), Video star, Design machine (statics), Every-day shipper (3+ days), Many-brand hero (3+ brands). Sticky notes give the week in numbers. Below it: **Last week's podium** (top 3 by creatives), the **Awards** wall (swatch cards; Admins give, edit and remove awards with a person, a preset tag or a custom name, a reason, an optional creative link, and how long it shows: 1 week, 1 month or until removed), **The crew** (everyone's character, role, tagline, this week's count and badges) and **Fresh off the press** (a reel of the last 7 days' deliveries, paused on hover).
+- **Cheers.** Anyone with Studio can cheer an award or a star (toggle), with counts kept in the *Cheers* tab.
+- **Overview strip.** A compact TV with this week's spotlights and *Open Studio*.
+- **Storage** (access book): *Profiles* (email, team name, character JSON, image id, tagline), *Character images*, *Awards*, *Cheers*. Only your own profile can be saved, under your own team name. Awards are Admin-only, enforced on the server.

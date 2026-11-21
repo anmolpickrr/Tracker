@@ -11,11 +11,11 @@
   const P = Object.assign({}, DEFAULTS);
   try { Object.assign(P, JSON.parse(LS.get('co.view', '{}'))); } catch (e) { /* ignore */ }
   let TASK_SAVE = null; // set by the task editor; also used by the assistant
-  const TABS = ['mine', 'today', 'standup', 'tasks', 'notes', 'whatsnew', 'team', 'reports', 'brands', 'health', 'issues', 'access'];
+  const TABS = ['mine', 'today', 'studio', 'standup', 'tasks', 'notes', 'whatsnew', 'team', 'reports', 'brands', 'health', 'issues', 'access'];
   /* The page filters (Sheet, Designer, Brand, Type) each section uses. A filter a section does not use is hidden there and
      never applied (My work is always the signed-in person's own work, so a Designer filter left on elsewhere cannot empty it). */
   const FKEYS = ['src', 'designer', 'brand', 'type'];
-  const FILTER_USE = { mine: ['src', 'brand', 'type'], today: FKEYS, standup: FKEYS, tasks: FKEYS, team: FKEYS, reports: FKEYS, brands: FKEYS, health: FKEYS, notes: [], issues: [], access: [], whatsnew: [] };
+  const FILTER_USE = { studio: [], mine: ['src', 'brand', 'type'], today: FKEYS, standup: FKEYS, tasks: FKEYS, team: FKEYS, reports: FKEYS, brands: FKEYS, health: FKEYS, notes: [], issues: [], access: [], whatsnew: [] };
   const fUsed = (tab) => FILTER_USE[tab] || FKEYS;
   const fActive = (p) => fUsed(p.tab || 'today').filter((k) => p[k]);
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
@@ -501,7 +501,8 @@
     const typeColors = (types) => { const m = new Map(); types.forEach((t, i) => m.set(t, t === 'Other' || i >= colors.length ? 'var(--chart-muted)' : colors[i])); return m; };
     /* People: initials avatar + name. Several designers show stacked avatars. */
     const initials = (n) => String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-    const av = (n, cls) => { const a = document.createElement('span'); a.className = 'av' + (cls ? ' ' + cls : ''); a.textContent = initials(n); a.setAttribute('aria-hidden', 'true'); return a; };
+    // Everyone's character (Studio) is their avatar; initials until they make one.
+    const av = (n, cls) => { const a = document.createElement('span'); a.className = 'av' + (cls ? ' ' + cls : ''); a.setAttribute('aria-hidden', 'true'); const f = n && n !== '?' && window.CO_FACE ? window.CO_FACE(n) : null; if (f) { a.classList.add('has-face'); const im = new Image(); im.src = f; im.alt = ''; im.decoding = 'async'; a.append(im); } else a.textContent = initials(n); return a; };
     const who = (r) => {
       const w = document.createElement('span'); w.className = 'who' + (r.list.length ? '' : ' none');
       if (!r.list.length) { w.append(av('?', 'none'), 'Unassigned'); return w; }
@@ -642,7 +643,7 @@
     document.querySelectorAll('.co-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     document.querySelectorAll('.bt[data-tab]').forEach((b) => { if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     document.getElementById('bt-more').toggleAttribute('aria-current', !['today', document.querySelector('.btabs .bt[data-tab="mine"]') ? 'mine' : 'standup', 'tasks', 'notes'].includes(tab));
-    document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes' || tab === 'issues' || tab === 'whatsnew';
+    document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes' || tab === 'issues' || tab === 'whatsnew' || tab === 'studio';
     { const use = fUsed(tab), act = fActive(Object.assign({}, p, { tab }));
       FKEYS.forEach((k) => { const el = document.querySelector('.co-f[data-param="' + k + '"]'); if (el) { el.hidden = !use.includes(k); el.classList.toggle('is-set', use.includes(k) && !!p[k]); } });
       document.getElementById('f-reset').hidden = true; // "Clear all" lives with the chips
@@ -810,6 +811,7 @@
     mine: ['My work', 'Your day at a glance: what you delivered, what is under review, in progress, not picked up yet and overdue.'],
     today: ['Overview', () => 'What needs attention today.'],
     brands: ['Brands', 'Every brand at a glance, and the work waiting on clients.'],
+    studio: ['Studio', 'The team\'s Hall of Fame: awards, last week\'s stars, everyone\'s characters and fresh work.'],
     whatsnew: ['What\'s new', 'Every update to the dashboard: what changed, what it does and how to use it.'],
     notes: ['Notes', 'Quick notes for the team: tag people with @ to share, assign them and set reminders.'],
     standup: ['Daily stand-up', 'One card per active designer: what is late, due today, in progress and up next.'],
@@ -840,7 +842,7 @@
     const b = document.createElement('b'); b.textContent = A.user.name || A.user.email;
     w.append(b);
     // The owner sees just their name; everyone else also sees their role and email.
-    if (!isOwner()) { const sm = document.createElement('small'); sm.textContent = roleText(A.user) + ' · ' + A.user.email; w.append(sm); } el.append(CO.av(A.user.name || A.user.email, 'lg'), w); el.title = A.user.email;
+    if (!isOwner()) { const sm = document.createElement('small'); sm.textContent = roleText(A.user) + ' · ' + A.user.email; w.append(sm); } el.append(CO.av(myDesigner() || A.user.name || A.user.email, 'lg'), w); el.title = 'Your character: click to edit'; el.setAttribute('role', 'button'); el.tabIndex = 0;
   });
   dash.draw('today-date', (el) => { el.textContent = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); });
   dash.draw('sync-dot', (el) => { el.className = 'co-sync-dot ' + (S.status === 'ok' ? (S.staleError ? 'warn' : 'ok') : S.status === 'error' ? 'bad' : S.status === 'loading' ? 'busy' : ''); });
@@ -3801,7 +3803,8 @@
     Connection: ['#8aa000', 'M2 9a15 15 0 0 1 20 0M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0M12 20h.01'], Screen: ['#8aa000', 'M3 4h18v12H3zM8 20h8M12 16v4'],
     Server: ['#ff5a26', 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01'], 'Background jobs': ['#8a877f', 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z'],
     'Stand-up': ['#685bc7', 'M4 5h16v16H4zM4 10h16M9 3v4M15 3v4'], 'Web app': ['#685bc7', 'M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12'],
-    'Creative brief': ['#8aa000', 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5']
+    'Creative brief': ['#8aa000', 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5'],
+    Studio: ['#685bc7', 'M3 5h18v12H3zM8 21h8M12 17v4']
   };
   const issArea = (a) => ISS_AREA[a] || ['#9a978f', 'M12 3 2 20h20L12 3zM12 10v4M12 17h.01'];
   const issIcon = (a, cls) => { const [c, d] = issArea(a), w = el('span', 'iss-ic' + (cls ? ' ' + cls : '')); w.style.setProperty('--ac', c); w.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>'; return w; };
@@ -3816,7 +3819,7 @@
     sheet: ['Fix in the sheets or settings', 'Something in the sheets or a Google setting needs a change; each says what.'],
     auto: ['Fixing itself', 'Temporary errors. The dashboard retries and closes these on its own.']
   };
-  const issLane = (x) => (x.retry || /^Could not save/.test(x.title) || x.area === 'Actions' ? 'action' : /^(Data|Packages|Creative brief|Web app)$/.test(x.area) || x.fix === 'open-health' || x.fix === 'open-brands' || x.fix === 'open-pricing' ? 'sheet' : 'auto');
+  const issLane = (x) => (x.retry || /^Could not save/.test(x.title) || x.area === 'Actions' ? 'action' : /^(Data|Packages|Creative brief|Web app|Studio)$/.test(x.area) || x.fix === 'open-health' || x.fix === 'open-brands' || x.fix === 'open-pricing' ? 'sheet' : 'auto');
   const ISS_F = { status: 'Status', eta: 'Design ETA', designer: 'Designer', link: 'Creative link', file: 'Open File', brief: 'Content', cstatus: 'Content status', priority: 'Priority', qty: 'Creatives' };
   const issRetryOf = (x) => { try { const r = JSON.parse(x.retry || ''); return r && r.action === 'updateTask' && r.fields ? r : null; } catch (e) { return null; } };
   const issVal = (k, v) => (v === '' || v == null ? '(blank)' : k === 'eta' ? CO.fmtDate(String(v)) : /^https?:\/\//.test(String(v)) ? String(v).replace(/^https?:\/\/(www\.)?/, '').slice(0, 34) + (String(v).length > 40 ? '…' : '') : String(v));
@@ -3988,7 +3991,7 @@
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   /* Section picker: which parts of the dashboard a person can open (one, several or all). A dropdown with checkboxes;
      My work is always included. Used when adding someone, approving a request, giving access back and editing access. */
-  const SECTIONS = [['mine', 'My work'], ['today', 'Overview'], ['standup', 'Stand-up'], ['tasks', 'Tasks'], ['notes', 'Notes'], ['team', 'Team'], ['reports', 'Reports'], ['brands', 'Brands'], ['health', 'Data health'], ['issues', 'Issues']];
+  const SECTIONS = [['mine', 'My work'], ['today', 'Overview'], ['standup', 'Stand-up'], ['tasks', 'Tasks'], ['notes', 'Notes'], ['team', 'Team'], ['reports', 'Reports'], ['brands', 'Brands'], ['studio', 'Studio'], ['health', 'Data health'], ['issues', 'Issues']];
   const DEF_PAGES = (role) => SECTIONS.map((x) => x[0]).filter((k) => role === 'Admin' || (k !== 'health' && k !== 'issues'));
   const samePages = (a, b) => a.length === b.length && a.every((k) => b.includes(k));
   function secPicker(pages, onChange) {
@@ -4093,7 +4096,7 @@
       // [key, label, what View means, what Edit means (or '' when there is nothing to edit)]
       const ROWS = [['mine', 'My work', 'Their own tasks and to-dos (always on)', ''], ['today', 'Overview', 'Team numbers, Needs attention and charts', ''], ['standup', 'Stand-up', 'Stand-up cards and the Day plan', ''],
         ['tasks', 'Tasks', 'The task list (what they can edit: Tasks tab)', ''], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
-        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', ''], ['issues', 'Issues', 'Errors and issues found automatically', 'Retry, fix and resolve issues']];
+        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['studio', 'Studio', 'Hall of Fame, awards, the crew and cheers (everyone keeps their own character)', ''], ['health', 'Data health', 'Sheet checks and fixes needed', ''], ['issues', 'Issues', 'Errors and issues found automatically', 'Retry, fix and resolve issues']];
       const level = (k) => k === 'pricing' ? (st.pricing ? 'edit' : 'hidden') : k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
         : !st.pages.has(k) ? 'hidden' : (k === 'team' && st.team) || (k === 'issues' && st.issueFix) ? 'edit' : 'view';
       const setLevel = (k, v) => {
@@ -4333,7 +4336,7 @@
   const REMIND_AT = { morning: 600, evening: 1080, label: { morning: '10:00', evening: '18:00' } };
   /* Presence: who is online (admins only see the list; everyone is told it is visible). */
   const PRS = { on: true, list: [] };
-  const PAGE_NAME = { mine: 'My work', today: 'Overview', standup: 'Stand-up', tasks: 'Tasks', notes: 'Notes', team: 'Team', reports: 'Reports', brands: 'Brands', health: 'Data health', access: 'Access' };
+  const PAGE_NAME = { mine: 'My work', today: 'Overview', standup: 'Stand-up', tasks: 'Tasks', notes: 'Notes', team: 'Team', reports: 'Reports', brands: 'Brands', studio: 'Studio', health: 'Data health', access: 'Access' };
   const agoText = (iso) => { if (!iso) return 'never'; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : CO.istDateTime(iso); };
   dash.draw('presence-mini', (el) => {
     el.replaceChildren(); if (!isAdmin() || A.mode !== 'auth' || !PRS.on) return;
@@ -6373,6 +6376,8 @@
     return { checks };
   })();
 
+  // Studio: characters, Hall of Fame and awards (assets/studio.js)
+  if (window.CO_STUDIO) { try { window.CO_STUDIO({ A, S, dash, CO, post, toast, LS, isAdmin, pageOk, myDesigner, EF, renderAll }); } catch (e) { console.error('studio', e); } }
   renderAll();
   start();
 })();
