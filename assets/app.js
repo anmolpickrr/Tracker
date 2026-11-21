@@ -3260,12 +3260,13 @@
       $('ed-where').textContent = CO.cls(r) + ' · ' + (SHEET[r.src] || r.source) + (r.row ? ' · row ' + r.row : '') + (r.id ? ' · ' + r.id : '');
       $('ed-title').textContent = r.brand + ' · ' + r.type;
       $('ed-topic').textContent = CO.topicText(r);
-      const st = $('ed-status');
+      const st = $('ed-status'), stHint = () => { const o = st.selectedOptions[0]; $('ed-st-hint').textContent = o && o.dataset.hint || ''; };
+      if (!st.dataset.hinted) { st.dataset.hinted = '1'; st.addEventListener('change', stHint); }
       [...st.querySelectorAll('option[data-extra]')].forEach((o) => o.remove());
       // The dropdown edits Design Status only, so a task awaiting its brief shows its design status (TBP or blank).
       const dStage = r.awaiting ? 'To be planned' : r.stage;
       if (![...st.options].some((o) => o.value === dStage)) { const o = new Option(dStage + ' (as in the sheet)', dStage); o.dataset.extra = '1'; o.disabled = true; st.append(o); }
-      st.value = dStage;
+      st.value = dStage; stHint();
       $('ed-eta').value = r.eta || ''; $('ed-quick').querySelectorAll('[data-d]').forEach((b) => b.classList.remove('on'));
       $('ed-designer').value = before.designer; whoPaint();
       $('ed-priority').value = /^P[0-3]$/.test(r.priority) ? r.priority : '';
@@ -3510,6 +3511,7 @@
         if (b.kind !== 'doc') { note('This brief is not a Google Doc, so it opens in a new tab.'); return; }
         const doc = cleanBrief(b.html || ''); if (b.title) doc.prepend(el('p', 'ed-brief-title', b.title + (b.tabTitle ? ' › ' + b.tabTitle : '')));
         // a Doc with a tab per script: say which tab, or how to point the sheet at the right one
+        if (!b.tab && /^api/.test(b.tabHow || '')) doc.prepend(el('p', 'co-note ed-brief-tip', 'Showing this Doc\'s first tab: the dashboard could not list its tabs to find ' + r.id + '. ' + (/has not been used|disabled|SERVICE_DISABLED|accessNotConfigured/i.test(b.tabHow) ? (isAdmin() ? 'The Google Docs API is not on yet: in Apps Script, open Services, click +, add Google Docs API. ' : 'An Admin needs to turn on the Google Docs API. ') : 'Google said: ' + b.tabHow.replace(/^api\s*/, '') + '. ') + 'Until then, use Open in Google Docs and pick the tab.'));
         if (!b.tab && b.tabHow === 'nomatch') doc.prepend(el('p', 'co-note ed-brief-tip', 'This Doc has several tabs and none is named with ' + r.id + ', so its first tab is shown. Name the tab with the ID, or link the tab in the sheet.'));
         if (!doc.textContent.trim()) { note('The brief is empty.'); return; }
         doc.className = 'ed-brief-doc'; body.replaceChildren(doc);

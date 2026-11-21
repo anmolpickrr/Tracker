@@ -4458,3 +4458,4 @@ dialog.wn::backdrop { background: rgba(10, 10, 12, .35); }
 /* Issues: why a save failed, in plain words */
 .is-why{display:block;font-size:12.5px;line-height:1.45;color:var(--fg-2);margin-top:4px;max-width:72ch}
 .is-why b{font-weight:600;color:var(--warn)}
+.ed-st-hint{display:block;margin-top:6px;font-size:12px;line-height:1.35;color:var(--muted);font-weight:400}

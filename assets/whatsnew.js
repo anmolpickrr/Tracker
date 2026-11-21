@@ -4,6 +4,13 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-21-brief-reason', date: '2026-11-21', kind: 'improved', who: 'all', go: 'tasks', title: 'Clearer brief preview and status field',
+    what: 'When a brief shows the Doc\'s first tab instead of the task\'s own tab, the preview now says why.',
+    does: 'The design status list uses short names (TBP, WIP, Under review…) that fit the field, with what each means written underneath.',
+    how: 'Open any task. If the note above the brief says the tabs could not be listed, use Open in Google Docs and pick the tab with the task ID.',
+    changed: 'Before, "TBP: ready to be picked up" was cut off, and a wrong brief tab gave no explanation.'
+  },
+  {
     id: '2026-11-21-issues-why', date: '2026-11-21', kind: 'improved', who: 'page:issues', go: 'issues', title: 'Failed saves say why',
     what: 'Each save that did not reach the sheet now shows the reason on its row, in plain words.',
     does: 'For example "That column is protected in the sheet" or "Google Sheets was busy". A failed save whose value is in the sheet now (because someone saved it later) closes by itself.',

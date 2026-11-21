@@ -715,7 +715,8 @@ function docTabFor_(docId, taskId, auth) {
         const txt = res.getContentText(), proj = (txt.match(/project[s/ ]+(\d{6,})/) || [])[1];
         // the Docs API is off for the web app's Google Cloud project: one issue for the owner, with the switch
         if (/has not been used|is disabled|SERVICE_DISABLED|accessNotConfigured/i.test(txt)) { try { const dc = CacheService.getScriptCache(); if (!dc.get('iss:docs-api-6h')) { dc.put('iss:docs-api-6h', '1', 21600); issueLog_('Creative brief', 'Turn on the Google Docs API to show the right tab of each brief', 'Brief Docs with a tab per task (for example "SRAP591 : 4th ugc") need the Google Docs API to find the tab for each task ID. It is off for the web app\'s Google Cloud project. Turn it on once' + (proj ? ': https://console.cloud.google.com/apis/library/docs.googleapis.com?project=' + proj : ' in that project\'s APIs & Services') + '. Until then, a tab linked in the sheet (a link ending in ?tab=…) is still shown.', 'web app', { key: 'brief|docs-api' }); } } catch (e) { /* never fail the brief */ } }
-        return { how: 'api ' + res.getResponseCode() };
+        let gm = ''; try { gm = (JSON.parse(txt).error || {}).message || ''; } catch (e) { gm = ''; }
+        return { how: 'api ' + res.getResponseCode() + (gm ? ': ' + String(gm).slice(0, 160) : '') };
       }
       tabs = [];
       const walk = function (list) { (list || []).forEach(function (t) { if (t.tabProperties) tabs.push({ id: t.tabProperties.tabId, title: t.tabProperties.title || '' }); walk(t.childTabs); }); };
