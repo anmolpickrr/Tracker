@@ -4,6 +4,13 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-21-issues-why', date: '2026-11-21', kind: 'improved', who: 'page:issues', go: 'issues', title: 'Failed saves say why',
+    what: 'Each save that did not reach the sheet now shows the reason on its row, in plain words.',
+    does: 'For example "That column is protected in the sheet" or "Google Sheets was busy". A failed save whose value is in the sheet now (because someone saved it later) closes by itself.',
+    how: 'Open Issues and read the "Why" line under a failed save. Fix what it says, then click Retry. Items that need a Google Cloud setting have a button that opens it.',
+    changed: 'The Google Docs API reminder is logged at most every 6 hours instead of on every brief.'
+  },
+  {
     id: '2026-11-20-notes-assignees', date: '2026-11-20', kind: 'new', who: 'page:notes', go: 'notes', title: 'Edit notes assigned to you',
     what: 'If a note is assigned to you, you can now edit it, not only tick your item.',
     does: 'You can change its text, checklist, reminder, colour and files, and tag more people (they can then see it). Who can see it and who it is assigned to stay as the author set them, and only the author can delete it.',

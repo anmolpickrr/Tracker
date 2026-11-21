@@ -4455,3 +4455,6 @@ dialog.wn::backdrop { background: rgba(10, 10, 12, .35); }
 }
 .is-hl { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .is-done-pill { flex: none; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+/* Issues: why a save failed, in plain words */
+.is-why{display:block;font-size:12.5px;line-height:1.45;color:var(--fg-2);margin-top:4px;max-width:72ch}
+.is-why b{font-weight:600;color:var(--warn)}

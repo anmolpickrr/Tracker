@@ -236,7 +236,7 @@
     issQueue({ key, area, title, details: String(details || '').slice(0, 1500) + ' · Page: ' + (PAGES[P.tab] ? PAGES[P.tab][0] : P.tab || '') + ' · ' + browserName(), retry: retry || undefined, fix: fix || undefined, active: true });
   };
   // Only issues this browser reported are closed from here (the web app also allows only those to be closed by non-Admins).
-  ISS.resolve = (key) => { if (!ISS.mine.includes(key)) return; ISS.mine = ISS.mine.filter((k) => k !== key); ISS.keep(); issQueue({ key, active: false }); };
+  ISS.resolve = (key, any) => { if (!ISS.mine.includes(key)) { if (any && (ISS.list || []).some((x) => x.key === key && x.status === 'Open')) issQueue({ key, active: false }); return; } ISS.mine = ISS.mine.filter((k) => k !== key); ISS.keep(); issQueue({ key, active: false }); };
   ISS.load = async (force) => {
     if (A.mode !== 'auth' || !pageOk('issues') || ISS.busy || (!force && Date.now() - ISS.at < 20000 && ISS.list)) return;
     ISS.busy = true; if (!AX.users && isAdmin()) axRefresh(false); // names of who reported what
@@ -3434,7 +3434,7 @@
           throw err;
         }
         SAVING.delete(r.uid); savingPill();
-        ISS.resolve(key);
+        ISS.resolve(key, true);
         // the sheet's own spellings (status, content status) and row, once confirmed
         if (res.written && res.written.cstatus) { mark.fields = Object.assign({}, fields, { cstatus: res.written.cstatus }); const cur = (S.tasks || []).find((x) => x.uid === r.uid); if (cur) cur.content_status = String(res.written.cstatus).toUpperCase(); }
         renderAll();
@@ -3796,6 +3796,33 @@
   const ISS_F = { status: 'Status', eta: 'Design ETA', designer: 'Designer', link: 'Creative link', file: 'Open File', brief: 'Content', cstatus: 'Content status', priority: 'Priority', qty: 'Creatives' };
   const issRetryOf = (x) => { try { const r = JSON.parse(x.retry || ''); return r && r.action === 'updateTask' && r.fields ? r : null; } catch (e) { return null; } };
   const issVal = (k, v) => (v === '' || v == null ? '(blank)' : k === 'eta' ? CO.fmtDate(String(v)) : /^https?:\/\//.test(String(v)) ? String(v).replace(/^https?:\/\/(www\.)?/, '').slice(0, 34) + (String(v).length > 40 ? '…' : '') : String(v));
+  // Why a save failed, in plain words (the technical text stays under the row).
+  function issWhy(x) {
+    const d = String(x.details || '').split(' · Page:')[0].trim(); if (!d || d === 'x') return '';
+    if (/protected/i.test(d)) return 'That column is protected in the sheet, so the web app cannot write to it. Remove the protection or add the dashboard\'s account as an editor of the range.';
+    if (/data validation|violates|dropdown|not one of|Invalid entry/i.test(d)) return 'The sheet\'s dropdown does not accept this value: ' + d.slice(0, 140);
+    if (/not found|no row|could not find/i.test(d)) return 'The task could not be found in the sheet (its ID or row may have changed).';
+    if (/took too long|timed? ?out|timeout/i.test(d)) return 'The web app took too long to answer.';
+    if (/busy|lock|try again/i.test(d)) return 'Google Sheets was busy with other saves.';
+    if (/failed to fetch|network|load failed|offline/i.test(d)) return 'The connection dropped while saving.';
+    if (/quota|too many|rate/i.test(d)) return 'Google\'s daily limit for the web app was reached.';
+    return d.slice(0, 160);
+  }
+  // A failed save whose values are in the sheet now (saved later by anyone) needs nothing more.
+  function issAlreadySaved(r) {
+    const t = r && (S.tasks || []).find((y) => y.src === r.source && y.id === r.id); if (!t) return false;
+    const f = r.fields, n = (v) => String(v == null ? '' : v).trim().toLowerCase();
+    return Object.keys(f).every((k) => k === 'status' ? n(t.stage) === n(f.status) || (f.status === 'To be planned' && t.awaiting)
+      : k === 'eta' ? n(t.eta) === n(f.eta) : k === 'designer' ? n((t.list || []).join(',')) === n(String(f.designer || '').split(/\s*,\s*/).join(','))
+      : k === 'cstatus' ? n(t.content_status) === n(f.cstatus) : k === 'qty' ? Number(t.qty) === Number(f.qty) : n(t[k]) === n(f[k]));
+  }
+  ISS.sweep = () => {
+    if (!ISS.list || !S.tasks || !(isAdmin() || perm('issueFix'))) return;
+    ISS.swept = ISS.swept || new Set();
+    const done = ISS.list.filter((x) => x.status === 'Open' && !ISS.swept.has(x.key) && issAlreadySaved(issRetryOf(x)));
+    if (!done.length) return; done.forEach((x) => { ISS.swept.add(x.key); x.status = 'Resolved'; x.resolvedOn = new Date().toISOString(); x.resolvedBy = 'Automatic check'; });
+    Promise.all(done.map((x) => post({ action: 'issueAct', key: x.key, act: 'resolve' }).catch(() => ISS.swept.delete(x.key)))).then(() => ISS.load(true));
+  };
   function issHead(x) {
     const r = issRetryOf(x), id = (r && r.id) || ((x.title.match(/\b(SRAP?\d+[_\d]*)\b/) || [])[1]);
     const t = id && (S.tasks || []).find((y) => y.id === id);
@@ -3826,6 +3853,7 @@
   dash.draw('issues', (box) => {
     box.replaceChildren();
     if (!ISS.list) { box.append(el('p', 'co-note', ISS.err || 'Loading issues…')); if (!ISS.busy) ISS.load(); return; }
+    ISS.sweep();
     const L = ISS.list, open = L.filter((x) => x.status === 'Open'), wk = Date.now() - 7 * 864e5, fixed7 = L.filter((x) => x.status !== 'Open' && x.resolvedOn && new Date(x.resolvedOn) > wk);
     const canFix = isAdmin() || perm('issueFix');
     // lanes: the summary and the filter in one
@@ -3861,6 +3889,7 @@
       const sub = el('span', 'is-sub'); if (hd.ctx) sub.append(el('span', 'is-ctx', hd.ctx));
       if (r) Object.keys(r.fields).forEach((k) => { const c = el('span', 'is-chg'); c.append(el('small', '', ISS_F[k] || k), el('span', '', '→ ' + issVal(k, r.fields[k]))); sub.append(c); });
       if (sub.childNodes.length) main.append(sub);
+      const why = on && issLane(x) === 'action' ? issWhy(x) : ''; if (why) { const w = el('span', 'is-why'); w.append(el('b', '', 'Why: '), document.createTextNode(why)); main.append(w); }
       const meta = el('span', 'is-meta'); const who = x.by && !/^(Automatic check|schedule|web app)$/.test(x.by) ? nameOf(x.by) : 'Found automatically';
       meta.append(el('span', '', who), el('span', '', on ? agoText(x.last) : 'resolved ' + when(x.resolvedOn)));
       if (x.count > 1) meta.append(el('span', 'is-count', x.count + ' times'));
@@ -3870,6 +3899,8 @@
       const acts = el('div', 'iss-acts2');
       const btn = (t, cls, fn) => { const b = el('button', 'co-btn sm' + (cls ? ' ' + cls : ''), t); b.type = 'button'; b.addEventListener('click', (e) => { e.stopPropagation(); fn(b); }); acts.append(b); return b; };
       if (canFix && on && r) btn('Retry', 'primary', (b) => issRetry(x, b));
+      const gurl = (String(x.details || '').match(/https:\/\/console\.cloud\.google\.com\/[^\s'")]+/) || [])[0];
+      if (on && gurl && isAdmin()) btn('Turn on in Google Cloud', 'primary', () => window.open(gurl.replace(/[.,]+$/, ''), '_blank', 'noopener'));
       if (canFix && on && ISS_FIX[x.fix] && (x.fix !== 'open-pricing' || isAdmin()) && (x.fix !== 'open-health' || pageOk('health'))) btn(ISS_FIX[x.fix][0], r ? '' : 'primary', ISS_FIX[x.fix][1]);
       if (canFix) { if (on) btn('Mark resolved', 'ghost', () => issAct(x, 'resolve')); else { btn('Reopen', 'ghost', () => issAct(x, 'reopen')); btn('Remove', 'ghost', () => { if (confirm('Remove this issue from the list?')) issAct(x, 'delete'); }); } }
       top.append(tog); if (acts.childNodes.length) top.append(acts); li.append(top);
