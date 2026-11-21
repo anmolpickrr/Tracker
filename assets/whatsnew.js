@@ -4,6 +4,13 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-21-my-day', date: '2026-11-21', kind: 'new', who: 'page:mine', go: 'mine', title: 'Your day, in five buckets',
+    what: 'My work now opens with a breakdown of your day: Done, Under review, In progress, Not picked up and Overdue.',
+    does: 'Each bucket shows how many tasks (and creatives) are in it. Click one to see exactly which tasks they are, with their ETA and status.',
+    how: 'Open My work and click a bucket. On Done, switch between Today and This week. Click any task to open it and update its status or ETA.',
+    changed: 'Replaces the Focus now, Up next and Delivered this week lists. A task past its ETA shows under Overdue and also in its own stage.'
+  },
+  {
     id: '2026-11-21-brief-reason', date: '2026-11-21', kind: 'improved', who: 'all', go: 'tasks', title: 'Clearer brief preview and status field',
     what: 'When a brief shows the Doc\'s first tab instead of the task\'s own tab, the preview now says why.',
     does: 'The design status list uses short names (TBP, WIP, Under review…) that fit the field, with what each means written underneath.',

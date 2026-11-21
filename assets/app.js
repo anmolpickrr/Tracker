@@ -807,7 +807,7 @@
 
   /* ================= Header, sync state and filters ================= */
   const PAGES = {
-    mine: ['My work', 'Your overdue work, what is due today, what is next and what you delivered this week.'],
+    mine: ['My work', 'Your day at a glance: what you delivered, what is under review, in progress, not picked up yet and overdue.'],
     today: ['Overview', () => 'What needs attention today.'],
     brands: ['Brands', 'Every brand at a glance, and the work waiting on clients.'],
     whatsnew: ['What\'s new', 'Every update to the dashboard: what changed, what it does and how to use it.'],
@@ -1497,7 +1497,7 @@
   /* ================= My work =================
      One person's day: overdue and due today first, then what is next, what is with the client and what they delivered
      this week. Team members land here; admins can view any team member. */
-  const MW = { who: LS.get('co.mwho2', '') };
+  const MW = { who: LS.get('co.mwho2', ''), k: LS.get('co.mwk', ''), ds: LS.get('co.mwds', 'today') };
   dash.draw('mine', (el) => {
     if (A.mode !== 'auth' || !A.user) { el.replaceChildren(); return; }
     if (CO.notReady(el, 'box')) return;
@@ -1515,8 +1515,7 @@
     }
     const all = CO.rows().filter((r) => r.list.includes(who));
     const t = CO.today(), wk = mondayOf(t);
-    const open = all.filter((r) => r.open), focus = open.filter((r) => r.due === 'overdue' || r.due === 'today').sort((a, b) => (a.eta || '').localeCompare(b.eta || ''));
-    const next = open.filter((r) => r.due !== 'overdue' && r.due !== 'today').sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || (a.priority || 'P9').localeCompare(b.priority || 'P9'));
+    const open = all.filter((r) => r.open);
     const waiting = all.filter((r) => r.shared).sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999'));
     const done = all.filter((r) => r.done && r.ddate && r.ddate >= wk && r.ddate <= t).sort((a, b) => b.ddate.localeCompare(a.ddate));
     // header: who, role, load; admins pick the person
@@ -1531,15 +1530,35 @@
       sel.addEventListener('change', () => { MW.who = sel.value === mine ? '' : sel.value; LS.set('co.mwho2', MW.who); dash.draw('mine'); });
       const lab = document.createElement('label'); lab.className = 'mw-as'; lab.append('View as ', sel); head.append(lab);
     }
-    // tiles
-    const tiles = document.createElement('div'); tiles.className = 'mw-tiles';
-    [['late', 'Overdue', open.filter((r) => r.due === 'overdue')], ['today', 'Due today', open.filter((r) => r.due === 'today')], ['wip', 'In progress', open.filter((r) => r.stage === 'WIP')], ['done', 'Delivered this week', done]].forEach(([k, l, list]) => {
-      const b = document.createElement('div'); b.className = 'mw-tile k-' + k + (list.length ? '' : ' zero'); const n = document.createElement('b'); n.textContent = CO.num(list.length); const sp = document.createElement('span'); sp.textContent = l; const sm = document.createElement('small'); const cq = CO.sumQty(list); sm.textContent = (list.length === 1 ? '1 task' : list.length + ' tasks') + (cq !== list.length ? ' · ' + cq + ' creatives' : ''); b.append(n, sp, sm); tiles.append(b);
+    // The day in five buckets: what is done, with the Creative Head, in progress, not picked up yet, and late.
+    // Each bucket is a tab; its tasks are listed below. A late task also stays in its own stage bucket.
+    const doneToday = all.filter((r) => r.done && r.ddate === t).sort((a, b) => (b.eta || '').localeCompare(a.eta || ''));
+    const BK = [
+      ['done', 'Done', MW.ds === 'week' ? done : doneToday, MW.ds === 'week' ? 'delivered since Monday' : 'delivered today'],
+      ['review', 'Under review', all.filter((r) => r.review).sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999')), 'waiting for the Creative Head'],
+      ['wip', 'In progress', open.filter((r) => r.stage === 'WIP' || r.stage === 'Changes requested').sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999')), 'WIP and changes requested'],
+      ['pick', 'Not picked up', open.filter((r) => r.stage === 'To be planned').sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || (a.priority || 'P9').localeCompare(b.priority || 'P9')), 'assigned, not started'],
+      ['late', 'Overdue', open.filter((r) => r.due === 'overdue').sort((a, b) => (a.eta || '').localeCompare(b.eta || '')), 'past the design ETA']
+    ];
+    const dueToday = open.filter((r) => r.due === 'today').length;
+    if (!BK.some((x) => x[0] === MW.k)) MW.k = '';
+    const sel = MW.k || (BK[4][2].length ? 'late' : BK[2][2].length ? 'wip' : BK[3][2].length ? 'pick' : 'done');
+    const day = document.createElement('div'); day.className = 'mw-day';
+    const dh = document.createElement('div'); dh.className = 'mw-day-h';
+    const dt = document.createElement('b'); dt.textContent = (who === mine ? 'Your day' : who.split(' ')[0] + '\'s day') + ', ' + new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'short' });
+    const ds = document.createElement('small'); ds.textContent = dueToday ? dueToday + (dueToday === 1 ? ' task is' : ' tasks are') + ' due today' : 'Nothing else is due today';
+    const dl = document.createElement('div'); dl.append(dt, ds); dh.append(dl);
+    day.append(dh);
+    const tiles = document.createElement('div'); tiles.className = 'mw-tiles'; tiles.setAttribute('role', 'tablist'); tiles.setAttribute('aria-label', 'My day');
+    BK.forEach(([k, l, list, sub]) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'mw-tile k-' + k + (list.length ? '' : ' zero') + (sel === k ? ' on' : ''); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(sel === k)); b.dataset.k = k;
+      const n = document.createElement('b'); n.textContent = CO.num(list.length); const sp = document.createElement('span'); sp.textContent = l; const sm = document.createElement('small'); const cq = CO.sumQty(list); sm.textContent = sub + (cq > list.length ? ' · ' + cq + ' creatives' : '');
+      b.append(n, sp, sm); b.addEventListener('click', () => { MW.k = k; LS.set('co.mwk', k); dash.draw('mine'); }); tiles.append(b);
     });
-    head.append(tiles); el.append(head);
+    day.append(tiles); head.append(day); el.append(head);
     const fl = filterNote2();
     const section = (title, note, list, opts, empty, limit) => {
-      const c = card(title, note, list.length); collapser(c, 'mw:' + title, title); const ul = document.createElement('ul'); ul.className = 'na-list mw-list';
+      const c = card(title, note, list.length); if (!(opts && opts.fixed)) collapser(c, 'mw:' + title, title); const ul = document.createElement('ul'); ul.className = 'na-list mw-list';
       list.slice(0, limit || 50).forEach((r, i) => { const li = workRow(r, Object.assign({ who: false }, opts)); li.classList.add('in'); li.style.setProperty('--i', Math.min(i, 10)); ul.append(li); });
       if (list.length > (limit || 50)) { const m = document.createElement('li'); m.className = 'tw-more'; m.textContent = '+' + (list.length - (limit || 50)) + ' more in Tasks'; ul.append(m); }
       if (!list.length) { c.append(emptyLine(fl ? empty + ' (filtered: ' + fl + ')' : empty)); if (fl) c.append(clearBtn2()); } else c.append(ul);
@@ -1552,11 +1571,14 @@
     const cto = CT.of(who), isWriter = CT.writers().some((w) => w === who) || CT.contentOnly(who);
     if (isWriter || cto.open.length) left.append(section('Content tasks', 'Briefs, scripts and content in your bucket.', cto.open, { kind: 'changes' }, 'No open content tasks.'));
     if (cto.client.length) right.append(section('Content with the client', 'Briefs shared with the client.', cto.client, { waiting: true }, ''));
-    left.append(section('Focus now', 'Overdue and due today, oldest deadline first.', focus, {}, 'Nothing overdue or due today.'),
-      section('Up next', 'Open work by ETA; work with no ETA comes last.', next, { kind: 'tomorrow' }, 'Nothing else open.', 12));
+    const cur = BK.find((x) => x[0] === sel), kOpt = { done: { done: true, kind: 'done' }, review: { kind: 'today' }, wip: {}, pick: { kind: 'tomorrow' }, late: { kind: 'late' } }[sel];
+    const NOTE = { done: MW.ds === 'week' ? 'Delivered since Monday ' + CO.fmtDate(wk) + ', newest first.' : 'Delivered today (Design ETA today and marked DONE).', review: 'Finished and waiting for the Creative Head\'s review (UNDER REVIEW).', wip: 'Being worked on, including changes the client asked for. Earliest ETA first.', pick: 'Assigned to you but not started (TBP). Earliest ETA first, then priority.', late: 'Open work past its Design ETA, most overdue first. Update the ETA or the status in each task.' };
+    const EMPTY = { done: MW.ds === 'week' ? 'Nothing delivered yet this week.' : 'Nothing delivered yet today.', review: 'Nothing waiting for review.', wip: 'Nothing in progress.', pick: 'Nothing waiting to be picked up.', late: 'Nothing overdue. Well done.' };
+    const lc = section(cur[1], NOTE[sel], cur[2], Object.assign({ fixed: true }, kOpt), EMPTY[sel]); lc.classList.add('mw-bucket', 'k-' + sel);
+    if (sel === 'done') { const sw = document.createElement('div'); sw.className = 'pm-seg mw-ds'; sw.setAttribute('role', 'radiogroup'); sw.setAttribute('aria-label', 'Delivered'); [['today', 'Today'], ['week', 'This week']].forEach(([v, tx]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-opt' + (MW.ds === v ? ' on' : ''); b.textContent = tx; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(MW.ds === v)); b.addEventListener('click', () => { MW.ds = v; LS.set('co.mwds', v); dash.draw('mine'); }); sw.append(b); }); const hh = lc.querySelector('.na-head'); (hh || lc).append(sw); }
+    left.append(lc);
     if (who === mine && isOwner()) { const rev = CO.rows().filter((r) => r.review).sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999')); right.append(section('Waiting for your review', 'Your team finished these (UNDER REVIEW). Move each to DONE or SHARED after reviewing.', rev, { kind: 'today' }, 'Nothing waiting for your review.')); }
-    right.append(section('With the client', 'Shared and waiting for approval. Not counted as late.', waiting, { waiting: true, kind: 'changes' }, 'Nothing waiting on a client.', 10),
-      section('Delivered this week', 'Since Monday ' + CO.fmtDate(wk) + '.', done, { done: true, kind: 'done' }, 'Nothing delivered yet this week.'));
+    right.append(section('With the client', 'Shared and waiting for approval. Not counted as late.', waiting, { waiting: true, kind: 'changes' }, 'Nothing waiting on a client.', 10));
     grid.append(left, right); el.append(grid);
   });
 
