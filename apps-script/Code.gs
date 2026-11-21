@@ -2925,14 +2925,14 @@ function ownDataText_(user, fresh, maxAge) {
    Performer, Best Creative…) and cheers. Kept in the access book: Profiles, Character images (the picture in pieces,
    like note files), Awards and Cheers. A photo sent to make a character is never stored; only the picture made from it,
    once its owner saves it. */
-const PROF_HEAD = ['Email', 'Team name', 'Character', 'Image', 'Tagline', 'Updated', 'Prefs'];
+const PROF_HEAD = ['Email', 'Team name', 'Character', 'Image', 'Tagline', 'Updated', 'Prefs', 'Snapshot'];
 const CIMG_HEAD = ['Image', 'Piece', 'Pieces', 'Data', 'By', 'At'];
 const AWARD_HEAD = ['ID', 'Who', 'Title', 'Tag', 'Note', 'Link', 'Until', 'By', 'At', 'Deleted'];
 const CHEER_HEAD = ['Key', 'Email', 'At'];
 function studioTab_(name, head) { const ss = accessBook_(); let sh = ss.getSheetByName(name); if (!sh) { sh = ss.insertSheet(name); sh.appendRow(head); sh.setFrozenRows(1); if (name === 'Character images' || name === 'Notify') sh.hideSheet(); } else if (sh.getLastColumn() < head.length) { while (sh.getMaxColumns() < head.length) sh.insertColumnAfter(sh.getMaxColumns()); sh.getRange(1, 1, 1, head.length).setValues([head]); } return sh; }
 function studioRows_(name, head) { const sh = studioTab_(name, head), last = sh.getLastRow(); return { sh: sh, rows: last < 2 ? [] : sh.getRange(2, 1, last - 1, head.length).getValues() }; }
 function studio_(u) {
-  const pr = studioRows_('Profiles', PROF_HEAD).rows.map(function (r) { return { email: String(r[0]).toLowerCase(), who: String(r[1] || ''), char: parseJson_(r[2], null), img: String(r[3] || ''), tagline: String(r[4] || ''), updated: iso_(r[5]) }; }).filter(function (x) { return x.email; });
+  const pr = studioRows_('Profiles', PROF_HEAD).rows.map(function (r) { return { email: String(r[0]).toLowerCase(), who: String(r[1] || ''), char: parseJson_(r[2], null), img: String(r[3] || ''), tagline: String(r[4] || ''), updated: iso_(r[5]), snap: String(r[7] || '') }; }).filter(function (x) { return x.email; });
   const p = permsOf_(u), page = isAdminUser_(u) || p.pages.indexOf('studio') >= 0;
   const mineRow = studioRows_('Profiles', PROF_HEAD).rows.filter(function (r) { return String(r[0]).toLowerCase() === u.email; })[0];
   const out = { ok: true, profiles: pr, canAward: isAdminUser_(u), myPrefs: mineRow ? parseJson_(mineRow[6], null) : null };
@@ -2957,24 +2957,27 @@ function charImage_(b) {
 }
 function profileSave_(b, u) {
   const P = studioRows_('Profiles', PROF_HEAD), sh = P.sh, i = P.rows.findIndex(function (r) { return String(r[0]).toLowerCase() === u.email; });
-  const cur = i >= 0 ? P.rows[i] : [u.email, '', '', '', '', '', ''];
+  const cur = i >= 0 ? P.rows[i] : [u.email, '', '', '', '', '', '', ''];
   let who = clean_(b.who).slice(0, 80);
   if (who && !ownMatcher_(u)(who, '')) who = ''; // only your own name on the team list
   const ch = b.char && typeof b.char === 'object' ? JSON.stringify(b.char).slice(0, 3000) : String(cur[2] || '');
-  let img = String(cur[3] || '');
-  if (b.image === 'remove') img = '';
-  else if (b.image && typeof b.image === 'string') {
-    const data = String(b.image).replace(/^data:image\/(png|jpeg|webp);base64,/, '');
-    if (!/^[A-Za-z0-9+/=]+$/.test(data) || data.length > 400000) return { ok: false, error: 'The picture could not be saved (it should be a small PNG, JPEG or WebP).' };
-    const mime = (String(b.image).match(/^data:(image\/(png|jpeg|webp));/) || [])[1] || 'image/webp';
-    img = 'I' + Utilities.formatDate(new Date(), IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 8);
+  const store = function (v) {
+    const data = String(v).replace(/^data:image\/(png|jpeg|webp);base64,/, '');
+    if (!/^[A-Za-z0-9+/=]+$/.test(data) || data.length > 400000) return null;
+    const mime = (String(v).match(/^data:(image\/(png|jpeg|webp));/) || [])[1] || 'image/webp';
+    const id = 'I' + Utilities.formatDate(new Date(), IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 8);
     const full = 'data:' + mime + ';base64,' + data, PC = 45000, n = Math.ceil(full.length / PC), rows = [], now = new Date();
-    for (let k = 0; k < n; k++) rows.push([img, k + 1, n, full.slice(k * PC, (k + 1) * PC), u.email, now]);
+    for (let k = 0; k < n; k++) rows.push([id, k + 1, n, full.slice(k * PC, (k + 1) * PC), u.email, now]);
     const ish = studioTab_('Character images', CIMG_HEAD); ish.getRange(ish.getLastRow() + 1, 1, rows.length, CIMG_HEAD.length).setValues(rows);
-  }
-  const row = [u.email, who || String(cur[1] || '') || clean_(u.name).slice(0, 80), ch, img, safe_(String(b.tagline != null ? b.tagline : cur[4] || '').slice(0, 80)), new Date(), String(cur[6] || '')];
+    return id;
+  };
+  let img = String(cur[3] || ''), snapId = String(cur[7] || '');
+  if (b.image === 'remove') img = '';
+  else if (b.image && typeof b.image === 'string') { img = store(b.image); if (!img) return { ok: false, error: 'The picture could not be saved (it should be a small PNG, JPEG or WebP).' }; }
+  if (b.snap && typeof b.snap === 'string') snapId = store(b.snap) || snapId;
+  const row = [u.email, who || String(cur[1] || '') || clean_(u.name).slice(0, 80), ch, img, safe_(String(b.tagline != null ? b.tagline : cur[4] || '').slice(0, 80)), new Date(), String(cur[6] || ''), snapId];
   if (i >= 0) sh.getRange(i + 2, 1, 1, PROF_HEAD.length).setValues([row]); else sh.appendRow(row);
-  return { ok: true, profile: { email: u.email, who: row[1], char: parseJson_(ch, null), img: img, tagline: row[4] }, changes: [{ action: 'Character updated', sheet: 'Profiles', record: u.email, details: img && img !== String(cur[3] || '') ? 'new picture' : '' }] };
+  return { ok: true, profile: { email: u.email, who: row[1], char: parseJson_(ch, null), img: img, tagline: row[4], snap: snapId }, changes: [{ action: 'Character updated', sheet: 'Profiles', record: u.email, details: img && img !== String(cur[3] || '') ? 'new picture' : '' }] };
 }
 const AWARD_TAGS = ['best-performer', 'best-creative', 'top-contributor', 'rising-star', 'client-favourite', 'speed-star', 'team-player', 'idea-machine', 'custom'];
 function awardSave_(b, u) {
@@ -3043,7 +3046,7 @@ function soundPrefs_(b, u) {
   const p = b.prefs && typeof b.prefs === 'object' ? b.prefs : {}, keep = { asked: !!p.asked, notify: !!p.notify, music: !!p.music, vol: Math.max(0, Math.min(1, Number(p.vol) || 0)), mvol: Math.max(0, Math.min(1, Number(p.mvol) || 0)), types: {} };
   ['reminder', 'mention', 'task', 'achievement', 'announcement'].forEach(function (k) { keep.types[k] = !(p.types && p.types[k] === false); });
   const P = studioRows_('Profiles', PROF_HEAD), i = P.rows.findIndex(function (r) { return String(r[0]).toLowerCase() === u.email; });
-  if (i >= 0) P.sh.getRange(i + 2, 7).setValue(JSON.stringify(keep)); else P.sh.appendRow([u.email, clean_(u.name).slice(0, 80), '', '', '', new Date(), JSON.stringify(keep)]);
+  if (i >= 0) P.sh.getRange(i + 2, 7).setValue(JSON.stringify(keep)); else P.sh.appendRow([u.email, clean_(u.name).slice(0, 80), '', '', '', new Date(), JSON.stringify(keep), '']);
   return { ok: true, prefs: keep };
 }
 const NOTIFY_HEAD = ['ID', 'At', 'From', 'To', 'Type', 'Text', 'Ref'];

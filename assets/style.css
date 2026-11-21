@@ -4777,3 +4777,28 @@ a.stu-print:hover { border-color: var(--primary); }
 .np-pop { top: 84px; }
 @media (min-width: 1024px) { .snd-ask { left: calc(var(--side-w) + 40px); } }
 @media (max-width: 1023px) { .snd-ask { bottom: 92px; left: 16px; } }
+
+/* ============ 3D characters (Nov 2026) ============ */
+.c3d, .c3d-stage { display: block; width: 100%; height: 100%; touch-action: pan-y; }
+.c3d { cursor: grab; } .c3d:active { cursor: grabbing; }
+.c3d-crew { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 3; }
+.stu-stage.is-3d { padding: 0; min-height: 0; display: block; }
+.stu-3dstage { position: relative; width: 100%; aspect-ratio: 16 / 10; min-height: 340px; border-radius: 22px; }
+.stu-3dknobs { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; gap: 8px; z-index: 3; padding: 6px; border-radius: 99px; background: color-mix(in srgb, var(--raised) 80%, transparent); backdrop-filter: blur(6px); border: 1px solid var(--line); }
+.stu-stage.is-3d .stu-note { width: 136px; padding: 22px 12px 12px; } .stu-stage.is-3d .stu-note b { font-size: 13px; }
+.stu-stage.is-3d .stu-note.n0 { left: 0; top: 0; } .stu-stage.is-3d .stu-note.n1 { right: 0; top: 0; } .stu-stage.is-3d .stu-note.n2 { right: 0; bottom: 62px; } .stu-stage.is-3d .stu-note.n3 { left: 0; bottom: 62px; }
+.stu-stage.is-3d .stu-cal, .stu-stage.is-3d .stu-mug { display: none; }
+.stu-3dslot { aspect-ratio: 200 / 220; border-radius: 16px; background: color-mix(in srgb, var(--violet) 10%, var(--panel)); }
+.stu-fig.snap > img { border-radius: 20px; }
+.stu-fig.big.is-3d { aspect-ratio: 10 / 11; border-radius: 28px; overflow: hidden; }
+.stu-pv-hint { margin: 0; font-size: 12px; }
+.stu-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.stu-look { display: grid; grid-template-columns: 56px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 10px; align-items: center; padding: 8px; border-radius: 16px; border: 2px solid transparent; background: var(--panel-2); color: var(--fg); text-align: left; cursor: pointer; font: inherit; }
+.stu-look img { grid-row: 1 / 3; width: 56px; height: 56px; border-radius: 14px; }
+.stu-look b { font-size: 13.5px; } .stu-look small { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+.stu-look:hover { border-color: var(--line); } .stu-look.on { border-color: var(--fg); background: var(--raised); }
+.stu-moves .stu-chip { font-size: 12.5px; }
+@media (max-width: 760px) { .stu-3dstage { aspect-ratio: 4 / 5; } .stu-stage.is-3d .stu-note { position: relative; inset: auto !important; } .stu-stage.is-3d { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .stu-stage.is-3d .stu-3dstage { grid-column: 1 / -1; } .stu-3dknobs { position: static; transform: none; grid-column: 1 / -1; justify-self: center; } }
+/* the crew only moves when you hover a card (keeps the page light on any computer) */
+.stu-mate:not(:hover) .ch-anim .ch-head, .stu-mate:not(:hover) .ch-anim .ch-eyes, .stu-mate:not(:hover) .ch-anim .ch-gear { animation-play-state: paused; }
+.stu-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .stu-tabs::-webkit-scrollbar { display: none; } .stu-tabs .pm-opt { flex: none; }

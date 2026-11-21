@@ -3,6 +3,7 @@
    that flips through this week's spotlights (Admins' awards first, then last week's stars, worked out from the
    sheets), a podium, the awards wall with cheers, the crew and a reel of fresh deliveries. A compact strip of it
    sits at the top of the Overview. Started by app.js with its helpers (window.CO_STUDIO(api)). */
+var CO_STU_VER = (document.currentScript && (document.currentScript.src.match(/[?&]v=(\w+)/) || [])[1]) || '';
 window.CO_STUDIO = function (api) {
   'use strict';
   const { A, S, dash, CO, post, toast, LS, isAdmin, pageOk, myDesigner, EF, renderAll } = api;
@@ -49,6 +50,21 @@ window.CO_STUDIO = function (api) {
   };
   const tagOf = (k) => TAGS[k] || TAGS.custom;
 
+  /* ---------- 3D (loaded only when someone opens Studio or the builder) ---------- */
+  let D3 = null, d3p = null;
+  // 3D needs a real graphics chip: software rendering (no GPU) is far too slow, so those screens keep the 2D characters
+  const gl = (() => { try { const c = document.createElement('canvas'), x = window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')); if (!x) return false; const i = x.getExtension('WEBGL_debug_renderer_info'), r = i ? String(x.getParameter(i.UNMASKED_RENDERER_WEBGL)) : ''; const lose = x.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); return window.CO_FORCE3D || !/swiftshader|llvmpipe|software|basic render/i.test(r); } catch (e) { return false; } })();
+  const want3d = () => {
+    if (d3p) return d3p;
+    d3p = (async () => { if (!gl || window.CO_NO3D) return null; try { await import('./char3d.js' + (CO_STU_VER ? '?v=' + CO_STU_VER : '')); D3 = window.CO_3D || null; if (D3) { SNAPS.clear(); renderAll(); } return D3; } catch (e) { console.warn('3D characters are off:', e && e.message); return null; } })();
+    return d3p;
+  };
+  ST.want3d = want3d;
+  const lowPower = () => window.innerWidth < 900 || (navigator.hardwareConcurrency || 8) <= 4 || reduce();
+  const SNAPS = new Map();
+  const snapOf = (cfg, size) => { if (!D3 || !cfg) return null; const k = JSON.stringify(cfg) + (size || 160); if (!SNAPS.has(k)) { if (SNAPS.size > 200) SNAPS.clear(); try { SNAPS.set(k, D3.snap(cfg, size || 160)); } catch (e) { SNAPS.set(k, null); } } return SNAPS.get(k); };
+  const MASCOT = { style: 'vinyl', skin: '#ffe0c7', hair: 'bald', hairColor: '#b9b6b0', eyes: 'sparkle', mouth: 'grin', head: 'cap', outfit: 'hoodie', outfitColor: '#685bc7', pants: '#2b3a55', bg: '#ddff00', gear: ['trophy'], move: 'wave' };
+
   /* ---------- profiles and faces ---------- */
   const profOf = (name) => { if (!name) return null; const n = String(name).toLowerCase(); return ST.profiles.find((p) => p.who && p.who.toLowerCase() === n) || ST.profiles.find((p) => p.email === n) || null; };
   const myProf = () => (A.user ? ST.profiles.find((p) => p.email === A.user.email) || null : null);
@@ -61,12 +77,13 @@ window.CO_STUDIO = function (api) {
     return null;
   }
   // A small face for avatars everywhere (null: initials as before)
-  const face = (name) => { const p = profOf(name); if (!p) return null; if (p.img) { const d = imgData(p.img); if (d) return d; } return p.char ? CH.url(p.char, 'head') : null; };
+  const face = (name) => { const p = profOf(name); if (!p) return null; if (p.img) { const d = imgData(p.img); if (d) return d; } if (p.snap) { const d = imgData(p.snap); if (d) return d; } if (p.char && D3) { const u = snapOf(p.char, 128); if (u) return u; } return p.char ? CH.url(p.char, 'head') : null; };
   window.CO_FACE = face;
   // The full figure, as an element
   function figure(p, opts) {
     const o = opts || {}, w = el('div', 'stu-fig' + (o.cls ? ' ' + o.cls : ''));
     if (p && p.img && imgData(p.img)) { const im = new Image(); im.src = imgData(p.img); im.alt = o.label || ''; im.decoding = 'async'; w.classList.add('photo'); w.append(im); }
+    else if (p && p.char && (p.snap ? imgData(p.snap) : D3)) { const u = p.snap && imgData(p.snap) ? imgData(p.snap) : snapOf(p.char, 220); const im = new Image(); im.src = u; im.alt = o.label || ''; im.decoding = 'async'; w.classList.add('photo', 'snap'); w.append(im); }
     else if (p && p.char) w.innerHTML = CH.svg(p.char, { anim: !!o.anim && !reduce(), label: o.label });
     else {
       // no character yet: a bright initials card (never a made-up face)
@@ -126,7 +143,7 @@ window.CO_STUDIO = function (api) {
     b.addEventListener('click', async (e) => {
       e.stopPropagation(); const cur = ST.cheers[key] || { n: 0, mine: false, who: [] }, on = !cur.mine;
       ST.cheers[key] = Object.assign({}, cur, { mine: on, n: Math.max(0, cur.n + (on ? 1 : -1)) });
-      if (on) burst(b); dash.draw('studio'); dash.draw('studio-strip');
+      if (on) { burst(b); if (SND) SND.play('achievement'); } dash.draw('studio'); dash.draw('studio-strip');
       try { await post({ action: 'cheer', key }); } catch (err) { ST.cheers[key] = cur; toast('Could not cheer: ' + err.message, true); dash.draw('studio'); }
     });
     return b;
@@ -167,20 +184,34 @@ window.CO_STUDIO = function (api) {
     glass.append(tvScreen(list[ST.ch], ST.ch, n), el('i', 'stu-scan'));
     bezel.append(glass); shell.append(bezel);
     const panel = el('div', 'stu-panel');
-    const knob = (dir, label) => { const k = btn('', 'stu-knob ' + dir, () => { if (!n) return; ST.ch = (ST.ch + (dir === 'next' ? 1 : n - 1)) % n; ST.flip = true; dash.draw('studio'); dash.draw('studio-strip'); restart(); }); k.setAttribute('aria-label', label); return k; };
+    const knob = (dir, label) => { const k = btn('', 'stu-knob ' + dir, () => { if (!n) return; ST.ch = (ST.ch + (dir === 'next' ? 1 : n - 1)) % n; ST.flip = true; updateTV(); restart(); }); k.setAttribute('aria-label', label); return k; };
     const vents = el('span', 'stu-vents'); for (let i = 0; i < 4; i++) vents.append(el('i'));
     panel.append(vents, el('span', 'stu-led' + (n ? ' on' : '')), knob('prev', 'Previous spotlight'), knob('next', 'Next spotlight'));
     shell.append(panel); box.append(shell);
     if (ST.flip) { glass.classList.add('flip'); ST.flip = false; }
     return box;
   }
-  function restart() { clearInterval(ST.timer); ST.timer = setInterval(() => { if (document.visibilityState !== 'visible' || reduce()) return; const n = channels().list.length; if (n < 2) return; if (document.querySelector('.stu-tv:hover')) return; ST.ch = (ST.ch + 1) % n; ST.flip = true; dash.draw('studio'); dash.draw('studio-strip'); }, 7000); }
+  // the spotlight on the 3D desk (kept between redraws; only its figure and screen change)
+  function spotCard() {
+    const { list } = channels(), n = list.length; if (ST.ch >= n) ST.ch = 0; const c = list[ST.ch];
+    if (!c) return { key: 'none', card: null, cfg: null };
+    const p = profOf(c.who), tg = tagOf(c.tag), cfg = p && p.char ? Object.assign({}, p.char) : Object.assign({}, MASCOT);
+    const card = { i: ST.ch, n, title: c.title, who: c.who, line: c.line, color: c.kind === 'award' ? tg[1] : '#1e1e1e', ink: c.kind === 'award' ? tg[2] : '#ddff00', fx: [{ tag: c.kind === 'award' ? c.tag : 'star' }], move: (p && p.char && p.char.move) || (c.kind === 'award' ? 'victory' : 'disco') };
+    return { key: c.key + JSON.stringify(cfg) + (c.line || ''), card, cfg };
+  }
+  function updateTV(force) {
+    if (ST.stage) { const sc = spotCard(); if (force || sc.key !== ST.spotKey) { ST.spotKey = sc.key; ST.stage.spot(sc.card, sc.cfg); } }
+    else { const old = document.querySelector('.stu-stage .stu-tv'); if (old) old.replaceWith(tv(false)); else dash.draw('studio'); }
+    dash.draw('studio-strip');
+  }
+  function restart() { clearInterval(ST.timer); ST.timer = setInterval(() => { if (document.visibilityState !== 'visible' || reduce()) return; const n = channels().list.length; if (n < 2) return; if (document.querySelector('.stu-tv:hover, .stu-3dstage:hover')) return; ST.ch = (ST.ch + 1) % n; ST.flip = true; updateTV(); }, 8000); }
   restart();
 
   /* ---------- Studio page ---------- */
   const people = () => (S.team || []).filter((m) => m.status !== 'Inactive' && !EF.hidden(m.name)).map((m) => m.name).sort((a, b) => a.localeCompare(b));
   dash.draw('studio', (box) => {
     if (A.mode !== 'auth' || !A.user) { box.replaceChildren(); return; }
+    want3d();
     if (!ST.loaded) { box.replaceChildren(el('p', 'co-note', ST.err ? 'Could not load the Studio: ' + ST.err : 'Opening the Studio…')); ST.load(); return; }
     if (CO.notReady(box, 'box')) return;
     box.replaceChildren();
@@ -202,7 +233,18 @@ window.CO_STUDIO = function (api) {
     heroL.append(acts);
     const radio = el('div', 'stu-radio'); radio.dataset.draw = 'studio-radio'; heroL.append(radio); setTimeout(() => dash.draw('studio-radio'), 0);
     const stage = el('div', 'stu-stage');
-    stage.append(tv(false));
+    want3d();
+    if (D3) {
+      if (!ST.stageEl) {
+        ST.stageEl = el('div', 'stu-3dstage'); ST.stageEl.setAttribute('role', 'img'); ST.stageEl.setAttribute('aria-label', 'Hall of Fame: a 3D desk with a retro computer showing the spotlight, and the person dancing beside it. Click the knobs to change channel, or the person to change their move.');
+        ST.stage = D3.stage(ST.stageEl, { onKnob: (dir) => { const n = channels().list.length; if (!n) return; ST.ch = (ST.ch + (dir === 'next' ? 1 : n - 1)) % n; updateTV(); restart(); if (SND) SND.play('task'); }, onMove: () => {} });
+        ST.spotKey = '';
+      }
+      stage.classList.add('is-3d'); stage.append(ST.stageEl);
+      const kn = el('div', 'stu-3dknobs'); kn.append(btn('Previous', 'co-btn sm', () => { const n = channels().list.length; if (!n) return; ST.ch = (ST.ch + n - 1) % n; updateTV(); restart(); }), btn('Next spotlight', 'co-btn sm', () => { const n = channels().list.length; if (!n) return; ST.ch = (ST.ch + 1) % n; updateTV(); restart(); }), cheerBtn((channels().list[ST.ch] || {}).key || 'none', true));
+      stage.append(kn);
+      if (ST.stage) { const sc = spotCard(); if (sc.key !== ST.spotKey) { ST.spotKey = sc.key; ST.stage.spot(sc.card, sc.cfg); } }
+    } else stage.append(tv(false));
     notes.forEach(([k, v, c, r], i) => { const n = el('div', 'stu-note n' + i); n.style.setProperty('--nc', c); n.style.setProperty('--rot', r + 'deg'); n.append(el('small', '', k), el('b', '', v)); stage.append(n); });
     const cal = el('div', 'stu-cal'); const d = new Date(); cal.append(el('small', '', d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'short' })), el('b', '', d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric' }))); stage.append(cal, el('i', 'stu-mug'));
     hero.append(heroL, stage); box.append(hero);
@@ -242,7 +284,13 @@ window.CO_STUDIO = function (api) {
     const wkBy = new Map(wk.people.map((x) => [x.name, x]));
     people().forEach((n) => {
       const p = profOf(n), mine = n === me, c = el('article', 'stu-mate' + (mine ? ' me' : ''));
-      c.append(figure(p, { anim: true, label: n }));
+      if (D3 && p && p.char && !p.img && !lowPower()) {
+        if (!ST.crew) ST.crew = D3.crew(document.getElementById('studio') || box, () => { const t = document.querySelector('.top'); return t ? Math.max(0, t.getBoundingClientRect().bottom) : 0; });
+        ST.slots = ST.slots || new Map();
+        const fxl = ST.awards.filter((a) => a.who === n).map((a) => ({ tag: a.tag })), key = JSON.stringify(p.char) + JSON.stringify(fxl);
+        let sl = ST.slots.get(n); if (!sl || sl.key !== key || !sl.el.isConnected && sl.gone) { const sel = el('div', 'stu-fig stu-3dslot'); sel.setAttribute('role', 'img'); sel.setAttribute('aria-label', n + '\'s character. Hover to see their move, click for another.'); ST.crew.add(sel, p.char, { fx: fxl }); sl = { el: sel, key }; ST.slots.set(n, sl); }
+        c.append(sl.el);
+      } else c.append(figure(p, { anim: true, label: n }));
       const tx = el('div', 'stu-mate-tx'); tx.append(el('b', '', n), el('small', '', String(EF.role(n) || '').replace(/\s*\(not shown\)\s*/i, '') || 'Team'));
       if (p && p.tagline) tx.append(el('q', 'stu-tagline', p.tagline));
       const x = wkBy.get(n), meta = el('div', 'stu-mate-meta'); meta.append(el('span', '', x ? x.qty + ' this week' : 'Warming up'));
@@ -283,38 +331,75 @@ window.CO_STUDIO = function (api) {
   });
 
   /* ---------- character builder ---------- */
-  const BT = [['face', 'Face'], ['hair', 'Hair'], ['style', 'Outfit'], ['gear', 'Gear'], ['scene', 'Colours'], ['photo', 'From a photo']];
+  const STYLES = [['clay', 'Clay', 'Soft and matte, like stop-motion'], ['vinyl', 'Vinyl toy', 'Glossy designer-toy shine'], ['plush', 'Plush', 'Soft, fuzzy and huggable'], ['toon', 'Toon', 'Bold outlines, Saturday-morning cartoon'], ['blocky', 'Blocky', 'Chunky voxel-game shapes'], ['bean', 'Bean', 'Round party-game bean']];
+  const PANTS = ['#2b3a55', '#1e1e1e', '#3a6fb0', '#d9d1c2', '#6b4423', '#2fb37a', '#685bc7', '#ff5a26'];
+  const SHOES = ['#f0eee9', '#1e1e1e', '#ff5a26', '#ddff00', '#685bc7', '#e86aa6', '#8fd3ff', '#f5c542'];
+  const BT = [['look', 'Look'], ['face', 'Face'], ['hair', 'Hair'], ['style', 'Outfit'], ['gear', 'Gear'], ['moves', 'Moves'], ['scene', 'Colours'], ['photo', 'From a photo']];
   let B = null;
   function openBuilder() {
     const p = myProf(), role = EF.role(myDesigner() || '') || '';
-    B = { char: CH.norm(p && p.char ? p.char : CH.random(role)), image: p && p.img ? imgData(p.img) : null, imgId: p && p.img || '', useImg: !!(p && p.img), tab: 'face', tagline: p ? p.tagline : '', role, photoBusy: false, made: null };
+    const base = p && p.char ? p.char : CH.random(role);
+    B = { char: Object.assign({ style: 'clay', move: 'wave', pants: '#2b3a55', shoes: '#f0eee9', gloves: 'none' }, CH.norm(base), base.style ? { style: base.style } : {}, base.move ? { move: base.move } : {}), image: p && p.img ? imgData(p.img) : null, imgId: p && p.img || '', useImg: !!(p && p.img), tab: 'look', tagline: p ? p.tagline : '', role, photoBusy: false, made: null };
+    ['pants', 'shoes', 'gloves'].forEach((k) => { if (base[k]) B.char[k] = base[k]; });
     let d = document.getElementById('stu-builder');
-    if (!d) { d = el('dialog', 'co-dialog stu-dlg'); d.id = 'stu-builder'; d.setAttribute('aria-label', 'Make your character'); document.body.append(d); d.addEventListener('close', () => { B = null; }); }
-    paintBuilder(); d.showModal();
+    if (!d) { d = el('dialog', 'co-dialog stu-dlg'); d.id = 'stu-builder'; d.setAttribute('aria-label', 'Make your character'); document.body.append(d); d.addEventListener('close', () => { if (B && B.view) B.view.dispose(); B = null; d.replaceChildren(); }); }
+    d.replaceChildren(); paintBuilder(); d.showModal();
+    want3d().then(() => { if (B) { B.tab = B.tab || 'look'; paintPreview(); paintControls(); } });
   }
   function paintBuilder() {
     const d = document.getElementById('stu-builder'); if (!d || !B) return;
-    d.replaceChildren();
-    const head = el('div', 'stu-dlg-h'); head.append(el('h2', '', 'Make your character'), btn('', 'stu-x', () => d.close())); head.lastChild.setAttribute('aria-label', 'Close'); head.lastChild.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    const head = el('div', 'stu-dlg-h'); head.append(el('h2', '', 'Make your character')); const x = btn('', 'stu-x', () => d.close()); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; head.append(x);
     const body = el('div', 'stu-dlg-b');
-    // preview
     const pv = el('div', 'stu-pv');
-    const fig = el('div', 'stu-fig big' + (B.useImg && B.image ? ' photo' : ''));
-    if (B.useImg && B.image) { const im = new Image(); im.src = B.image; im.alt = 'Your character'; fig.append(im); } else fig.innerHTML = CH.svg(B.char, { anim: !reduce(), label: 'Your character' });
-    const pvAct = el('div', 'stu-pv-act');
-    pvAct.append(btn('Surprise me', 'co-btn', (e) => { B.char = CH.random(B.role); B.useImg = false; burst(e.currentTarget, 10); paintBuilder(); }));
-    if (B.image) pvAct.append(btn(B.useImg ? 'Use the built one' : 'Use my photo one', 'co-btn ghost', () => { B.useImg = !B.useImg; paintBuilder(); }));
-    const tl = el('input', 'co-input stu-tl'); tl.placeholder = 'Your tagline (e.g. "Kerning is my cardio")'; tl.maxLength = 80; tl.value = B.tagline || ''; tl.setAttribute('aria-label', 'Tagline'); tl.addEventListener('input', () => { B.tagline = tl.value; });
-    pv.append(fig, pvAct, tl);
-    // controls
-    const ctl = el('div', 'stu-ctl');
+    B.figHost = el('div', 'stu-fig big'); B.actHost = el('div', 'stu-pv-act');
+    const tl = el('input', 'co-input stu-tl'); tl.placeholder = 'Your tagline (e.g. "Kerning is my cardio")'; tl.maxLength = 80; tl.value = B.tagline || ''; tl.setAttribute('aria-label', 'Tagline'); tl.addEventListener('input', () => { if (B) B.tagline = tl.value; });
+    B.hint = el('p', 'co-note stu-pv-hint', '');
+    pv.append(B.figHost, B.hint, B.actHost, tl);
+    B.ctlHost = el('div', 'stu-ctl');
+    body.append(pv, B.ctlHost);
+    const foot = el('div', 'stu-dlg-f');
+    const save = btn('Save my character', 'co-btn primary', async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = 'Saving…';
+      try {
+        const payload = { action: 'profileSave', who: myDesigner() || A.user.name || '', char: B.char, tagline: B.tagline || '' };
+        if (B.useImg && B.made) payload.image = B.made; else if (!B.useImg && B.imgId) payload.image = 'remove';
+        if (D3) { try { payload.snap = D3.snap(B.char, 256); } catch (er) { /* the 2D picture is used */ } }
+        const r = await post(payload);
+        const i = ST.profiles.findIndex((y) => y.email === A.user.email); const np = Object.assign({ email: A.user.email }, r.profile);
+        const keep = (id, data) => { if (id && data) { ST.imgs.set(id, data); try { localStorage.setItem('co.cimg.' + id, data); } catch (er) { /* full */ } } };
+        if (B.useImg && B.made) keep(np.img, B.made); if (payload.snap) keep(np.snap, payload.snap);
+        if (i >= 0) ST.profiles[i] = np; else ST.profiles.push(np);
+        if (ST.slots) ST.slots.delete(myDesigner()); ST.spotKey = '';
+        burst(b, 28); if (SND) SND.play('achievement'); toast('Character saved. Say hi to the new you!'); document.getElementById('stu-builder').close(); renderAll();
+      } catch (err) { b.disabled = false; b.textContent = 'Save my character'; toast('Could not save: ' + err.message, true); }
+    });
+    foot.append(el('span', 'co-note', 'Your character is your avatar everywhere on the dashboard.'), btn('Cancel', 'co-btn ghost', () => d.close()), save);
+    d.append(head, body, foot);
+    paintPreview(); paintControls();
+  }
+  function paintPreview() {
+    if (!B || !B.figHost) return;
+    const host = B.figHost, photo = B.useImg && B.image;
+    host.classList.toggle('photo', !!photo); host.classList.toggle('is-3d', !photo && !!D3);
+    if (photo) { if (B.view) { B.view.dispose(); B.view = null; } host.replaceChildren(); const im = new Image(); im.src = B.image; im.alt = 'Your character'; host.append(im); }
+    else if (D3) { if (!B.view) { host.replaceChildren(); host.style.background = B.char.bg; B.view = D3.view(host, B.char, { move: B.char.move || 'wave', close: false, fx: ST.awards.filter((a) => a.who === myDesigner()).map((a) => ({ tag: a.tag })) }); } else { B.view.set(B.char); host.style.background = B.char.bg; } }
+    else { host.innerHTML = CH.svg(B.char, { anim: !reduce(), label: 'Your character' }); }
+    B.hint.textContent = photo ? 'Made from your photo.' : D3 ? 'Drag to spin. ' + ((window.CO_3D.MOVES.find((m) => m[0] === B.char.move) || [])[1] || 'Wave') + ' is your signature move.' : '';
+    B.actHost.replaceChildren(btn('Surprise me', 'co-btn', (e) => { const keep = { style: B.char.style, move: B.char.move }; B.char = Object.assign(CH.random(B.role), keep, { pants: PANTS[Math.floor(Math.random() * PANTS.length)], shoes: SHOES[Math.floor(Math.random() * SHOES.length)] }); B.useImg = false; burst(e.currentTarget, 10); paintPreview(); paintControls(); }));
+    if (B.image) B.actHost.append(btn(B.useImg ? 'Use the built one' : 'Use my photo one', 'co-btn ghost', () => { B.useImg = !B.useImg; paintPreview(); paintControls(); }));
+  }
+  function paintControls() {
+    if (!B || !B.ctlHost) return;
+    const ctl = B.ctlHost; ctl.replaceChildren();
     const tabs = el('div', 'pm-seg stu-tabs'); tabs.setAttribute('role', 'tablist');
-    BT.forEach(([k, t]) => { const b = btn(t, 'pm-opt' + (B.tab === k ? ' on' : ''), () => { B.tab = k; paintBuilder(); }); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(B.tab === k)); tabs.append(b); });
+    BT.filter(([k]) => D3 || (k !== 'look' && k !== 'moves')).forEach(([k, t]) => { const b = btn(t, 'pm-opt' + (B.tab === k ? ' on' : ''), () => { B.tab = k; paintControls(); }); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(B.tab === k)); tabs.append(b); });
+    if (!D3 && (B.tab === 'look' || B.tab === 'moves')) B.tab = 'face';
     const pane = el('div', 'stu-pane');
-    const set = (k, v) => { B.char[k] = v; B.useImg = false; paintBuilder(); };
+    const set = (k, v) => { B.char[k] = v; B.useImg = false; paintPreview(); paintControls(); };
+    const thumb = (cfg, crop) => (D3 ? snapOf(Object.assign({}, cfg, { gear: [] }), 112) : CH.url(Object.assign({}, cfg, { gear: crop === 'head' ? [] : cfg.gear }), crop || 'head'));
     const group = (title, key, list, crop) => {
       const g = el('div', 'stu-grp'); g.append(el('h4', '', title)); const w = el('div', 'stu-opts');
-      list.forEach(([v, t]) => { const b = btn('', 'stu-opt' + (B.char[key] === v ? ' on' : ''), () => set(key, v)); const im = new Image(); im.src = CH.url(Object.assign({}, B.char, { [key]: v, gear: crop === 'head' ? [] : B.char.gear }), crop || 'head'); im.alt = ''; b.append(im, el('small', '', t)); b.setAttribute('aria-pressed', String(B.char[key] === v)); w.append(b); });
+      list.forEach(([v, t]) => { const b = btn('', 'stu-opt' + (B.char[key] === v ? ' on' : ''), () => set(key, v)); const im = new Image(); im.src = thumb(Object.assign({}, B.char, { [key]: v }), crop); im.alt = ''; im.loading = 'lazy'; b.append(im, el('small', '', t)); b.setAttribute('aria-pressed', String(B.char[key] === v)); w.append(b); });
       g.append(w); return g;
     };
     const swatches = (title, key, list) => {
@@ -323,38 +408,38 @@ window.CO_STUDIO = function (api) {
       g.append(w); return g;
     };
     const O = CH.OPT;
+    if (B.tab === 'look') {
+      const g = el('div', 'stu-grp'); g.append(el('h4', '', 'Style'), el('p', 'co-note', 'Original looks inspired by the cartoons and toys of 2000–2020. Everything else (face, hair, outfit, gear) works in every style.'));
+      const w = el('div', 'stu-looks');
+      STYLES.forEach(([v, t, dsc]) => { const b = btn('', 'stu-look' + (B.char.style === v ? ' on' : ''), () => set('style', v)); const im = new Image(); im.src = thumb(Object.assign({}, B.char, { style: v })); im.alt = ''; b.append(im, el('b', '', t), el('small', '', dsc)); b.setAttribute('aria-pressed', String(B.char.style === v)); w.append(b); });
+      g.append(w); pane.append(g);
+    }
     if (B.tab === 'face') pane.append(swatches('Skin', 'skin', O.skin), group('Eyes', 'eyes', O.eyes), group('Mouth', 'mouth', O.mouth), group('Brows', 'brows', O.brows), group('Beard & more', 'face', O.face));
     if (B.tab === 'hair') pane.append(group('Hairstyle', 'hair', O.hair), swatches('Hair colour', 'hairColor', O.hairColor));
-    if (B.tab === 'style') pane.append(group('Outfit', 'outfit', O.outfit, 'full'), swatches('Outfit colour', 'outfitColor', O.outfitColor), group('Glasses', 'glasses', O.glasses), group('On your head', 'head', O.head));
+    if (B.tab === 'style') {
+      pane.append(group('Outfit', 'outfit', O.outfit, 'full'), swatches('Outfit colour', 'outfitColor', O.outfitColor));
+      if (D3) { pane.append(swatches('Trousers', 'pants', PANTS), swatches('Shoes', 'shoes', SHOES)); const g = el('div', 'stu-grp'); g.append(el('h4', '', 'Hands')); const w = el('div', 'stu-chips'); [['none', 'Bare hands'], ['white', 'Cartoon gloves']].forEach(([v, t]) => { const b = btn(t, 'stu-chip' + (B.char.gloves === v ? ' on' : ''), () => set('gloves', v)); b.setAttribute('aria-pressed', String(B.char.gloves === v)); w.append(b); }); g.append(w); pane.append(g); }
+      pane.append(group('Glasses', 'glasses', O.glasses), group('On your head', 'head', O.head));
+    }
     if (B.tab === 'gear') {
       const g = el('div', 'stu-grp'), sug = CH.gearFor(B.role);
-      g.append(el('h4', '', 'Tools of the trade (up to 3)'), el('p', 'co-note', B.role ? 'Suggested for ' + B.role + ' first.' : 'Pick what you use every day.'));
+      g.append(el('h4', '', 'Tools of the trade (up to 4)'), el('p', 'co-note', (B.role ? 'Suggested for ' + B.role + ' first (★). ' : '') + 'They float around your character; earphones, a pencil and a backpack are worn.'));
       const w = el('div', 'stu-chips');
-      O.gear.slice().sort((a, b) => (sug.includes(b[0]) ? 1 : 0) - (sug.includes(a[0]) ? 1 : 0)).forEach(([v, t]) => {
-        const on = B.char.gear.includes(v), b = btn((sug.includes(v) ? '★ ' : '') + t, 'stu-chip' + (on ? ' on' : ''), () => { const gl = B.char.gear.filter((x) => x !== v); if (!on) { gl.push(v); while (gl.length > 3) gl.shift(); } set('gear', gl); });
+      O.gear.slice().sort((a2, b2) => (sug.includes(b2[0]) ? 1 : 0) - (sug.includes(a2[0]) ? 1 : 0)).forEach(([v, t]) => {
+        const on = B.char.gear.includes(v), b = btn((sug.includes(v) ? '★ ' : '') + t, 'stu-chip' + (on ? ' on' : ''), () => { const gl2 = B.char.gear.filter((y) => y !== v); if (!on) { gl2.push(v); while (gl2.length > 4) gl2.shift(); } set('gear', gl2); });
         b.setAttribute('aria-pressed', String(on)); w.append(b);
       });
+      g.append(w); pane.append(g);
+    }
+    if (B.tab === 'moves' && D3) {
+      const g = el('div', 'stu-grp'); g.append(el('h4', '', 'Your signature move'), el('p', 'co-note', 'Played when someone hovers over you in Studio, and when you are in the spotlight. Click to preview.'));
+      const w = el('div', 'stu-chips stu-moves');
+      window.CO_3D.MOVES.forEach(([v, t]) => { const b = btn(t, 'stu-chip' + (B.char.move === v ? ' on' : ''), () => { B.char.move = v; if (B.view) B.view.play(v); paintControls(); B.hint.textContent = 'Drag to spin. ' + t + ' is your signature move.'; }); b.setAttribute('aria-pressed', String(B.char.move === v)); w.append(b); });
       g.append(w); pane.append(g);
     }
     if (B.tab === 'scene') pane.append(swatches('Background', 'bg', O.bg));
     if (B.tab === 'photo') pane.append(photoPane());
     ctl.append(tabs, pane);
-    body.append(pv, ctl);
-    const foot = el('div', 'stu-dlg-f');
-    const save = btn('Save my character', 'co-btn primary', async (e) => {
-      const b = e.currentTarget; b.disabled = true; b.textContent = 'Saving…';
-      try {
-        const payload = { action: 'profileSave', who: myDesigner() || A.user.name || '', char: B.char, tagline: B.tagline || '' };
-        if (B.useImg && B.made) payload.image = B.made; else if (!B.useImg && B.imgId) payload.image = 'remove';
-        const r = await post(payload);
-        const i = ST.profiles.findIndex((x) => x.email === A.user.email); const np = Object.assign({ email: A.user.email }, r.profile);
-        if (B.useImg && B.made && np.img) { ST.imgs.set(np.img, B.made); try { localStorage.setItem('co.cimg.' + np.img, B.made); } catch (er) { /* full */ } }
-        if (i >= 0) ST.profiles[i] = np; else ST.profiles.push(np);
-        burst(b, 28); toast('Character saved. Say hi to the new you!'); document.getElementById('stu-builder').close(); renderAll();
-      } catch (err) { b.disabled = false; b.textContent = 'Save my character'; toast('Could not save: ' + err.message, true); }
-    });
-    foot.append(el('span', 'co-note', 'Your character is your avatar everywhere on the dashboard.'), btn('Cancel', 'co-btn ghost', () => d.close()), save);
-    d.append(head, body, foot);
   }
   function photoPane() {
     const g = el('div', 'stu-grp stu-photo');
@@ -364,14 +449,14 @@ window.CO_STUDIO = function (api) {
     if (B.photoBusy) drop.classList.add('busy');
     inp.addEventListener('change', async () => {
       const f = inp.files && inp.files[0]; if (!f) return;
-      B.photoBusy = true; paintBuilder();
+      B.photoBusy = true; paintControls();
       try {
         const photo = await shrink(f, 768, 'image/jpeg', 0.86);
         const desc = { outfit: (CH.OPT.outfit.find((x) => x[0] === B.char.outfit) || [])[1] + ' in ' + colourName(B.char.outfitColor), gear: B.char.gear.map((x) => (CH.OPT.gear.find((y) => y[0] === x) || [])[1]).join(', '), role: B.role, bg: colourName(B.char.bg) };
         const r = await post({ action: 'charMake', photo, desc });
         const made = await shrinkUrl('data:' + r.mime + ';base64,' + r.data, 384);
-        if (!B) return; B.made = made; B.image = made; B.useImg = true; B.photoBusy = false; toast('Here you are! ' + (r.left >= 0 ? r.left + ' more today.' : '')); paintBuilder();
-      } catch (e) { if (B) { B.photoBusy = false; paintBuilder(); } toast(e.message, true); }
+        if (!B) return; B.made = made; B.image = made; B.useImg = true; B.photoBusy = false; toast('Here you are! ' + (r.left >= 0 ? r.left + ' more today.' : '')); paintPreview(); paintControls();
+      } catch (e) { if (B) { B.photoBusy = false; paintControls(); } toast(e.message, true); }
     });
     g.append(drop);
     if (B.made) { const im = new Image(); im.src = B.made; im.className = 'stu-made'; im.alt = 'Made from your photo'; g.append(im); }
@@ -421,6 +506,6 @@ window.CO_STUDIO = function (api) {
   }
   // the person card at the bottom of the sidebar opens the builder
   document.addEventListener('click', (e) => { const c = e.target.closest('[data-draw="me-card"]'); if (c && A.user) openBuilder(); });
-  window.CO_studio = { open: openBuilder, award: openAward, state: ST, stars };
+  window.CO_studio = { open: openBuilder, award: openAward, state: ST, stars, tv: () => updateTV(true), card: () => spotCard() };
   return ST;
 };

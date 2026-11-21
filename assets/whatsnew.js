@@ -4,6 +4,13 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-22-3d', date: '2026-11-22', kind: 'new', who: 'all', go: 'studio', title: 'Characters in 3D, with dance moves',
+    what: 'Your character is now a full 3D figure with hands, shoes and depth, and the Hall of Fame is a 3D desk with a retro computer.',
+    does: 'Pick one of six looks (clay, vinyl toy, plush, toon, blocky, bean), trousers, shoes and cartoon gloves, and a signature move from 19 (wave, peace sign, dab, floss, robot, bhangra, moonwalk and more). The tools of your craft float around you: a typewriter for writers, a palette for designers, a camera and clapperboard for editors. Award winners get a crown, a trophy, a spotlight and confetti.',
+    how: 'Open Studio. Hover a teammate to see their move, click to try another. On the desk, click the computer\'s knobs to change channel, click the person to change their move, and click the mug to make it jump. Edit yours under Make my character > Look and Moves.',
+    changed: 'Your 3D picture becomes your avatar everywhere. Computers without graphics acceleration keep the earlier 2D characters, so the dashboard stays fast.'
+  },
+  {
     id: '2026-11-22-sounds', date: '2026-11-22', kind: 'new', who: 'all', title: 'Mentions, announcements and soft sounds',
     what: 'Tag teammates from the bell, from any notification and from What\'s new. Notifications now arrive with a gentle animation, and optional sounds.',
     does: 'Each kind has its own colour and sound: reminders, mentions, task updates, achievements (awards) and announcements. New ones ring the bell and slide in a small card you can open or dismiss. Admins can send an announcement to everyone. Studio has an optional radio: soft, endless instrumental music made live.',

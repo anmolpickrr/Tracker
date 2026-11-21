@@ -11,21 +11,21 @@
   const OPT = {
     skin: SKIN, hairColor: HAIRC, outfitColor: CLOTH, bg: BG,
     hair: [['short', 'Short'], ['sidepart', 'Side part'], ['curly', 'Curly'], ['wavy', 'Wavy'], ['long', 'Long'], ['bob', 'Bob'], ['bun', 'Top bun'], ['ponytail', 'Ponytail'], ['afro', 'Afro'], ['spiky', 'Spiky'], ['buzz', 'Buzz'], ['bald', 'Bald']],
-    eyes: [['dot', 'Dots'], ['round', 'Round'], ['sparkle', 'Sparkle'], ['happy', 'Happy'], ['wink', 'Wink'], ['sleepy', 'Sleepy']],
+    eyes: [['dot', 'Dots'], ['round', 'Round'], ['sparkle', 'Sparkle'], ['anime', 'Big eyes'], ['happy', 'Happy'], ['wink', 'Wink'], ['sleepy', 'Sleepy']],
     brows: [['soft', 'Soft'], ['bold', 'Bold'], ['raised', 'Raised'], ['none', 'None']],
     mouth: [['smile', 'Smile'], ['grin', 'Grin'], ['tongue', 'Cheeky'], ['smirk', 'Smirk'], ['o', 'Oh!'], ['flat', 'Focused']],
     face: [['none', 'None'], ['stubble', 'Stubble'], ['mustache', 'Moustache'], ['beard', 'Beard'], ['freckles', 'Freckles']],
     glasses: [['none', 'None'], ['round', 'Round'], ['square', 'Square'], ['retro', 'Retro'], ['sun', 'Sunglasses'], ['visor', 'Lime visor']],
     head: [['none', 'None'], ['headphones', 'Headphones'], ['beanie', 'Beanie'], ['cap', 'Cap'], ['beret', 'Beret'], ['bandana', 'Bandana']],
     outfit: [['hoodie', 'Hoodie'], ['tee', 'T-shirt'], ['shirt', 'Shirt'], ['jacket', 'Jacket'], ['sweater', 'Sweater'], ['turtleneck', 'Turtleneck'], ['overalls', 'Overalls']],
-    gear: [['laptop', 'Laptop'], ['tablet', 'Tablet & pen'], ['camera', 'Camera'], ['clapper', 'Clapperboard'], ['mic', 'Mic'], ['mug', 'Coffee'], ['sketchbook', 'Sketchbook'], ['book', 'Book'], ['earphones', 'Earphones'], ['pencil', 'Pencil on ear'], ['bag', 'Bag'], ['plant', 'Tiny plant']]
+    gear: [['typewriter', 'Typewriter'], ['palette', 'Colour palette'], ['notebook', 'Notebook & pen'], ['reel', 'Film reel'], ['laptop', 'Laptop'], ['tablet', 'Tablet & pen'], ['camera', 'Camera'], ['clapper', 'Clapperboard'], ['mic', 'Mic'], ['mug', 'Coffee'], ['sketchbook', 'Sketchbook'], ['book', 'Book'], ['earphones', 'Earphones'], ['pencil', 'Pencil on ear'], ['bag', 'Bag'], ['plant', 'Tiny plant']]
   };
   // Tools that suit each kind of role (matched on the role's words); the builder offers them first.
   const ROLE_GEAR = [
-    [/video|editor|motion|film|reel/i, ['headphones', 'clapper', 'laptop', 'camera', 'earphones']],
-    [/copy|writer|content|script/i, ['book', 'mug', 'laptop', 'pencil', 'sketchbook']],
-    [/head|lead|manager|director/i, ['mug', 'sun', 'laptop', 'book', 'bag']],
-    [/design|graphic|illustr|visual|art/i, ['tablet', 'sketchbook', 'pencil', 'laptop', 'mug']]
+    [/video|editor|motion|film|reel/i, ['headphones', 'clapper', 'camera', 'laptop', 'reel', 'earphones']],
+    [/copy|writer|content|script/i, ['typewriter', 'book', 'notebook', 'mug', 'pencil']],
+    [/head|lead|manager|director/i, ['mug', 'sun', 'laptop', 'book', 'plant']],
+    [/design|graphic|illustr|visual|art/i, ['tablet', 'palette', 'sketchbook', 'pencil', 'laptop']]
   ];
   const gearFor = (role) => { const m = ROLE_GEAR.find((x) => x[0].test(String(role || ''))); return m ? m[1] : ['laptop', 'mug', 'tablet', 'headphones']; };
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -42,7 +42,7 @@
     };
   }
   const DEF = { v: 1, skin: SKIN[2], hair: 'short', hairColor: HAIRC[1], eyes: 'dot', brows: 'soft', mouth: 'smile', face: 'none', glasses: 'none', head: 'none', outfit: 'hoodie', outfitColor: '#685bc7', bg: '#ddff00', gear: ['laptop'] };
-  const norm = (c) => { const o = Object.assign({}, DEF, c || {}); if (!Array.isArray(o.gear)) o.gear = []; o.gear = o.gear.filter((x) => OPT.gear.some((g) => g[0] === x)).slice(0, 3); return o; };
+  const norm = (c) => { const o = Object.assign({}, DEF, c || {}); if (!Array.isArray(o.gear)) o.gear = []; o.gear = o.gear.filter((x) => OPT.gear.some((g) => g[0] === x)).slice(0, 4); return o; };
 
   /* colour helpers */
   const hex = (c) => { const m = String(c).replace('#', ''); const n = parseInt(m.length === 3 ? m.split('').map((x) => x + x).join('') : m, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
