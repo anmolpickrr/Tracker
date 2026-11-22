@@ -414,7 +414,7 @@ function doPost(e) {
     if (body.action === 'packages') return json_(pkgList_());
     if (body.action === 'pricing') return json_(pricingGet_());
     if (body.action === 'settings') { const st = settings_(); return json_({ ok: true, settings: Object.assign({}, st, { chat: st.chat ? 'set' : '' }) }); }
-    if (body.action === 'data') { const pm = permsOf_(user), age = Math.max(30, Math.min(900, Number(body.maxAge) || 0)) || 0; return text_(pm.scope === 'own' ? ownDataText_(user, !!body.fresh, body.maxAge ? age : 0) : dataText_(!!body.fresh, body.maxAge ? age : 0)); }
+    if (body.action === 'data') { const pm = permsOf_(user), age = Math.max(30, Math.min(900, Number(body.maxAge) || 0)) || 0; return text_(privateText_(pm.scope === 'own' ? ownDataText_(user, !!body.fresh, body.maxAge ? age : 0) : dataText_(!!body.fresh, body.maxAge ? age : 0), user)); }
     if (body.action === 'health') return json_(health_());
     if (body.action === 'users') { let all = null; try { all = JSON.parse(dataText_(false)); } catch (e) { all = null; } return json_({ ok: true, users: users_().list.map(function (u) { return publicUser_(u, all); }), you: user.email, owners: owners_() }); }
     if (body.action === 'audit') return json_(auditRead_(body));
@@ -678,6 +678,7 @@ function brief_(body, user) {
   if (!row) return { ok: false, error: 'ID ' + id + ' was not found in the sheet.' };
   const pm = permsOf_(user);
   if (!isAdminUser_(user) && pm.scope !== 'all' && !ownMatcher_(user)(sheet.getRange(row, c.designer + 1).getDisplayValue(), c.owner >= 0 ? sheet.getRange(row, c.owner + 1).getDisplayValue() : '')) return { ok: false, error: 'This task is not assigned to you.' };
+  if (!isOwner_(user.email) && ownerOnly_(sheet.getRange(row, c.designer + 1).getDisplayValue())) return { ok: false, error: 'This task is private.' };
   if (c.brief < 0) return { ok: false, error: 'No Creative Brief column in this sheet.' };
   let url = clean_(cellUrl_(sheet.getRange(row, c.brief + 1))); // a label with the link behind it counts as the link
   const m = url.match(/^https:\/\/docs\.google\.com\/document\/(?:u\/\d+\/)?d\/([A-Za-z0-9_-]{20,})/);
@@ -3072,4 +3073,52 @@ function inbox_(u) {
     const to = String(r[3]); return to === 'all' || to.split(',').indexOf(u.email) >= 0 || String(r[2]).toLowerCase() === u.email;
   }).map(function (r) { const by = String(r[2]).toLowerCase(); return { id: String(r[0]), at: r[1].toISOString(), from: by, fromName: names[by] || by, to: String(r[3]) === 'all' ? 'all' : 'some', mine: by === u.email, type: String(r[4]), text: String(r[5]), ref: parseJson_(r[6], null) }; });
   return { ok: true, items: items.reverse().slice(0, 100) };
+}
+
+
+/* ================= The Creative Head's own work is private (Nov 2026) =================
+   Everyone else gets the owner's tasks anonymised before the data leaves the web app: brand "Private", no title, ID,
+   links, brief or notes, designer "Private". What totals need stays (status, dates, quantity, creative type, sheet),
+   so every overall number, report and team metric still counts them. A task shared with someone else stays visible
+   to them, with the owner's name taken out. */
+let OWNER_KEYS_ = null;
+function ownerKeys_() {
+  if (OWNER_KEYS_) return OWNER_KEYS_;
+  const keys = [];
+  try {
+    const all = JSON.parse(dataText_(false)), team = Object.keys(all.sources || {}).map(function (k) { return all.sources[k]; }).filter(function (x) { return x && x.kind === 'team'; })[0];
+    const members = team ? CODATA.parseTeam(team) : [];
+    owners_().forEach(function (email) {
+      const u = (users_().list || []).filter(function (x) { return x.email === email; })[0] || { email: email, name: '' };
+      const me = teamMatch_(u, members); if (me) { keys.push(me.key || me.name); String(me.aliases || '').split(/[,;\n]/).forEach(function (a) { if (a.indexOf('@') < 0) keys.push(a); }); }
+      if (u.name) keys.push(u.name);
+    });
+  } catch (e) { /* fall back to the name below */ }
+  if (!keys.length) keys.push('Anmol Sharma');
+  OWNER_KEYS_ = keys.map(function (n) { return String(n).toLowerCase().trim(); }).filter(function (n) { return n.length > 2; });
+  return OWNER_KEYS_;
+}
+function ownerNames_(cell) { const parts = String(cell || '').split(/\s*(?:,|\+|&|\/|\band\b)\s*/i).filter(Boolean), k = ownerKeys_(); return { parts: parts, mine: parts.filter(function (p) { const l = p.toLowerCase().trim(); return k.some(function (n) { return l === n || l === n.split(' ')[0] || n.indexOf(l) === 0 && l.length > 3; }); }) }; }
+function ownerOnly_(cell) { const o = ownerNames_(cell); return o.parts.length > 0 && o.mine.length === o.parts.length; }
+function privateText_(text, user) {
+  if (!user || user.owner || isOwner_(user.email)) return text;
+  const all = JSON.parse(text);
+  Object.keys(all.sources || {}).forEach(function (k) {
+    const src = all.sources[k]; if (!src || src.kind === 'team' || !Array.isArray(src.rows)) return;
+    const head = (src.headers || []).map(function (h) { return clean_(h).toLowerCase(); });
+    const c = taskColumns_(kindOf_(k), head); if (c.designer < 0) return;
+    const keep = {}; head.forEach(function (h, i) { if (/status|eta|date|deliver|month|qty|quantity|no\.? ?of|creatives|creative type|^type|format/.test(h) && !/link|brief|note|file/.test(h)) keep[i] = 1; });
+    [c.status, c.eta, c.qty, c.cstatus].forEach(function (i) { if (i >= 0) keep[i] = 1; });
+    src.rows = src.rows.map(function (r, n) {
+      const o = ownerNames_(r[c.designer]); if (!o.mine.length) return r;
+      const out = r.slice();
+      if (o.mine.length < o.parts.length) { out[c.designer] = o.parts.filter(function (p) { return o.mine.indexOf(p) < 0; }).join(', '); return out; }
+      for (let i = 0; i < out.length; i++) if (!keep[i]) out[i] = '';
+      out[c.designer] = 'Private'; out[c.id] = 'PVT-' + k + '-' + n;
+      const bc = head.indexOf('brand'); if (bc >= 0) out[bc] = 'Private';
+      return out;
+    });
+    if (src.links) delete src.links;
+  });
+  return JSON.stringify(all);
 }

@@ -411,10 +411,11 @@
     const status = () => dash.data('tasks').status;
     const all = () => (S.status === 'ok' ? S.tasks : null);
     // rows(): tasks with the page filters applied. rows(true): every task (briefings and reminders ignore filters).
+    const PRIV_TABS = new Set(['today', 'reports', 'brands']); // pages whose numbers include private work
     const rows = (unfiltered) => {
       const a = all(); if (!a) return null;
       const p0 = dash.params(), use = fUsed(p0.tab || 'today'), p = unfiltered ? { src: '', designer: '', brand: '', type: '' } : { src: use.includes('src') ? p0.src : '', designer: use.includes('designer') ? p0.designer : '', brand: use.includes('brand') ? p0.brand : '', type: use.includes('type') ? p0.type : '' }, tm = team();
-      const key = [p.src, p.designer, p.brand, p.type, today()].join('|');
+      const key = [p.src, p.designer, p.brand, p.type, today(), p0.tab, unfiltered].join('|');
       if (memo.rows === a && memo.team === tm && memo.key === key) return memo.out;
       const t = today(), out = [];
       for (const r0 of a) {
@@ -425,6 +426,8 @@
         if (p.designer && (p.designer === '__none' ? list.length : !list.includes(p.designer))) continue;
         const r = Object.assign({}, r0, { list, designers: list.join(' + '), owner: maskText(r0.owner) });
         r.due = due(r, t);
+        // the Creative Head's own tasks arrive anonymised ("Private"): counted in totals, never listed
+        if (list.includes('Private')) { r.private = true; r.list = []; r.designers = ''; if (!PRIV_TABS.has(p0.tab || 'today') || unfiltered === 'list') continue; }
         out.push(r);
       }
       memo = { rows: a, team: tm, key, out };
@@ -1007,7 +1010,7 @@
     if (CO.notReady(el, 'box')) return;
     const t = CO.today(), tm = CO.addDays(t, 1);
     const cat = (r) => r.due === 'overdue' ? 'late' : r.due === 'today' ? 'today' : (r.open && r.eta === tm) ? 'tomorrow' : 'changes';
-    const rows = CO.rows().filter((r) => r.due === 'overdue' || r.due === 'today' || (r.open && r.eta === tm) || r.stage === 'Changes requested')
+    const rows = CO.rows().filter((r) => !r.private && (r.due === 'overdue' || r.due === 'today' || (r.open && r.eta === tm) || r.stage === 'Changes requested'))
       .sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || (a.priority || 'P9').localeCompare(b.priority || 'P9'));
     const F = [['all', 'All', () => true], ['late', 'Overdue', (r) => r.due === 'overdue'], ['today', 'Today', (r) => r.due === 'today'], ['tomorrow', 'Tomorrow', (r) => r.open && r.eta === tm], ['changes', 'Changes', (r) => r.stage === 'Changes requested']];
     if (!F.some((f) => f[0] === NA.f)) NA.f = 'all';
@@ -1449,7 +1452,7 @@
     }
     el._popWas = side && isOpen;
     const inner = document.createElement('div'); inner.className = 'tw-inner';
-    const list = lists[TW.sel].slice().sort((x, y) => (x.list[0] || '~').localeCompare(y.list[0] || '~') || (x.eta || '').localeCompare(y.eta || ''));
+    const list = lists[TW.sel].filter((r) => !r.private).slice().sort((x, y) => (x.list[0] || '~').localeCompare(y.list[0] || '~') || (x.eta || '').localeCompare(y.eta || ''));
     const ul = document.createElement('ul'); ul.className = 'tw-list'; ul.setAttribute('role', 'tabpanel');
     list.slice(0, 40).forEach((r, i) => {
       const li = document.createElement('li'); li.className = 'tw-item k-' + TW.sel + (animList ? ' in' : ''); li.style.setProperty('--i', Math.min(i, 10)); li.tabIndex = 0; li.dataset.twUid = r.uid;
@@ -1653,7 +1656,7 @@
     el.replaceChildren();
     const t = CO.today();
     const isBrief = (r) => r.awaiting && /client/i.test(r.sub || '');
-    const all = CO.rows().filter((r) => r.shared || isBrief(r));
+    const all = CO.rows().filter((r) => !r.private && (r.shared || isBrief(r)));
     const since = (r) => (r.eta && r.eta < t ? r.eta : isBrief(r) && !r.eta && r.req && r.req < t ? r.req : null);
     const days = (r) => { const s0 = since(r); return s0 ? CO.diffDays(s0, t) : 0; };
     const bandOf = (d) => WAIT_BANDS.find((b) => b[2](d));
@@ -1836,7 +1839,7 @@
       if (CO.notReady(el, 'box')) return;
       const rs = CO.rows(), t = CO.today(), wkAgo = CO.addDays(t, -6);
       const people = new Map();
-      CO.team().byKey.forEach((m) => { if (m.status === 'Active') people.set(m.name, []); });
+      CO.team().byKey.forEach((m) => { if (m.status === 'Active' && !EF.hidden(m.name)) people.set(m.name, []); });
       rs.forEach((r) => {
         const recentDone = r.done && r.ddate && r.ddate >= wkAgo && r.ddate <= t;
         if (CO.CLOSED.has(r.stage) && !recentDone) return;
@@ -2730,7 +2733,7 @@
     const HOURS = { 'Static': 1.5, 'Banner': 1.5, 'Frame': 1.5, 'GIF': 2, 'Carousel': 2.5, 'A+ Content': 3, 'Infographic': 2.5, 'Video': 4, 'Video Edit': 4, 'Reel': 4, 'AI Video': 5, 'Animation': 5, 'In-House Video': 6, 'Unspecified': 2 };
     const CAP = 7;
     const role = (name) => (CO.member(name).role || '').trim();
-    const hidden = (name) => /not shown/i.test(role(name)) && !/creative head/i.test(role(name)) && !/^anmol\b/i.test(name); // the Creative Head's own work is shown (Nov 2026)
+    const hidden = (name) => name === 'Private' || (!isOwner() && (/creative head/i.test(role(name)) || /^anmol\b/i.test(name))) || /not shown/i.test(role(name)) && !/creative head/i.test(role(name)) && !/^anmol\b/i.test(name); // the Creative Head's own work is shown (Nov 2026)
     const intern = (name) => /intern/i.test(role(name));
     const writer = (name) => /content writer/i.test(role(name));
     const typeHours = (t) => HOURS[t] != null ? HOURS[t] : CO.VIDEO.test(t || '') ? 4 : 2;
@@ -2773,7 +2776,7 @@
       const out = [], seen = new Set();
       (S.team || []).filter((m) => m.status !== 'Inactive').forEach((m) => { if (contentOnly(m.name) || isHead(m.name)) { out.push(m.name); seen.add(first(m.name)); } });
       ONLY.concat(ALSO).forEach((f) => { if (!seen.has(f)) out.push(f.charAt(0).toUpperCase() + f.slice(1)); }); // e.g. Gul, who is not on the team list
-      return out;
+      return out.filter((n) => isOwner() || !(isHead(n) || /^anmol\b/i.test(n))); // the Creative Head's own work is private
     };
     // Every name in the Content Owner cell counts: "Client, Gul", "Gul, Client", "Client,Gul", "Client / Gul", "Client & Gul", one per line…
     const owners = (r) => String(r.owner || '').toLowerCase().split(/\s*(?:,|;|&|\/|\+|\n|\r|\|| and )\s*/).map((x) => x.trim()).filter(Boolean);
