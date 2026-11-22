@@ -845,7 +845,7 @@
     const b = document.createElement('b'); b.textContent = A.user.name || A.user.email;
     w.append(b);
     // The owner sees just their name; everyone else also sees their role and email.
-    if (!isOwner()) { const sm = document.createElement('small'); sm.textContent = roleText(A.user) + ' · ' + A.user.email; w.append(sm); } el.append(CO.av(myDesigner() || A.user.name || A.user.email, 'lg'), w); el.title = 'Your character: click to edit'; el.setAttribute('role', 'button'); el.tabIndex = 0;
+    if (!isOwner()) { const sm = document.createElement('small'); sm.textContent = roleText(A.user) + ' · ' + A.user.email; w.append(sm); } const avw = document.createElement('span'); avw.className = 'su-av'; avw.append(CO.av(myDesigner() || A.user.name || A.user.email, 'lg')); const pen = document.createElement('span'); pen.className = 'su-edit'; pen.setAttribute('aria-hidden', 'true'); pen.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16zM14 6l3 3"/></svg>'; avw.append(pen); const hint = document.createElement('small'); hint.className = 'su-hint'; hint.textContent = 'Edit character'; w.append(hint); el.append(avw, w); el.title = 'Edit your character'; el.setAttribute('aria-label', 'Edit your character'); el.setAttribute('role', 'button'); el.tabIndex = 0;
   });
   dash.draw('today-date', (el) => { el.textContent = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); });
   dash.draw('sync-dot', (el) => { el.className = 'co-sync-dot ' + (S.status === 'ok' ? (S.staleError ? 'warn' : 'ok') : S.status === 'error' ? 'bad' : S.status === 'loading' ? 'busy' : ''); });
