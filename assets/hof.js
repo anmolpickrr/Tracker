@@ -21,7 +21,7 @@ window.CO_HOFINIT = function (api) {
     ['snacky', 'Snack Buddy', 'Jolly, hungry, the best company', 'groove'],
     ['brainy', 'Big Brain', 'Has a plan for everything', 'nod'],
     ['spiky', 'Power-Up Hero', 'Never gives up, powers up', 'powerup'],
-    ['bot', 'Helper Bot', 'Here to help. Beep boop', 'float'],
+    ['astro', 'Space Cadet', 'Out-of-this-world ideas', 'float'],
     ['octo', 'Octo Multitasker', 'Eight arms, zero stress', 'wiggle'],
     ['cat', 'Cool Cat', 'Too cool for deadlines (meets them anyway)', 'strut'],
     ['mad', 'Mad Scientist', 'Wild ideas, wilder hair', 'shake'],
