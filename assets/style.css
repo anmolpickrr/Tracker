@@ -4960,3 +4960,36 @@ a.stu-print:hover { border-color: var(--primary); }
 .hp-f { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid var(--line); background: var(--panel-2); } .hp-f small { margin-right: auto; }
 @media (max-width: 760px) { .hp-b { grid-template-columns: 1fr; } .hp-pv { position: static; } .hof2-stage.big { height: 220px; } }
 .hof2 { grid-template-columns: minmax(0, 1fr); } .hof2-wrap, .hof2-track { min-width: 0; }
+
+/* ============ Characters v3.1: never cropped, 3D tilt, smoother motion ============ */
+/* room to move: the figure sits inside a padded box so jumps, flips and crowns never leave it */
+.pf { perspective: 700px; transform-style: preserve-3d; overflow: visible; }
+.pf-img { inset: 12% 10% 4%; width: 80%; height: 84%; will-change: transform; transition: rotate .4s ease; }
+.pf-tilt { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateY(var(--ry, 0deg)) rotateX(var(--rx, 0deg)); transition: transform .5s cubic-bezier(.2, .8, .2, 1); }
+.pf-tilt .pf-img { filter: drop-shadow(calc(var(--ry, 0deg) / -2deg * 1px) 8px 10px rgba(30, 30, 30, .22)); }
+.pf-shadow { bottom: 2%; }
+.pf-crown { top: 2%; }
+/* living idle: every move also breathes */
+.pf:not(.still) .pf-tilt { animation: pfBreathe 3.2s ease-in-out infinite; }
+@keyframes pfBreathe { 0%, 100% { scale: 1 1; } 50% { scale: 1.015 .99; } }
+/* smoother, weightier moves (ease in/out with anticipation and overshoot) */
+.mv-bounce .pf-img { animation: mvBounce2 1.25s cubic-bezier(.45, 0, .55, 1) infinite; }
+@keyframes mvBounce2 { 0% { transform: translateY(0) scale(1.05, .95); } 18% { transform: translateY(0) scale(.96, 1.05); } 48% { transform: translateY(-10%) scale(.99, 1.02) rotate(-2deg); } 78% { transform: translateY(0) scale(1.04, .96); } 100% { transform: translateY(0) scale(1.05, .95); } }
+.mv-groove .pf-img { animation: mvGroove2 1.6s cubic-bezier(.45, 0, .55, 1) infinite; }
+@keyframes mvGroove2 { 0%, 100% { transform: translateX(-5%) rotate(-6deg) translateY(0); } 25% { transform: translateX(0) rotate(0) translateY(-6%) scale(.98, 1.03); } 50% { transform: translateX(5%) rotate(6deg) translateY(0); } 75% { transform: translateX(0) rotate(0) translateY(-6%) scale(.98, 1.03); } }
+.mv-wiggle .pf-img { animation: mvWiggle2 1.4s cubic-bezier(.45, 0, .55, 1) infinite; }
+@keyframes mvWiggle2 { 0%, 100% { transform: rotate(-7deg) translateX(-2%); } 50% { transform: rotate(7deg) translateX(2%) translateY(-3%); } }
+.mv-float .pf-img { animation: mvFloat2 3.6s cubic-bezier(.45, 0, .55, 1) infinite; }
+@keyframes mvFloat2 { 0%, 100% { transform: translateY(-2%) rotate(-3deg); } 50% { transform: translateY(-9%) rotate(3deg); } }
+/* hover: they notice you and do a happy hop */
+.pf.hop .pf-img { animation: pfHop .7s cubic-bezier(.3, 0, .2, 1) 1 !important; }
+@keyframes pfHop { 0% { transform: scale(1.08, .9); } 40% { transform: translateY(-14%) scale(.94, 1.08) rotate(-4deg); } 75% { transform: translateY(0) scale(1.06, .94); } 100% { transform: none; } }
+/* nothing sits on top of a character */
+.hof2-stage { height: 230px; padding-top: 6px; overflow: visible; }
+.hof2-arr { top: 98px; z-index: 2; }
+.hof2-stage .pf { margin: 0 46px; }
+.hof2-track { padding-top: 6px; }
+.hof-fig, .hof-w { overflow: visible; }
+.hp-opt { padding-top: 10px; } .hp-opt .pf { width: 92px; }
+.hof2-stage.big { height: 300px; }
+@media (prefers-reduced-motion: reduce) { .pf-tilt { animation: none !important; transition: none; } }

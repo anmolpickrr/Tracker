@@ -54,7 +54,13 @@ window.CO_HOFINIT = function (api) {
     const o = opts || {}, w = el('span', 'pf mv-' + (c.move || 'bounce') + (o.still ? ' still' : '') + (o.cls ? ' ' + o.cls : ''));
     const im = new Image(); im.src = artUrl(c); im.alt = o.label || ''; im.decoding = 'async'; im.draggable = false; im.className = 'pf-img';
     im.onerror = () => { w.classList.add('missing'); };
-    w.append(el('i', 'pf-shadow'), im);
+    const tilt = el('span', 'pf-tilt'); tilt.append(im); w.append(el('i', 'pf-shadow'), tilt);
+    // 3D feel: the character turns toward your pointer and hops when you arrive
+    if (!o.still) {
+      w.addEventListener('pointermove', (e) => { const r = w.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5; w.style.setProperty('--ry', (x * 30).toFixed(1) + 'deg'); w.style.setProperty('--rx', (-y * 16).toFixed(1) + 'deg'); });
+      w.addEventListener('pointerleave', () => { w.style.setProperty('--ry', '0deg'); w.style.setProperty('--rx', '0deg'); });
+      w.addEventListener('pointerenter', () => { if (reduce()) return; w.classList.remove('hop'); void w.offsetWidth; w.classList.add('hop'); setTimeout(() => w.classList.remove('hop'), 750); });
+    }
     if (o.crown) { const cr = el('span', 'pf-crown'); cr.innerHTML = '<svg viewBox="0 0 32 22" aria-hidden="true"><path d="M2 20h28l-2-14-7 6-5-10-5 10-7-6z" fill="#f5c542" stroke="#b8860b" stroke-width="1.2" stroke-linejoin="round"/><circle cx="16" cy="3" r="2.4" fill="#ff5a26"/><circle cx="4" cy="6" r="2" fill="#685bc7"/><circle cx="28" cy="6" r="2" fill="#2fb37a"/></svg>'; w.append(cr); }
     if (o.sparkle) { const sp = el('span', 'pf-sp'); sp.style.setProperty('--hc', o.sparkle); for (let k = 0; k < 5; k++) sp.append(el('i')); w.append(sp); }
     return w;
