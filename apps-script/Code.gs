@@ -2306,12 +2306,12 @@ const ASSIST_MODELS = {
 };
 function assistStatus_() {
   const p = PropertiesService.getScriptProperties();
-  return { ai: !!(p.getProperty('ANTHROPIC_API_KEY') || p.getProperty('GEMINI_API_KEY')), tts: !!(p.getProperty('GOOGLE_TTS_KEY') || p.getProperty('GEMINI_API_KEY')), provider: assistProvider_() };
+  return { ai: !!('' /* free-only: paid $1 is never used */ || p.getProperty('GEMINI_API_KEY')), tts: !!('' /* free-only: paid $1 is never used */ || p.getProperty('GEMINI_API_KEY')), provider: assistProvider_() };
 }
 // Which service answers: the admin's choice if its key is set; "auto" prefers the free Gemini key, then Claude Haiku.
 function assistProvider_() {
   const p = PropertiesService.getScriptProperties(), m = settings_().model || 'auto';
-  const gem = !!p.getProperty('GEMINI_API_KEY'), cl = !!p.getProperty('ANTHROPIC_API_KEY');
+  const gem = !!p.getProperty('GEMINI_API_KEY'), cl = !!'' /* free-only: paid $1 is never used */;
   if (m === 'gemini' || m === 'auto') return gem ? 'gemini' : cl ? (m === 'auto' ? 'haiku' : 'none') : 'none';
   return cl ? m : gem ? 'gemini' : 'none';
 }
@@ -2383,7 +2383,7 @@ function assistClean_(messages) {
 function assist_(user, body) {
   const prov = assistProvider_();
   if (prov === 'none') return { ok: false, error: 'not_configured' };
-  const key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+  const key = '' /* free-only: paid $1 is never used */;
   const M = ASSIST_MODELS[prov];
   if (!assistLimit_(user.email, 'ast', 40)) return { ok: false, error: 'Too many questions in a short time. Try again in a few minutes.' };
   const messages = assistClean_(body.messages);
@@ -2449,12 +2449,12 @@ function voiceChunks_(text) {
 }
 function ttsReady_() {
   const p = PropertiesService.getScriptProperties();
-  return !!(p.getProperty('GOOGLE_TTS_KEY') || (p.getProperty('GEMINI_API_KEY') && !CacheService.getScriptCache().get('tts-off')));
+  return !!('' /* free-only: paid $1 is never used */ || (p.getProperty('GEMINI_API_KEY') && !CacheService.getScriptCache().get('tts-off')));
 }
 function ttsKey_(lang, text) { return 'tts2:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, lang + text)); }
 // Synthesises several texts at once; returns [{ a, m } | null] in the same order.
 function ttsMany_(texts, lang) {
-  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GOOGLE_TTS_KEY'), gk = props.getProperty('GEMINI_API_KEY');
+  const props = PropertiesService.getScriptProperties(), key = '' /* free-only: paid $1 is never used */, gk = props.getProperty('GEMINI_API_KEY');
   const cache = CacheService.getScriptCache(), out = texts.map(function () { return null; }), todo = [];
   texts.forEach(function (t, i) { const hit = cache.get(ttsKey_(lang, t)); if (hit) { try { out[i] = JSON.parse(hit); return; } catch (e) { /* re-make */ } } todo.push(i); });
   if (!todo.length) return out;
@@ -2496,7 +2496,7 @@ function attachVoice_(user, r, pref) {
 }
 function speak_(user, body) {
   const props = PropertiesService.getScriptProperties();
-  if (!props.getProperty('GOOGLE_TTS_KEY') && !props.getProperty('GEMINI_API_KEY')) return { ok: false, error: 'not_configured' };
+  if (!'' /* free-only: paid $1 is never used */ && !props.getProperty('GEMINI_API_KEY')) return { ok: false, error: 'not_configured' };
   const many = Array.isArray(body.texts), texts = (many ? body.texts : [body.text]).map(function (t) { return String(t || '').slice(0, 700); }).filter(Boolean).slice(0, 5);
   if (!texts.length) return { ok: false };
   for (let i = 0; i < texts.length; i++) if (!assistLimit_(user.email, 'tts', 80)) return { ok: false, error: 'limit' };
@@ -3006,6 +3006,8 @@ function cheer_(b, u) {
    At most 8 a day per person. The photo is only sent to Gemini; nothing is kept until the person saves the result. */
 const CHAR_MODELS = ['gemini-2.5-flash-image', 'gemini-2.5-flash-image-preview', 'gemini-2.0-flash-preview-image-generation'];
 function charMake_(b, u) {
+  // Free-only (Nov 2026): Gemini's image models have no free tier, so photo characters are off.
+  return { ok: false, error: 'Photo characters are switched off: they need a paid Google AI plan. Pick a character instead.' };
   const key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!key) return { ok: false, error: 'Photo characters need a Gemini key. Ask the owner to add GEMINI_API_KEY in the web app\'s Script properties.', setup: true };
   const photo = String(b.photo || '').replace(/^data:image\/(jpeg|png|webp);base64,/, '');

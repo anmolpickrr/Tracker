@@ -525,3 +525,26 @@ Studio is no longer a menu section or an Overview strip, and it is no longer an 
 - **In the web app** (`privateText_`), every signed-in person except the owner gets the owner's tasks anonymised before the data is sent. Brand becomes "Private", designer becomes "Private", the ID becomes `PVT-…`, and title, links, brief, notes and every other detail are blanked. Status, dates, quantity, creative type and sheet stay, so totals, reports, monthly counts and team metrics still include them exactly (same number of rows). A task shared with someone else stays visible to that person, with the owner's name removed. Briefs of the owner's tasks are refused for everyone else.
 - **On the dashboard**, anonymised rows count in Overview, Reports and Brands totals but are never listed: not in Tasks, Stand-up, My work, Needs attention, the Today widget, Waiting on client or the Hall of Fame. The owner is left out of people lists (stand-up cards, team views, content writers, stars) for everyone else.
 - **Not covered:** Admins' activity log (Access) and Fasty read the sheets directly and can still mention the owner's tasks. Restrict those Admin permissions if needed.
+
+## Free-only (Nov 2026)
+
+The dashboard runs only on free services. Code paths that could cost money are switched off in `Code.gs`:
+- `ANTHROPIC_API_KEY` (Claude for Fasty) is never read; Fasty uses Gemini's free tier.
+- `GOOGLE_TTS_KEY` (Cloud Text-to-Speech, which needs billing) is never read; voice uses Gemini's free speech model.
+- Photo-to-character (`charMake_`) is off, because Gemini's image models have no free tier.
+
+| Service | Used for | Cost | Free limits |
+|---|---|---|---|
+| GitHub (public repo + Pages) | Hosting the site, code updates | Free | Pages: 1 GB site, 100 GB/month bandwidth |
+| Google Apps Script | The web app (data API, saves, reminders, self-update) | Free | Workspace: 6 min per run, 30 min/day of triggers per user, 100k URL fetches/day, 1,500 emails/day |
+| Google Sheets / Drive | All data, access, notes, issues, characters | Free | 10M cells per spreadsheet |
+| Google Sign-In (Identity Services) | Login | Free | None in practice |
+| Google Calendar API | Meetings | Free | 1M queries/day |
+| Google Docs API | Brief tab lookup | Free | 300 reads/min per project |
+| Apps Script API | Self-update from GitHub | Free | 50k calls/day |
+| Google Chat webhook (optional) | Briefing messages | Free | 1 message/s per space |
+| Gemini API, free tier (optional) | Fasty answers and voice | Free while the key's Google Cloud project has **no billing account** | Per-model per-minute/day caps (e.g. Flash: ~10 req/min, ~250/day); prompts may be used by Google to improve products |
+| jsdelivr CDN | d3, Motion, anime.js, three.js | Free (open-source, MIT/ISC) | None in practice |
+| Google Fonts | Outfit, Inter, IBM Plex Mono | Free (OFL) | None |
+| Character art | Made once with Pollinations.ai and rembg, shipped as files | Free, no runtime calls | None |
+| Sounds and music | Made live in the browser (Web Audio) | Free | None |
