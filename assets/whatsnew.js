@@ -4,6 +4,13 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-23-new-crew', date: '2026-11-23', kind: 'improved', who: 'all', title: 'A brand-new crew of characters',
+    what: '20 new characters in a soft 3D toy style: comfy hoodie kids, a grumpy genius, a DJ, plus a fuzzy bear, baby gorilla, penguin, panda, little dragon and more.',
+    does: 'Each comes as a designer, video editor or copywriter, with plush textures, big expressive eyes and attitude. All are our own originals.',
+    how: 'Click the character beside the clock, then Change my character. If you had picked one before, you now have its closest new match; pick again any time.',
+    changed: 'Replaces the earlier set of 18 characters.'
+  },
+  {
     id: '2026-11-22-personas', date: '2026-11-22', kind: 'new', who: 'all', title: 'Pick your character: 18 fun personas',
     what: 'Characters are now glossy 3D-style personas with real personality, from Gadget Kid and Ninja Rookie to Snack Buddy, Space Cadet and Cool Cat, each drawn as a designer, video editor or copywriter.',
     does: 'Your persona is your avatar and shows in the Hall of Fame beside the clock with your move (bounce, backflip, groove and more). Award winners get a crown, sparkles and a glow. Everyone starts with one picked for them until they choose.',

@@ -14,24 +14,26 @@ window.CO_HOFINIT = function (api) {
 
   /* ---------- the personas ---------- */
   const PERSONAS = [
-    ['gadget', 'Gadget Kid', 'Inventor with a backpack of gizmos', 'bounce'],
-    ['rascal', 'Little Rascal', 'Cheeky, fearless, always up to something', 'wiggle'],
-    ['villager', 'Village Hero', 'Brave, strong, saves the day', 'stomp'],
-    ['ninja', 'Ninja Rookie', 'Quick, sneaky, loves a wink', 'flip'],
-    ['snacky', 'Snack Buddy', 'Jolly, hungry, the best company', 'groove'],
-    ['brainy', 'Big Brain', 'Has a plan for everything', 'nod'],
-    ['spiky', 'Power-Up Hero', 'Never gives up, powers up', 'powerup'],
-    ['astro', 'Space Cadet', 'Out-of-this-world ideas', 'float'],
-    ['octo', 'Octo Multitasker', 'Eight arms, zero stress', 'wiggle'],
-    ['cat', 'Cool Cat', 'Too cool for deadlines (meets them anyway)', 'strut'],
-    ['mad', 'Mad Scientist', 'Wild ideas, wilder hair', 'shake'],
-    ['panda', 'Panda Master', 'Soft heart, strong moves', 'stomp'],
-    ['cop', 'Mini Cop', 'Keeps every brief in order', 'bounce'],
-    ['star', 'Pop Star', 'Every creative is a hit', 'groove'],
-    ['racer', 'Turbo Racer', 'Fastest turnaround in town', 'zoom'],
-    ['monk', 'Wind Monk', 'Calm under any deadline', 'float'],
-    ['pirate', 'Pirate Kid', 'Hunts for treasure-grade ideas', 'strut'],
-    ['supergirl', 'Super Sister', 'Small, mighty, unstoppable', 'jump']
+    ['hoodiekid', 'Hoodie Kid', 'Comfy, cool, always shipping', 'groove'],
+    ['grumpy', 'Grumpy Genius', 'Unimpressed until it is perfect', 'nod'],
+    ['nerd', 'Big Specs', 'Notices every pixel', 'shake'],
+    ['beanie', 'Beanie Boss', 'Sleepy look, sharp work', 'strut'],
+    ['capkid', 'Coffee Cap', 'Runs on caffeine and ideas', 'bounce'],
+    ['bluehood', 'Track Star', 'Fast, friendly, rosy cheeks', 'zoom'],
+    ['orangepuff', 'Puffer Pro', 'Smug for a reason', 'strut'],
+    ['streetgirl', 'Street Style', 'Effortlessly on trend', 'groove'],
+    ['frog', 'Groovy Kid', 'Peace, love and deadlines', 'jump'],
+    ['gorilla', 'Baby Gorilla', 'Soft heart, big muscles', 'stomp'],
+    ['bunny', 'Snuggle Bunny', 'Cute but focused', 'bounce'],
+    ['bear', 'Fuzzy Bear', 'Winks at every brief', 'wiggle'],
+    ['penguin', 'Pip Penguin', 'Happy flapper', 'wiggle'],
+    ['duckling', 'Smart Duck', 'Glasses on, quacks ideas', 'nod'],
+    ['panda', 'Panda Pal', 'Kicks deadlines', 'powerup'],
+    ['dragon', 'Little Dragon', 'Small but fiery', 'flip'],
+    ['squirrel', 'Sporty Squirrel', 'Quick on its feet', 'shuffle'],
+    ['blob', 'Lilac Blob', 'Pure good vibes', 'float'],
+    ['thumbsguy', 'Thumbs Up', 'Always says yes', 'bounce'],
+    ['dj', 'DJ Chill', 'Vibing to the timeline', 'nod']
   ];
   const PROFS = [['designer', 'Designer'], ['video', 'Video editor'], ['writer', 'Copywriter']];
   const MOVES = [['bounce', 'Bounce'], ['wiggle', 'Wiggle'], ['jump', 'Jump for joy'], ['groove', 'Groove'], ['shuffle', 'Side shuffle'], ['flip', 'Backflip'], ['spin', 'Turnaround'], ['shake', 'Happy shake'], ['float', 'Float'], ['stomp', 'Power stomp'], ['strut', 'Strut'], ['nod', 'Nod along'], ['zoom', 'Zoom'], ['powerup', 'Power up']];
@@ -40,11 +42,13 @@ window.CO_HOFINIT = function (api) {
   const hash = (s) => { let h = 0; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
   const ART = 'assets/chars/';
   const artUrl = (c) => ART + c.persona + '-' + c.prof + '.webp';
-  const faceUrl = (c) => ART + c.persona + '-' + c.prof + '-face.webp';
+  const faceUrl = (c) => ART + (PERSONAS.some((x) => x[0] === c.persona) ? c.persona : (charOf ? 'hoodiekid' : c.persona)) + '-' + c.prof + '-face.webp';
   // everyone has a character: their own pick, or one chosen for them until they pick
   function charOf(name) {
     const p = SD().profOf ? SD().profOf(name) : null;
-    if (p && p.char && p.char.persona) return Object.assign({ chosen: true }, p.char);
+    // characters from the earlier set move to their closest new one
+    const OLD = { gadget: 'nerd', rascal: 'hoodiekid', villager: 'bluehood', ninja: 'beanie', snacky: 'bear', brainy: 'grumpy', spiky: 'orangepuff', astro: 'blob', bot: 'blob', octo: 'blob', cat: 'dj', mad: 'nerd', panda: 'panda', cop: 'capkid', star: 'streetgirl', racer: 'squirrel', monk: 'dragon', pirate: 'thumbsguy', supergirl: 'streetgirl' };
+    if (p && p.char && p.char.persona) { const c = Object.assign({ chosen: true }, p.char); if (!PERSONAS.some((x) => x[0] === c.persona)) c.persona = OLD[c.persona] || PERSONAS[0][0]; return c; }
     const role = EF.role(name) || '';
     const k = PERSONAS[hash(name) % PERSONAS.length];
     return { persona: k[0], prof: profOfRole(role), move: k[3], chosen: false };
@@ -222,7 +226,7 @@ window.CO_HOFINIT = function (api) {
     ctl.append(mv);
     body.append(pv, ctl);
     const foot = el('div', 'hp-f');
-    foot.append(el('small', 'co-note', 'Art made free with Pollinations.ai. Inspired by classic cartoons, not copies of any.'), btn('Cancel', 'co-btn ghost', () => d.close()));
+    foot.append(el('small', 'co-note', 'Original characters, art made free with Pollinations.ai.'), btn('Cancel', 'co-btn ghost', () => d.close()));
     const save = btn('Save my character', 'co-btn primary', async () => {
       save.disabled = true; save.textContent = 'Saving…';
       try {
