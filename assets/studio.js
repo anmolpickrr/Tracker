@@ -161,7 +161,7 @@ window.CO_STUDIO = function (api) {
   /* ---------- the channels on the TV ---------- */
   function channels() {
     const st = stars(), list = [];
-    ST.awards.slice().sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 3).forEach((a) => list.push({ key: 'aw:' + a.id, kind: 'award', title: a.title, who: a.who, line: a.note || tagOf(a.tag)[3], tag: a.tag, link: a.link }));
+    const ok = new Set(people()); ST.awards.filter((a) => ok.has(a.who)).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 3).forEach((a) => list.push({ key: 'aw:' + a.id, kind: 'award', title: a.title, who: a.who, line: a.note || tagOf(a.tag)[3], tag: a.tag, link: a.link }));
     // only the people the Creative Head picks are featured (no automatic weekly stars)
     return { list, st };
   }
@@ -208,7 +208,7 @@ window.CO_STUDIO = function (api) {
   restart();
 
   /* ---------- Studio page ---------- */
-  const people = () => (S.team || []).filter((m) => m.status !== 'Inactive' && !EF.hidden(m.name)).map((m) => m.name).sort((a, b) => a.localeCompare(b));
+  const people = () => (S.team || []).filter((m) => m.status !== 'Inactive' && !EF.hidden(m.name) && !/creative head/i.test(m.role || '') && !/^anmol\b/i.test(m.name)).map((m) => m.name).sort((a, b) => a.localeCompare(b));
   dash.draw('studio', (box) => {
     if (A.mode !== 'auth' || !A.user) { box.replaceChildren(); return; }
     want3d();

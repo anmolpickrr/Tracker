@@ -84,7 +84,7 @@ window.CO_HOFINIT = function (api) {
       const tw = wk.people.find((x) => x.name === n), lw = lastWk.people.find((x) => x.name === n);
       return { name: n, role: String(EF.role(n) || '').replace(/\s*\(not shown\)\s*/i, ''), awards, stars, week: tw ? tw.qty : 0, last: lw ? lw.qty : 0, rank: awards.length ? 0 : stars.length ? 1 : 2 };
     });
-    out.sort((a, b) => a.rank - b.rank || (b.awards[0] ? String(b.awards[0].at) : '').localeCompare(a.awards[0] ? String(a.awards[0].at) : '') || b.week - a.week || a.name.localeCompare(b.name));
+    return out.filter((m) => m.awards.length).sort((a, b) => a.rank - b.rank || (b.awards[0] ? String(b.awards[0].at) : '').localeCompare(a.awards[0] ? String(a.awards[0].at) : '') || b.week - a.week || a.name.localeCompare(b.name));
     return out;
   }
 
@@ -104,11 +104,11 @@ window.CO_HOFINIT = function (api) {
     W.el.setAttribute('aria-label', 'Hall of Fame: ' + (c.kind === 'hi' ? 'see everyone' : c.title + ', ' + c.who) + '. Click to browse the team.');
     if (key !== W.key) {
       W.key = key;
-      const f = figure(ch, { label: c.who, crown: c.kind === 'award' && c.tag === 'best-performer', cls: 'pf-mini' + (c.kind === 'award' ? ' cheer' : '') });
-      W.fig.replaceChildren(f);
+      if (c.kind === 'hi') { W.fig.innerHTML = '<svg class="hof-trophy" viewBox="0 0 48 48" aria-hidden="true"><path d="M16 8h16v10a8 8 0 0 1-16 0z" fill="#f5c542" stroke="#b8860b" stroke-width="1.5"/><path d="M16 11h-6a6 6 0 0 0 7 7M32 11h6a6 6 0 0 1-7 7" fill="none" stroke="#b8860b" stroke-width="2"/><path d="M24 26v6M17 40h14l-2-8H19z" fill="#f5c542" stroke="#b8860b" stroke-width="1.5"/></svg>'; }
+      else { const f = figure(ch, { label: c.who, crown: c.kind === 'award' && c.tag === 'best-performer', cls: 'pf-mini' + (c.kind === 'award' ? ' cheer' : '') }); W.fig.replaceChildren(f); }
       if (anim && !reduce()) { W.el.classList.remove('swap'); void W.el.offsetWidth; W.el.classList.add('swap'); }
     }
-    W.tag.textContent = c.kind === 'hi' ? 'Hall of Fame' : c.title; W.name.textContent = c.kind === 'hi' ? 'Meet the team' : c.who;
+    W.tag.textContent = c.kind === 'hi' ? 'Hall of Fame' : c.title; W.name.textContent = c.kind === 'hi' ? 'No one featured' : c.who;
     W.dots.replaceChildren(); if (L.length > 1) for (let k = 0; k < Math.min(L.length, 6); k++) W.dots.append(el('i', k === W.i % 6 ? 'on' : ''));
   }
   function wNext(d) { const n = wItems().length; if (n < 2) return; W.i = (W.i + (d || 1) + n) % n; wPaint(true); }
@@ -154,6 +154,7 @@ window.CO_HOFINIT = function (api) {
     const x = btn('', 'hof2-x', popClose); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     head.append(ht, x); pop.append(head);
     const list = members();
+    if (!list.length) { const e = el('div', 'hof2-empty'); e.innerHTML = '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M16 8h16v10a8 8 0 0 1-16 0z" fill="#f5c542" stroke="#b8860b" stroke-width="1.5"/><path d="M16 11h-6a6 6 0 0 0 7 7M32 11h6a6 6 0 0 1-7 7" fill="none" stroke="#b8860b" stroke-width="2"/><path d="M24 26v6M17 40h14l-2-8H19z" fill="#f5c542" stroke="#b8860b" stroke-width="1.5"/></svg>'; e.append(el('b', '', 'No one featured right now'), el('small', '', S2.state && S2.state.canAward ? 'Pick up to 3 people to celebrate.' : 'The Creative Head picks who is featured here.')); pop.append(e); }
     const wrap = el('div', 'hof2-wrap'), track = el('div', 'hof2-track'); track.tabIndex = 0; track.setAttribute('aria-label', 'Team members');
     list.forEach((m) => {
       const ch = charOf(m.name), aw = m.awards[0], tg = aw ? tagOf(aw.tag) : null, color = aw ? tg[1] : m.stars.length ? '#ddff00' : '#c9b6ff';
@@ -191,6 +192,7 @@ window.CO_HOFINIT = function (api) {
     const foot = el('div', 'hof2-f');
     const ctr = el('span', 'hof2-ctr', ''); foot.append(ctr);
     const mine = charOf(myDesigner() || (A.user && A.user.name));
+    if (S2.state && S2.state.canAward && list.length < 3) foot.append(btn('Feature someone', 'co-btn sm', () => { popClose(); S2.award(); }));
     foot.append(btn(mine.chosen ? 'Change my character' : 'Choose my character', 'co-btn sm primary', () => { popClose(); pick(); }));
     
     pop.append(foot);

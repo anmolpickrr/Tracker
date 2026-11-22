@@ -5015,3 +5015,6 @@ a.stu-print:hover { border-color: var(--primary); }
 .side-user[data-draw="me-card"]:focus-visible { outline: 2px solid #ddff00; outline-offset: 2px; }
 .su-edit { width: 18px !important; height: 18px !important; right: -4px; bottom: -2px; }
 .su-edit svg { width: 10px !important; height: 10px !important; }
+.hof-trophy { width: 40px; height: 40px; margin: 8px; animation: hofBob 2.6s ease-in-out infinite; }
+.hof2-empty { display: grid; justify-items: center; gap: 6px; padding: 28px 12px; text-align: center; }
+.hof2-empty svg { width: 64px; height: 64px; } .hof2-empty b { font: 700 17px/1.2 var(--font-display); } .hof2-empty small { color: var(--muted); font-size: 12.5px; }
