@@ -161,8 +161,8 @@ window.CO_STUDIO = function (api) {
   /* ---------- the channels on the TV ---------- */
   function channels() {
     const st = stars(), list = [];
-    ST.awards.slice().sort((a, b) => String(b.at).localeCompare(String(a.at))).forEach((a) => list.push({ key: 'aw:' + a.id, kind: 'award', title: a.title, who: a.who, line: a.note || tagOf(a.tag)[3], tag: a.tag, link: a.link }));
-    st.list.forEach((s) => list.push(s));
+    ST.awards.slice().sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 3).forEach((a) => list.push({ key: 'aw:' + a.id, kind: 'award', title: a.title, who: a.who, line: a.note || tagOf(a.tag)[3], tag: a.tag, link: a.link }));
+    // only the people the Creative Head picks are featured (no automatic weekly stars)
     return { list, st };
   }
   function tvScreen(ch, i, n) {
@@ -553,10 +553,11 @@ window.CO_STUDIO = function (api) {
   /* ---------- award composer (Admins) ---------- */
   function openAward(a) {
     let d = document.getElementById('stu-award'); if (!d) { d = el('dialog', 'co-dialog stu-dlg stu-aw'); d.id = 'stu-award'; document.body.append(d); }
-    const W = { id: a ? a.id : '', who: a ? a.who : '', tag: a ? a.tag : 'best-performer', title: a ? a.title : TAGS['best-performer'][0], note: a ? a.note : '', link: a ? a.link : '', until: a ? a.until : CO.addDays(CO.today(), 7) };
+    const preset = a && !a.id ? a : null; if (preset) a = null;
+    const W = { id: a ? a.id : '', who: a ? a.who : preset ? preset.who : '', tag: a ? a.tag : 'best-performer', title: a ? a.title : TAGS['best-performer'][0], note: a ? a.note : '', link: a ? a.link : '', until: a ? a.until : CO.addDays(CO.today(), 7) };
     const paint = () => {
       d.replaceChildren();
-      const head = el('div', 'stu-dlg-h'); head.append(el('h2', '', a ? 'Edit award' : 'Give an award')); const x = btn('', 'stu-x', () => d.close()); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; head.append(x);
+      const head = el('div', 'stu-dlg-h'); head.append(el('h2', '', a ? 'Edit award' : 'Feature in the Hall of Fame')); const x = btn('', 'stu-x', () => d.close()); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; head.append(x);
       const f = el('div', 'stu-aw-b');
       const tg = tagOf(W.tag), prev = el('div', 'stu-swatch preview'); prev.style.setProperty('--tag', tg[1]); prev.style.setProperty('--tag-ink', tg[2]);
       const top = el('div', 'stu-sw-top'); top.append(el('small', 'stu-sw-brand', 'AWARD'), figure(profOf(W.who), { label: W.who, cls: 'mini' }));
@@ -573,7 +574,7 @@ window.CO_STUDIO = function (api) {
       f.append(prev, form);
       const foot = el('div', 'stu-dlg-f');
       if (a) foot.append(btn('Remove award', 'co-btn ghost danger', async () => { if (!confirm('Remove this award from the wall?')) return; try { await post({ action: 'awardDelete', id: a.id }); ST.awards = ST.awards.filter((y) => y.id !== a.id); d.close(); toast('Award removed'); renderAll(); } catch (e) { toast(e.message, true); } }));
-      const save = btn(a ? 'Save award' : 'Give award', 'co-btn primary', async (e) => {
+      const save = btn(a ? 'Save' : 'Feature them', 'co-btn primary', async (e) => {
         if (!W.who || !W.title.trim()) { toast('Pick a person and name the award.', true); return; }
         const b = e.currentTarget; b.disabled = true;
         try { const r = await post(Object.assign({ action: 'awardSave' }, W)); const rec = Object.assign({}, W, { id: r.id, at: a ? a.at : new Date().toISOString() }); ST.awards = ST.awards.filter((y) => y.id !== r.id).concat([rec]); burst(b, 40); d.close(); toast(a ? 'Award saved' : W.title + ' for ' + first(W.who) + '! Everyone can see it now.'); ST.ch = 0; renderAll(); }

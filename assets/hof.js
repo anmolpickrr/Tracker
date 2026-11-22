@@ -80,7 +80,7 @@ window.CO_HOFINIT = function (api) {
     const lastWk = S2.weekStats && S2.mondayOf ? S2.weekStats(CO.addDays(S2.mondayOf(t), -7), CO.addDays(S2.mondayOf(t), -1)) : { people: [] };
     const out = people.map((n) => {
       const awards = (st.awards || []).filter((a) => a.who === n).sort((a, b) => String(b.at).localeCompare(String(a.at)));
-      const stars = last.list.filter((s) => s.who === n);
+      const stars = [];
       const tw = wk.people.find((x) => x.name === n), lw = lastWk.people.find((x) => x.name === n);
       return { name: n, role: String(EF.role(n) || '').replace(/\s*\(not shown\)\s*/i, ''), awards, stars, week: tw ? tw.qty : 0, last: lw ? lw.qty : 0, rank: awards.length ? 0 : stars.length ? 1 : 2 };
     });
@@ -93,8 +93,7 @@ window.CO_HOFINIT = function (api) {
   function wItems() {
     const L = spotlights(); if (L.length) return L;
     const me = myDesigner() || (A.user && A.user.name) || 'You';
-    const ms = members().filter((m) => m.week > 0).slice(0, 4).map((m) => ({ key: 'wk:' + m.name, kind: 'week', title: m.week + ' creatives this week', who: m.name, tag: 'star' }));
-    return ms.length ? ms : [{ key: 'hi', kind: 'hi', title: 'Hall of Fame', who: me, tag: 'star' }];
+    return [{ key: 'hi', kind: 'hi', title: 'Hall of Fame', who: me, tag: 'star' }];
   }
   function wPaint(anim) {
     if (!W.el) return;
@@ -151,7 +150,7 @@ window.CO_HOFINIT = function (api) {
     const keepScroll = !first0 && pop.querySelector('.hof2-track') ? curIdx : null;
     pop.replaceChildren();
     const S2 = SD(), t = CO.today(), mon = S2.mondayOf ? S2.mondayOf(t) : t;
-    const head = el('div', 'hof2-h'); const ht = el('div'); ht.append(el('b', '', 'Hall of Fame'), el('small', '', 'Week of ' + CO.fmtDate(mon) + ' · swipe or use the arrows'));
+    const head = el('div', 'hof2-h'); const ht = el('div'); ht.append(el('b', '', 'Hall of Fame'), el('small', '', ((S2.state && S2.state.awards || []).length) + ' of 3 featured · swipe or use the arrows'));
     const x = btn('', 'hof2-x', popClose); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     head.append(ht, x); pop.append(head);
     const list = members();
@@ -176,6 +175,11 @@ window.CO_HOFINIT = function (api) {
       body.append(stats);
       const row = el('div', 'hof2-row');
       if (S2.cheerBtn) row.append(S2.cheerBtn('pw:' + m.name + ':' + mon, true));
+      if (S2.state && S2.state.canAward) {
+        const live = (S2.state.awards || []).length;
+        if (aw) row.append(btn('Remove from Hall of Fame', 'co-btn sm ghost', async () => { if (!confirm('Remove ' + m.name + ' from the Hall of Fame?')) return; try { await post({ action: 'awardDelete', id: aw.id }); S2.state.awards = S2.state.awards.filter((y) => y.id !== aw.id); W.key = ''; renderAll(); toast('Removed'); } catch (e) { toast(e.message, true); } }));
+        else if (live < 3) row.append(btn('Feature in Hall of Fame', 'co-btn sm primary', () => { popClose(); S2.award({ who: m.name }); }));
+      }
       if (aw && aw.link) { const a = el('a', 'stu-link', 'See the creative'); a.href = aw.link; a.target = '_blank'; a.rel = 'noopener'; row.append(a); }
       body.append(row);
       card.append(stage, body); track.append(card);
@@ -188,7 +192,7 @@ window.CO_HOFINIT = function (api) {
     const ctr = el('span', 'hof2-ctr', ''); foot.append(ctr);
     const mine = charOf(myDesigner() || (A.user && A.user.name));
     foot.append(btn(mine.chosen ? 'Change my character' : 'Choose my character', 'co-btn sm primary', () => { popClose(); pick(); }));
-    if (S2.state && S2.state.canAward) foot.append(btn('Give an award', 'co-btn sm', () => { popClose(); S2.award(); }));
+    
     pop.append(foot);
     const start = keepScroll != null ? keepScroll : Math.max(0, list.findIndex((m) => m.name === W.start));
     curIdx = start; requestAnimationFrame(() => { track.scrollLeft = start * track.clientWidth; mark(); });

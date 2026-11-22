@@ -2984,6 +2984,7 @@ function awardSave_(b, u) {
   const link = clean_(b.link).slice(0, 500); if (link && !/^https:\/\//.test(link)) return { ok: false, error: 'The link should start with https://' };
   const until = /^\d{4}-\d{2}-\d{2}$/.test(String(b.until || '')) ? String(b.until) : '';
   const A = studioRows_('Awards', AWARD_HEAD), id = clean_(b.id), i = id ? A.rows.findIndex(function (r) { return String(r[0]) === id; }) : -1;
+  if (i < 0) { const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd'); const live = A.rows.filter(function (r) { const u = r[6] instanceof Date ? Utilities.formatDate(r[6], IST, 'yyyy-MM-dd') : String(r[6] || ''); return r[0] && !(r[9] === true || String(r[9]) === 'TRUE') && (!u || u >= today); }).length; if (live >= 3) return { ok: false, error: 'Up to 3 people can be featured at a time. Remove one from the Hall of Fame first.' }; }
   const row = [i >= 0 ? id : 'W' + Utilities.formatDate(new Date(), IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 6), safe_(who), safe_(title), tag, safe_(clean_(b.note).slice(0, 240)), link, until, u.email, i >= 0 ? A.rows[i][8] : new Date(), ''];
   if (i >= 0) A.sh.getRange(i + 2, 1, 1, AWARD_HEAD.length).setValues([row]); else A.sh.appendRow(row);
   if (i < 0) { try { notifyAdd_(u.email, 'all', 'achievement', who + ' won ' + title + (row[4] ? ': ' + row[4] : '') + '.', { tab: 'studio', title: title }); } catch (e) { /* the award still stands */ } }
