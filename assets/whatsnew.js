@@ -4,6 +4,13 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-22-personas', date: '2026-11-22', kind: 'new', who: 'all', title: 'Pick your character: 18 fun personas',
+    what: 'Characters are now glossy 3D-style personas with real personality, from Gadget Kid and Ninja Rookie to Snack Buddy, Helper Bot and Cool Cat, each drawn as a designer, video editor or copywriter.',
+    does: 'Your persona is your avatar and shows in the Hall of Fame beside the clock with your move (bounce, backflip, groove and more). Award winners get a crown, sparkles and a glow. Everyone starts with one picked for them until they choose.',
+    how: 'Click the character beside the clock, then Choose my character. Click it again any time to browse the whole team with the arrows or by swiping sideways, and cheer for anyone.',
+    changed: 'All characters are original (inspired by classic cartoons, not copies of any) and the art is made with free tools.'
+  },
+  {
     id: '2026-11-22-hof-widget', date: '2026-11-22', kind: 'improved', who: 'all', title: 'The Hall of Fame, next to the clock',
     what: 'A tiny animated character beside the clock celebrates whoever won an award or was a star last week, for everyone.',
     does: 'It rotates every few seconds between award winners (Best Performer, Best Creative and more) and last week\'s stars, each doing a move, with sparkles for awards and a crown for Best Performer.',

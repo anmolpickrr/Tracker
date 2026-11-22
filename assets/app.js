@@ -6485,6 +6485,7 @@
 
   // Studio: characters, Hall of Fame and awards (assets/studio.js)
   if (window.CO_STUDIO) { try { window.CO_STUDIO({ A, S, dash, CO, post, toast, LS, isAdmin, pageOk, myDesigner, EF, renderAll }); } catch (e) { console.error('studio', e); } }
+  if (window.CO_HOFINIT) { try { window.CO_HOFINIT({ A, S, dash, CO, post, toast, LS, isAdmin, pageOk, myDesigner, EF, renderAll }); } catch (e) { console.error('hof', e); } }
   renderAll();
   start();
 })();

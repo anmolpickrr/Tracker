@@ -77,7 +77,7 @@ window.CO_STUDIO = function (api) {
     return null;
   }
   // A small face for avatars everywhere (null: initials as before)
-  const face = (name) => { const p = profOf(name); if (!p) return null; if (p.img) { const d = imgData(p.img); if (d) return d; } if (p.snap) { const d = imgData(p.snap); if (d) return d; } if (p.char && D3) { const u = snapOf(p.char, 128); if (u) return u; } return p.char ? CH.url(p.char, 'head') : null; };
+  const face = (name) => { const p = profOf(name); if (!p) return null; if (p.char && p.char.persona && window.CO_HOF) return window.CO_HOF.faceUrl(p.char); if (p.img) { const d = imgData(p.img); if (d) return d; } if (p.snap) { const d = imgData(p.snap); if (d) return d; } if (p.char && D3) { const u = snapOf(p.char, 128); if (u) return u; } return p.char ? CH.url(p.char, 'head') : null; };
   window.CO_FACE = face;
   // The full figure, as an element
   function figure(p, opts) {
@@ -357,7 +357,6 @@ window.CO_STUDIO = function (api) {
       HOF.el.addEventListener('wheel', (e) => { if (Math.abs(e.deltaY) > 10) { e.preventDefault(); hofNext(e.deltaY > 0 ? 1 : -1); } }, { passive: false });
       clearInterval(HOF.timer); HOF.timer = setInterval(() => { if (document.hidden || reduce() || (HOF.pop && HOF.pop.isConnected) || (HOF.el && HOF.el.matches(':hover'))) return; hofNext(1); }, 6500);
       // the 3D figure loads quietly a few seconds after the dashboard opens
-      setTimeout(() => { want3d().then(() => { HOF.key = ''; hofPaint(false); }); }, 2500);
     }
     if (HOF.el.parentElement !== box) box.replaceChildren(HOF.el);
     hofPaint(false);
@@ -586,7 +585,7 @@ window.CO_STUDIO = function (api) {
     paint(); d.showModal();
   }
   // the person card at the bottom of the sidebar opens the builder
-  document.addEventListener('click', (e) => { const c = e.target.closest('[data-draw="me-card"]'); if (c && A.user) openBuilder(); });
-  window.CO_studio = { open: openBuilder, award: openAward, state: ST, stars, tv: () => updateTV(true), card: () => spotCard() };
+  document.addEventListener('click', (e) => { const c = e.target.closest('[data-draw="me-card"]'); if (c && A.user) window.CO_studio.open(); });
+  window.CO_studio = { open: () => (window.CO_HOF ? window.CO_HOF.pick() : openBuilder()), build: openBuilder, award: openAward, state: ST, stars, tv: () => updateTV(true), card: () => spotCard(), channels, cheerBtn, profOf, myProf, tagOf, TAGS, weekStats, mondayOf, burst, people, imgData };
   return ST;
 };
