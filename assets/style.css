@@ -4993,3 +4993,15 @@ a.stu-print:hover { border-color: var(--primary); }
 .hp-opt { padding-top: 10px; } .hp-opt .pf { width: 92px; }
 .hof2-stage.big { height: 300px; }
 @media (prefers-reduced-motion: reduce) { .pf-tilt { animation: none !important; transition: none; } }
+
+/* ============ Character finish v4: sharp, never clipped, contained glow ============ */
+.hof2-stage { height: 250px; background: none; isolation: isolate; overflow: visible; display: block; position: relative; }
+.hof2-stage::before { content: ""; position: absolute; left: 50%; top: 52%; width: 190px; height: 190px; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--hc, #c9b6ff) 42%, transparent) 0%, color-mix(in srgb, var(--hc, #c9b6ff) 14%, transparent) 45%, transparent 70%); filter: blur(6px); z-index: -1; pointer-events: none; }
+.hof2-stage::after { content: ""; position: absolute; left: 50%; bottom: 14px; width: 120px; height: 14px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, .28), transparent); z-index: -1; }
+.hof2-stage .pf { position: absolute; left: 50%; bottom: 18px; width: 210px; height: 210px; margin: 0; transform: translateX(-50%); }
+.hof2-stage .pf .pf-img { inset: 0; width: 100%; height: 100%; image-rendering: auto; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .25)); }
+.hof2-stage .pf-shadow { display: none; }
+.hof2-stage.big { height: 320px; } .hof2-stage.big .pf { width: 280px; height: 280px; } .hof2-stage.big::before { width: 250px; height: 250px; }
+.hof2-card { padding: 8px 0 0; } .hof2-track { padding: 10px 0 4px; }
+.hof2-arr { top: 120px; background: var(--raised); }
+.pf-sp i { filter: drop-shadow(0 0 4px var(--hc, #ddff00)); }

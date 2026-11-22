@@ -162,7 +162,6 @@ window.CO_HOFINIT = function (api) {
       const stage = el('div', 'hof2-stage');
       stage.append(figure(ch, { label: m.name, crown: !!m.awards.find((a) => a.tag === 'best-performer'), sparkle: aw || m.stars.length ? color : '' }));
       stage.addEventListener('click', () => { const f = stage.querySelector('.pf'); const mv = MOVES[(MOVES.findIndex((v) => f.classList.contains('mv-' + v[0])) + 1) % MOVES.length][0]; f.className = f.className.replace(/mv-\w+/, 'mv-' + mv); });
-      stage.title = 'Click to see another move';
       const body = el('div', 'hof2-b');
       const nm = el('b', 'hof2-name', m.name); const per = P(ch.persona); const sub = el('small', 'hof2-sub', (m.role || 'Team') + ' · ' + per[1] + (ch.chosen ? '' : ' (until they pick one)'));
       body.append(nm, sub);
