@@ -31,7 +31,7 @@
   // Access management, the activity log and live team activity: the owner and everyone with the Admin role.
   const isAdmin = () => isOwner() || !!(A.user && A.user.role === 'Admin');
   const perm = (k) => A.mode === 'key' || !!(A.user && (A.user.owner || (A.user.perms ? !!A.user.perms[k] : (k === 'edit' ? RANK[A.user.role] >= 2 : k === 'export' || k === 'fasty' ? true : RANK[A.user.role] >= 3))));
-  const pageOk = (t) => { if (t === 'whatsnew') return true; /* What's new is for everyone, whatever their role */ if (t === 'studio') return A.mode === 'auth' && !!A.user; /* the Hall of Fame is for everyone signed in */ if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access' && t !== 'issues'; if (t === 'access') return isAdmin(); if (t === 'issues' && isAdmin()) return true; if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
+  const pageOk = (t) => { if (t === 'whatsnew') return true; /* What's new is for everyone, whatever their role */ if (t === 'studio') return false; /* the Studio page is retired (Nov 2026): the Hall of Fame lives beside the clock */ if (A.mode !== 'auth' || !A.user) return t !== 'notes' && t !== 'mine' && t !== 'access' && t !== 'issues'; if (t === 'access') return isAdmin(); if (t === 'issues' && isAdmin()) return true; if (A.user.owner) return true; const pg = A.user.perms && A.user.perms.pages; return pg ? pg.includes(t) : (t !== 'health' || RANK[A.user.role] >= 3); };
   if (TABS.includes(location.hash.slice(1))) P.tab = location.hash.slice(1);
 
   const S = { status: 'idle', error: '', tasks: null, team: null, teamRaw: [], sources: {}, generatedAt: null, loadedAt: null };
@@ -4793,6 +4793,7 @@
   // Where a message points: a page, an update in What's new, a task
   const msgGo = (ref) => {
     if (!ref || !ref.tab) return;
+    if (ref.tab === 'studio') { if (window.CO_HOF) window.CO_HOF.open(); return; } // the Studio page is retired: open the Hall of Fame pop-up
     if (ref.tab === 'whatsnew' && ref.id) { dash.setParams({ tab: 'whatsnew' }); setTimeout(() => { try { wnPick(ref.id, true); } catch (e) { /* gone */ } }, 300); return; }
     if (ref.tab === 'tasks' && ref.id) { const r = (CO.rows(true) || []).find((x) => x.id === ref.id); if (r) { document.dispatchEvent(new CustomEvent('co-open-task', { detail: r.uid })); return; } }
     if (TABS.includes(ref.tab) && pageOk(ref.tab)) dash.setParams({ tab: ref.tab });

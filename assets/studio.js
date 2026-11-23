@@ -389,7 +389,7 @@ window.CO_STUDIO = function (api) {
     const mine = myProf();
     foot.append(btn(mine && (mine.char || mine.img) ? 'Edit my character' : 'Make my character', 'co-btn sm primary', () => { hofPopClose(); openBuilder(); }));
     if (ST.canAward) foot.append(btn('Give an award', 'co-btn sm', () => { hofPopClose(); openAward(); }));
-    foot.append(btn('Hall of Fame', 'co-btn sm ghost', () => { hofPopClose(); dash.setParams({ tab: 'studio' }); }));
+    foot.append(btn('Hall of Fame', 'co-btn sm ghost', () => { hofPopClose(); (window.CO_HOF ? window.CO_HOF.open() : null); }));
     if (ST.old) foot.append(el('p', 'co-note hof-old', 'The web app is updating; awards appear in a few minutes.'));
     pop.append(tx, foot);
   }
@@ -406,7 +406,7 @@ window.CO_STUDIO = function (api) {
     const tx = el('div', 'stu-strip-tx'); tx.append(el('small', '', 'Studio · Hall of Fame'), el('b', '', list.length ? list.length + (list.length === 1 ? ' spotlight' : ' spotlights') + ' this week' : 'Make your character'), el('span', 'co-note', list.length ? 'Awards and last week\'s stars. Cheer for your team.' : 'Build your clay character and see the crew.'));
     const faces = el('div', 'stu-strip-faces');
     list.slice(0, 5).forEach((c) => { const f = el('span', 'stu-strip-face'); f.append(figure(profOf(c.who), { label: c.who, cls: 'mini' })); const tg = tagOf(c.tag); const s = el('small', 'stu-badge', c.title); s.style.setProperty('--tag', c.kind === 'award' ? tg[1] : '#ddff00'); s.style.setProperty('--tag-ink', c.kind === 'award' ? tg[2] : '#1e1e1e'); f.append(s); f.title = c.who + ': ' + c.title; faces.append(f); });
-    const go = btn('Open Studio', 'co-btn primary', () => dash.setParams({ tab: 'studio' }));
+    const go = btn('Open Studio', 'co-btn primary', () => (window.CO_HOF ? window.CO_HOF.open() : null));
     box.append(tv(true), tx, faces, go);
   });
 

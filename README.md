@@ -121,6 +121,8 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 **Creative link → Under review (Nov 2026):** submitting or replacing a creative link always sets the design status to UNDER REVIEW (the dashboard sends it, and the server adds it when a link arrives without a status). Links changed directly in the sheet are not affected.
 
+**Studio page retired (Nov 2026):** `pageOk('studio')` is always false, so the page cannot open; links and notifications that pointed to it open the Hall of Fame pop-up.
+
 **Hall of Fame access (Nov 2026):** per person on the Access page (`perms.hof`): *View* (default: see, cheer, react), *Feature* (`award`: give and remove awards) or *Full control* (`edit`: also edit awards and their creatives). The owner always has full control; Admins have no award rights unless granted. The server checks every award save, edit and removal.
 
 **Awards (Nov 2026):** up to two creatives per award (Awards tab, *Link* and *Link 2*), shown on the Hall of Fame card. Editing an award is for the owner (Creative Head) only: the *Edit* button shows only for them and the server refuses others; Admins can still feature and remove.

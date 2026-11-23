@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-studio-off', date: '2026-11-24', kind: 'improved', who: 'all', title: 'The Studio page is retired',
+    what: 'The old Studio page can no longer be opened, even from an old link or notification.',
+    does: 'Award notifications and old Studio links now open the Hall of Fame pop-up beside the clock instead.',
+    how: 'Click the Hall of Fame beside the clock.'
+  },
+  {
     id: '2026-11-24-hof-v5', date: '2026-11-24', kind: 'improved', who: 'all', title: 'Hall of Fame card: tighter and cleaner',
     what: 'The card is about a third shorter.',
     does: 'Edit and Remove are small icons beside the name, reactions sit on the same line as the award date, stats are one slim line and the two creatives sit side by side.',
