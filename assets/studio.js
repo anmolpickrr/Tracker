@@ -559,15 +559,24 @@ window.CO_STUDIO = function (api) {
       d.replaceChildren();
       const head = el('div', 'stu-dlg-h'); head.append(el('h2', '', a ? 'Edit award' : 'Feature in the Hall of Fame')); const x = btn('', 'stu-x', () => d.close()); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; head.append(x);
       const f = el('div', 'stu-aw-b');
-      const tg = tagOf(W.tag), prev = el('div', 'stu-swatch preview'); prev.style.setProperty('--tag', tg[1]); prev.style.setProperty('--tag-ink', tg[2]);
-      const top = el('div', 'stu-sw-top'); top.append(el('small', 'stu-sw-brand', 'AWARD'), figure(profOf(W.who), { label: W.who, cls: 'mini' }));
-      const bot = el('div', 'stu-sw-bot'); bot.append(el('b', 'stu-sw-title', W.title || 'Award'), el('span', 'stu-sw-who', W.who || 'Pick someone')); if (W.note) bot.append(el('p', 'stu-sw-note', W.note)); prev.append(top, bot);
+      // Live preview: the award as people will see it, with the person's own character.
+      const tg = tagOf(W.tag), prev = el('div', 'aw-pv'); prev.style.setProperty('--tag', tg[1]); prev.style.setProperty('--tag-ink', tg[2]);
+      const stage = el('div', 'aw-pv-stage');
+      const badge = el('span', 'aw-pv-badge'); badge.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3"/></svg>'; badge.append('Hall of Fame');
+      stage.append(badge);
+      if (W.who && window.CO_HOF) { const im = new Image(); im.className = 'aw-pv-art'; im.alt = ''; im.decoding = 'async'; im.src = window.CO_HOF.artUrl(window.CO_HOF.charOf(W.who)); im.onerror = () => { im.replaceWith(Object.assign(CO.av(W.who), { className: 'av aw-pv-av' })); }; stage.append(im); }
+      else stage.append(el('span', 'aw-pv-empty', W.who ? first(W.who) : 'Pick someone'));
+      const body = el('div', 'aw-pv-b');
+      const ttl = el('b', 'aw-pv-title', W.title || 'Award'), nm = el('span', 'aw-pv-who', W.who || 'Pick someone'), why = el('p', 'aw-pv-why' + (W.note ? '' : ' ph'), W.note || 'Why they earned it shows here.');
+      const meta = el('small', 'aw-pv-meta', W.until ? 'Featured until ' + CO.fmtDate(W.until) : 'Featured until you remove it');
+      body.append(ttl, nm, why); if (W.link) body.append(el('span', 'aw-pv-link', 'Creative attached')); body.append(meta);
+      prev.append(stage, body);
       const form = el('div', 'stu-aw-form');
       const lab = (t, c) => { const l = el('label', 'co-field'); l.append(t, c); return l; };
       const who = el('select', 'co-select'); who.append(new Option('Pick a person', '')); people().forEach((n) => who.append(new Option(n, n))); who.value = W.who; who.addEventListener('change', () => { W.who = who.value; paint(); });
       const tags = el('div', 'stu-chips'); Object.entries(TAGS).forEach(([k, v]) => { const b = btn(v[0], 'stu-chip tagc' + (W.tag === k ? ' on' : ''), () => { W.tag = k; if (k !== 'custom') W.title = v[0]; else if (Object.values(TAGS).some((t) => t[0] === W.title)) W.title = ''; paint(); }); b.style.setProperty('--tag', v[1]); b.style.setProperty('--tag-ink', v[2]); b.setAttribute('aria-pressed', String(W.tag === k)); tags.append(b); });
-      const title = el('input', 'co-input'); title.maxLength = 40; title.value = W.title; title.placeholder = 'Award name'; title.addEventListener('input', () => { W.title = title.value; prev.querySelector('.stu-sw-title').textContent = W.title || 'Award'; });
-      const note = el('textarea', 'co-input'); note.rows = 2; note.maxLength = 240; note.value = W.note; note.placeholder = 'Why? (shown on the award)'; note.addEventListener('input', () => { W.note = note.value; });
+      const title = el('input', 'co-input'); title.maxLength = 40; title.value = W.title; title.placeholder = 'Award name'; title.addEventListener('input', () => { W.title = title.value; prev.querySelector('.aw-pv-title').textContent = W.title || 'Award'; });
+      const note = el('textarea', 'co-input'); note.rows = 2; note.maxLength = 240; note.value = W.note; note.placeholder = 'Why? (shown on the award)'; note.addEventListener('input', () => { W.note = note.value; const w = prev.querySelector('.aw-pv-why'); w.textContent = W.note || 'Why they earned it shows here.'; w.classList.toggle('ph', !W.note); });
       const link = el('input', 'co-input'); link.type = 'url'; link.value = W.link; link.placeholder = 'Link to the creative (optional, https://…)'; link.addEventListener('input', () => { W.link = link.value.trim(); });
       const until = el('div', 'pm-seg'); [['7', '1 week'], ['30', '1 month'], ['', 'Until I remove it']].forEach(([v, t]) => { const val = v ? CO.addDays(CO.today(), +v) : ''; const on = v ? W.until && Math.abs(CO.diffDays(CO.today(), W.until) - +v) <= 1 : !W.until; const b = btn(t, 'pm-opt' + (on ? ' on' : ''), () => { W.until = val; paint(); }); until.append(b); });
       form.append(lab('Who', who), el('h4', '', 'Award'), tags, lab('Name', title), lab('Why', note), lab('Creative', link), el('h4', '', 'Show it for'), until);

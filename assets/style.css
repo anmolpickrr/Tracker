@@ -5044,3 +5044,20 @@ a.stu-print:hover { border-color: var(--primary); }
 .pm-mini .av.live::after { display: none !important; }
 .pm-mini > span:last-child { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; }
 .pm-mini > span:last-child::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent); }
+
+/* Award dialog: live preview card */
+.aw-pv { align-self: start; border-radius: 24px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 18px 40px -24px rgba(0,0,0,.35); }
+.aw-pv-stage { position: relative; height: 250px; padding-top: 34px; display: grid; place-items: end center; background: var(--tag); overflow: hidden; }
+.aw-pv-stage::before { content: ""; position: absolute; left: 50%; bottom: -70px; width: 260px; height: 160px; transform: translateX(-50%); border-radius: 50%; background: rgba(255,255,255,.22); }
+.aw-pv-badge { position: absolute; top: 14px; left: 14px; z-index: 2; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px 0 8px; border-radius: 999px; background: rgba(0,0,0,.18); color: var(--tag-ink); font-size: 12px; font-weight: 600; }
+.aw-pv-badge svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.aw-pv-art { position: relative; z-index: 1; height: 210px; width: auto; max-width: 92%; object-fit: contain; filter: drop-shadow(0 10px 14px rgba(0,0,0,.28)); }
+.aw-pv-av { position: relative; z-index: 1; width: 96px !important; height: 96px !important; font-size: 30px !important; margin-bottom: 60px; }
+.aw-pv-empty { position: relative; z-index: 1; align-self: center; color: var(--tag-ink); font-weight: 600; opacity: .8; }
+.aw-pv-b { display: grid; gap: 4px; padding: 16px 18px 18px; }
+.aw-pv-title { font: 700 22px/1.15 var(--font-display); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.aw-pv-who { font-size: 14px; color: var(--fg-2); }
+.aw-pv-why { margin: 6px 0 0; font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.aw-pv-why.ph { color: var(--muted); font-style: italic; }
+.aw-pv-link { justify-self: start; margin-top: 6px; padding: 3px 10px; border-radius: 999px; background: var(--sunken); font-size: 12px; }
+.aw-pv-meta { margin-top: 8px; color: var(--muted); font-size: 12px; }

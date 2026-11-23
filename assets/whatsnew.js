@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-23-award-preview', date: '2026-11-23', kind: 'improved', who: 'all', title: 'A proper preview when featuring someone',
+    what: 'The Hall of Fame dialog now previews the award with the person\'s own character, in the award\'s colour.',
+    does: 'The name, the reason (as you type) and how long it stays featured all update live.',
+    how: 'Hall of Fame > Feature someone.'
+  },
+  {
     id: '2026-11-23-link-review', date: '2026-11-23', kind: 'improved', who: 'all', title: 'A new creative link always moves the task to Under review',
     what: 'Submitting or replacing a creative link now always sets the design status to Under review.',
     does: 'It applies to every task, including ones already Delivered or Shared, so the Creative Head reviews each new version. There is no checkbox to skip it any more.',
