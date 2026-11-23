@@ -210,6 +210,9 @@ function onSheetChange(e) {
 function doGet(e) {
   const p = (e && e.parameter) || {};
   // Public: tells the dashboard whether to show Google sign-in. Contains no data.
+  // Visiting the web app's own address opens the dashboard, served by Apps Script (works with "Anyone within" the
+  // organisation: Google signs people in, no "Anyone" access needed). The data API below is unchanged.
+  if (!p.mode && !p.key && !p.fresh) return appPage_();
   if (p.mode === 'config') return json_({ ok: true, api: 5, auth: authOn_(), clientId: authOn_() ? CONFIG.access.clientId : '', domains: CONFIG.access.domains });
   if (authOn_()) return json_({ ok: false, error: 'signin_required' });
   // Older shared-key access, used only while sign-in is not set up.
@@ -871,8 +874,8 @@ function verifyIdToken_(t) {
 }
 
 /* body: { idToken, intent: 'login' | 'signup', profile: { team, note } } */
-function signin_(body) {
-  const g = verifyIdToken_(body.idToken);
+function signin_(body, trusted) {
+  const g = trusted || verifyIdToken_(body.idToken);
   if (!g) return { ok: false, error: 'bad_token' };
   const dom = g.email.split('@')[1];
   if (!domainOk_(g.email) || (CONFIG.access.workspaceOnly && g.hd !== dom)) {
@@ -921,6 +924,46 @@ function signin_(body) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ============================ Dashboard served by Apps Script ============================
+ * The page is the same one GitHub Pages serves (fetched from there and cached for a minute), with its files still
+ * loading from GitHub Pages. Inside Apps Script the page talks to this script through google.script.run (gasCall),
+ * and people are recognised by their signed-in Google account (gasSignin_), so the web app can be shared with
+ * "Anyone within <organisation>" only. Every request still goes through doPost's checks (session, role, permissions). */
+const PAGES_URL = 'https://anmolpickrr.github.io/Tracker/';
+function appPage_() {
+  const cache = CacheService.getScriptCache();
+  let html = cache.get('apppage');
+  if (!html) {
+    const r = UrlFetchApp.fetch(PAGES_URL + 'index.html?t=' + Date.now(), { muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) return HtmlService.createHtmlOutput('<p style="font:16px sans-serif;padding:40px">The dashboard could not be loaded from GitHub Pages (HTTP ' + r.getResponseCode() + '). Reload in a minute.</p>');
+    html = r.getContentText();
+    try { cache.put('apppage', html, 60); } catch (e) { /* bigger than the cache allows: fetch each time */ }
+  }
+  let url = ''; try { url = ScriptApp.getService().getUrl(); } catch (e) { url = ''; }
+  html = html
+    .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/i, '') // Apps Script serves the page in its own sandbox
+    .replace(/<head>/i, '<head><base href="' + PAGES_URL + '" target="_top"><script>window.CO_GAS=1;window.CO_GAS_URL=' + JSON.stringify(url) + ';</script>');
+  const out = HtmlService.createHtmlOutput(html).setTitle('Creative Ops Tracker').addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+  try { out.setFaviconUrl(PAGES_URL + 'assets/favicon.png'); } catch (e) { /* optional */ }
+  return out;
+}
+/** Called by the page with google.script.run: the same request doPost handles, as text. */
+function gasCall(text) {
+  let body = {}; try { body = JSON.parse(text || '{}'); } catch (e) { return JSON.stringify({ ok: false, error: 'bad_json' }); }
+  if (body.action === 'gasSignin') { TEAM_MEMO_ = null; return JSON.stringify(gasSignin_(body)); }
+  if (body.action === 'signin') return JSON.stringify({ ok: false, error: 'bad_token' }); // Google sign-in is not used inside Apps Script
+  const out = doPost({ postData: { contents: text } });
+  return typeof out === 'string' ? out : out.getContent();
+}
+/* Who is visiting, as Google knows them (only people in the organisation can open the page at all). */
+function gasSignin_(body) {
+  let email = '';
+  try { email = String(Session.getActiveUser().getEmail() || '').toLowerCase(); } catch (e) { email = ''; }
+  if (!email) return { ok: false, error: 'no_email' };
+  const u0 = userByEmail_(email);
+  return signin_(body || {}, { email: email, name: (u0 && u0.name) || email.split('@')[0].split(/[._-]+/).map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' '), hd: email.split('@')[1], picture: '' });
 }
 function profile_(p) {
   const t = clean_(p && p.team).slice(0, 80), n = clean_(p && p.note).slice(0, 300);

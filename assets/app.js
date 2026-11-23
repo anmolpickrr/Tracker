@@ -95,20 +95,31 @@
   const parse = (text) => {
     try { return JSON.parse(text); } catch (e) { throw new Error(/<html/i.test(text) ? 'The web app answered with a web page instead of data. Check that it is deployed with access set to "Anyone".' : 'The web app returned something that is not data.'); }
   };
+  /* Inside Apps Script (the dashboard served by the web app itself) requests go through google.script.run instead of
+     fetch: no "Anyone" access needed, and Google has already signed the person in. Same requests, same answers. */
+  const GAS = !!(window.CO_GAS && window.google && google.script && google.script.run);
+  const gasRun = (body, ms) => new Promise((res, rej) => {
+    const t = setTimeout(() => rej(Object.assign(new Error('timeout'), { name: 'AbortError' })), ms || 30000);
+    google.script.run.withSuccessHandler((txt) => { clearTimeout(t); res(String(txt)); }).withFailureHandler((e) => { clearTimeout(t); rej(new Error((e && e.message) || 'The web app could not be reached')); }).gasCall(JSON.stringify(body));
+  });
   /* Signed-in requests: everything goes by POST with the session, never in the URL. */
   // quiet: background calls (the live-activity heartbeat) never sign anyone out; the 30-second check handles that with the right message.
   async function callApi(payload, quiet) {
     let res;
+    // Nothing to ask before signing in (a part of the page that draws early would otherwise get 'sign in first' back).
+    if (A.mode === 'auth' && !A.session && payload.action !== 'signout') throw new Error('Not signed in yet');
+    const sentWith = A.session;
     // Every request has a time limit (a laptop waking up or a network switch can leave one hanging for ever, which used
     // to freeze the live updates until a manual refresh). Loading all the data gets longer than the small checks.
     const ctl = typeof AbortController === 'function' ? new AbortController() : null, lim = payload.action === 'data' ? 90000 : /^(updateTask|noteSave|packageSave|setMember|setAccess)$/.test(payload.action) ? 60000 : 30000, tm = ctl ? setTimeout(() => ctl.abort(), lim) : 0;
-    try { res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)), signal: ctl ? ctl.signal : undefined }); }
+    try { res = GAS ? { text: await gasRun(Object.assign({ session: A.session }, payload), lim) } : await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)), signal: ctl ? ctl.signal : undefined }); }
     catch (e) { clearTimeout(tm); ISS.net(false); throw (e && e.name === 'AbortError' ? new Error('The web app took too long to answer; trying again shortly.') : e); }
     clearTimeout(tm);
     ISS.net(true);
-    const body = parse(await res.text());
+    const body = parse(typeof res.text === 'string' ? res.text : await res.text());
     if (body.ok && window.__liveAct) { const f = payload.fields || {}, W = { updateTask: () => 'Updated ' + (payload.id || 'a task') + ': ' + Object.keys(f).map((k) => k + ' → ' + f[k]).join(', '), noteSave: () => 'Saved a note', noteDelete: () => 'Deleted a note', noteAction: () => 'Updated an action in a note', setMember: () => 'Changed the team list' }; if (W[payload.action]) window.__liveAct('update', W[payload.action]()); }
-    if (!quiet && !body.ok && ['signin_required', 'session_expired', 'no_access'].includes(body.error)) { lostAccess(body); throw new AuthLost(body.error); }
+    // only the session this request carried can be 'lost' (a reply to an older request must not sign out a fresh sign-in)
+    if (!quiet && !body.ok && ['signin_required', 'session_expired', 'no_access'].includes(body.error)) { if (sentWith === A.session) lostAccess(body); throw new AuthLost(body.error); }
     return body;
   }
   async function keyGet(params) {
@@ -792,6 +803,7 @@
   const busyNow = () => !!document.querySelector('dialog[open]') || (document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) && String(document.activeElement.value || '').trim() !== '');
   function goLatest() {
     try { sessionStorage.setItem('co.reloadFor', REL.next); } catch (e) { /* ignore */ }
+    if (window.CO_GAS) { try { window.open(window.CO_GAS_URL || location.href, '_top'); } catch (e) { location.reload(); } return; }
     location.replace(location.pathname + '?v=' + encodeURIComponent(REL.next) + location.hash);
   }
   async function checkRelease() {
@@ -5764,7 +5776,7 @@
     if (CAL.err) { const p = document.createElement('p'); p.className = 'co-note bad'; p.textContent = CAL.err; el.append(p); }
     const evs = CAL.events; if (!evs.length) { const p = document.createElement('p'); p.className = 'cal-free'; p.textContent = 'No meetings in the next three days.'; el.append(p); return; }
     // When the calendar only shares busy times with the dashboard, offer the person's own read-only connection (names + Meet links).
-    if (CAL.limited && CAL.via !== 'token') {
+    if (CAL.limited && CAL.via !== 'token' && !GAS) {
       const tip = document.createElement('div'); tip.className = 'cal-limited';
       const tx = document.createElement('p'); tx.textContent = 'Meeting names and Meet links are hidden by your calendar sharing.';
       const bt = document.createElement('button'); bt.type = 'button'; bt.className = 'co-btn primary'; bt.textContent = 'Show names & Meet links'; bt.addEventListener('click', calConnect);
@@ -5849,6 +5861,10 @@
     const m = msg || gateNote;
     gateTab(G.tab); gateMsg(m);
     $g('gate-domains').textContent = A.domains.map((d) => '@' + d).join(' or ');
+    if (GAS) { // inside Apps Script Google has already signed the person in: one button instead of Google's
+      ['g-login', 'g-signup'].forEach((id) => { const host = $g(id); if (!host) return; host.replaceChildren(); if (id === 'g-signup') return; const b = document.createElement('button'); b.type = 'button'; b.className = 'co-btn primary gas-go'; b.textContent = 'Continue with my Google account'; b.addEventListener('click', () => gasSignin('login')); host.append(b); });
+      return;
+    }
     try {
       await gis();
       const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
@@ -5867,10 +5883,15 @@
       const res = await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'signin', idToken: G.cred, intent, profile: intent === 'signup' ? { team: $g('gate-team').value, note: $g('gate-note').value } : undefined }) });
       body = parse(await res.text());
     } catch (e) { gateMsg('Could not reach the dashboard server. Check your connection and try again.', true); return; }
+    signinResult(body);
+  }
+  // What the web app said about a sign-in (Google button, or Apps Script's own sign-in), shown the same way.
+  function signinResult(body) {
     const domains = A.domains.map((d) => '@' + d).join(' or ');
     if (!body.ok) {
       if (body.error === 'domain') { G.cred = null; gateMsg(body.email + ' cannot be used here. Sign in with your company Google account (' + domains + ').', true); try { google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ } return; }
       if (body.error === 'bad_token') { G.cred = null; gateMsg('Google sign-in did not complete. Try again.', true); return; }
+      if (body.error === 'no_email') { gateMsg('Google did not tell the dashboard who you are. Open it while signed in to your company Google account (' + domains + ').', true); return; }
       gateMsg('Sign-in failed: ' + body.error, true); return;
     }
     const who = body.user || {}, first = who.name ? ' ' + who.name.split(' ')[0] : '';
@@ -5883,9 +5904,16 @@
     if (body.status === 'denied') return gateState('Request declined', 'The request for ' + who.email + ' was declined. Talk to the Creative Head if you need access.', false);
     return gateState('Access removed', 'Access for ' + who.email + ' has been removed. Talk to the Creative Head if you need it back.', false);
   }
+  async function gasSignin(intent) {
+    gateMsg('Checking your access…');
+    let body;
+    try { body = parse(await gasRun({ action: 'gasSignin', intent: intent || 'login', profile: intent === 'signup' ? { team: $g('gate-team').value, note: ($g('gate-note') || {}).value || '' } : undefined }, 60000)); }
+    catch (e) { gateMsg('Could not reach the dashboard server. Reload the page to try again.', true); return; }
+    signinResult(body);
+  }
   document.querySelectorAll('[data-gtab]').forEach((b) => b.addEventListener('click', () => { gateTab(b.dataset.gtab); gateMsg(''); }));
-  $g('gate-signup').addEventListener('submit', (e) => { e.preventDefault(); if (G.cred) signin('signup'); });
-  $g('gs-again').addEventListener('click', () => signin('login'));
+  $g('gate-signup').addEventListener('submit', (e) => { e.preventDefault(); if (GAS) gasSignin('signup'); else if (G.cred) signin('signup'); });
+  $g('gs-again').addEventListener('click', () => (GAS ? gasSignin('login') : signin('login')));
   $g('gs-other').addEventListener('click', () => { G.cred = null; G.unknown = null; try { google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ } gateTab('login'); });
 
   function signedIn(user) {
@@ -5914,11 +5942,18 @@
     try { await callApi({ action: 'signout' }); } catch (e) { /* signing out locally is what matters */ }
     A.session = ''; LS.set('co.session', null); LS.set('co.me', null); DC.clear();
     try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (e) { /* ignore */ }
-    try { sessionStorage.setItem('co.gatemsg', 'You are signed out.'); } catch (e) { /* ignore */ }
+    try { sessionStorage.setItem('co.gatemsg', 'You are signed out.'); if (GAS) sessionStorage.setItem('co.gasOut', '1'); } catch (e) { /* ignore */ }
     location.reload();
   });
 
   async function start() {
+    if (GAS) {
+      A.url = 'gas'; A.mode = 'auth'; A.domains = ['pickrr.com', 'shiprocket.com']; document.body.dataset.mode = 'auth'; document.body.dataset.gas = '1'; S.status = 'loading'; renderAll();
+      if (A.session) { try { const me = await callApi({ action: 'me' }); if (me.ok) { signedIn(me.user); return; } } catch (e) { if (e instanceof AuthLost) return; } }
+      let out = false; try { out = sessionStorage.getItem('co.gasOut') === '1'; sessionStorage.removeItem('co.gasOut'); } catch (e) { /* ignore */ }
+      if (out) { showGate('You are signed out.'); return; }
+      showGate(); gasSignin('login'); return;
+    }
     const url = conn().url;
     if (!url) { A.mode = 'key'; document.body.dataset.mode = 'key'; S.status = 'unconfigured'; renderAll(); return; }
     A.url = url; S.status = 'loading'; renderAll();

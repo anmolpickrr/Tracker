@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-gas-host', date: '2026-11-24', kind: 'improved', who: 'all', title: 'The dashboard is moving to a company-only address',
+    what: 'The dashboard can now also open from a Google Apps Script address that only @pickrr.com and @shiprocket.com accounts can reach.',
+    does: 'Google signs you in with your company account, so there is no separate sign-in step. Everything else works as before; the old link will forward you there.',
+    how: 'Nothing to do: keep using your usual link.'
+  },
+  {
     id: '2026-11-24-studio-off', date: '2026-11-24', kind: 'improved', who: 'all', title: 'The Studio page is retired',
     what: 'The old Studio page can no longer be opened, even from an old link or notification.',
     does: 'Award notifications and old Studio links now open the Hall of Fame pop-up beside the clock instead.',
