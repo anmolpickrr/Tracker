@@ -5035,3 +5035,12 @@ a.stu-print:hover { border-color: var(--primary); }
 #btn-bell.buzz svg { animation: bellBuzz .6s cubic-bezier(.36,.07,.19,.97); transform-origin: 50% 10%; }
 @keyframes bellBuzz { 0%,100% { transform: rotate(0); } 15% { transform: rotate(16deg); } 30% { transform: rotate(-14deg); } 45% { transform: rotate(10deg); } 60% { transform: rotate(-8deg); } 75% { transform: rotate(4deg); } }
 @media (prefers-reduced-motion: reduce) { #btn-bell.buzz svg { animation: none; } }
+
+/* Online pill: solid, evenly overlapped avatars; one live dot in the label instead of a dot per face */
+.pm-mini { gap: 0; padding: 0 14px 0 5px; }
+.pm-mini .av { position: relative; width: 30px; height: 30px; font-size: 10.5px; background: var(--lav, #ece9ff) !important; box-shadow: 0 0 0 2px var(--panel) !important; overflow: hidden; }
+:root[data-theme="dark"] .pm-mini .av { background: #2b2840 !important; color: #c3baff; }
+.pm-mini .av + .av { margin-left: -9px; }
+.pm-mini .av.live::after { display: none !important; }
+.pm-mini > span:last-child { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; }
+.pm-mini > span:last-child::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent); }

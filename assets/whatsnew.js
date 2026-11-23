@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-23-online-pill', date: '2026-11-23', kind: 'fixed', who: 'page:access', title: 'Cleaner "online" pill',
+    what: 'The faces in the online pill overlapped with a big dot on each one.',
+    does: 'Faces are now solid and evenly stacked, with one live dot beside the count.',
+    how: 'Click the pill to jump to Live team activity.'
+  },
+  {
     id: '2026-11-23-haptic', date: '2026-11-23', kind: 'new', who: 'all', title: 'Vibration when a notification arrives',
     what: 'Notifications and reminders now give a short vibration, each type with its own pattern.',
     does: 'Phones that support vibration (most Android phones) buzz; on computers and iPhones the bell gives a short shake instead. It follows the per-type switches, and works even with sounds off.',
