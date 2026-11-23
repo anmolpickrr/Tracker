@@ -4086,9 +4086,9 @@
     if (!locked && u.status === 'Approved') {
       const P0 = u.perms || {}, first = (u.name || u.email).split(' ')[0];
       const box = el('div', 'pm-box pm-tabs'); box.id = 'pm-box'; const bh = el('div', 'pm-head'); bh.append(el('h3', 'co-h2', 'What ' + first + ' can see and do')); box.append(bh);
-      const base = { pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty, pricing: !!P0.pricing, status: !!P0.status, briefs: P0.briefs !== false, links: P0.links !== false, eta: !!P0.eta, delivery: !!P0.delivery, assign: !!P0.assign, details: !!P0.details, issueFix: !!P0.issueFix };
+      const base = { hof: P0.hof || '', pages: new Set(P0.pages || DEF_PAGES(u.role)), edit: !!P0.edit, team: !!P0.team, packages: P0.packages || '', scope: P0.scope || (u.role === 'Viewer' ? 'own' : 'all'), export: !!P0.export, load: !!P0.load, fasty: !!P0.fasty, pricing: !!P0.pricing, status: !!P0.status, briefs: P0.briefs !== false, links: P0.links !== false, eta: !!P0.eta, delivery: !!P0.delivery, assign: !!P0.assign, details: !!P0.details, issueFix: !!P0.issueFix };
       base.pages.add('mine');
-      const snapOf = (o) => JSON.stringify({ p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty, pr: o.pricing, st: o.status, br: o.briefs, li: o.links, et: o.eta, dl: o.delivery, as: o.assign, dt: o.details, ix: o.issueFix });
+      const snapOf = (o) => JSON.stringify({ hf: o.hof, p: [...o.pages].sort(), e: o.edit, t: o.team, k: o.packages, s: o.scope, x: o.export, l: o.load, f: o.fasty, pr: o.pricing, st: o.status, br: o.briefs, li: o.links, et: o.eta, dl: o.delivery, as: o.assign, dt: o.details, ix: o.issueFix });
       // unsaved changes survive the 30-second refresh of the access list
       const st = PR.draft && PR.draft.email === u.email ? PR.draft.st : Object.assign({}, base, { pages: new Set(base.pages) });
       const snap = () => snapOf(st), start = snapOf(base);
@@ -4096,12 +4096,13 @@
       // [key, label, what View means, what Edit means (or '' when there is nothing to edit)]
       const ROWS = [['mine', 'My work', 'Their own tasks and to-dos (always on)', ''], ['today', 'Overview', 'Team numbers, Needs attention and charts', ''], ['standup', 'Stand-up', 'Stand-up cards and the Day plan', ''],
         ['tasks', 'Tasks', 'The task list (what they can edit: Tasks tab)', ''], ['notes', 'Notes', 'Notes they write or are tagged in', ''], ['team', 'Team', 'Scorecards and workload', 'Add people and set them active or inactive'],
-        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', ''], ['issues', 'Issues', 'Errors and issues found automatically', 'Retry, fix and resolve issues']];
-      const level = (k) => k === 'pricing' ? (st.pricing ? 'edit' : 'hidden') : k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
+        ['reports', 'Reports', 'Reports and trends', ''], ['brands', 'Brands', 'Brand performance', ''], ['packages', 'Brand packages', 'Packages and what is left', 'Add, change and close packages'], ['hof', 'Hall of Fame', 'See it, cheer and react (everyone)', 'Feature: give and remove awards. Full control: also edit awards and their creatives'], ['pricing', 'Pricing', '', 'Set the price of each creative type and the GST rate (used by every budget package)'], ['health', 'Data health', 'Sheet checks and fixes needed', ''], ['issues', 'Issues', 'Errors and issues found automatically', 'Retry, fix and resolve issues']];
+      const level = (k) => k === 'hof' ? (st.hof === 'edit' ? 'edit' : st.hof === 'award' ? 'award' : 'view') : k === 'pricing' ? (st.pricing ? 'edit' : 'hidden') : k === 'packages' ? (st.pages.has('brands') ? (st.packages === 'edit' ? 'edit' : st.packages === 'view' ? 'view' : 'hidden') : 'hidden')
         : !st.pages.has(k) ? 'hidden' : (k === 'team' && st.team) || (k === 'issues' && st.issueFix) ? 'edit' : 'view';
       const setLevel = (k, v) => {
         if (k === 'mine') return;
         if (k === 'pricing') { st.pricing = v === 'edit'; return; }
+        if (k === 'hof') { st.hof = v === 'view' ? '' : v; return; }
         if (k === 'packages') { st.packages = v === 'hidden' ? '' : v; if (v !== 'hidden') st.pages.add('brands'); return; }
         if (v === 'hidden') { st.pages.delete(k); if (k === 'tasks') st.edit = false; if (k === 'team') st.team = false; if (k === 'issues') st.issueFix = false; if (k === 'brands') st.packages = ''; return; }
         st.pages.add(k); if (k === 'tasks') st.edit = v === 'edit'; if (k === 'team') st.team = v === 'edit'; if (k === 'issues') st.issueFix = v === 'edit';
@@ -4113,7 +4114,7 @@
         const r = el('div', 'pm-row' + (k === 'packages' ? ' sub' : '')); r.setAttribute('role', 'row');
         const nm = el('div', 'pm-nm'); nm.append(el('b', '', label)); const hint = el('small', '', ''); nm.append(hint);
         const seg = el('div', 'pm-seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', label + ' access');
-        const opts = k === 'pricing' ? [['hidden', 'No access'], ['edit', 'Manage']] : k === 'mine' ? [['view', 'View']] : eHint ? [['hidden', 'Hidden'], ['view', 'View'], ['edit', 'Edit']] : [['hidden', 'Hidden'], ['view', 'View']];
+        const opts = k === 'hof' ? [['view', 'View'], ['award', 'Feature'], ['edit', 'Full control']] : k === 'pricing' ? [['hidden', 'No access'], ['edit', 'Manage']] : k === 'mine' ? [['view', 'View']] : eHint ? [['hidden', 'Hidden'], ['view', 'View'], ['edit', 'Edit']] : [['hidden', 'Hidden'], ['view', 'View']];
         const btns = opts.map(([v, t]) => { const b = el('button', 'pm-opt o-' + v, t); b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.v = v; b.addEventListener('click', () => { setLevel(k, v); paint(); }); seg.append(b); return b; });
         segs.push({ k, btns, hint, vHint, eHint, r });
         r.append(nm, seg); grid.append(r);
@@ -4145,7 +4146,7 @@
       const row = el('div', 'pm-act');
       const save = el('button', 'co-btn primary', 'Save changes'); save.type = 'button';
       const undo = el('button', 'co-btn', 'Undo changes'); undo.type = 'button'; undo.addEventListener('click', () => { PR.draft = null; drawPerson(); });
-      save.addEventListener('click', () => { PR.draft = null; const perms = { pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty, pricing: st.pricing, status: st.status, briefs: st.briefs, links: st.links, eta: st.eta, delivery: st.delivery, assign: st.assign, details: st.details, issueFix: st.issueFix }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
+      save.addEventListener('click', () => { PR.draft = null; const perms = { hof: st.hof, pages: [...st.pages], scope: st.scope, packages: st.packages, edit: st.edit, team: st.team, export: st.export, load: st.load, fasty: st.fasty, pricing: st.pricing, status: st.status, briefs: st.briefs, links: st.links, eta: st.eta, delivery: st.delivery, assign: st.assign, details: st.details, issueFix: st.issueFix }; setAccess(u.email, { perms }, 'Access saved for ' + (u.name || u.email)); });
       row.append(save, undo);
       if (u.custom) { const rs = el('button', 'co-btn ghost', 'Reset to ' + ROLE_LABEL[u.role] + ' defaults'); rs.type = 'button'; rs.addEventListener('click', () => setAccess(u.email, { perms: null }, (u.name || u.email) + ': back to ' + ROLE_LABEL[u.role] + ' defaults')); row.append(rs); }
       foot.append(row); box.append(foot); permEl.append(box);
@@ -4155,7 +4156,7 @@
           hint.textContent = lv === 'edit' ? 'Can see and ' + eHint.charAt(0).toLowerCase() + eHint.slice(1) : lv === 'view' ? vHint + (eHint ? ' · view only' : '') : 'Not shown to ' + first; hint.title = hint.textContent;
           r.classList.toggle('off', lv === 'hidden');
         });
-        const n = SECTIONS.filter(([k]) => st.pages.has(k)).length, edits = [st.status && 'status', st.eta && 'ETA', st.delivery && 'delivery date', st.assign && 'designer', st.details && 'requirement details', st.links && 'links', st.team && 'the team list', st.packages === 'edit' && 'brand packages'].filter(Boolean);
+        const n = SECTIONS.filter(([k]) => st.pages.has(k)).length, edits = [st.status && 'status', st.eta && 'ETA', st.delivery && 'delivery date', st.assign && 'designer', st.details && 'requirement details', st.links && 'links', st.team && 'the team list', st.packages === 'edit' && 'brand packages', st.hof === 'edit' ? 'the Hall of Fame (full control)' : st.hof === 'award' && 'Hall of Fame awards'].filter(Boolean);
         sum.textContent = 'Opens ' + n + ' of ' + SECTIONS.length + ' sections · ' + (edits.length ? 'can edit ' + edits.join(', ') : 'view only') + ' · sees ' + (st.scope === 'own' ? 'only their own tasks' : 'all tasks');
         ownWarn.hidden = !(st.scope === 'own' && u.onTeam === false);
         const dirty = snap() !== start; PR.draft = dirty ? { email: u.email, st } : null; save.disabled = !dirty; undo.hidden = !dirty; box.classList.toggle('dirty', dirty);

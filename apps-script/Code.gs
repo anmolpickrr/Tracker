@@ -51,12 +51,13 @@ function defaultPerms_(role) {
 }
 function permsOf_(u) {
   if (!u) return defaultPerms_('Viewer');
-  if (u.owner || isOwner_(u.email)) { const all = defaultPerms_('Admin'); all.owner = true; all.packages = 'edit'; all.pricing = true; return all; }
+  if (u.owner || isOwner_(u.email)) { const all = defaultPerms_('Admin'); all.owner = true; all.packages = 'edit'; all.pricing = true; all.hof = 'edit'; return all; }
   const p = defaultPerms_(u.role), o = u.perms || {};
   if (Array.isArray(o.pages)) p.pages = o.pages.filter(function (k) { return PAGE_KEYS.indexOf(k) >= 0; });
   ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links', 'eta', 'delivery', 'assign', 'details', 'issueFix'].forEach(function (k) { if (typeof o[k] === 'boolean') p[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') p.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') p.packages = o.packages;
+  p.hof = o.hof === 'award' || o.hof === 'edit' ? o.hof : '';
   if (Array.isArray(o.pages) && !o.studioSet && p.pages.indexOf('studio') < 0) p.pages.push('studio'); // Studio (Nov 2026) is on until the owner turns it off
   if (p.pages.indexOf('mine') < 0) p.pages.unshift('mine'); // everyone keeps their own work page
   return p;
@@ -69,6 +70,7 @@ function cleanPerms_(o) {
   ['edit', 'export', 'load', 'team', 'fasty', 'pricing', 'status', 'briefs', 'links', 'eta', 'delivery', 'assign', 'details', 'issueFix'].forEach(function (k) { if (typeof o[k] === 'boolean') out[k] = o[k]; });
   if (o.scope === 'own' || o.scope === 'all') out.scope = o.scope;
   if (o.packages === 'view' || o.packages === 'edit' || o.packages === '') out.packages = o.packages;
+  if (o.hof === 'award' || o.hof === 'edit' || o.hof === '') out.hof = o.hof;
   return out;
 }
 function allowed_(u, action) {
@@ -82,7 +84,7 @@ function allowed_(u, action) {
   if (action === 'issues') return isAdminUser_(u) || p.pages.indexOf('issues') >= 0;
   if (action === 'issueAct') return isAdminUser_(u) || (p.pages.indexOf('issues') >= 0 && !!p.issueFix);
   // Studio: everyone shows their own character; the page (awards, cheers) follows the section switch; awards are Admins'.
-  if (action === 'awardSave' || action === 'awardDelete') return isAdminUser_(u);
+  if (action === 'awardSave' || action === 'awardDelete') return p.hof === 'award' || p.hof === 'edit';
   if (action === 'setMember') return p.team;
   if (action === 'health') return p.pages.indexOf('health') >= 0;
   if (action === 'assist' || action === 'speak') return p.fasty;
@@ -2945,7 +2947,7 @@ function studioRows_(name, head) { const sh = studioTab_(name, head), last = sh.
 function studio_(u) {
   const pr = studioRows_('Profiles', PROF_HEAD).rows.map(function (r) { return { email: String(r[0]).toLowerCase(), who: String(r[1] || ''), char: parseJson_(r[2], null), img: String(r[3] || ''), tagline: String(r[4] || ''), updated: iso_(r[5]), snap: String(r[7] || '') }; }).filter(function (x) { return x.email; });
   const mineRow = studioRows_('Profiles', PROF_HEAD).rows.filter(function (r) { return String(r[0]).toLowerCase() === u.email; })[0];
-  const out = { ok: true, profiles: pr, canAward: isAdminUser_(u), myPrefs: mineRow ? parseJson_(mineRow[6], null) : null };
+  const out = { ok: true, profiles: pr, canAward: permsOf_(u).hof === 'award' || permsOf_(u).hof === 'edit', canEditAward: permsOf_(u).hof === 'edit', myPrefs: mineRow ? parseJson_(mineRow[6], null) : null };
   const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd'); // the Hall of Fame is for everyone signed in
   out.awards = studioRows_('Awards', AWARD_HEAD).rows.filter(function (r) { return r[0] && !(r[9] === true || String(r[9]) === 'TRUE'); }).map(function (r) {
     const until = r[6] instanceof Date ? Utilities.formatDate(r[6], IST, 'yyyy-MM-dd') : String(r[6] || '');
@@ -2996,7 +2998,7 @@ function awardSave_(b, u) {
   const link2 = clean_(b.link2).slice(0, 500); if (link2 && !/^https:\/\//.test(link2)) return { ok: false, error: 'The second link should start with https://' };
   const until = /^\d{4}-\d{2}-\d{2}$/.test(String(b.until || '')) ? String(b.until) : '';
   const A = studioRows_('Awards', AWARD_HEAD), id = clean_(b.id), i = id ? A.rows.findIndex(function (r) { return String(r[0]) === id; }) : -1;
-  if (i >= 0 && !isOwner_(u.email)) return { ok: false, error: 'Only the Creative Head can edit an award.' };
+  if (i >= 0 && permsOf_(u).hof !== 'edit') return { ok: false, error: 'You can give awards, but editing them needs Full control of the Hall of Fame (Access page).' };
   if (i < 0) { const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd'); const live = A.rows.filter(function (r) { const u = r[6] instanceof Date ? Utilities.formatDate(r[6], IST, 'yyyy-MM-dd') : String(r[6] || ''); return r[0] && !(r[9] === true || String(r[9]) === 'TRUE') && (!u || u >= today); }).length; if (live >= 3) return { ok: false, error: 'Up to 3 people can be featured at a time. Remove one from the Hall of Fame first.' }; }
   const row = [i >= 0 ? id : 'W' + Utilities.formatDate(new Date(), IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 6), safe_(who), safe_(title), tag, safe_(clean_(b.note).slice(0, 240)), link, until, u.email, i >= 0 ? A.rows[i][8] : new Date(), '', link2];
   if (i >= 0) A.sh.getRange(i + 2, 1, 1, AWARD_HEAD.length).setValues([row]); else A.sh.appendRow(row);

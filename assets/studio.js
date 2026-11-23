@@ -100,7 +100,7 @@ window.CO_STUDIO = function (api) {
     if (A.mode !== 'auth' || !A.user || ST.busy || (!force && ST.at && Date.now() - ST.at < (ST.loaded ? 300000 : 60000))) return;
     ST.busy = true;
     try {
-      const b = await post({ action: 'studio' }); ST.profiles = b.profiles || []; ST.awards = b.awards || []; ST.cheers = b.cheers || {}; ST.canAward = !!b.canAward; ST.loaded = true; ST.at = Date.now(); ST.err = '';
+      const b = await post({ action: 'studio' }); ST.profiles = b.profiles || []; ST.awards = b.awards || []; ST.cheers = b.cheers || {}; { const U = A.user || {}, h = U.owner ? 'edit' : (U.perms && U.perms.hof) || ''; ST.canAward = h === 'award' || h === 'edit'; ST.canEditAward = h === 'edit'; } // Hall of Fame: the owner, or people given Feature / Full control on the Access page ST.loaded = true; ST.at = Date.now(); ST.err = '';
       // sound choices follow the person to every device (what they chose on the server wins)
       if (SND && b.myPrefs && b.myPrefs.asked && !ST.prefsSynced) SND.set(b.myPrefs, false);
       ST.prefsSynced = true;
@@ -271,7 +271,7 @@ window.CO_STUDIO = function (api) {
       if (a.note) bot.append(el('p', 'stu-sw-note', a.note));
       const row = el('div', 'stu-sw-act'); row.append(cheerBtn('aw:' + a.id, true));
       if (a.link) { const l = el('a', 'stu-link', 'Creative'); l.href = a.link; l.target = '_blank'; l.rel = 'noopener'; row.append(l); }
-      if (ST.canAward) { row.append(btn('Edit', 'co-link', () => openAward(a))); }
+      if (ST.canEditAward) { row.append(btn('Edit', 'co-link', () => openAward(a))); }
       bot.append(row); c.append(top, bot); wall.append(c);
     });
     aw.append(wall);

@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-hof-perm', date: '2026-11-24', kind: 'improved', who: 'page:access', title: 'Choose who manages the Hall of Fame',
+    what: 'The Access page has a Hall of Fame row for each person: View, Feature or Full control.',
+    does: 'View: see, cheer and react. Feature: give and remove awards. Full control: also edit awards and their creatives. Nobody but the Creative Head has Feature or Full control until you grant it, Admins included.',
+    how: 'Access > a person > Permissions > Sections > Hall of Fame, then Save changes.'
+  },
+  {
     id: '2026-11-24-rx-names', date: '2026-11-24', kind: 'improved', who: 'all', title: 'See who reacted, and preview songs',
     what: 'Reactions now show who reacted, with names highlighted (yours flashes when you react). Each song shows who suggested it.',
     does: 'Tap ▶ on a song with a YouTube link to hear its first 5 seconds; Spotify links open Spotify\'s own preview. The playlist only accepts clean songs: explicit, vulgar or adult titles are refused.',

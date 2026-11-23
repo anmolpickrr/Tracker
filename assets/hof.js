@@ -183,7 +183,7 @@ window.CO_HOFINIT = function (api) {
         else if (live < 3) row.append(btn('Feature in Hall of Fame', 'co-btn sm primary', () => { popClose(); S2.award({ who: m.name }); }));
       }
       if (aw) { const L2 = S2.awLinks ? S2.awLinks(aw) : [aw.link].filter(Boolean); if (L2.length) { const sc = el('div', 'hof2-shows'); L2.forEach((u, k) => { const t = el('div', 'hof2-show'); const a = el('a', 'hof2-show-a'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.append(el('span', 'hof2-show-ic', linkIcon(u)), el('b', '', L2.length > 1 ? 'Creative ' + (k + 1) : 'The creative'), el('small', '', host(u) + ' ↗')); t.append(a, reactBar('rx:' + aw.id + ':c' + (k + 1))); sc.append(t); }); body.append(sc); } }
-      if (aw && A.user && A.user.owner && S2.award) row.append(btn('Edit', 'co-btn sm ghost hof2-edit', () => { popClose(); S2.award(aw); }));
+      if (aw && S2.state && S2.state.canEditAward && S2.award) row.append(btn('Edit', 'co-btn sm ghost hof2-edit', () => { popClose(); S2.award(aw); }));
       body.append(row);
       card.append(stage, body); track.append(card);
     });
