@@ -3599,8 +3599,9 @@
         lkState(box, r.link, r.open ? 'Not submitted yet' : 'No link in the sheet');
         $('ed-link-save').textContent = r.link ? 'Replace' : 'Submit';
         // Submitting a finished creative moves open work to Under review (if they may change the status).
-        const rv = canSt && r.open; $('ed-link-rv-l').hidden = !rv; $('ed-link-rv').checked = rv;
-        $('ed-link-auto').hidden = !(r.open && !canSt); box.dataset.auto = r.open && !canSt ? '1' : '';
+        // Rule (Nov 2026): submitting or replacing the creative link always moves the task to Under review.
+        $('ed-link-rv-l').hidden = true; $('ed-link-rv').checked = true;
+        $('ed-link-auto').hidden = r.stage === 'Under review'; box.dataset.auto = '1';
       }
       lkCount();
     }
@@ -3609,9 +3610,9 @@
       const v = $('ed-link').value.trim();
       if (!/^https:\/\/\S+\.\S+/i.test(v)) { $('ed-msg').textContent = 'Paste a full link that starts with https://'; $('ed-link').focus(); return; }
       if (v === before.link) { $('ed-msg').textContent = 'That is already the link in the sheet.'; return; }
-      const fields = { link: v }; if ((!$('ed-link-rv-l').hidden && $('ed-link-rv').checked) || $('ed-link-box').dataset.auto) fields.status = 'Under review';
+      const fields = { link: v, status: 'Under review' };
       $('ed-msg').textContent = ''; dlgE.close();
-      saveInBackground(r, fields, before, fields.status ? 'Link submitted and moved to Under review' : 'Link submitted');
+      saveInBackground(r, fields, before, r.stage === 'Under review' ? 'Link saved (already Under review)' : 'Link saved and moved to Under review');
     });
     $('ed-link').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('ed-link-save').click(); } });
     // One handler for the other two links: the editable file (Open File) and the content (Creative Brief + content status).

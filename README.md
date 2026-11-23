@@ -119,6 +119,8 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 **Vibration (Nov 2026):** each notification or reminder vibrates (`navigator.vibrate`, Android browsers) with a pattern per type, and the bell shakes on every device. On by default; each person turns it off under bell > Sounds & music > *Vibration* (saved with their sound settings). iPhones and computers have no web vibration, so they get the bell shake only.
 
+**Creative link → Under review (Nov 2026):** submitting or replacing a creative link always sets the design status to UNDER REVIEW (the dashboard sends it, and the server adds it when a link arrives without a status). Links changed directly in the sheet are not affected.
+
 ## My work (team members)
 
 Everyone lands on **My work** showing their own work (the owner lands on the Overview). My work shows **only the signed-in person's own tasks**: there is no *View as* and no page filters (Admins see anyone's work on Tasks or Team; clicking a person on Team opens Tasks filtered to them). A **This week / This month** switch sets the period, and six status tiles count the tasks in it: **Assigned** (everything), **TBP**, **WIP** (incl. changes requested), **Under review**, **Shared** (incl. no update) and **Rejected**. Clicking a tile lists those tasks below, **grouped by Design ETA date** (today and tomorrow labelled); open work from before the period is under *Earlier, still open* and tasks without an ETA under *No Design ETA*, both first. Content writers also see **Content tasks**. The person is matched by their Google name against the team list; if a name is spelt differently, add it under *Also written as* in the team sheet. On phones My work replaces Stand-up in the bottom bar for team members.

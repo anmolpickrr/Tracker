@@ -553,6 +553,8 @@ function updateTask_(body, mine, pm, contentMine) {
   const id = clean_(body.id);
   if (!id) return { ok: false, error: 'This task has no ID in the sheet, so it can only be edited there.' };
   const f = body.fields || {};
+  // Rule: a new or replaced creative link always moves the task to Under review.
+  if (f.link != null && String(f.link).trim() !== '' && f.status == null) f.status = 'Under review';
   const sheet = openTab_(src);
   let lastCol = sheet.getLastColumn();
   const lastRow = sheet.getLastRow();

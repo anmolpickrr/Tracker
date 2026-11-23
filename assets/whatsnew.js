@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-23-link-review', date: '2026-11-23', kind: 'improved', who: 'all', title: 'A new creative link always moves the task to Under review',
+    what: 'Submitting or replacing a creative link now always sets the design status to Under review.',
+    does: 'It applies to every task, including ones already Delivered or Shared, so the Creative Head reviews each new version. There is no checkbox to skip it any more.',
+    how: 'Open a task, paste the link under Creative link and press Submit or Replace.'
+  },
+  {
     id: '2026-11-23-online-pill', date: '2026-11-23', kind: 'fixed', who: 'page:access', title: 'Cleaner "online" pill',
     what: 'The faces in the online pill overlapped with a big dot on each one.',
     does: 'Faces are now solid and evenly stacked, with one live dot beside the count.',
