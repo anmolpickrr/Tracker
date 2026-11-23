@@ -5164,3 +5164,28 @@ a.stu-print:hover { border-color: var(--primary); }
 @keyframes rxBump { 0% { transform: scale(.6); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
 .hof2-quote { cursor: default; user-select: none; }
 @media (prefers-reduced-motion: reduce) { .rx-pick, .rx-opt, .rx-pill { transition: none; } .rx-pill.bump { animation: none; } }
+
+/* who reacted / who suggested: names highlighted */
+.rx-who { flex-basis: 100%; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+.hof2-show .rx-who { text-align: right; }
+.rx-who-n { color: var(--fg); font-weight: 600; padding: 0 4px; border-radius: 6px; background: color-mix(in srgb, var(--violet, #6b4dff) 16%, transparent); }
+.rx-who-n.hl, .pl-by.hl { animation: whoFlash 1.6s ease-out; }
+@keyframes whoFlash { 0%, 30% { background: #ddff00; color: #141414; box-shadow: 0 0 0 3px rgba(221,255,0,.35); } 100% { } }
+.hof2-show { flex-wrap: wrap; }
+.pl-by { justify-self: start; display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; padding: 2px 8px 2px 2px; border-radius: 99px; background: color-mix(in srgb, var(--violet, #6b4dff) 16%, transparent); font-size: 11.5px; }
+.pl-by .av { width: 18px; height: 18px; font-size: 8px; }
+.pl-by b { font-weight: 600; }
+/* 5-second preview */
+.pl-prev { position: relative; flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--violet, #6b4dff); color: #fff; cursor: pointer; display: grid; place-items: center; transition: transform .15s, background .15s; }
+.pl-prev svg { width: 14px; height: 14px; fill: currentColor; margin-left: 2px; }
+.pl-prev:hover { transform: scale(1.08); } .pl-prev:disabled { background: var(--sunken); color: var(--muted); cursor: not-allowed; transform: none; }
+.pl-prev.on svg { display: none; }
+.pl-prev.on::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+.pl-ring { position: absolute; inset: -3px; border-radius: 50%; pointer-events: none; }
+.pl-prev.on .pl-ring { background: conic-gradient(#ddff00 var(--p, 0%), transparent 0); -webkit-mask: radial-gradient(circle, transparent 18px, #000 19px); mask: radial-gradient(circle, transparent 18px, #000 19px); animation: plRing 5s linear forwards; }
+@property --p { syntax: '<percentage>'; inherits: false; initial-value: 0%; }
+@keyframes plRing { to { --p: 100%; } }
+.pl-player { list-style: none; display: flex; justify-content: center; padding: 6px; border-radius: 14px; background: var(--sunken); animation: plIn .25s ease-out; }
+.pl-player iframe { width: 100%; max-width: 360px; aspect-ratio: 16 / 9; border: 0; border-radius: 10px; }
+.pl-player iframe[height="80"] { aspect-ratio: auto; height: 80px; }
+@keyframes plIn { from { opacity: 0; transform: translateY(-4px); } }

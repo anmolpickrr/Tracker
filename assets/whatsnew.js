@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-rx-names', date: '2026-11-24', kind: 'improved', who: 'all', title: 'See who reacted, and preview songs',
+    what: 'Reactions now show who reacted, with names highlighted (yours flashes when you react). Each song shows who suggested it.',
+    does: 'Tap ▶ on a song with a YouTube link to hear its first 5 seconds; Spotify links open Spotify\'s own preview. The playlist only accepts clean songs: explicit, vulgar or adult titles are refused.',
+    how: 'Hall of Fame > ♫ for the playlist; reactions are under each award message and creative.'
+  },
+  {
     id: '2026-11-24-reactions', date: '2026-11-24', kind: 'new', who: 'all', title: 'React with emojis in the Hall of Fame',
     what: 'React to award messages and to each showcased creative with ❤️ 🔥 😂 😍 👏 🎉 💯 🙌.',
     does: 'Tap the smiley to open the picker; your emoji floats up and the count pops. Tap a reaction again to undo. Double-click a message for a quick ❤️. Every showcased creative is listed, with its own reactions.',

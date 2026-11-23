@@ -3022,6 +3022,7 @@ function music_(u) {
 function musicAdd_(b, u) {
   const song = clean_(b.song).slice(0, 80), artist = clean_(b.artist).slice(0, 60), lang = MUSIC_LANGS.indexOf(clean_(b.lang)) >= 0 ? clean_(b.lang) : 'Other', link = clean_(b.link).slice(0, 500);
   if (!song) return { ok: false, error: 'Add the song name.' };
+  if (/\b(f+u+c*k+\w*|sh[i1]t\w*|b[i1]tch\w*|sexy?|sexual|nud(e|ity)|porn\w*|d[i1]ck|puss(y|ies)|asshole|bastard|slut|whore|horny|explicit|nsfw|xxx|boobs?|naked|chut\w*|chu+t[i1]y\w*|madarc\w*|bh?en ?ch\w*|bc|mc|bsdk|gaa?nd\w*|lu+nd|randi|harami|kamin[ae]|saal[ia]|daaru|daru|sharaab?|peg|nasha|bottle|tharki|jawani|choli)\b/i.test(song + ' ' + artist)) return { ok: false, error: 'Please suggest clean songs only: no explicit, vulgar or adult content.' };
   if (!plain_(song) || (artist && !plain_(artist))) return { ok: false, error: 'Names cannot start with = + - or @' };
   if (link && !/^https:\/\/[^\s"'<>]{4,490}$/i.test(link)) return { ok: false, error: 'The link must be a full https:// address (YouTube, Spotify…).' };
   const M = studioRows_('Music', MUSIC_HEAD);

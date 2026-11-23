@@ -252,6 +252,8 @@ window.CO_HOFINIT = function (api) {
 
   /* ---------- emoji reactions (on award messages and creatives) ----------
      Stored with cheers: one key per target and emoji ("rx:<award>:<m|c1|c2>:<emoji>"), toggled per person. */
+  // a person's name from their email (team names first), for "who reacted" and "who suggested"
+  const nameOf = (email) => { const loc = String(email || '').split('@')[0]; const f = loc.split(/[._-]/)[0].toLowerCase(); const t = (SD().people ? SD().people() : []).find((n) => n.toLowerCase().split(' ')[0] === f); return t || loc.split(/[._-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' '); };
   const EMO = ['❤️', '🔥', '😂', '😍', '👏', '🎉', '💯', '🙌'];
   const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, '').replace(/^(drive|docs)\.google\.com$/, 'Google Drive'); } catch (e) { return 'link'; } };
   const linkIcon = (u) => /figma/i.test(u) ? '◆' : /youtu|vimeo|\.mp4/i.test(u) ? '▶' : /drive|docs\.google/i.test(u) ? '▲' : /canva/i.test(u) ? '●' : '↗';
@@ -263,6 +265,10 @@ window.CO_HOFINIT = function (api) {
     add.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg><i>+</i>';
     const paint = (bump) => {
       pills.replaceChildren();
+      const ppl = [];
+      EMO.forEach((e) => { const c = C()[base + ':' + e]; if (c && c.n) (c.who || []).forEach((w) => { if (!ppl.some((x) => x.w === w)) ppl.push({ w, e }); }); if (c && c.mine && A.user && !(c.who || []).includes(String(A.user.email).toLowerCase()) && !ppl.some((x) => x.w === 'me')) ppl.push({ w: 'me', e }); });
+      who.replaceChildren(); who.hidden = !ppl.length;
+      if (ppl.length) { const me = A.user && String(A.user.email).toLowerCase(); ppl.slice(0, 3).forEach((x, i) => { const n = el('b', 'rx-who-n' + (bump && (x.w === me || x.w === 'me') ? ' hl' : ''), x.w === me || x.w === 'me' ? 'You' : nameOf(x.w)); if (i) who.append(i === Math.min(ppl.length, 3) - 1 && ppl.length <= 3 ? ' and ' : ', '); who.append(n); }); who.append(ppl.length > 3 ? ' +' + (ppl.length - 3) + ' reacted' : ' reacted'); }
       EMO.forEach((e) => { const c = C()[base + ':' + e]; if (!c || !c.n) return; const p = btn('', 'rx-pill' + (c.mine ? ' on' : '') + (bump === e ? ' bump' : '')); p.append(el('span', 'rx-e', e), el('b', '', String(c.n))); p.setAttribute('aria-pressed', String(!!c.mine)); p.setAttribute('aria-label', e + ' ' + c.n + (c.mine ? ', you reacted' : '')); p.title = c.mine ? 'You reacted. Tap to undo.' : 'Tap to react ' + e; p.addEventListener('click', (ev) => bar.react(e, false, ev)); pills.append(p); });
     };
     bar.react = async (e, onlyOn, ev) => {
@@ -274,7 +280,8 @@ window.CO_HOFINIT = function (api) {
       try { await post({ action: 'cheer', key: k }); } catch (err) { all[k] = cur; paint(); toast('Reaction not saved: ' + err.message, true); }
     };
     add.addEventListener('click', (ev) => { ev.stopPropagation(); openPicker(add, bar); });
-    bar.append(pills, add); paint(); return bar;
+    const who = el('div', 'rx-who'); who.hidden = true;
+    bar.append(pills, add, who); paint(); return bar;
   }
   function openPicker(anchor, bar) {
     if (pickerOpen) { const was = pickerOpen.bar; closePicker(); if (was === bar) return; }
@@ -297,15 +304,41 @@ window.CO_HOFINIT = function (api) {
     for (let i = 0; i < 5; i++) { const f = el('span', 'rx-fly', e); f.style.left = x + 'px'; f.style.top = y + 'px'; f.style.setProperty('--dx', ((Math.random() - 0.5) * 80).toFixed(0) + 'px'); f.style.setProperty('--d', (i * 60) + 'ms'); f.style.setProperty('--s', (i ? 0.6 + Math.random() * 0.5 : 1.5).toFixed(2)); document.body.append(f); setTimeout(() => f.remove(), 1300 + i * 60); }
   }
 
+
+  // Clean songs only: explicit, vulgar or adult words in English, Hindi and Punjabi (transliterated) are refused.
+  const BAD = /\b(f+u+c*k+\w*|sh[i1]t\w*|b[i1]tch\w*|sexy?|sexual|nud(e|ity)|porn\w*|d[i1]ck|puss(y|ies)|asshole|bastard|slut|whore|horny|explicit|nsfw|18\+|xxx|boobs?|naked|kiss me all over|chut\w*|chu+t[i1]y\w*|madarc\w*|bh?en ?ch\w*|bc|mc|bsdk|gaa?nd\w*|lu+nd|randi|harami|kamin[ae]|saal[ia]|daaru|daru|sharaab?|peg|nasha|bottle|tharki|jawani|choli)\b/i;
+  const dirty = (t) => BAD.test(String(t || '').normalize('NFKD').replace(/[̀-ͯ]/g, ''));
+  // 5-second previews: YouTube links play their first 5 seconds in a small player; Spotify links open Spotify's own preview player.
+  const ytId = (u) => { const m = String(u).match(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/)([\w-]{11})/); return m ? m[1] : ''; };
+  const spId = (u) => { const m = String(u).match(/open\.spotify\.com\/(?:intl-\w+\/)?track\/(\w+)/); return m ? m[1] : ''; };
+  let playing = null;
+  function stopPreview() { if (!playing) return; clearTimeout(playing.t); playing.box.remove(); playing.b.classList.remove('on'); playing.b.setAttribute('aria-label', 'Preview ' + playing.m.song); playing = null; }
+  function previewBtn(m, li) {
+    const yt = ytId(m.link), sp = spId(m.link);
+    const b = btn('', 'pl-prev'); b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><i class="pl-ring"></i>';
+    if (!yt && !sp) { b.disabled = true; b.title = 'Add a YouTube or Spotify link to preview'; b.setAttribute('aria-label', 'No preview for ' + m.song); return b; }
+    b.setAttribute('aria-label', 'Preview ' + m.song); b.title = yt ? 'Play the first 5 seconds' : 'Spotify preview';
+    b.addEventListener('click', () => {
+      const same = playing && playing.m.id === m.id; stopPreview(); if (same) return;
+      const box = el('li', 'pl-player'); const f = document.createElement('iframe'); f.title = 'Preview: ' + m.song; f.allow = 'autoplay; encrypted-media'; f.loading = 'eager'; f.referrerPolicy = 'strict-origin-when-cross-origin';
+      f.src = yt ? 'https://www.youtube-nocookie.com/embed/' + yt + '?autoplay=1&start=0&end=5&controls=0&modestbranding=1&rel=0&playsinline=1' : 'https://open.spotify.com/embed/track/' + sp + '?utm_source=generator&theme=0';
+      if (sp) f.height = '80';
+      box.append(f); li.after(box); b.classList.add('on'); b.setAttribute('aria-label', 'Stop preview');
+      playing = { m, b, box, t: yt ? setTimeout(stopPreview, 5600) : setTimeout(stopPreview, 30000) };
+    });
+    return b;
+  }
+
   /* ---------- team playlist: anyone suggests trending songs (any language), others like them ---------- */
   const PL = { list: null, langs: ['Hindi', 'Punjabi', 'English', 'Tamil', 'Telugu', 'Bengali', 'Marathi', 'Haryanvi', 'Bhojpuri', 'Gujarati', 'Malayalam', 'Kannada', 'K-pop', 'Lo-fi', 'Instrumental', 'Other'], f: '', err: '' };
   const linkKind = (u) => /youtu/i.test(u) ? 'YouTube' : /spotify/i.test(u) ? 'Spotify' : /music\.apple/i.test(u) ? 'Apple Music' : /jiosaavn|saavn/i.test(u) ? 'JioSaavn' : /gaana/i.test(u) ? 'Gaana' : /wynk/i.test(u) ? 'Wynk' : 'Listen';
   async function plLoad() { try { const r = await post({ action: 'music' }); PL.list = r.list || []; if (r.langs) PL.langs = r.langs; PL.err = ''; } catch (e) { PL.list = PL.list || []; PL.err = /unknown/i.test(e.message) ? 'The playlist needs the latest web app. It switches on after the next automatic update.' : e.message; } }
   async function playlist() {
     let d = document.getElementById('hof-pl'); if (!d) { d = el('dialog', 'co-dialog pl-dlg'); d.id = 'hof-pl'; d.setAttribute('aria-labelledby', 'pl-t'); document.body.append(d); d.addEventListener('click', (e) => { if (e.target === d) d.close(); }); }
+    if (!d.dataset.wired) { d.dataset.wired = '1'; d.addEventListener('close', stopPreview); }
     const paint = () => {
-      d.replaceChildren();
-      const h = el('div', 'pl-h'); const ht = el('div'); const t = el('h2', '', 'Team playlist'); t.id = 'pl-t'; ht.append(t, el('p', 'co-note', 'Trending songs the team is into, in any language. Songs open on YouTube, Spotify or similar under their own licences; nothing is played or stored here.'));
+      stopPreview(); d.replaceChildren();
+      const h = el('div', 'pl-h'); const ht = el('div'); const t = el('h2', '', 'Team playlist'); t.id = 'pl-t'; ht.append(t, el('p', 'co-note', 'Clean, trending songs the team is into, in any language. Tap ▶ for a 5-second preview (YouTube links); full songs open on YouTube, Spotify and others under their own licences.'));
       const x = btn('', 'hof2-x', () => d.close()); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; h.append(ht, x);
       // suggest
       const form = el('form', 'pl-form'); form.noValidate = true;
@@ -316,16 +349,18 @@ window.CO_HOFINIT = function (api) {
       const add = el('button', 'co-btn primary', 'Suggest'); add.type = 'submit';
       form.append(song, art, lang, link, add);
       form.addEventListener('submit', async (e) => { e.preventDefault(); if (!song.value.trim()) { song.focus(); return; } if (link.value.trim() && !/^https:\/\/\S+\.\S+/i.test(link.value.trim())) { toast('Paste a full link that starts with https://', true); link.focus(); return; } add.disabled = true;
-        try { await post({ action: 'musicAdd', song: song.value, artist: art.value, lang: lang.value, link: link.value.trim() }); toast('Added to the team playlist'); await plLoad(); paint(); } catch (err) { add.disabled = false; toast(/unknown/i.test(err.message) ? 'The playlist switches on after the next web app update.' : err.message, true); } });
+        const bad = dirty(song.value + ' ' + art.value); if (bad) { toast('Please suggest clean songs only: no explicit, vulgar or adult content.', true); song.focus(); return; }
+        try { const rr = await post({ action: 'musicAdd', song: song.value, artist: art.value, lang: lang.value, link: link.value.trim() }); PL.justAdded = rr && rr.id; toast('Added to the team playlist'); await plLoad(); paint(); } catch (err) { add.disabled = false; toast(/unknown/i.test(err.message) ? 'The playlist switches on after the next web app update.' : err.message, true); } });
       // language filter
       const langsUsed = [...new Set((PL.list || []).map((m) => m.lang))];
       const fl = el('div', 'pl-chips'); [''].concat(PL.langs.filter((l) => langsUsed.includes(l))).forEach((l) => { const b = btn(l || 'All', 'pl-chip' + (PL.f === l ? ' on' : ''), () => { PL.f = l; paint(); }); b.setAttribute('aria-pressed', String(PL.f === l)); fl.append(b); });
       // list: most liked first, then newest
       const ul = el('ol', 'pl-list');
-      const L = (PL.list || []).filter((m) => !PL.f || m.lang === PL.f).sort((a, b) => b.likes - a.likes || String(b.at).localeCompare(String(a.at)));
+      const L = (PL.list || []).filter((m) => !dirty(m.song + ' ' + m.artist)).filter((m) => !PL.f || m.lang === PL.f).sort((a, b) => b.likes - a.likes || String(b.at).localeCompare(String(a.at)));
       L.forEach((m, i) => {
         const li = el('li', 'pl-row'); li.append(el('span', 'pl-n', String(i + 1)));
-        const tx = el('div', 'pl-tx'); tx.append(el('b', '', m.song), el('small', '', [m.artist, m.lang, 'by ' + first(m.by)].filter(Boolean).join(' · '))); li.append(tx);
+        const tx = el('div', 'pl-tx'); const meta = el('small', '', [m.artist, m.lang].filter(Boolean).join(' · ')); const by = el('span', 'pl-by' + (m.id === PL.justAdded ? ' hl' : '')); const bav = CO.av(m.by || '?'); by.append(bav, el('b', '', m.mine ? 'You' : first(m.by))); tx.append(el('b', '', m.song), meta, by); li.append(tx);
+        li.append(previewBtn(m, li));
         if (m.link) { const a = el('a', 'pl-play', linkKind(m.link)); a.href = m.link; a.target = '_blank'; a.rel = 'noopener'; li.append(a); }
         const lk = btn('', 'pl-like' + (m.liked ? ' on' : ''), async () => { m.liked = !m.liked; m.likes += m.liked ? 1 : -1; paint(); try { await post({ action: 'cheer', key: 'mu:' + m.id }); } catch (e) { m.liked = !m.liked; m.likes += m.liked ? 1 : -1; paint(); toast(e.message, true); } });
         lk.setAttribute('aria-pressed', String(m.liked)); lk.setAttribute('aria-label', (m.liked ? 'Unlike ' : 'Like ') + m.song); lk.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/></svg>'; lk.append(el('span', '', String(m.likes))); li.append(lk);
