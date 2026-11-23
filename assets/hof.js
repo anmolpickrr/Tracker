@@ -182,7 +182,8 @@ window.CO_HOFINIT = function (api) {
         if (aw) row.append(btn('Remove from Hall of Fame', 'co-btn sm ghost', async () => { if (!confirm('Remove ' + m.name + ' from the Hall of Fame?')) return; try { await post({ action: 'awardDelete', id: aw.id }); S2.state.awards = S2.state.awards.filter((y) => y.id !== aw.id); W.key = ''; renderAll(); toast('Removed'); } catch (e) { toast(e.message, true); } }));
         else if (live < 3) row.append(btn('Feature in Hall of Fame', 'co-btn sm primary', () => { popClose(); S2.award({ who: m.name }); }));
       }
-      if (aw && aw.link) { const a = el('a', 'co-btn sm ghost hof2-see', 'See the creative ↗'); a.href = aw.link; a.target = '_blank'; a.rel = 'noopener'; row.append(a); }
+      if (aw && (aw.link || aw.link2)) { const L2 = [aw.link, aw.link2].filter(Boolean); const sc = el('div', 'hof2-shows'); sc.append(el('small', '', L2.length > 1 ? 'Showcase' : 'Showcase')); L2.forEach((u, k) => { const a = el('a', 'hof2-show', L2.length > 1 ? 'Creative ' + (k + 1) + ' ↗' : 'See the creative ↗'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; sc.append(a); }); body.append(sc); }
+      if (aw && A.user && A.user.owner && S2.award) row.append(btn('Edit', 'co-btn sm ghost hof2-edit', () => { popClose(); S2.award(aw); }));
       body.append(row);
       card.append(stage, body); track.append(card);
     });

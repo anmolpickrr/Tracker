@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-award-two', date: '2026-11-24', kind: 'improved', who: 'all', title: 'Awards can showcase two creatives',
+    what: 'A Hall of Fame award can now link up to two creatives.',
+    does: 'They appear on the card as Creative 1 and Creative 2. Only the Creative Head can edit an award after it is given.',
+    how: 'When featuring someone, fill in Creatives (up to 2).'
+  },
+  {
     id: '2026-11-24-playlist', date: '2026-11-24', kind: 'new', who: 'all', title: 'Team playlist: suggest trending songs',
     what: 'Anyone can suggest a trending song, in Hindi, Punjabi, English, Tamil, Telugu and more, or a genre like Lo-fi.',
     does: 'Add the song, artist, language and a YouTube or Spotify link. Everyone can like songs; the most liked rise to the top, and you can filter by language.',

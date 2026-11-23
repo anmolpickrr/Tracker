@@ -121,6 +121,8 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 **Creative link → Under review (Nov 2026):** submitting or replacing a creative link always sets the design status to UNDER REVIEW (the dashboard sends it, and the server adds it when a link arrives without a status). Links changed directly in the sheet are not affected.
 
+**Awards (Nov 2026):** up to two creatives per award (Awards tab, *Link* and *Link 2*), shown on the Hall of Fame card. Editing an award is for the owner (Creative Head) only: the *Edit* button shows only for them and the server refuses others; Admins can still feature and remove.
+
 **Team playlist (Nov 2026):** anyone signed in suggests trending songs (song, artist, language/genre, optional YouTube/Spotify/JioSaavn link) in the *Music* tab of the access sheet; likes are stored in *Cheers* as `mu:<id>`. Up to 10 suggestions a day per person; duplicates are refused; the suggester or an Admin can remove one. Open it from the Hall of Fame pop-up (♫) or bell > Sounds & music. Endpoints: `music`, `musicAdd`, `musicDel`.
 
 ## My work (team members)

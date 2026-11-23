@@ -2938,7 +2938,7 @@ function ownDataText_(user, fresh, maxAge) {
    once its owner saves it. */
 const PROF_HEAD = ['Email', 'Team name', 'Character', 'Image', 'Tagline', 'Updated', 'Prefs', 'Snapshot'];
 const CIMG_HEAD = ['Image', 'Piece', 'Pieces', 'Data', 'By', 'At'];
-const AWARD_HEAD = ['ID', 'Who', 'Title', 'Tag', 'Note', 'Link', 'Until', 'By', 'At', 'Deleted'];
+const AWARD_HEAD = ['ID', 'Who', 'Title', 'Tag', 'Note', 'Link', 'Until', 'By', 'At', 'Deleted', 'Link 2'];
 const CHEER_HEAD = ['Key', 'Email', 'At'];
 function studioTab_(name, head) { const ss = accessBook_(); let sh = ss.getSheetByName(name); if (!sh) { sh = ss.insertSheet(name); sh.appendRow(head); sh.setFrozenRows(1); if (name === 'Character images' || name === 'Notify') sh.hideSheet(); } else if (sh.getLastColumn() < head.length) { while (sh.getMaxColumns() < head.length) sh.insertColumnAfter(sh.getMaxColumns()); sh.getRange(1, 1, 1, head.length).setValues([head]); } return sh; }
 function studioRows_(name, head) { const sh = studioTab_(name, head), last = sh.getLastRow(); return { sh: sh, rows: last < 2 ? [] : sh.getRange(2, 1, last - 1, head.length).getValues() }; }
@@ -2949,7 +2949,7 @@ function studio_(u) {
   const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd'); // the Hall of Fame is for everyone signed in
   out.awards = studioRows_('Awards', AWARD_HEAD).rows.filter(function (r) { return r[0] && !(r[9] === true || String(r[9]) === 'TRUE'); }).map(function (r) {
     const until = r[6] instanceof Date ? Utilities.formatDate(r[6], IST, 'yyyy-MM-dd') : String(r[6] || '');
-    return { id: String(r[0]), who: String(r[1]), title: String(r[2]), tag: String(r[3]), note: String(r[4] || ''), link: String(r[5] || ''), until: until, by: String(r[7]).toLowerCase(), at: iso_(r[8]) };
+    return { id: String(r[0]), who: String(r[1]), title: String(r[2]), tag: String(r[3]), note: String(r[4] || ''), link: String(r[5] || ''), link2: String(r[10] || ''), until: until, by: String(r[7]).toLowerCase(), at: iso_(r[8]) };
   }).filter(function (a) { return !a.until || a.until >= today; });
   const ch = {}; studioRows_('Cheers', CHEER_HEAD).rows.forEach(function (r) { const k = String(r[0]); if (!k) return; const c = ch[k] || (ch[k] = { n: 0, mine: false, who: [] }); c.n++; if (String(r[1]).toLowerCase() === u.email) c.mine = true; if (c.who.length < 12) c.who.push(String(r[1]).toLowerCase()); });
   out.cheers = ch;
@@ -2993,10 +2993,12 @@ function awardSave_(b, u) {
   const who = clean_(b.who).slice(0, 80), title = clean_(b.title).slice(0, 40), tag = AWARD_TAGS.indexOf(clean_(b.tag)) >= 0 ? clean_(b.tag) : 'custom';
   if (!who || !title) return { ok: false, error: 'Pick a person and an award.' };
   const link = clean_(b.link).slice(0, 500); if (link && !/^https:\/\//.test(link)) return { ok: false, error: 'The link should start with https://' };
+  const link2 = clean_(b.link2).slice(0, 500); if (link2 && !/^https:\/\//.test(link2)) return { ok: false, error: 'The second link should start with https://' };
   const until = /^\d{4}-\d{2}-\d{2}$/.test(String(b.until || '')) ? String(b.until) : '';
   const A = studioRows_('Awards', AWARD_HEAD), id = clean_(b.id), i = id ? A.rows.findIndex(function (r) { return String(r[0]) === id; }) : -1;
+  if (i >= 0 && !isOwner_(u.email)) return { ok: false, error: 'Only the Creative Head can edit an award.' };
   if (i < 0) { const today = Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd'); const live = A.rows.filter(function (r) { const u = r[6] instanceof Date ? Utilities.formatDate(r[6], IST, 'yyyy-MM-dd') : String(r[6] || ''); return r[0] && !(r[9] === true || String(r[9]) === 'TRUE') && (!u || u >= today); }).length; if (live >= 3) return { ok: false, error: 'Up to 3 people can be featured at a time. Remove one from the Hall of Fame first.' }; }
-  const row = [i >= 0 ? id : 'W' + Utilities.formatDate(new Date(), IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 6), safe_(who), safe_(title), tag, safe_(clean_(b.note).slice(0, 240)), link, until, u.email, i >= 0 ? A.rows[i][8] : new Date(), ''];
+  const row = [i >= 0 ? id : 'W' + Utilities.formatDate(new Date(), IST, 'yyMMdd') + '-' + Utilities.getUuid().slice(0, 6), safe_(who), safe_(title), tag, safe_(clean_(b.note).slice(0, 240)), link, until, u.email, i >= 0 ? A.rows[i][8] : new Date(), '', link2];
   if (i >= 0) A.sh.getRange(i + 2, 1, 1, AWARD_HEAD.length).setValues([row]); else A.sh.appendRow(row);
   if (i < 0) { try { notifyAdd_(u.email, 'all', 'achievement', who + ' won ' + title + (row[4] ? ': ' + row[4] : '') + '.', { tab: 'studio', title: title }); } catch (e) { /* the award still stands */ } }
   return { ok: true, id: row[0], changes: [{ action: i >= 0 ? 'Award changed' : 'Award given', sheet: 'Awards', record: who, details: title + (until ? ' until ' + until : '') }] };
