@@ -2730,7 +2730,7 @@ function autoUpdate_(log) {
     const code = get('Code.gs'), manifest = get('appsscript.json'), h = hash_(code + manifest);
     if (h === st.hash) {
       // Waiting for the one-click switch: clear the note once the live web app runs the installed version.
-      if (/needs one click/.test(st.err || '')) { try { const r = UrlFetchApp.fetch('https://script.googleapis.com/v1/projects/' + ScriptApp.getScriptId() + '/deployments', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true }); const ds = (JSON.parse(r.getContentText()).deployments || []).filter(function (d) { return d.deploymentConfig && d.deploymentConfig.versionNumber; }); if (ds.length && ds.every(function (d) { return d.deploymentConfig.versionNumber >= st.version; })) { save({ err: '', busy: 0 }); say('Live on version ' + st.version + '.'); } else say(st.err); } catch (e) { /* try again next run */ } return; }
+      if (/needs one click/.test(st.err || '')) { try { const r = UrlFetchApp.fetch('https://script.googleapis.com/v1/projects/' + ScriptApp.getScriptId() + '/deployments', { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true }); const ds = (JSON.parse(r.getContentText()).deployments || []).filter(function (d) { return d.deploymentConfig && d.deploymentConfig.versionNumber; }); if (ds.some(function (d) { return d.deploymentConfig.versionNumber >= st.version; })) { save({ err: '', busy: 0 }); say('Live on version ' + st.version + '.'); } else say(st.err); } catch (e) { /* try again next run */ } return; }
       say('Already up to date (' + (st.version ? 'version ' + st.version : 'no version yet') + ').'); save({ err: '', busy: 0 }); return; }
     // Safety: the new code must parse and still be the dashboard's web app.
     try { new Function(code); } catch (e) { if (e instanceof SyntaxError) { save({ err: 'The newest Code.gs on GitHub has an error and was not installed: ' + e.message }); say(st.err); return; } }
@@ -2751,13 +2751,18 @@ function autoUpdate_(log) {
     const ver = call('post', '/versions', { description: 'Automatic update from GitHub ' + Utilities.formatDate(new Date(), IST, 'd MMM yyyy, HH:mm') });
     // Point the live web app deployment (the one the dashboard uses) at the new version; the URL does not change.
     const deps = (call('get', '/deployments').deployments || []).filter(function (d) { return d.deploymentConfig && d.deploymentConfig.versionNumber && (d.entryPoints || []).some(function (e) { return e.entryPointType === 'WEB_APP'; }); });
-    try { deps.forEach(function (d) { call('put', '/deployments/' + d.deploymentId, { deploymentConfig: { scriptId: id, versionNumber: ver.versionNumber, manifestFileName: 'appsscript', description: 'Automatic update' } }); }); }
-    catch (de) { if (!/ANYONE access has been disabled/i.test(String(de.message || de))) throw de;
-      // Installed, but Google will not re-point a web app shared with "Anyone" (Workspace restriction): remember it so it is not reinstalled every 10 minutes.
-      save({ hash: h, version: ver.versionNumber, at: Date.now(), busy: 0, err: 'New code is installed as version ' + ver.versionNumber + ' but needs one click to go live (your Workspace no longer lets it switch automatically). In Apps Script: Deploy > Manage deployments > pencil > Version: New version > Deploy. Never change "Who has access" (any other choice stops the dashboard for everyone). If Google refuses with "ANYONE access has been disabled", the Workspace admin must allow "Anyone" access for Apps Script web apps first; until then the dashboard keeps running on the last version that went live.' });
-      say('Installed version ' + ver.versionNumber + '; the web app must be moved to it by hand (Deploy > Manage deployments).'); return; }
-    save({ hash: needsOwner ? '' : h, version: ver.versionNumber, at: Date.now(), err: needsOwner, deployments: deps.length, busy: 0 });
-    say('Installed version ' + ver.versionNumber + ' and updated ' + deps.length + ' web app deployment(s).' + (needsOwner ? ' ' + needsOwner : ''));
+    // Each web app deployment on its own: the old "Anyone" one can no longer be updated (Workspace rule) and is skipped,
+    // while the company-only one ("Anyone within" the organisation) keeps updating itself.
+    let moved = 0, refused = 0;
+    deps.forEach(function (d) {
+      try { call('put', '/deployments/' + d.deploymentId, { deploymentConfig: { scriptId: id, versionNumber: ver.versionNumber, manifestFileName: 'appsscript', description: 'Automatic update' } }); moved++; }
+      catch (de) { if (/ANYONE access has been disabled/i.test(String(de.message || de))) refused++; else throw de; }
+    });
+    if (!moved && refused) {
+      save({ hash: h, version: ver.versionNumber, at: Date.now(), busy: 0, err: 'New code is installed as version ' + ver.versionNumber + ' but no web app could be switched to it: the only deployment is shared with "Anyone", which your Workspace no longer allows. Use the company-only deployment (Deploy > New deployment > Web app > Who has access: Anyone within your organisation).' });
+      say('Installed version ' + ver.versionNumber + '; no deployment could be updated.'); return; }
+    save({ hash: needsOwner ? '' : h, version: ver.versionNumber, at: Date.now(), err: needsOwner, deployments: moved, busy: 0 });
+    say('Installed version ' + ver.versionNumber + ' and updated ' + moved + ' web app deployment(s)' + (refused ? ' (' + refused + ' old "Anyone" one skipped)' : '') + '.' + (needsOwner ? ' ' + needsOwner : ''));
   } catch (e) {
     const m = String(e.message || e);
     const proj = (m.match(/project (\d+)/) || [])[1];
