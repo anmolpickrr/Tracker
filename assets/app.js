@@ -3650,7 +3650,7 @@
     changed: '<svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>'
   };
   const RM = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const anim = (el, kf, o) => { if (RM() || !el) return; try { if (window.Motion && window.Motion.animate) window.Motion.animate(el, kf, Object.assign({ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }, o || {})); else el.animate(Object.fromEntries ? kf : kf, Object.assign({ duration: 350, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }, o && o.delay ? { delay: o.delay * 1000 } : {})); } catch (e) { /* motion is optional */ } };
+  const anim = (el, kf, o) => { if (RM() || !el) return; /* never leave something invisible: if the animation stalls (tab in the background, throttled timers), put the end state back */ setTimeout(() => { try { el.getAnimations().forEach((a) => a.finish()); } catch (e) { /* ignore */ } if (el.style.opacity !== '' && el.style.opacity !== '1') el.style.opacity = ''; if (el.style.transform && el.style.transform !== 'none') el.style.transform = ''; }, 1200 + ((o && o.delay) || 0) * 1000); try { if (window.Motion && window.Motion.animate) window.Motion.animate(el, kf, Object.assign({ duration: 0.35, ease: [0.2, 0.8, 0.2, 1] }, o || {})); else el.animate(Object.fromEntries ? kf : kf, Object.assign({ duration: 350, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' }, o && o.delay ? { delay: o.delay * 1000 } : {})); } catch (e) { /* motion is optional */ } };
   function wnPaint() {
     const seen = wnSeen(), unseen = wnItems().filter((x) => !seen.has(x.id)).length;
     const d = document.querySelector('#btn-new .wn-dot'); if (d) d.hidden = !unseen;
@@ -3730,7 +3730,7 @@
     grid.append(tl, det); root.append(grid);
     // count up the hero numbers once
     root.querySelectorAll('.wnh-stat b').forEach((b) => { const to = +b.dataset.to; if (RM() || WN.entered) { b.textContent = String(to); return; } const t0 = performance.now(); const step = (t) => { const k = Math.min(1, (t - t0) / 700); b.textContent = String(Math.round(to * (1 - Math.pow(1 - k, 3)))); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); });
-    if (!WN.entered) { anim(hero, { opacity: [0, 1], transform: ['translateY(10px) scale(.99)', 'none'] }); }
+    if (!WN.entered) { anim(hero, { transform: ['translateY(10px)', 'none'] }); }
     const pick = rows.find((x) => x.id === WN.sel) || rows[0];
     if (pick) { WN.sel = pick.id; setTimeout(() => wnPick(pick.id, false), 0); }
     WN.entered = true;

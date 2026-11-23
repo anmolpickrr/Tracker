@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-23-wn-hero', date: '2026-11-23', kind: 'fixed', who: 'all', title: "What's new: the top card shows again",
+    what: "The dark summary card at the top of What's new could stay invisible, leaving an empty gap.",
+    does: 'Its entrance animation no longer hides it, and any animation that stalls now snaps to its end state.',
+    how: 'Nothing to do.'
+  },
+  {
     id: '2026-11-23-alerts-on', date: '2026-11-23', kind: 'improved', who: 'all', title: 'Sounds and alerts are now on for everyone',
     what: 'Notification sounds, desktop alerts, reminders and briefing emails are switched on by default.',
     does: 'Your browser may ask once to allow notifications after your first click: choose Allow. The Studio radio still plays only when you press play.',
