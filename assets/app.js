@@ -1842,6 +1842,9 @@
       // Content-only writers have no design card unless they hold design work; every content writer gets a card.
       [...people.keys()].forEach((k) => { if (CT.contentOnly(k) && !people.get(k).length) people.delete(k); });
       CT.writers().forEach((w) => { if (!people.has(w)) people.set(w, []); });
+      // The Creative Head is left out of the stand-up for now (owner's request, Nov 2026); set SU_HEAD to true to show them again.
+      const SU_HEAD = false;
+      if (!SU_HEAD) [...people.keys()].forEach((k) => { if (/creative head/i.test(EF.role(k) || '') || /^anmol\b/i.test(k)) people.delete(k); });
       const p = dash.params();
       if (p.designer && p.designer !== '__none') [...people.keys()].forEach((k) => { if (k !== p.designer) people.delete(k); });
       if (p.designer === '__none') [...people.keys()].forEach((k) => { if (k !== 'Unassigned') people.delete(k); });

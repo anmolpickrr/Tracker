@@ -113,6 +113,8 @@ Browsers cannot show a dashboard alert when no dashboard tab is open (that would
 
 The bell lists, for the signed-in person: their overdue tasks and tasks due today or tomorrow; for admins, team overdue and unassigned totals; new requirements since yesterday; status, sheet and team changes made by others in the last 48 hours; note mentions and action items; meetings starting within 15 minutes; and the two daily briefings. Every item opens the task, note or page it is about. Emails are not read: the dashboard has no access to anyone's inbox.
 
+**Stand-up (Nov 2026):** the Creative Head has no card in the stand-up for now (switch `SU_HEAD` in `assets/app.js` to show it again).
+
 ## My work (team members)
 
 Everyone lands on **My work** showing their own work (the owner lands on the Overview). My work shows **only the signed-in person's own tasks**: there is no *View as* and no page filters (Admins see anyone's work on Tasks or Team; clicking a person on Team opens Tasks filtered to them). A **This week / This month** switch sets the period, and six status tiles count the tasks in it: **Assigned** (everything), **TBP**, **WIP** (incl. changes requested), **Under review**, **Shared** (incl. no update) and **Rejected**. Clicking a tile lists those tasks below, **grouped by Design ETA date** (today and tomorrow labelled); open work from before the period is under *Earlier, still open* and tasks without an ETA under *No Design ETA*, both first. Content writers also see **Content tasks**. The person is matched by their Google name against the team list; if a name is spelt differently, add it under *Also written as* in the team sheet. On phones My work replaces Stand-up in the bottom bar for team members.

@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-23-su-nohead', date: '2026-11-23', kind: 'improved', who: 'page:standup', title: 'Stand-up: Creative Head card hidden',
+    what: 'The Creative Head no longer has a card in the daily stand-up.',
+    does: 'Stand-up shows only the team. Totals elsewhere are unchanged.',
+    how: 'Nothing to do.'
+  },
+  {
     id: '2026-11-23-mywork-v3', date: '2026-11-23', kind: 'improved', who: 'all', title: 'My work: all your tasks, by week or month',
     what: 'My work now lists every task assigned to you: Assigned, TBP, WIP, Under review, Shared and Rejected.',
     does: 'Switch between This week and This month; tasks are grouped by Design ETA date, with open work from earlier and undated tasks first. Tap a status to see only those.',
