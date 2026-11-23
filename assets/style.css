@@ -5189,3 +5189,36 @@ a.stu-print:hover { border-color: var(--primary); }
 .pl-player iframe { width: 100%; max-width: 360px; aspect-ratio: 16 / 9; border: 0; border-radius: 10px; }
 .pl-player iframe[height="80"] { aspect-ratio: auto; height: 80px; }
 @keyframes plIn { from { opacity: 0; transform: translateY(-4px); } }
+
+/* Hall of Fame pop-up v5: tighter */
+.hof2-b { position: relative; gap: 6px; }
+.hof2-tools { position: absolute; top: 0; right: 0; display: flex; gap: 4px; }
+.hof2-ib { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--raised); color: var(--fg-2); cursor: pointer; display: grid; place-items: center; transition: color .15s, background .15s; }
+.hof2-ib svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.hof2-ib:hover { color: var(--fg); background: var(--panel-2); }
+.hof2-ib[aria-label^="Remove"]:hover { color: #ff5a26; }
+.hof2-name { padding-right: 64px; }
+.hof2-badge { padding: 2px 9px 2px 7px; font-size: 11.5px; border-width: 1px; }
+.hof2-quote { padding: 8px 10px 6px 30px; }
+.hof2-qm { font-size: 26px; left: 9px; top: 4px; }
+.hof2-quote blockquote { font-size: 13px; }
+.hof2-qf { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 4px; }
+.hof2-qf figcaption { margin: 0; }
+.hof2-quote .rx { margin: 0; justify-content: flex-end; }
+.rx-add { width: 24px; height: 22px; } .rx-add svg { width: 13px; height: 13px; }
+.rx-pill { height: 22px; padding: 0 7px; font-size: 11.5px; } .rx-pill .rx-e { font-size: 12.5px; }
+.hof2-quote .rx-who { text-align: right; }
+.hof2-stats { padding: 6px 2px; }
+.hof2-stats span { grid-auto-flow: column; align-items: baseline; justify-content: center; gap: 4px; }
+.hof2-stats b { font-size: 14px; } .hof2-stats small { font-size: 11px; }
+.hof2-shows.n2 { grid-template-columns: 1fr 1fr; }
+.hof2-show { padding: 5px 5px 5px 6px; gap: 4px; border-radius: 12px; flex-wrap: nowrap; }
+.hof2-show-ic { width: 24px; height: 24px; border-radius: 7px; font-size: 10px; }
+.hof2-show-a { gap: 6px; min-width: 0; flex: 1; }
+.hof2-show-tx { display: grid; min-width: 0; line-height: 1.15; }
+.hof2-show-tx b { font-size: 12px; } .hof2-show-tx small { font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hof2-show .rx { flex: none; flex-wrap: nowrap; gap: 3px; }
+.hof2-show .rx-who { display: none; }
+.hof2-show .rx-pill:nth-child(n+2) { display: none; }
+.hof2-row .co-btn.sm { height: 30px; }
+.hof2-f { padding-top: 6px; }

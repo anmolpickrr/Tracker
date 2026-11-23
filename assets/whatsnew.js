@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-hof-v5', date: '2026-11-24', kind: 'improved', who: 'all', title: 'Hall of Fame card: tighter and cleaner',
+    what: 'The card is about a third shorter.',
+    does: 'Edit and Remove are small icons beside the name, reactions sit on the same line as the award date, stats are one slim line and the two creatives sit side by side.',
+    how: 'Click the Hall of Fame beside the clock.'
+  },
+  {
     id: '2026-11-24-hof-perm', date: '2026-11-24', kind: 'improved', who: 'page:access', title: 'Choose who manages the Hall of Fame',
     what: 'The Access page has a Hall of Fame row for each person: View, Feature or Full control.',
     does: 'View: see, cheer and react. Feature: give and remove awards. Full control: also edit awards and their creatives. Nobody but the Creative Head has Feature or Full control until you grant it, Admins included.',

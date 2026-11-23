@@ -9,6 +9,7 @@ window.CO_HOFINIT = function (api) {
   const SD = () => window.CO_studio || {};
   const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
   const btn = (t, c, fn) => { const b = el('button', c, t); b.type = 'button'; if (fn) b.addEventListener('click', fn); return b; };
+  const ibtn = (label, path, fn) => { const b = btn('', 'hof2-ib', fn); b.setAttribute('aria-label', label); b.title = label; b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + path + '</svg>'; return b; };
   const first = (n) => String(n || '').split(' ')[0];
   const reduce = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -165,13 +166,13 @@ window.CO_HOFINIT = function (api) {
       stage.addEventListener('click', () => { const f = stage.querySelector('.pf'); const mv = MOVES[(MOVES.findIndex((v) => f.classList.contains('mv-' + v[0])) + 1) % MOVES.length][0]; f.className = f.className.replace(/mv-\w+/, 'mv-' + mv); });
       const body = el('div', 'hof2-b');
       const nm = el('b', 'hof2-name', m.name); const per = P(ch.persona); const sub = el('small', 'hof2-sub', (m.role || 'Team') + ' · ' + per[1]);
-      body.append(nm, sub);
+      const tools = el('div', 'hof2-tools'); body.append(tools, nm, sub);
       const badges = el('div', 'hof2-badges');
       m.awards.slice(0, 3).forEach((a) => { const t2 = tagOf(a.tag), b = el('span', 'hof2-badge', a.title); b.style.setProperty('--bc', t2[1]); b.title = a.note || ''; badges.append(b); });
       m.stars.slice(0, 2).forEach((s) => { const b = el('span', 'hof2-badge star', s.title); b.style.setProperty('--bc', '#ddff00'); b.title = s.line; badges.append(b); });
       if (!badges.childNodes.length) badges.append(el('span', 'hof2-quiet', 'No badges yet this week'));
       body.append(badges);
-      if (aw && aw.note) { const q = el('figure', 'hof2-quote'); q.style.setProperty('--qc', tagOf(aw.tag)[1]); const mk = el('span', 'hof2-qm', '“'); mk.setAttribute('aria-hidden', 'true'); const bq = el('blockquote', '', aw.note); const cap = el('figcaption', '', aw.at ? 'Awarded ' + CO.fmtDate(String(aw.at).slice(0, 10)) : ''); q.append(mk, bq, cap); const rb = reactBar('rx:' + aw.id + ':m'); q.append(rb); q.addEventListener('dblclick', (e) => { e.preventDefault(); rb.react('❤️', true, e); }); body.append(q); }
+      if (aw && aw.note) { const q = el('figure', 'hof2-quote'); q.style.setProperty('--qc', tagOf(aw.tag)[1]); const mk = el('span', 'hof2-qm', '“'); mk.setAttribute('aria-hidden', 'true'); const bq = el('blockquote', '', aw.note); const cap = el('figcaption', '', aw.at ? 'Awarded ' + CO.fmtDate(String(aw.at).slice(0, 10)) : ''); const rb = reactBar('rx:' + aw.id + ':m'); const qf = el('div', 'hof2-qf'); qf.append(cap, rb); q.append(mk, bq, qf); q.addEventListener('dblclick', (e) => { e.preventDefault(); rb.react('❤️', true, e); }); body.append(q); }
       const stats = el('div', 'hof2-stats');
       [[m.week, 'this week'], [m.last, 'last week'], [m.awards.length, m.awards.length === 1 ? 'award' : 'awards']].forEach(([v, l]) => { const s2 = el('span'); s2.append(el('b', '', String(v)), el('small', '', l)); stats.append(s2); });
       body.append(stats);
@@ -179,11 +180,11 @@ window.CO_HOFINIT = function (api) {
       if (S2.cheerBtn) row.append(S2.cheerBtn('pw:' + m.name + ':' + mon, true));
       if (S2.state && S2.state.canAward) {
         const live = (S2.state.awards || []).length;
-        if (aw) row.append(btn('Remove', 'co-btn sm ghost', async () => { if (!confirm('Remove ' + m.name + ' from the Hall of Fame?')) return; try { await post({ action: 'awardDelete', id: aw.id }); S2.state.awards = S2.state.awards.filter((y) => y.id !== aw.id); W.key = ''; renderAll(); toast('Removed'); } catch (e) { toast(e.message, true); } }));
+        if (aw) tools.append(ibtn('Remove from Hall of Fame', '<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>',  async () => { if (!confirm('Remove ' + m.name + ' from the Hall of Fame?')) return; try { await post({ action: 'awardDelete', id: aw.id }); S2.state.awards = S2.state.awards.filter((y) => y.id !== aw.id); W.key = ''; renderAll(); toast('Removed'); } catch (e) { toast(e.message, true); } }));
         else if (live < 3) row.append(btn('Feature in Hall of Fame', 'co-btn sm primary', () => { popClose(); S2.award({ who: m.name }); }));
       }
-      if (aw) { const L2 = S2.awLinks ? S2.awLinks(aw) : [aw.link].filter(Boolean); if (L2.length) { const sc = el('div', 'hof2-shows'); L2.forEach((u, k) => { const t = el('div', 'hof2-show'); const a = el('a', 'hof2-show-a'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.append(el('span', 'hof2-show-ic', linkIcon(u)), el('b', '', L2.length > 1 ? 'Creative ' + (k + 1) : 'The creative'), el('small', '', host(u) + ' ↗')); t.append(a, reactBar('rx:' + aw.id + ':c' + (k + 1))); sc.append(t); }); body.append(sc); } }
-      if (aw && S2.state && S2.state.canEditAward && S2.award) row.append(btn('Edit', 'co-btn sm ghost hof2-edit', () => { popClose(); S2.award(aw); }));
+      if (aw) { const L2 = S2.awLinks ? S2.awLinks(aw) : [aw.link].filter(Boolean); if (L2.length) { const sc = el('div', 'hof2-shows n' + L2.length); L2.forEach((u, k) => { const t = el('div', 'hof2-show'); const a = el('a', 'hof2-show-a'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.title = 'Open ' + host(u); const tx2 = el('span', 'hof2-show-tx'); tx2.append(el('b', '', L2.length > 1 ? 'Creative ' + (k + 1) : 'Creative'), el('small', '', host(u) + ' ↗')); a.append(el('span', 'hof2-show-ic', linkIcon(u)), tx2); t.append(a, reactBar('rx:' + aw.id + ':c' + (k + 1))); sc.append(t); }); body.append(sc); } }
+      if (aw && S2.state && S2.state.canEditAward && S2.award) tools.prepend(ibtn('Edit award', '<path d="M4 20h4L19 9l-4-4L4 16z"/>', () => { popClose(); S2.award(aw); }));
       body.append(row);
       card.append(stage, body); track.append(card);
     });
