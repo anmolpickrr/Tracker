@@ -125,6 +125,8 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 **Audio licensing:** every sound the dashboard plays is generated in the browser by our own code (Web Audio: notification tones and the Studio radio), so there are no third-party recordings and nothing to license. The team playlist only stores song names and links; tracks play on YouTube, Spotify, JioSaavn etc. under those services' licences, never on the dashboard.
 
+**Reactions (Nov 2026):** emoji reactions on award messages and on each showcased creative, stored in *Cheers* as `rx:<award id>:<m|c1|c2>:<emoji>` (one row per person per emoji, toggled). Both creatives are also written into the Link column (space-separated) so they show even before the web app has the *Link 2* column.
+
 **Team playlist (Nov 2026):** anyone signed in suggests trending songs (song, artist, language/genre, optional YouTube/Spotify/JioSaavn link) in the *Music* tab of the access sheet; likes are stored in *Cheers* as `mu:<id>`. Up to 10 suggestions a day per person; duplicates are refused; the suggester or an Admin can remove one. Open it from the Hall of Fame pop-up (♫) or bell > Sounds & music. Endpoints: `music`, `musicAdd`, `musicDel`.
 
 ## My work (team members)

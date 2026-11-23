@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-reactions', date: '2026-11-24', kind: 'new', who: 'all', title: 'React with emojis in the Hall of Fame',
+    what: 'React to award messages and to each showcased creative with ❤️ 🔥 😂 😍 👏 🎉 💯 🙌.',
+    does: 'Tap the smiley to open the picker; your emoji floats up and the count pops. Tap a reaction again to undo. Double-click a message for a quick ❤️. Every showcased creative is listed, with its own reactions.',
+    how: 'Click the Hall of Fame beside the clock.'
+  },
+  {
     id: '2026-11-24-hof-compact', date: '2026-11-24', kind: 'improved', who: 'all', title: 'Hall of Fame pop-up: smaller and tidier',
     what: 'The pop-up is narrower and shorter, with the stats in one line and actions on one row.',
     does: 'It never grows past the screen; long content scrolls inside it.',

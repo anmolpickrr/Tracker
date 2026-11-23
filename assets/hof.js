@@ -171,7 +171,7 @@ window.CO_HOFINIT = function (api) {
       m.stars.slice(0, 2).forEach((s) => { const b = el('span', 'hof2-badge star', s.title); b.style.setProperty('--bc', '#ddff00'); b.title = s.line; badges.append(b); });
       if (!badges.childNodes.length) badges.append(el('span', 'hof2-quiet', 'No badges yet this week'));
       body.append(badges);
-      if (aw && aw.note) { const q = el('figure', 'hof2-quote'); q.style.setProperty('--qc', tagOf(aw.tag)[1]); const mk = el('span', 'hof2-qm', '“'); mk.setAttribute('aria-hidden', 'true'); const bq = el('blockquote', '', aw.note); const cap = el('figcaption', '', aw.at ? 'Awarded ' + CO.fmtDate(String(aw.at).slice(0, 10)) : ''); q.append(mk, bq, cap); body.append(q); }
+      if (aw && aw.note) { const q = el('figure', 'hof2-quote'); q.style.setProperty('--qc', tagOf(aw.tag)[1]); const mk = el('span', 'hof2-qm', '“'); mk.setAttribute('aria-hidden', 'true'); const bq = el('blockquote', '', aw.note); const cap = el('figcaption', '', aw.at ? 'Awarded ' + CO.fmtDate(String(aw.at).slice(0, 10)) : ''); q.append(mk, bq, cap); const rb = reactBar('rx:' + aw.id + ':m'); q.append(rb); q.addEventListener('dblclick', (e) => { e.preventDefault(); rb.react('❤️', true, e); }); body.append(q); }
       const stats = el('div', 'hof2-stats');
       [[m.week, 'this week'], [m.last, 'last week'], [m.awards.length, m.awards.length === 1 ? 'award' : 'awards']].forEach(([v, l]) => { const s2 = el('span'); s2.append(el('b', '', String(v)), el('small', '', l)); stats.append(s2); });
       body.append(stats);
@@ -182,7 +182,7 @@ window.CO_HOFINIT = function (api) {
         if (aw) row.append(btn('Remove', 'co-btn sm ghost', async () => { if (!confirm('Remove ' + m.name + ' from the Hall of Fame?')) return; try { await post({ action: 'awardDelete', id: aw.id }); S2.state.awards = S2.state.awards.filter((y) => y.id !== aw.id); W.key = ''; renderAll(); toast('Removed'); } catch (e) { toast(e.message, true); } }));
         else if (live < 3) row.append(btn('Feature in Hall of Fame', 'co-btn sm primary', () => { popClose(); S2.award({ who: m.name }); }));
       }
-      if (aw && (aw.link || aw.link2)) { const L2 = [aw.link, aw.link2].filter(Boolean); const sc = el('div', 'hof2-shows'); sc.append(el('small', '', L2.length > 1 ? 'Showcase' : 'Showcase')); L2.forEach((u, k) => { const a = el('a', 'hof2-show', L2.length > 1 ? 'Creative ' + (k + 1) + ' ↗' : 'See the creative ↗'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; sc.append(a); }); body.append(sc); }
+      if (aw) { const L2 = S2.awLinks ? S2.awLinks(aw) : [aw.link].filter(Boolean); if (L2.length) { const sc = el('div', 'hof2-shows'); L2.forEach((u, k) => { const t = el('div', 'hof2-show'); const a = el('a', 'hof2-show-a'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.append(el('span', 'hof2-show-ic', linkIcon(u)), el('b', '', L2.length > 1 ? 'Creative ' + (k + 1) : 'The creative'), el('small', '', host(u) + ' ↗')); t.append(a, reactBar('rx:' + aw.id + ':c' + (k + 1))); sc.append(t); }); body.append(sc); } }
       if (aw && A.user && A.user.owner && S2.award) row.append(btn('Edit', 'co-btn sm ghost hof2-edit', () => { popClose(); S2.award(aw); }));
       body.append(row);
       card.append(stage, body); track.append(card);
@@ -248,6 +248,54 @@ window.CO_HOFINIT = function (api) {
     d.append(head, body, foot);
   }
 
+
+
+  /* ---------- emoji reactions (on award messages and creatives) ----------
+     Stored with cheers: one key per target and emoji ("rx:<award>:<m|c1|c2>:<emoji>"), toggled per person. */
+  const EMO = ['❤️', '🔥', '😂', '😍', '👏', '🎉', '💯', '🙌'];
+  const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, '').replace(/^(drive|docs)\.google\.com$/, 'Google Drive'); } catch (e) { return 'link'; } };
+  const linkIcon = (u) => /figma/i.test(u) ? '◆' : /youtu|vimeo|\.mp4/i.test(u) ? '▶' : /drive|docs\.google/i.test(u) ? '▲' : /canva/i.test(u) ? '●' : '↗';
+  let pickerOpen = null;
+  function reactBar(base) {
+    const S2 = SD(), C = () => (S2.state && S2.state.cheers) || {};
+    const bar = el('div', 'rx'); bar.dataset.k = base;
+    const pills = el('div', 'rx-pills'), add = btn('', 'rx-add'); add.setAttribute('aria-label', 'Add a reaction'); add.setAttribute('aria-haspopup', 'true');
+    add.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg><i>+</i>';
+    const paint = (bump) => {
+      pills.replaceChildren();
+      EMO.forEach((e) => { const c = C()[base + ':' + e]; if (!c || !c.n) return; const p = btn('', 'rx-pill' + (c.mine ? ' on' : '') + (bump === e ? ' bump' : '')); p.append(el('span', 'rx-e', e), el('b', '', String(c.n))); p.setAttribute('aria-pressed', String(!!c.mine)); p.setAttribute('aria-label', e + ' ' + c.n + (c.mine ? ', you reacted' : '')); p.title = c.mine ? 'You reacted. Tap to undo.' : 'Tap to react ' + e; p.addEventListener('click', (ev) => bar.react(e, false, ev)); pills.append(p); });
+    };
+    bar.react = async (e, onlyOn, ev) => {
+      const k = base + ':' + e, all = C(), cur = all[k] || { n: 0, mine: false, who: [] };
+      if (onlyOn && cur.mine) { fly(e, ev, bar); return; }
+      const on = !cur.mine; all[k] = Object.assign({}, cur, { mine: on, n: Math.max(0, cur.n + (on ? 1 : -1)) });
+      if (S2.state) S2.state.cheers = all;
+      paint(on ? e : ''); if (on) { fly(e, ev, bar); try { if (navigator.vibrate) navigator.vibrate(12); } catch (x) { /* ignore */ } }
+      try { await post({ action: 'cheer', key: k }); } catch (err) { all[k] = cur; paint(); toast('Reaction not saved: ' + err.message, true); }
+    };
+    add.addEventListener('click', (ev) => { ev.stopPropagation(); openPicker(add, bar); });
+    bar.append(pills, add); paint(); return bar;
+  }
+  function openPicker(anchor, bar) {
+    if (pickerOpen) { const was = pickerOpen.bar; closePicker(); if (was === bar) return; }
+    const pk = el('div', 'rx-pick'); pk.setAttribute('role', 'menu'); pk.setAttribute('aria-label', 'React');
+    EMO.forEach((e, i) => { const b = btn(e, 'rx-opt'); b.style.setProperty('--i', i); b.setAttribute('role', 'menuitem'); b.setAttribute('aria-label', 'React ' + e); b.addEventListener('click', (ev) => { ev.stopPropagation(); bar.react(e, false, ev); closePicker(); }); pk.append(b); });
+    document.body.append(pk);
+    const r = anchor.getBoundingClientRect(), w = pk.offsetWidth, h = pk.offsetHeight;
+    pk.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + 'px';
+    pk.style.top = (r.top - h - 8 > 8 ? r.top - h - 8 : r.bottom + 8) + 'px';
+    requestAnimationFrame(() => pk.classList.add('in'));
+    const off = (ev) => { if (!pk.contains(ev.target)) closePicker(); }, key = (ev) => { if (ev.key === 'Escape') closePicker(); };
+    setTimeout(() => { document.addEventListener('pointerdown', off, true); document.addEventListener('keydown', key); }, 0);
+    pickerOpen = { pk, bar, off, key }; const f = pk.querySelector('.rx-opt'); if (f) f.focus({ preventScroll: true });
+  }
+  function closePicker() { if (!pickerOpen) return; const { pk, off, key } = pickerOpen; document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', key); pk.classList.remove('in'); setTimeout(() => pk.remove(), 180); pickerOpen = null; }
+  // the emoji floats up from where you tapped (a few copies for a burst)
+  function fly(e, ev, near) {
+    if (reduce()) return;
+    const r = near.getBoundingClientRect(), x = ev && ev.clientX ? ev.clientX : r.left + 20, y = ev && ev.clientY ? ev.clientY : r.top;
+    for (let i = 0; i < 5; i++) { const f = el('span', 'rx-fly', e); f.style.left = x + 'px'; f.style.top = y + 'px'; f.style.setProperty('--dx', ((Math.random() - 0.5) * 80).toFixed(0) + 'px'); f.style.setProperty('--d', (i * 60) + 'ms'); f.style.setProperty('--s', (i ? 0.6 + Math.random() * 0.5 : 1.5).toFixed(2)); document.body.append(f); setTimeout(() => f.remove(), 1300 + i * 60); }
+  }
 
   /* ---------- team playlist: anyone suggests trending songs (any language), others like them ---------- */
   const PL = { list: null, langs: ['Hindi', 'Punjabi', 'English', 'Tamil', 'Telugu', 'Bengali', 'Marathi', 'Haryanvi', 'Bhojpuri', 'Gujarati', 'Malayalam', 'Kannada', 'K-pop', 'Lo-fi', 'Instrumental', 'Other'], f: '', err: '' };
