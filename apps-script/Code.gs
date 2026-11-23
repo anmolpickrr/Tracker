@@ -554,9 +554,15 @@ function updateTask_(body, mine, pm, contentMine) {
   if (!id) return { ok: false, error: 'This task has no ID in the sheet, so it can only be edited there.' };
   const f = body.fields || {};
   const sheet = openTab_(src);
-  const lastCol = sheet.getLastColumn(), lastRow = sheet.getLastRow();
+  let lastCol = sheet.getLastColumn();
+  const lastRow = sheet.getLastRow();
   const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function (h) { return clean_(h).toLowerCase(); });
   const c = taskColumns_(kindOf_(body.source), head);
+  // No "Open File" column yet: add one at the end of the header row, so the link has somewhere to go.
+  if (f.file != null && String(f.file).trim() !== '' && c.file < 0) {
+    sheet.getRange(1, lastCol + 1).setValue('Open File');
+    c.file = lastCol; lastCol++;
+  }
 
   // Locate the row: trust the hint only if the ID there still matches.
   let row = Number(body.row) || 0;

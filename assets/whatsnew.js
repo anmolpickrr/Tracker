@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-23-open-file-col', date: '2026-11-23', kind: 'fixed', who: 'all', title: 'Open File links now save on every sheet',
+    what: 'Saving an Open File link failed on sheets that had no Open File column.',
+    does: 'The dashboard now adds an "Open File" column at the end of that sheet the first time a link is saved.',
+    how: 'Nothing to do. Failed saves on the Issues page can simply be retried.'
+  },
+  {
     id: '2026-11-23-new-crew', date: '2026-11-23', kind: 'improved', who: 'all', title: 'A brand-new crew of characters',
     what: '20 new characters in a soft 3D toy style: comfy hoodie kids, a grumpy genius, a DJ, plus a fuzzy bear, baby gorilla, penguin, panda, little dragon and more.',
     does: 'Each comes as a designer, video editor or copywriter, with plush textures, big expressive eyes and attitude. All are our own originals.',
