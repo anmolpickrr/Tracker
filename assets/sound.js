@@ -147,6 +147,7 @@
       el.append(g);
     }
     el.append(sw('Vibration', P.haptic !== false, (v) => { P.haptic = v; save(); if (v) haptic('mention', true); }, navigator.vibrate ? 'A short buzz when a notification or reminder arrives.' : 'Buzzes on phones that support it; on this device the bell gives a short shake.'));
+    { const pb = mk('button', 'co-btn sm snd-pl', '♫ Team playlist: suggest trending songs'); pb.type = 'button'; pb.addEventListener('click', () => { if (window.CO_HOF && window.CO_HOF.playlist) window.CO_HOF.playlist(); }); el.append(pb); }
     el.append(sw('Studio radio (background music)', P.music, (v) => { P.music = v; P.asked = true; if (!v) music.pause(); save(); panel(el); }, 'Plays only on the Studio page, only when you press play.'));
   }
   ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { if (P.notify || P.music) { try { audio(); } catch (e) { /* no audio */ } } }, { once: true, capture: true }));

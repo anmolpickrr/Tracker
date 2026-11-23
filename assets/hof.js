@@ -144,16 +144,17 @@ window.CO_HOFINIT = function (api) {
   function place() { const r = W.el.getBoundingClientRect(), w = Math.min(380, window.innerWidth - 24); W.pop.style.width = w + 'px'; W.pop.style.top = (r.bottom + 8) + 'px'; W.pop.style.left = Math.max(12, Math.min(window.innerWidth - w - 12, r.left + r.width / 2 - w / 2)) + 'px'; }
   let curIdx = 0;
   function go(d) { const t = W.pop && W.pop.querySelector('.hof2-track'); if (!t) return; const n = t.children.length; curIdx = Math.max(0, Math.min(n - 1, curIdx + d)); t.children[curIdx].scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', inline: 'center', block: 'nearest' }); mark(); }
-  function mark() { const t = W.pop && W.pop.querySelector('.hof2-track'); if (!t) return; [...t.children].forEach((c, i) => c.classList.toggle('on', i === curIdx)); const ctr = W.pop.querySelector('.hof2-ctr'); if (ctr) ctr.textContent = (curIdx + 1) + ' / ' + t.children.length; const pv = W.pop.querySelector('.hof2-prev'), nx = W.pop.querySelector('.hof2-next'); if (pv) pv.disabled = curIdx === 0; if (nx) nx.disabled = curIdx >= t.children.length - 1; }
+  function mark() { const t = W.pop && W.pop.querySelector('.hof2-track'); if (!t) return; [...t.children].forEach((c, i) => c.classList.toggle('on', i === curIdx)); const ctr = W.pop.querySelector('.hof2-ctr'); if (ctr) { ctr.replaceChildren(); [...t.children].forEach((_, i) => { const d = el('i', i === curIdx ? 'on' : ''); ctr.append(d); }); ctr.setAttribute('aria-label', (curIdx + 1) + ' of ' + t.children.length); } const pv = W.pop.querySelector('.hof2-prev'), nx = W.pop.querySelector('.hof2-next'); if (pv) pv.disabled = curIdx === 0; if (nx) nx.disabled = curIdx >= t.children.length - 1; }
   function popPaint(first0) {
     const pop = W.pop; if (!pop) return; place();
     const keepScroll = !first0 && pop.querySelector('.hof2-track') ? curIdx : null;
     pop.replaceChildren();
     const S2 = SD(), t = CO.today(), mon = S2.mondayOf ? S2.mondayOf(t) : t;
-    const head = el('div', 'hof2-h'); const ht = el('div'); ht.append(el('b', '', 'Hall of Fame'), el('small', '', ((S2.state && S2.state.awards || []).length) + ' of 3 featured · swipe or use the arrows'));
+    const head = el('div', 'hof2-h'); const ht = el('div'); ht.append(el('b', '', 'Hall of Fame'));
     const x = btn('', 'hof2-x', popClose); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     head.append(ht, x); pop.append(head);
     const list = members();
+    ht.append(el('small', '', list.length ? list.length + ' of 3 featured' + (list.length > 1 ? ' · swipe or use the arrows' : '') : 'Nobody featured right now'));
     if (!list.length) { const e = el('div', 'hof2-empty'); e.innerHTML = '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M16 8h16v10a8 8 0 0 1-16 0z" fill="#f5c542" stroke="#b8860b" stroke-width="1.5"/><path d="M16 11h-6a6 6 0 0 0 7 7M32 11h6a6 6 0 0 1-7 7" fill="none" stroke="#b8860b" stroke-width="2"/><path d="M24 26v6M17 40h14l-2-8H19z" fill="#f5c542" stroke="#b8860b" stroke-width="1.5"/></svg>'; e.append(el('b', '', 'No one featured right now'), el('small', '', S2.state && S2.state.canAward ? 'Pick up to 3 people to celebrate.' : 'The Creative Head picks who is featured here.')); pop.append(e); }
     const wrap = el('div', 'hof2-wrap'), track = el('div', 'hof2-track'); track.tabIndex = 0; track.setAttribute('aria-label', 'Team members');
     list.forEach((m) => {
@@ -163,14 +164,14 @@ window.CO_HOFINIT = function (api) {
       stage.append(figure(ch, { label: m.name, crown: !!m.awards.find((a) => a.tag === 'best-performer'), sparkle: aw || m.stars.length ? color : '' }));
       stage.addEventListener('click', () => { const f = stage.querySelector('.pf'); const mv = MOVES[(MOVES.findIndex((v) => f.classList.contains('mv-' + v[0])) + 1) % MOVES.length][0]; f.className = f.className.replace(/mv-\w+/, 'mv-' + mv); });
       const body = el('div', 'hof2-b');
-      const nm = el('b', 'hof2-name', m.name); const per = P(ch.persona); const sub = el('small', 'hof2-sub', (m.role || 'Team') + ' · ' + per[1] + (ch.chosen ? '' : ' (until they pick one)'));
+      const nm = el('b', 'hof2-name', m.name); const per = P(ch.persona); const sub = el('small', 'hof2-sub', (m.role || 'Team') + ' · ' + per[1]);
       body.append(nm, sub);
       const badges = el('div', 'hof2-badges');
       m.awards.slice(0, 3).forEach((a) => { const t2 = tagOf(a.tag), b = el('span', 'hof2-badge', a.title); b.style.setProperty('--bc', t2[1]); b.title = a.note || ''; badges.append(b); });
       m.stars.slice(0, 2).forEach((s) => { const b = el('span', 'hof2-badge star', s.title); b.style.setProperty('--bc', '#ddff00'); b.title = s.line; badges.append(b); });
       if (!badges.childNodes.length) badges.append(el('span', 'hof2-quiet', 'No badges yet this week'));
       body.append(badges);
-      if (aw && aw.note) body.append(el('p', 'hof2-note', '“' + aw.note + '”'));
+      if (aw && aw.note) { const q = el('figure', 'hof2-quote'); q.style.setProperty('--qc', tagOf(aw.tag)[1]); const mk = el('span', 'hof2-qm', '“'); mk.setAttribute('aria-hidden', 'true'); const bq = el('blockquote', '', aw.note); const cap = el('figcaption', '', aw.title + (aw.at ? ' · ' + CO.fmtDate(String(aw.at).slice(0, 10)) : '')); q.append(mk, bq, cap); body.append(q); }
       const stats = el('div', 'hof2-stats');
       [[m.week, 'this week'], [m.last, 'last week'], [m.awards.length, m.awards.length === 1 ? 'award' : 'awards']].forEach(([v, l]) => { const s2 = el('span'); s2.append(el('b', '', String(v)), el('small', '', l)); stats.append(s2); });
       body.append(stats);
@@ -181,7 +182,7 @@ window.CO_HOFINIT = function (api) {
         if (aw) row.append(btn('Remove from Hall of Fame', 'co-btn sm ghost', async () => { if (!confirm('Remove ' + m.name + ' from the Hall of Fame?')) return; try { await post({ action: 'awardDelete', id: aw.id }); S2.state.awards = S2.state.awards.filter((y) => y.id !== aw.id); W.key = ''; renderAll(); toast('Removed'); } catch (e) { toast(e.message, true); } }));
         else if (live < 3) row.append(btn('Feature in Hall of Fame', 'co-btn sm primary', () => { popClose(); S2.award({ who: m.name }); }));
       }
-      if (aw && aw.link) { const a = el('a', 'stu-link', 'See the creative'); a.href = aw.link; a.target = '_blank'; a.rel = 'noopener'; row.append(a); }
+      if (aw && aw.link) { const a = el('a', 'co-btn sm ghost hof2-see', 'See the creative ↗'); a.href = aw.link; a.target = '_blank'; a.rel = 'noopener'; row.append(a); }
       body.append(row);
       card.append(stage, body); track.append(card);
     });
@@ -190,10 +191,11 @@ window.CO_HOFINIT = function (api) {
     wrap.append(track, pv, nx); pop.append(wrap);
     let st0 = 0; track.addEventListener('scroll', () => { clearTimeout(st0); st0 = setTimeout(() => { const w = track.clientWidth; curIdx = Math.round(track.scrollLeft / w); mark(); }, 60); }, { passive: true });
     const foot = el('div', 'hof2-f');
-    const ctr = el('span', 'hof2-ctr', ''); foot.append(ctr);
+    const ctr = el('span', 'hof2-ctr', ''); if (list.length < 2) ctr.hidden = true; foot.append(ctr);
     const mine = charOf(myDesigner() || (A.user && A.user.name));
-    if (S2.state && S2.state.canAward && list.length < 3) foot.append(btn('Feature someone', 'co-btn sm', () => { popClose(); S2.award(); }));
-    foot.append(btn(mine.chosen ? 'Change my character' : 'Choose my character', 'co-btn sm primary', () => { popClose(); pick(); }));
+    if (S2.state && S2.state.canAward && list.length < 3) foot.append(btn('+ Feature', 'co-btn sm', () => { popClose(); S2.award(); }));
+    { const pb = btn('♫', 'co-btn sm hof2-plb', () => { popClose(); playlist(); }); pb.setAttribute('aria-label', 'Team playlist'); pb.title = 'Team playlist: suggest trending songs'; foot.append(pb); }
+    foot.append(btn(mine.chosen ? 'My character' : 'Pick my character', 'co-btn sm primary', () => { popClose(); pick(); }));
     
     pop.append(foot);
     const start = keepScroll != null ? keepScroll : Math.max(0, list.findIndex((m) => m.name === W.start));
@@ -245,5 +247,50 @@ window.CO_HOFINIT = function (api) {
     d.append(head, body, foot);
   }
 
-  window.CO_HOF = { pick, open: popToggle, faceUrl, artUrl, charOf, PERSONAS, MOVES };
+
+  /* ---------- team playlist: anyone suggests trending songs (any language), others like them ---------- */
+  const PL = { list: null, langs: ['Hindi', 'Punjabi', 'English', 'Tamil', 'Telugu', 'Bengali', 'Marathi', 'Haryanvi', 'Bhojpuri', 'Gujarati', 'Malayalam', 'Kannada', 'K-pop', 'Lo-fi', 'Instrumental', 'Other'], f: '', err: '' };
+  const linkKind = (u) => /youtu/i.test(u) ? 'YouTube' : /spotify/i.test(u) ? 'Spotify' : /music\.apple/i.test(u) ? 'Apple Music' : /jiosaavn|saavn/i.test(u) ? 'JioSaavn' : /gaana/i.test(u) ? 'Gaana' : /wynk/i.test(u) ? 'Wynk' : 'Listen';
+  async function plLoad() { try { const r = await post({ action: 'music' }); PL.list = r.list || []; if (r.langs) PL.langs = r.langs; PL.err = ''; } catch (e) { PL.list = PL.list || []; PL.err = /unknown/i.test(e.message) ? 'The playlist needs the latest web app. It switches on after the next automatic update.' : e.message; } }
+  async function playlist() {
+    let d = document.getElementById('hof-pl'); if (!d) { d = el('dialog', 'co-dialog pl-dlg'); d.id = 'hof-pl'; d.setAttribute('aria-labelledby', 'pl-t'); document.body.append(d); d.addEventListener('click', (e) => { if (e.target === d) d.close(); }); }
+    const paint = () => {
+      d.replaceChildren();
+      const h = el('div', 'pl-h'); const ht = el('div'); const t = el('h2', '', 'Team playlist'); t.id = 'pl-t'; ht.append(t, el('p', 'co-note', 'Trending songs the team is into, in any language. Suggest one, like the ones you love.'));
+      const x = btn('', 'hof2-x', () => d.close()); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; h.append(ht, x);
+      // suggest
+      const form = el('form', 'pl-form'); form.noValidate = true;
+      const song = el('input', 'co-input'); song.placeholder = 'Song'; song.maxLength = 80; song.required = true; song.setAttribute('aria-label', 'Song');
+      const art = el('input', 'co-input'); art.placeholder = 'Artist'; art.maxLength = 60; art.setAttribute('aria-label', 'Artist');
+      const lang = el('select', 'co-select'); lang.setAttribute('aria-label', 'Language or genre'); PL.langs.forEach((l) => lang.append(new Option(l, l))); lang.value = 'Hindi';
+      const link = el('input', 'co-input'); link.type = 'url'; link.placeholder = 'Link (YouTube, Spotify…), optional'; link.setAttribute('aria-label', 'Link');
+      const add = el('button', 'co-btn primary', 'Suggest'); add.type = 'submit';
+      form.append(song, art, lang, link, add);
+      form.addEventListener('submit', async (e) => { e.preventDefault(); if (!song.value.trim()) { song.focus(); return; } if (link.value.trim() && !/^https:\/\/\S+\.\S+/i.test(link.value.trim())) { toast('Paste a full link that starts with https://', true); link.focus(); return; } add.disabled = true;
+        try { await post({ action: 'musicAdd', song: song.value, artist: art.value, lang: lang.value, link: link.value.trim() }); toast('Added to the team playlist'); await plLoad(); paint(); } catch (err) { add.disabled = false; toast(/unknown/i.test(err.message) ? 'The playlist switches on after the next web app update.' : err.message, true); } });
+      // language filter
+      const langsUsed = [...new Set((PL.list || []).map((m) => m.lang))];
+      const fl = el('div', 'pl-chips'); [''].concat(PL.langs.filter((l) => langsUsed.includes(l))).forEach((l) => { const b = btn(l || 'All', 'pl-chip' + (PL.f === l ? ' on' : ''), () => { PL.f = l; paint(); }); b.setAttribute('aria-pressed', String(PL.f === l)); fl.append(b); });
+      // list: most liked first, then newest
+      const ul = el('ol', 'pl-list');
+      const L = (PL.list || []).filter((m) => !PL.f || m.lang === PL.f).sort((a, b) => b.likes - a.likes || String(b.at).localeCompare(String(a.at)));
+      L.forEach((m, i) => {
+        const li = el('li', 'pl-row'); li.append(el('span', 'pl-n', String(i + 1)));
+        const tx = el('div', 'pl-tx'); tx.append(el('b', '', m.song), el('small', '', [m.artist, m.lang, 'by ' + first(m.by)].filter(Boolean).join(' · '))); li.append(tx);
+        if (m.link) { const a = el('a', 'pl-play', linkKind(m.link)); a.href = m.link; a.target = '_blank'; a.rel = 'noopener'; li.append(a); }
+        const lk = btn('', 'pl-like' + (m.liked ? ' on' : ''), async () => { m.liked = !m.liked; m.likes += m.liked ? 1 : -1; paint(); try { await post({ action: 'cheer', key: 'mu:' + m.id }); } catch (e) { m.liked = !m.liked; m.likes += m.liked ? 1 : -1; paint(); toast(e.message, true); } });
+        lk.setAttribute('aria-pressed', String(m.liked)); lk.setAttribute('aria-label', (m.liked ? 'Unlike ' : 'Like ') + m.song); lk.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/></svg>'; lk.append(el('span', '', String(m.likes))); li.append(lk);
+        if (m.canDel) { const del = btn('', 'pl-del', async () => { if (!confirm('Remove "' + m.song + '" from the playlist?')) return; try { await post({ action: 'musicDel', id: m.id }); PL.list = PL.list.filter((y) => y.id !== m.id); paint(); } catch (e) { toast(e.message, true); } }); del.setAttribute('aria-label', 'Remove ' + m.song); del.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; li.append(del); }
+        ul.append(li);
+      });
+      const body = el('div', 'pl-b'); body.append(form);
+      if (PL.err) body.append(el('p', 'pl-empty', PL.err));
+      else if (PL.list == null) body.append(el('p', 'pl-empty', 'Loading…'));
+      else if (!L.length) body.append(el('p', 'pl-empty', PL.f ? 'No ' + PL.f + ' songs yet. Suggest one above.' : 'No songs yet. Be the first to suggest one.'));
+      else { if (fl.childNodes.length > 2) body.append(fl); body.append(ul); }
+      d.append(h, body);
+    };
+    paint(); if (!d.open) d.showModal(); await plLoad(); if (d.open) paint();
+  }
+  window.CO_HOF = { playlist, pick, open: popToggle, faceUrl, artUrl, charOf, PERSONAS, MOVES };
 };

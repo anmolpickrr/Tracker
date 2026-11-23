@@ -5061,3 +5061,44 @@ a.stu-print:hover { border-color: var(--primary); }
 .aw-pv-why.ph { color: var(--muted); font-style: italic; }
 .aw-pv-link { justify-self: start; margin-top: 6px; padding: 3px 10px; border-radius: 999px; background: var(--sunken); font-size: 12px; }
 .aw-pv-meta { margin-top: 8px; color: var(--muted); font-size: 12px; }
+
+/* Hall of Fame pop-up polish (Nov 2026) */
+.hof2-quote { position: relative; margin: 4px 0 2px; padding: 12px 14px 10px 40px; border-radius: 16px; background: color-mix(in srgb, var(--qc, #7c5cff) 12%, var(--raised)); border: 1px solid color-mix(in srgb, var(--qc, #7c5cff) 30%, transparent); }
+.hof2-qm { position: absolute; left: 12px; top: 2px; font: 700 40px/1 var(--font-display); color: var(--qc, #7c5cff); }
+.hof2-quote blockquote { margin: 0; font-size: 14px; line-height: 1.45; font-weight: 500; color: var(--fg); overflow-wrap: anywhere; }
+.hof2-quote figcaption { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
+.hof2-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hof2-see { text-decoration: none; }
+.hof2-f { flex-wrap: wrap; justify-content: flex-end; }
+.hof2-ctr { display: inline-flex; gap: 6px; align-items: center; }
+.hof2-ctr i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); transition: width .2s, background .2s; }
+.hof2-ctr i.on { width: 18px; border-radius: 99px; background: var(--violet, #6b4dff); }
+
+/* Team playlist */
+.pl-dlg { width: min(620px, calc(100vw - 32px)); padding: 0; border-radius: 26px; }
+.pl-h { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding: 22px 22px 6px; }
+.pl-h h2 { margin: 0; font: 700 24px/1.1 var(--font-display); }
+.pl-h .co-note { margin: 4px 0 0; }
+.pl-b { display: grid; gap: 14px; padding: 12px 22px 22px; max-height: min(70vh, 640px); overflow: auto; }
+.pl-form { display: grid; grid-template-columns: 1.3fr 1fr 0.9fr; gap: 8px; padding: 12px; border-radius: 18px; background: var(--sunken); }
+.pl-form input[type="url"] { grid-column: 1 / 3; }
+.pl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pl-chip { height: 30px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: transparent; color: var(--fg-2); cursor: pointer; font-size: 12.5px; }
+.pl-chip.on { background: var(--fg); color: var(--bg, #fff); border-color: var(--fg); }
+.pl-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pl-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: var(--raised); border: 1px solid var(--line); }
+.pl-n { width: 22px; text-align: center; font: 700 15px/1 var(--font-display); color: var(--muted); font-variant-numeric: tabular-nums; }
+.pl-tx { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.pl-tx b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-tx small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-play { flex: none; height: 30px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 99px; background: #ddff00; color: #141414; font-size: 12px; font-weight: 600; text-decoration: none; }
+.pl-like { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--line); background: transparent; color: var(--fg-2); cursor: pointer; font-size: 12px; }
+.pl-like svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; }
+.pl-like.on { color: #ff5a26; border-color: color-mix(in srgb, #ff5a26 40%, transparent); } .pl-like.on svg { fill: currentColor; }
+.pl-del { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 0; background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+.pl-del svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; }
+.pl-empty { margin: 4px 0; color: var(--muted); font-size: 13px; }
+.snd-pl { justify-self: start; margin: 4px 0; }
+@media (max-width: 560px) { .pl-form { grid-template-columns: 1fr 1fr; } .pl-form input[type="url"] { grid-column: 1 / -1; } .pl-form .co-btn { grid-column: 1 / -1; } .pl-play { display: none; } }
+.hof2-f { flex-wrap: nowrap; } .hof2-plb { width: 34px; padding: 0 !important; font-size: 16px; justify-content: center; }
+.hof2-ctr i { background: color-mix(in srgb, var(--muted) 55%, transparent); } .hof2-ctr i.on { background: var(--violet, #6b4dff); }

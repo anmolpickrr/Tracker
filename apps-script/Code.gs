@@ -32,7 +32,7 @@ const PAGE_KEYS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'report
 const OWNER_ONLY = { settings: 1, saveSettings: 1 };
 // The owner and everyone with the Admin role manage access and see the activity log and live team activity.
 const ADMIN_ONLY = { users: 1, setAccess: 1, audit: 1, presence: 1 };
-function isAdminUser_(u) { return !!u && (u.owner || isOwner_(u.email) || u.role === 'Admin'); }
+function isAdminUser_(u) { return !!u && (u.owner || isAdminUser_(u)); }
 function defaultPerms_(role) {
   // View only sees only their own work by default; Can edit and Admin see everyone's work (Creative Head, Nov 2026:
   // edit access means working with all tasks, brands and people, e.g. KAMs who are not on the designer team list).
@@ -93,7 +93,7 @@ function allowed_(u, action) {
   if (action === 'packageSave' || action === 'packageDelete') return p.packages === 'edit';
   return true;
 }
-const NEEDS = { inbox: 'Viewer', soundPrefs: 'Viewer', notifySend: 'Viewer', studio: 'Viewer', charImage: 'Viewer', charMake: 'Viewer', profileSave: 'Viewer', awardSave: 'Viewer', awardDelete: 'Viewer', cheer: 'Viewer', me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Viewer', issueAct: 'Viewer', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { inbox: 'Viewer', soundPrefs: 'Viewer', notifySend: 'Viewer', studio: 'Viewer', charImage: 'Viewer', charMake: 'Viewer', profileSave: 'Viewer', awardSave: 'Viewer', awardDelete: 'Viewer', cheer: 'Viewer', music: 'Viewer', musicAdd: 'Viewer', musicDel: 'Viewer', me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Viewer', issueAct: 'Viewer', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -475,6 +475,9 @@ function write_(body, user) {
     else if (body.action === 'awardSave') out = awardSave_(body, user);
     else if (body.action === 'awardDelete') out = awardDelete_(body, user);
     else if (body.action === 'cheer') out = cheer_(body, user);
+    else if (body.action === 'music') out = music_(user);
+    else if (body.action === 'musicAdd') out = musicAdd_(body, user);
+    else if (body.action === 'musicDel') out = musicDel_(body, user);
     else if (body.action === 'soundPrefs') out = soundPrefs_(body, user);
     else if (body.action === 'notifySend') out = notifySend_(body, user);
     else if (body.action === 'prefs') out = prefs_(body, user);
@@ -3003,6 +3006,34 @@ function awardDelete_(b, u) {
   if (i < 0) return { ok: false, error: 'This award is no longer there.' };
   A.sh.getRange(i + 2, 10).setValue(true);
   return { ok: true, changes: [{ action: 'Award removed', sheet: 'Awards', record: String(A.rows[i][1]), details: String(A.rows[i][2]) }] };
+}
+/* Team playlist: anyone signed in suggests a trending song (any language or genre); likes use the Cheers tab ("mu:<id>"). */
+const MUSIC_HEAD = ['ID', 'At', 'Email', 'Name', 'Song', 'Artist', 'Language', 'Link'];
+const MUSIC_LANGS = ['Hindi', 'Punjabi', 'English', 'Tamil', 'Telugu', 'Bengali', 'Marathi', 'Haryanvi', 'Bhojpuri', 'Gujarati', 'Malayalam', 'Kannada', 'K-pop', 'Lo-fi', 'Instrumental', 'Other'];
+function music_(u) {
+  const M = studioRows_('Music', MUSIC_HEAD), C = studioRows_('Cheers', CHEER_HEAD), likes = {}, mine = {};
+  C.rows.forEach(function (r) { const k = String(r[0]); if (k.indexOf('mu:') !== 0) return; likes[k] = (likes[k] || 0) + 1; if (String(r[1]).toLowerCase() === u.email) mine[k] = true; });
+  const admin = isAdminUser_(u);
+  const list = M.rows.filter(function (r) { return r[0]; }).map(function (r) { const k = 'mu:' + r[0]; return { id: String(r[0]), at: iso_(r[1]), by: String(r[3] || ''), song: String(r[4] || ''), artist: String(r[5] || ''), lang: String(r[6] || ''), link: String(r[7] || ''), likes: likes[k] || 0, liked: !!mine[k], mine: String(r[2]).toLowerCase() === u.email, canDel: admin || String(r[2]).toLowerCase() === u.email }; });
+  return { ok: true, list: list.reverse().slice(0, 200), langs: MUSIC_LANGS };
+}
+function musicAdd_(b, u) {
+  const song = clean_(b.song).slice(0, 80), artist = clean_(b.artist).slice(0, 60), lang = MUSIC_LANGS.indexOf(clean_(b.lang)) >= 0 ? clean_(b.lang) : 'Other', link = clean_(b.link).slice(0, 500);
+  if (!song) return { ok: false, error: 'Add the song name.' };
+  if (!plain_(song) || (artist && !plain_(artist))) return { ok: false, error: 'Names cannot start with = + - or @' };
+  if (link && !/^https:\/\/[^\s"'<>]{4,490}$/i.test(link)) return { ok: false, error: 'The link must be a full https:// address (YouTube, Spotify…).' };
+  const M = studioRows_('Music', MUSIC_HEAD);
+  if (M.rows.some(function (r) { return String(r[4]).toLowerCase() === song.toLowerCase() && String(r[5]).toLowerCase() === artist.toLowerCase(); })) return { ok: false, error: 'That song is already on the playlist. Give it a like instead.' };
+  if (M.rows.filter(function (r) { return String(r[2]).toLowerCase() === u.email && new Date(r[1]) > new Date(Date.now() - 864e5); }).length >= 10) return { ok: false, error: 'Up to 10 suggestions a day.' };
+  const id = 'M' + Utilities.getUuid().slice(0, 8);
+  M.sh.appendRow([id, new Date(), u.email, clean_(u.name).slice(0, 80), safe_(song), safe_(artist), lang, link]);
+  return { ok: true, id: id, changes: [{ action: 'Song suggested', sheet: 'Music', record: song, details: [artist, lang].filter(String).join(' · ') }] };
+}
+function musicDel_(b, u) {
+  const M = studioRows_('Music', MUSIC_HEAD), i = M.rows.findIndex(function (r) { return String(r[0]) === String(b.id); });
+  if (i < 0) return { ok: true };
+  if (!(isAdminUser_(u) || String(M.rows[i][2]).toLowerCase() === u.email)) return { ok: false, error: 'Only the person who suggested it or an Admin can remove it.' };
+  M.sh.deleteRow(i + 2); return { ok: true };
 }
 function cheer_(b, u) {
   const key = clean_(b.key).slice(0, 120); if (!key) return { ok: false, error: 'Nothing to cheer.' };

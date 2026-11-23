@@ -4,6 +4,18 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-playlist', date: '2026-11-24', kind: 'new', who: 'all', title: 'Team playlist: suggest trending songs',
+    what: 'Anyone can suggest a trending song, in Hindi, Punjabi, English, Tamil, Telugu and more, or a genre like Lo-fi.',
+    does: 'Add the song, artist, language and a YouTube or Spotify link. Everyone can like songs; the most liked rise to the top, and you can filter by language.',
+    how: 'Hall of Fame (beside the clock) > the ♫ button, or bell > Sounds & music > Team playlist.'
+  },
+  {
+    id: '2026-11-24-hof-polish', date: '2026-11-24', kind: 'improved', who: 'all', title: 'Hall of Fame card, polished',
+    what: 'The reason for an award is now a proper quote card in the award\'s colour, with the award name and date.',
+    does: 'The count at the top matches who is shown, a dot indicator replaces "1 / 1", and the buttons are tidier.',
+    how: 'Click the Hall of Fame beside the clock.'
+  },
+  {
     id: '2026-11-23-award-preview', date: '2026-11-23', kind: 'improved', who: 'all', title: 'A proper preview when featuring someone',
     what: 'The Hall of Fame dialog now previews the award with the person\'s own character, in the award\'s colour.',
     does: 'The name, the reason (as you type) and how long it stays featured all update live.',
