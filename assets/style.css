@@ -5030,3 +5030,8 @@ a.stu-print:hover { border-color: var(--primary); }
 .mw-grp.late .mw-grp-h { color: var(--org-ink, #c2410c); }
 @media (max-width: 1100px) { .mw-tiles.mw-tiles6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .mw-tiles.mw-tiles6 { grid-template-columns: 1fr 1fr; } }
+
+/* notification haptic: the bell shakes */
+#btn-bell.buzz svg { animation: bellBuzz .6s cubic-bezier(.36,.07,.19,.97); transform-origin: 50% 10%; }
+@keyframes bellBuzz { 0%,100% { transform: rotate(0); } 15% { transform: rotate(16deg); } 30% { transform: rotate(-14deg); } 45% { transform: rotate(10deg); } 60% { transform: rotate(-8deg); } 75% { transform: rotate(4deg); } }
+@media (prefers-reduced-motion: reduce) { #btn-bell.buzz svg { animation: none; } }

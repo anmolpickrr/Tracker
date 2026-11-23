@@ -3050,7 +3050,7 @@ function charMake_(b, u) {
    send each other from the dashboard: mentions (to chosen people, with a link to what they are about), announcements
    (Admins, to everyone) and achievements (an award, to everyone). The rest of the bell is worked out on each screen. */
 function soundPrefs_(b, u) {
-  const p = b.prefs && typeof b.prefs === 'object' ? b.prefs : {}, keep = { asked: !!p.asked, notify: !!p.notify, music: !!p.music, vol: Math.max(0, Math.min(1, Number(p.vol) || 0)), mvol: Math.max(0, Math.min(1, Number(p.mvol) || 0)), types: {} };
+  const p = b.prefs && typeof b.prefs === 'object' ? b.prefs : {}, keep = { v: Number(p.v) === 2 ? 2 : 1, haptic: p.haptic !== false, asked: !!p.asked, notify: !!p.notify, music: !!p.music, vol: Math.max(0, Math.min(1, Number(p.vol) || 0)), mvol: Math.max(0, Math.min(1, Number(p.mvol) || 0)), types: {} };
   ['reminder', 'mention', 'task', 'achievement', 'announcement'].forEach(function (k) { keep.types[k] = !(p.types && p.types[k] === false); });
   const P = studioRows_('Profiles', PROF_HEAD), i = P.rows.findIndex(function (r) { return String(r[0]).toLowerCase() === u.email; });
   if (i >= 0) P.sh.getRange(i + 2, 7).setValue(JSON.stringify(keep)); else P.sh.appendRow([u.email, clean_(u.name).slice(0, 80), '', '', '', new Date(), JSON.stringify(keep), '']);

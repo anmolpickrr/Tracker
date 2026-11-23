@@ -8,7 +8,7 @@
 (function () {
   'use strict';
   const KEY = 'co.snd';
-  const DEF = { v: 2, asked: true, notify: true, music: true, vol: 0.55, mvol: 0.4, types: { reminder: true, mention: true, task: true, achievement: true, announcement: true } };
+  const DEF = { v: 2, asked: true, notify: true, music: true, haptic: true, vol: 0.55, mvol: 0.4, types: { reminder: true, mention: true, task: true, achievement: true, announcement: true } };
   let P = DEF; try { P = Object.assign({}, DEF, JSON.parse(localStorage.getItem(KEY) || '{}')); P.types = Object.assign({}, DEF.types, P.types || {}); } catch (e) { P = Object.assign({}, DEF); }
   let saver = null; const listeners = new Set();
   // On for everyone by default (Nov 2026): older saved choices are switched on once; anything changed after that is kept.
@@ -57,7 +57,18 @@
     announcement: (t) => { [60, 64, 67, 71].forEach((m, i) => tone(sfx, t + i * 0.03, hz(m), 1.3, { type: 'triangle', gain: 0.16, attack: 0.08, lp: 1800 })); tone(sfx, t + 0.4, hz(83), 0.8, { gain: 0.12 }); }
   };
   let lastAt = 0;
+  // Vibration on phones that support it (Android); everywhere, the bell gives a short shake so it is felt on screen too.
+  const BUZZ = { reminder: [180, 80, 180], mention: [60, 50, 60], task: [70], achievement: [40, 40, 40, 40, 120], announcement: [120, 60, 120] };
+  let lastBuzz = 0;
+  function haptic(type, force) {
+    if (!force && (P.haptic === false || (P.types && P.types[type] === false))) return false;
+    if (!force && Date.now() - lastBuzz < 900) return false; lastBuzz = Date.now();
+    try { if (navigator.vibrate) navigator.vibrate(BUZZ[type] || BUZZ.task); } catch (e) { /* not allowed */ }
+    const bell = document.getElementById('btn-bell'); if (bell) { bell.classList.remove('buzz'); void bell.offsetWidth; bell.classList.add('buzz'); setTimeout(() => bell.classList.remove('buzz'), 700); }
+    return true;
+  }
   function play(type, force) {
+    if (!force) haptic(type);
     if (!force && (!P.notify || !P.types[type])) return false;
     if (!force && Date.now() - lastAt < 900) return false; // never a burst of sounds
     if (!audio()) return false; lastAt = Date.now();
@@ -135,8 +146,9 @@
       TYPES.forEach(([k, t, d]) => { const row = mk('div', 'snd-type'); row.append(sw(t, P.types[k], (v) => { P.types[k] = v; save(); })); const b = mk('button', 'co-link', 'Play'); b.type = 'button'; b.title = d; b.addEventListener('click', () => play(k, true)); row.append(b); g.append(row); });
       el.append(g);
     }
+    el.append(sw('Vibration', P.haptic !== false, (v) => { P.haptic = v; save(); if (v) haptic('mention', true); }, navigator.vibrate ? 'A short buzz when a notification or reminder arrives.' : 'Buzzes on phones that support it; on this device the bell gives a short shake.'));
     el.append(sw('Studio radio (background music)', P.music, (v) => { P.music = v; P.asked = true; if (!v) music.pause(); save(); panel(el); }, 'Plays only on the Studio page, only when you press play.'));
   }
   ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { if (P.notify || P.music) { try { audio(); } catch (e) { /* no audio */ } } }, { once: true, capture: true }));
-  window.CO_SOUND = { play, ask, music, panel, prefs: () => P, set(o, remote) { P = Object.assign({}, P, o); P.types = Object.assign({}, DEF.types, P.types || {}); const up = upgrade(); save(up ? undefined : remote); }, onSave(fn) { saver = fn; }, on(fn) { listeners.add(fn); return () => listeners.delete(fn); }, TYPES };
+  window.CO_SOUND = { play, haptic, ask, music, panel, prefs: () => P, set(o, remote) { P = Object.assign({}, P, o); P.types = Object.assign({}, DEF.types, P.types || {}); const up = upgrade(); save(up ? undefined : remote); }, onSave(fn) { saver = fn; }, on(fn) { listeners.add(fn); return () => listeners.delete(fn); }, TYPES };
 })();

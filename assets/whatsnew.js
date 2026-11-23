@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-23-haptic', date: '2026-11-23', kind: 'new', who: 'all', title: 'Vibration when a notification arrives',
+    what: 'Notifications and reminders now give a short vibration, each type with its own pattern.',
+    does: 'Phones that support vibration (most Android phones) buzz; on computers and iPhones the bell gives a short shake instead. It follows the per-type switches, and works even with sounds off.',
+    how: 'On by default. Turn it off any time: bell > Sounds & music > Vibration.'
+  },
+  {
     id: '2026-11-23-wn-hero', date: '2026-11-23', kind: 'fixed', who: 'all', title: "What's new: the top card shows again",
     what: "The dark summary card at the top of What's new could stay invisible, leaving an empty gap.",
     does: 'Its entrance animation no longer hides it, and any animation that stalls now snaps to its end state.',
