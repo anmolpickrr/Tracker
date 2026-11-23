@@ -11,7 +11,7 @@
  *   1. Put your sheet links in Config.gs (a second file in the same project).
  *   2. Run setup() once. It turns on change detection, creates the access list
  *      and audit log, and checks every sheet opens.
- *   3. Deploy → New deployment → Web app, Execute as: Me, Who has access: Anyone.
+ *   3. Deploy → New deployment → Web app, Execute as: Me, Who has access: Anyone within your organisation.
  *
  * Access: once CONFIG.access.clientId is filled in, nobody gets any data without
  * signing in with an approved Google work account (see README → "Access and sign-in").
