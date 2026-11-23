@@ -115,6 +115,8 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 **Stand-up (Nov 2026):** the Creative Head has no card in the stand-up for now (switch `SU_HEAD` in `assets/app.js` to show it again).
 
+**Alerts on by default (Nov 2026):** notification sounds (all types), the Studio radio setting, desktop alerts and briefing emails start switched on for everyone; earlier saved choices were switched on once (`v: 2` in `co.snd`, `co.deskv2`). Browsers require a click first, so audio unlocks and the notification permission is requested on the first click. Anyone can still turn each off in the bell panel.
+
 ## My work (team members)
 
 Everyone lands on **My work** showing their own work (the owner lands on the Overview). My work shows **only the signed-in person's own tasks**: there is no *View as* and no page filters (Admins see anyone's work on Tasks or Team; clicking a person on Team opens Tasks filtered to them). A **This week / This month** switch sets the period, and six status tiles count the tasks in it: **Assigned** (everything), **TBP**, **WIP** (incl. changes requested), **Under review**, **Shared** (incl. no update) and **Rejected**. Clicking a tile lists those tasks below, **grouped by Design ETA date** (today and tomorrow labelled); open work from before the period is under *Earlier, still open* and tasks without an ETA under *No Design ETA*, both first. Content writers also see **Content tasks**. The person is matched by their Google name against the team list; if a name is spelt differently, add it under *Also written as* in the team sheet. On phones My work replaces Stand-up in the bottom bar for team members.

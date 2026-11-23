@@ -4931,6 +4931,9 @@
       });
     });
     const desk = document.getElementById('np-desktop'), mail = document.getElementById('np-email');
+    // Desktop alerts are on by default (Nov 2026). Browsers only let a page ask for permission after a click, so ask on the first one.
+    if (!LS.get('co.deskv2', '')) { LS.set('co.deskv2', '1'); LS.set('co.desktop', '1'); }
+    if ('Notification' in window && Notification.permission === 'default' && LS.get('co.desktop', '') === '1') document.addEventListener('pointerdown', () => { try { Notification.requestPermission(); } catch (e) { /* old browser */ } }, { once: true });
     const privacy = document.getElementById('np-privacy');
     const close = () => { panel.hidden = true; document.getElementById('btn-bell').setAttribute('aria-expanded', 'false'); };
     const toggle = () => {

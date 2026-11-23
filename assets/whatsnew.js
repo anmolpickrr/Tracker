@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-23-alerts-on', date: '2026-11-23', kind: 'improved', who: 'all', title: 'Sounds and alerts are now on for everyone',
+    what: 'Notification sounds, desktop alerts, reminders and briefing emails are switched on by default.',
+    does: 'Your browser may ask once to allow notifications after your first click: choose Allow. The Studio radio still plays only when you press play.',
+    how: 'Turn anything off from the bell > Sounds & music, or the switches below the notifications.'
+  },
+  {
     id: '2026-11-23-su-nohead', date: '2026-11-23', kind: 'improved', who: 'page:standup', title: 'Stand-up: Creative Head card hidden',
     what: 'The Creative Head no longer has a card in the daily stand-up.',
     does: 'Stand-up shows only the team. Totals elsewhere are unchanged.',

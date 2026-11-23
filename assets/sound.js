@@ -8,9 +8,12 @@
 (function () {
   'use strict';
   const KEY = 'co.snd';
-  const DEF = { asked: false, notify: false, music: false, vol: 0.55, mvol: 0.4, types: { reminder: true, mention: true, task: true, achievement: true, announcement: true } };
+  const DEF = { v: 2, asked: true, notify: true, music: true, vol: 0.55, mvol: 0.4, types: { reminder: true, mention: true, task: true, achievement: true, announcement: true } };
   let P = DEF; try { P = Object.assign({}, DEF, JSON.parse(localStorage.getItem(KEY) || '{}')); P.types = Object.assign({}, DEF.types, P.types || {}); } catch (e) { P = Object.assign({}, DEF); }
   let saver = null; const listeners = new Set();
+  // On for everyone by default (Nov 2026): older saved choices are switched on once; anything changed after that is kept.
+  const upgrade = () => { if (P.v !== 2) { P = Object.assign({}, P, { v: 2, asked: true, notify: true, music: true }); P.types = Object.assign({}, DEF.types); return true; } return false; };
+  upgrade();
   const save = (remote) => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* private mode */ } if (remote !== false && saver) saver(P); listeners.forEach((f) => { try { f(P); } catch (e) { /* ignore */ } }); };
   const TYPES = [['reminder', 'Reminders', 'A soft two-note bell'], ['mention', 'Mentions', 'A quick bright pluck'], ['task', 'Task updates', 'A gentle pop'], ['achievement', 'Achievements', 'A sparkly rising chime'], ['announcement', 'Announcements', 'A warm chord']];
 
@@ -134,5 +137,6 @@
     }
     el.append(sw('Studio radio (background music)', P.music, (v) => { P.music = v; P.asked = true; if (!v) music.pause(); save(); panel(el); }, 'Plays only on the Studio page, only when you press play.'));
   }
-  window.CO_SOUND = { play, ask, music, panel, prefs: () => P, set(o, remote) { P = Object.assign({}, P, o); P.types = Object.assign({}, DEF.types, P.types || {}); save(remote); }, onSave(fn) { saver = fn; }, on(fn) { listeners.add(fn); return () => listeners.delete(fn); }, TYPES };
+  ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { if (P.notify || P.music) { try { audio(); } catch (e) { /* no audio */ } } }, { once: true, capture: true }));
+  window.CO_SOUND = { play, ask, music, panel, prefs: () => P, set(o, remote) { P = Object.assign({}, P, o); P.types = Object.assign({}, DEF.types, P.types || {}); const up = upgrade(); save(up ? undefined : remote); }, onSave(fn) { saver = fn; }, on(fn) { listeners.add(fn); return () => listeners.delete(fn); }, TYPES };
 })();
