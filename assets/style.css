@@ -5018,3 +5018,15 @@ a.stu-print:hover { border-color: var(--primary); }
 .hof-trophy { width: 40px; height: 40px; margin: 8px; animation: hofBob 2.6s ease-in-out infinite; }
 .hof2-empty { display: grid; justify-items: center; gap: 6px; padding: 28px 12px; text-align: center; }
 .hof2-empty svg { width: 64px; height: 64px; } .hof2-empty b { font: 700 17px/1.2 var(--font-display); } .hof2-empty small { color: var(--muted); font-size: 12.5px; }
+
+/* My work v3: status tiles + date groups */
+.mw-tiles.mw-tiles6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.mw-day-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.mw-grid.mw-grid1 { grid-template-columns: minmax(0, 1fr); }
+.mw-grp { margin-top: 14px; }
+.mw-grp-h { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 600 13px/1.3 var(--font-body, inherit); color: var(--muted); }
+.mw-grp-h span { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--sunken); color: var(--ink, inherit); }
+.mw-grp.today .mw-grp-h { color: var(--violet, #5b3df5); }
+.mw-grp.late .mw-grp-h { color: var(--org-ink, #c2410c); }
+@media (max-width: 1100px) { .mw-tiles.mw-tiles6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .mw-tiles.mw-tiles6 { grid-template-columns: 1fr 1fr; } }

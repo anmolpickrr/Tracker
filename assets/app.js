@@ -15,7 +15,7 @@
   /* The page filters (Sheet, Designer, Brand, Type) each section uses. A filter a section does not use is hidden there and
      never applied (My work is always the signed-in person's own work, so a Designer filter left on elsewhere cannot empty it). */
   const FKEYS = ['src', 'designer', 'brand', 'type'];
-  const FILTER_USE = { studio: [], mine: ['src', 'brand', 'type'], today: FKEYS, standup: FKEYS, tasks: FKEYS, team: FKEYS, reports: FKEYS, brands: FKEYS, health: FKEYS, notes: [], issues: [], access: [], whatsnew: [] };
+  const FILTER_USE = { studio: [], mine: [], today: FKEYS, standup: FKEYS, tasks: FKEYS, team: FKEYS, reports: FKEYS, brands: FKEYS, health: FKEYS, notes: [], issues: [], access: [], whatsnew: [] };
   const fUsed = (tab) => FILTER_USE[tab] || FKEYS;
   const fActive = (p) => fUsed(p.tab || 'today').filter((k) => p[k]);
   /* Access. 'auth': people sign in with Google and have a role. 'key': the older shared key (before sign-in is set up). */
@@ -646,7 +646,7 @@
     document.querySelectorAll('.co-tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
     document.querySelectorAll('.bt[data-tab]').forEach((b) => { if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     document.getElementById('bt-more').toggleAttribute('aria-current', !['today', document.querySelector('.btabs .bt[data-tab="mine"]') ? 'mine' : 'standup', 'tasks', 'notes'].includes(tab));
-    document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes' || tab === 'issues' || tab === 'whatsnew' || tab === 'studio';
+    document.getElementById('filter-bar').hidden = tab === 'access' || tab === 'notes' || tab === 'issues' || tab === 'whatsnew' || tab === 'studio' || tab === 'mine';
     { const use = fUsed(tab), act = fActive(Object.assign({}, p, { tab }));
       FKEYS.forEach((k) => { const el = document.querySelector('.co-f[data-param="' + k + '"]'); if (el) { el.hidden = !use.includes(k); el.classList.toggle('is-set', use.includes(k) && !!p[k]); } });
       document.getElementById('f-reset').hidden = true; // "Clear all" lives with the chips
@@ -811,7 +811,7 @@
 
   /* ================= Header, sync state and filters ================= */
   const PAGES = {
-    mine: ['My work', 'Your day at a glance: what you delivered, what is under review, in progress, not picked up yet and overdue.'],
+    mine: ['My work', 'Everything assigned to you this week or month, by status and date. Only you see your own list.'],
     today: ['Overview', () => 'What needs attention today.'],
     brands: ['Brands', 'Every brand at a glance, and the work waiting on clients.'],
     studio: ['Studio', 'The team\'s Hall of Fame: awards, last week\'s stars, everyone\'s characters and fresh work.'],
@@ -1502,7 +1502,7 @@
   /* ================= My work =================
      One person's day: overdue and due today first, then what is next, what is with the client and what they delivered
      this week. Team members land here; admins can view any team member. */
-  const MW = { who: LS.get('co.mwho2', ''), k: LS.get('co.mwk', ''), ds: LS.get('co.mwds', 'today') };
+  const MW = { per: LS.get('co.mwper', 'week'), st: LS.get('co.mwst', 'all') };
   dash.draw('mine', (el) => {
     if (A.mode !== 'auth' || !A.user) { el.replaceChildren(); return; }
     if (CO.notReady(el, 'box')) return;
@@ -1512,7 +1512,7 @@
     const people = (S.team || []).filter((m) => m.status !== 'Inactive' && !EF.hidden(m.name)).map((m) => m.name).concat(CT.writers().filter((w) => !(S.team || []).some((m) => m.name === w))).sort((a, b) => a.localeCompare(b));
     // My work is always the signed-in person's own work first; "View as" (owner and managers) is a deliberate switch.
     if (mine && !people.includes(mine)) people.unshift(mine);
-    let who = admin && MW.who && people.includes(MW.who) ? MW.who : mine || (admin ? people[0] : null);
+    const who = mine;
     const head = document.createElement('section'); head.className = 'co-card mw-head';
     if (!who) {
       const p = document.createElement('p'); p.className = 'co-note'; p.textContent = 'Your name (' + (A.user.name || A.user.email) + ') is not on the team list, so there is no personal view yet. Ask the admin to add it, or to add this spelling under "Also written as" in the team sheet.';
@@ -1528,63 +1528,55 @@
     const nm = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = who === mine ? 'Your work, ' + who.split(' ')[0] : who; const rl = document.createElement('p'); rl.className = 'co-note';
     const L = EF.load(who), rTxt = String(EF.role(who) || '').replace(/\s*\(not shown\)\s*/i, '').trim(); rl.textContent = [who === mine && isOwner() ? '' : rTxt || 'Role not set', open.length ? open.length + ' open' : 'nothing open', L.hours ? 'about ' + (L.days < 1 ? Math.round(L.hours) + ' h' : L.days.toFixed(1) + ' working days') + ' of work' + (L.content && !open.length ? ' (content writing)' : '') : ''].filter(Boolean).join(' · ');
     nm.append(h2, rl); id.append(av, nm); head.append(id);
-    if (admin) {
-      const sel = document.createElement('select'); sel.className = 'co-select'; sel.setAttribute('aria-label', 'View as');
-      people.forEach((n) => { const o = document.createElement('option'); o.value = n; o.textContent = n === mine ? n + ' (you)' : n; sel.append(o); }); sel.value = who;
-      if (who !== mine && mine) { const back = document.createElement('button'); back.type = 'button'; back.className = 'co-link mw-back'; back.textContent = 'Back to my work'; back.addEventListener('click', () => { MW.who = ''; LS.set('co.mwho2', ''); dash.draw('mine'); }); head.append(back); }
-      sel.addEventListener('change', () => { MW.who = sel.value === mine ? '' : sel.value; LS.set('co.mwho2', MW.who); dash.draw('mine'); });
-      const lab = document.createElement('label'); lab.className = 'mw-as'; lab.append('View as ', sel); head.append(lab);
-    }
-    // The day in five buckets: what is done, with the Creative Head, in progress, not picked up yet, and late.
-    // Each bucket is a tab; its tasks are listed below. A late task also stays in its own stage bucket.
-    const doneToday = all.filter((r) => r.done && r.ddate === t).sort((a, b) => (b.eta || '').localeCompare(a.eta || ''));
-    const BK = [
-      ['done', 'Done', MW.ds === 'week' ? done : doneToday, MW.ds === 'week' ? 'delivered since Monday' : 'delivered today'],
-      ['review', 'Under review', all.filter((r) => r.review).sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999')), 'waiting for the Creative Head'],
-      ['wip', 'In progress', open.filter((r) => r.stage === 'WIP' || r.stage === 'Changes requested').sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999')), 'WIP and changes requested'],
-      ['pick', 'Not picked up', open.filter((r) => r.stage === 'To be planned').sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999') || (a.priority || 'P9').localeCompare(b.priority || 'P9')), 'assigned, not started'],
-      ['late', 'Overdue', open.filter((r) => r.due === 'overdue').sort((a, b) => (a.eta || '').localeCompare(b.eta || '')), 'past the design ETA']
+    // Everything assigned to this person in the chosen period, by status, then grouped by date (Design ETA).
+    const per = MW.per === 'month' ? 'month' : 'week';
+    const p0 = per === 'week' ? wk : t.slice(0, 7) + '-01', p1 = per === 'week' ? CO.addDays(wk, 6) : CO.monthEnd(t.slice(0, 7));
+    const inPer = all.filter((r) => (r.eta && r.eta >= p0 && r.eta <= p1) || (r.open && (!r.eta || r.eta < p0)) || (r.shared && r.eta && r.eta < p0));
+    const ST = [
+      ['all', 'Assigned', () => true, 'everything assigned to you'],
+      ['tbp', 'TBP', (r) => r.stage === 'To be planned', 'to be planned, not started'],
+      ['wip', 'WIP', (r) => r.stage === 'WIP' || r.stage === 'Changes requested', 'in progress, incl. changes'],
+      ['review', 'Under review', (r) => r.stage === 'Under review', 'with the Creative Head'],
+      ['shared', 'Shared', (r) => r.stage === 'Shared' || r.stage === 'No update', 'with the client'],
+      ['rejected', 'Rejected', (r) => r.stage === 'Rejected', 'not approved']
     ];
-    const dueToday = open.filter((r) => r.due === 'today').length;
-    if (!BK.some((x) => x[0] === MW.k)) MW.k = '';
-    const sel = MW.k || (BK[4][2].length ? 'late' : BK[2][2].length ? 'wip' : BK[3][2].length ? 'pick' : 'done');
+    if (!ST.some((x) => x[0] === MW.st)) MW.st = 'all';
     const day = document.createElement('div'); day.className = 'mw-day';
     const dh = document.createElement('div'); dh.className = 'mw-day-h';
-    const dt = document.createElement('b'); dt.textContent = (who === mine ? 'Your day' : who.split(' ')[0] + '\'s day') + ', ' + new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'short' });
-    const ds = document.createElement('small'); ds.textContent = dueToday ? dueToday + (dueToday === 1 ? ' task is' : ' tasks are') + ' due today' : 'Nothing else is due today';
+    const dt = document.createElement('b'); dt.textContent = (per === 'week' ? 'This week' : 'This month') + ', ' + CO.fmtDate(p0) + ' to ' + CO.fmtDate(p1);
+    const dueToday = open.filter((r) => r.due === 'today').length, lateN = open.filter((r) => r.due === 'overdue').length;
+    const ds = document.createElement('small'); ds.textContent = [dueToday ? dueToday + ' due today' : 'Nothing due today', lateN ? lateN + ' overdue' : ''].filter(Boolean).join(' · ');
     const dl = document.createElement('div'); dl.append(dt, ds); dh.append(dl);
-    day.append(dh);
-    const tiles = document.createElement('div'); tiles.className = 'mw-tiles'; tiles.setAttribute('role', 'tablist'); tiles.setAttribute('aria-label', 'My day');
-    BK.forEach(([k, l, list, sub]) => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'mw-tile k-' + k + (list.length ? '' : ' zero') + (sel === k ? ' on' : ''); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(sel === k)); b.dataset.k = k;
+    const sw = document.createElement('div'); sw.className = 'pm-seg mw-ds'; sw.setAttribute('role', 'radiogroup'); sw.setAttribute('aria-label', 'Period');
+    [['week', 'This week'], ['month', 'This month']].forEach(([v, tx]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-opt' + (per === v ? ' on' : ''); b.textContent = tx; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(per === v)); b.addEventListener('click', () => { MW.per = v; LS.set('co.mwper', v); dash.draw('mine'); }); sw.append(b); });
+    dh.append(sw); day.append(dh);
+    const tiles = document.createElement('div'); tiles.className = 'mw-tiles mw-tiles6'; tiles.setAttribute('role', 'tablist'); tiles.setAttribute('aria-label', 'Status');
+    ST.forEach(([k, l, fn, sub]) => {
+      const list = inPer.filter(fn);
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'mw-tile k-' + k + (list.length ? '' : ' zero') + (MW.st === k ? ' on' : ''); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(MW.st === k));
       const n = document.createElement('b'); n.textContent = CO.num(list.length); const sp = document.createElement('span'); sp.textContent = l; const sm = document.createElement('small'); const cq = CO.sumQty(list); sm.textContent = sub + (cq > list.length ? ' · ' + cq + ' creatives' : '');
-      b.append(n, sp, sm); b.addEventListener('click', () => { MW.k = k; LS.set('co.mwk', k); dash.draw('mine'); }); tiles.append(b);
+      b.append(n, sp, sm); b.addEventListener('click', () => { MW.st = k; LS.set('co.mwst', k); dash.draw('mine'); }); tiles.append(b);
     });
     day.append(tiles); head.append(day); el.append(head);
-    const fl = filterNote2();
-    const section = (title, note, list, opts, empty, limit) => {
-      const c = card(title, note, list.length); if (!(opts && opts.fixed)) collapser(c, 'mw:' + title, title); const ul = document.createElement('ul'); ul.className = 'na-list mw-list';
-      list.slice(0, limit || 50).forEach((r, i) => { const li = workRow(r, Object.assign({ who: false }, opts)); li.classList.add('in'); li.style.setProperty('--i', Math.min(i, 10)); ul.append(li); });
-      if (list.length > (limit || 50)) { const m = document.createElement('li'); m.className = 'tw-more'; m.textContent = '+' + (list.length - (limit || 50)) + ' more in Tasks'; ul.append(m); }
-      if (!list.length) { c.append(emptyLine(fl ? empty + ' (filtered: ' + fl + ')' : empty)); if (fl) c.append(clearBtn2()); } else c.append(ul);
-      return c;
-    };
-    const grid = document.createElement('div'); grid.className = 'mw-grid';
-    const left = document.createElement('div'); left.className = 'mw-col'; const right = document.createElement('div'); right.className = 'mw-col';
-    // Content writers: briefs whose content they are still writing (the design has not started).
-    // Content tasks (briefs, scripts, content), separate from design: every task whose Content Owner names this person.
+    const grid = document.createElement('div'); grid.className = 'mw-grid mw-grid1';
+    const cur = ST.find((x) => x[0] === MW.st), list = inPer.filter(cur[2]);
+    const c = card(cur[0] === 'all' ? 'All your tasks' : cur[1], 'By Design ETA, ' + (per === 'week' ? 'this week' : 'this month') + '. Open work from earlier and tasks without a date are listed first.', list.length); c.classList.add('mw-bucket');
+    if (!list.length) c.append(emptyLine(cur[0] === 'all' ? 'Nothing assigned to you ' + (per === 'week' ? 'this week.' : 'this month.') : 'No ' + cur[1] + ' tasks ' + (per === 'week' ? 'this week.' : 'this month.')));
+    const groups = new Map(); const gk = (r) => !r.eta ? '0' : r.eta < p0 ? '1' : '2' + r.eta;
+    list.slice().sort((a, b) => gk(a).localeCompare(gk(b)) || (a.priority || 'P9').localeCompare(b.priority || 'P9')).forEach((r) => { const k = gk(r); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+    const gName = (k) => { if (k === '0') return 'No Design ETA'; if (k === '1') return 'Earlier, still open'; const d = k.slice(1); const w = new Date(d + 'T00:00:00Z').toLocaleDateString('en-IN', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' }); return w + (d === t ? ' · Today' : d === CO.addDays(t, 1) ? ' · Tomorrow' : ''); };
+    let i = 0;
+    groups.forEach((rs, k) => {
+      const g = document.createElement('div'); g.className = 'mw-grp' + (k.slice(1) === t ? ' today' : '') + (k === '1' ? ' late' : '');
+      const h = document.createElement('h3'); h.className = 'mw-grp-h'; h.textContent = gName(k); const n = document.createElement('span'); n.textContent = rs.length; h.append(n);
+      const ul = document.createElement('ul'); ul.className = 'na-list mw-list';
+      rs.forEach((r) => { const li = workRow(r, { who: false, done: r.done, waiting: r.shared, kind: r.due === 'overdue' ? 'late' : r.done ? 'done' : '' }); li.classList.add('in'); li.style.setProperty('--i', Math.min(i++, 10)); ul.append(li); });
+      g.append(h, ul); c.append(g);
+    });
     const cto = CT.of(who), isWriter = CT.writers().some((w) => w === who) || CT.contentOnly(who);
-    if (isWriter || cto.open.length) left.append(section('Content tasks', 'Briefs, scripts and content in your bucket.', cto.open, { kind: 'changes' }, 'No open content tasks.'));
-    if (cto.client.length) right.append(section('Content with the client', 'Briefs shared with the client.', cto.client, { waiting: true }, ''));
-    const cur = BK.find((x) => x[0] === sel), kOpt = { done: { done: true, kind: 'done' }, review: { kind: 'today' }, wip: {}, pick: { kind: 'tomorrow' }, late: { kind: 'late' } }[sel];
-    const NOTE = { done: MW.ds === 'week' ? 'Delivered since Monday ' + CO.fmtDate(wk) + ', newest first.' : 'Delivered today (Design ETA today and marked DONE).', review: 'Finished and waiting for the Creative Head\'s review (UNDER REVIEW).', wip: 'Being worked on, including changes the client asked for. Earliest ETA first.', pick: 'Assigned to you but not started (TBP). Earliest ETA first, then priority.', late: 'Open work past its Design ETA, most overdue first. Update the ETA or the status in each task.' };
-    const EMPTY = { done: MW.ds === 'week' ? 'Nothing delivered yet this week.' : 'Nothing delivered yet today.', review: 'Nothing waiting for review.', wip: 'Nothing in progress.', pick: 'Nothing waiting to be picked up.', late: 'Nothing overdue. Well done.' };
-    const lc = section(cur[1], NOTE[sel], cur[2], Object.assign({ fixed: true }, kOpt), EMPTY[sel]); lc.classList.add('mw-bucket', 'k-' + sel);
-    if (sel === 'done') { const sw = document.createElement('div'); sw.className = 'pm-seg mw-ds'; sw.setAttribute('role', 'radiogroup'); sw.setAttribute('aria-label', 'Delivered'); [['today', 'Today'], ['week', 'This week']].forEach(([v, tx]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-opt' + (MW.ds === v ? ' on' : ''); b.textContent = tx; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(MW.ds === v)); b.addEventListener('click', () => { MW.ds = v; LS.set('co.mwds', v); dash.draw('mine'); }); sw.append(b); }); const hh = lc.querySelector('.na-head'); (hh || lc).append(sw); }
-    left.append(lc);
-    if (who === mine && isOwner()) { const rev = CO.rows().filter((r) => r.review).sort((a, b) => (a.eta || '9999').localeCompare(b.eta || '9999')); right.append(section('Waiting for your review', 'Your team finished these (UNDER REVIEW). Move each to DONE or SHARED after reviewing.', rev, { kind: 'today' }, 'Nothing waiting for your review.')); }
-    right.append(section('With the client', 'Shared and waiting for approval. Not counted as late.', waiting, { waiting: true, kind: 'changes' }, 'Nothing waiting on a client.', 10));
-    grid.append(left, right); el.append(grid);
+    grid.append(c);
+    if (isWriter || cto.open.length) { const cc = card('Content tasks', 'Briefs, scripts and content in your bucket.', cto.open.length); const ul = document.createElement('ul'); ul.className = 'na-list mw-list'; cto.open.forEach((r) => ul.append(workRow(r, { who: false, kind: 'changes' }))); cc.append(cto.open.length ? ul : emptyLine('No open content tasks.')); grid.append(cc); }
+    el.append(grid);
   });
 
   /* ================= Brands ================= */
@@ -2837,7 +2829,7 @@
         num(ct.client.length); num(ct.hold.length);
         const dm = ct.doneIn(m + '-01', mEnd); num(dm.length); num(ct.doneIn(pf, pt).length);
         ct.open.forEach((r) => total.open.add(r.uid)); dm.forEach((r) => total.done.add(r.uid));
-        tr.addEventListener('click', () => { MW.who = w === myDesigner() ? '' : w; LS.set('co.mwho2', MW.who); dash.setParams({ tab: 'mine' }); });
+        tr.addEventListener('click', () => dash.setParams({ tab: 'tasks', designer: w }));
       });
       const tr = tb.insertRow(); tr.className = 'co-total';
       CO.td(tr, 'All content tasks (each counted once)'); CO.td(tr, CO.num(total.open.size), 'n');

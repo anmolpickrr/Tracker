@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-23-mywork-v3', date: '2026-11-23', kind: 'improved', who: 'all', title: 'My work: all your tasks, by week or month',
+    what: 'My work now lists every task assigned to you: Assigned, TBP, WIP, Under review, Shared and Rejected.',
+    does: 'Switch between This week and This month; tasks are grouped by Design ETA date, with open work from earlier and undated tasks first. Tap a status to see only those.',
+    how: 'Open My work. It shows only your own tasks; the filters and View as are gone from this page.'
+  },
+  {
     id: '2026-11-23-open-file-col', date: '2026-11-23', kind: 'fixed', who: 'all', title: 'Open File links now save on every sheet',
     what: 'Saving an Open File link failed on sheets that had no Open File column.',
     does: 'The dashboard now adds an "Open File" column at the end of that sheet the first time a link is saved.',
