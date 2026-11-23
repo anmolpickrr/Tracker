@@ -123,6 +123,8 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 **Awards (Nov 2026):** up to two creatives per award (Awards tab, *Link* and *Link 2*), shown on the Hall of Fame card. Editing an award is for the owner (Creative Head) only: the *Edit* button shows only for them and the server refuses others; Admins can still feature and remove.
 
+**Audio licensing:** every sound the dashboard plays is generated in the browser by our own code (Web Audio: notification tones and the Studio radio), so there are no third-party recordings and nothing to license. The team playlist only stores song names and links; tracks play on YouTube, Spotify, JioSaavn etc. under those services' licences, never on the dashboard.
+
 **Team playlist (Nov 2026):** anyone signed in suggests trending songs (song, artist, language/genre, optional YouTube/Spotify/JioSaavn link) in the *Music* tab of the access sheet; likes are stored in *Cheers* as `mu:<id>`. Up to 10 suggestions a day per person; duplicates are refused; the suggester or an Admin can remove one. Open it from the Hall of Fame pop-up (♫) or bell > Sounds & music. Endpoints: `music`, `musicAdd`, `musicDel`.
 
 ## My work (team members)

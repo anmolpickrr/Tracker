@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-hof-compact', date: '2026-11-24', kind: 'improved', who: 'all', title: 'Hall of Fame pop-up: smaller and tidier',
+    what: 'The pop-up is narrower and shorter, with the stats in one line and actions on one row.',
+    does: 'It never grows past the screen; long content scrolls inside it.',
+    how: 'Click the Hall of Fame beside the clock.'
+  },
+  {
     id: '2026-11-24-award-two', date: '2026-11-24', kind: 'improved', who: 'all', title: 'Awards can showcase two creatives',
     what: 'A Hall of Fame award can now link up to two creatives.',
     does: 'They appear on the card as Creative 1 and Creative 2. Only the Creative Head can edit an award after it is given.',

@@ -5107,3 +5107,28 @@ a.stu-print:hover { border-color: var(--primary); }
 .hof2-shows small { color: var(--muted); font-size: 11.5px; margin-right: 2px; }
 .hof2-show { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 99px; background: color-mix(in srgb, var(--hc, #7c5cff) 18%, var(--raised)); color: var(--fg); font-size: 12px; font-weight: 600; text-decoration: none; border: 1px solid color-mix(in srgb, var(--hc, #7c5cff) 35%, transparent); }
 .hof2-show:hover { background: color-mix(in srgb, var(--hc, #7c5cff) 30%, var(--raised)); }
+
+/* Hall of Fame pop-up: compact (Nov 2026) */
+.hof2 { gap: 8px; padding: 12px; border-radius: 22px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.hof2-h b { font-size: 16px; } .hof2-h small { font-size: 11.5px; }
+.hof2-x { width: 28px; height: 28px; }
+.hof2-card { gap: 8px; }
+.hof2-stage { height: 150px; }
+.hof2-arr { top: 58px; width: 30px; height: 30px; }
+.hof2-b { gap: 7px; padding: 0 2px; }
+.hof2-name { font-size: 18px; } .hof2-sub { font-size: 12px; margin-top: -3px; }
+.hof2-quote { padding: 9px 12px 8px 34px; border-radius: 14px; margin: 0; }
+.hof2-qm { font-size: 32px; left: 10px; top: 2px; }
+.hof2-quote blockquote { font-size: 13px; }
+.hof2-quote figcaption { margin-top: 4px; font-size: 11px; }
+.hof2-stats { display: flex; gap: 0; padding: 8px 4px; border-radius: 12px; background: var(--panel-2); }
+.hof2-stats span { flex: 1; display: grid; justify-items: center; gap: 0; padding: 0; background: none; border-radius: 0; }
+.hof2-stats span + span { border-left: 1px solid var(--line); }
+.hof2-stats b { font-size: 16px; } .hof2-stats small { font-size: 11px; }
+.hof2-shows { gap: 6px; }
+.hof2-row { gap: 6px; }
+.hof2-row .co-btn.sm { height: 32px; padding: 0 12px; font-size: 12.5px; }
+.hof2-f { gap: 6px; padding-top: 8px; }
+.hof2-f .co-btn.sm { height: 32px; padding: 0 12px; font-size: 12.5px; }
+.hof2-f .hof2-plb { width: 32px; }
+.hof2-stage { padding-top: 18px; box-sizing: border-box; } .hof2-stage .pf { height: 100%; }

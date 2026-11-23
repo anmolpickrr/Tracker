@@ -141,7 +141,7 @@ window.CO_HOFINIT = function (api) {
   document.addEventListener('click', (e) => { if (W.pop && !W.pop.contains(e.target) && !e.target.closest('.hof-w') && !e.target.closest('dialog')) popClose(); });
   document.addEventListener('keydown', (e) => { if (!W.pop) return; if (e.key === 'Escape') popClose(); else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !e.target.closest('input,textarea')) { e.preventDefault(); go(e.key === 'ArrowRight' ? 1 : -1); } });
   window.addEventListener('resize', () => { if (W.pop) place(); });
-  function place() { const r = W.el.getBoundingClientRect(), w = Math.min(380, window.innerWidth - 24); W.pop.style.width = w + 'px'; W.pop.style.top = (r.bottom + 8) + 'px'; W.pop.style.left = Math.max(12, Math.min(window.innerWidth - w - 12, r.left + r.width / 2 - w / 2)) + 'px'; }
+  function place() { const r = W.el.getBoundingClientRect(), w = Math.min(340, window.innerWidth - 24); W.pop.style.width = w + 'px'; W.pop.style.top = (r.bottom + 8) + 'px'; W.pop.style.maxHeight = (window.innerHeight - r.bottom - 20) + 'px'; W.pop.style.left = Math.max(12, Math.min(window.innerWidth - w - 12, r.left + r.width / 2 - w / 2)) + 'px'; }
   let curIdx = 0;
   function go(d) { const t = W.pop && W.pop.querySelector('.hof2-track'); if (!t) return; const n = t.children.length; curIdx = Math.max(0, Math.min(n - 1, curIdx + d)); t.children[curIdx].scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', inline: 'center', block: 'nearest' }); mark(); }
   function mark() { const t = W.pop && W.pop.querySelector('.hof2-track'); if (!t) return; [...t.children].forEach((c, i) => c.classList.toggle('on', i === curIdx)); const ctr = W.pop.querySelector('.hof2-ctr'); if (ctr) { ctr.replaceChildren(); [...t.children].forEach((_, i) => { const d = el('i', i === curIdx ? 'on' : ''); ctr.append(d); }); ctr.setAttribute('aria-label', (curIdx + 1) + ' of ' + t.children.length); } const pv = W.pop.querySelector('.hof2-prev'), nx = W.pop.querySelector('.hof2-next'); if (pv) pv.disabled = curIdx === 0; if (nx) nx.disabled = curIdx >= t.children.length - 1; }
@@ -171,7 +171,7 @@ window.CO_HOFINIT = function (api) {
       m.stars.slice(0, 2).forEach((s) => { const b = el('span', 'hof2-badge star', s.title); b.style.setProperty('--bc', '#ddff00'); b.title = s.line; badges.append(b); });
       if (!badges.childNodes.length) badges.append(el('span', 'hof2-quiet', 'No badges yet this week'));
       body.append(badges);
-      if (aw && aw.note) { const q = el('figure', 'hof2-quote'); q.style.setProperty('--qc', tagOf(aw.tag)[1]); const mk = el('span', 'hof2-qm', '“'); mk.setAttribute('aria-hidden', 'true'); const bq = el('blockquote', '', aw.note); const cap = el('figcaption', '', aw.title + (aw.at ? ' · ' + CO.fmtDate(String(aw.at).slice(0, 10)) : '')); q.append(mk, bq, cap); body.append(q); }
+      if (aw && aw.note) { const q = el('figure', 'hof2-quote'); q.style.setProperty('--qc', tagOf(aw.tag)[1]); const mk = el('span', 'hof2-qm', '“'); mk.setAttribute('aria-hidden', 'true'); const bq = el('blockquote', '', aw.note); const cap = el('figcaption', '', aw.at ? 'Awarded ' + CO.fmtDate(String(aw.at).slice(0, 10)) : ''); q.append(mk, bq, cap); body.append(q); }
       const stats = el('div', 'hof2-stats');
       [[m.week, 'this week'], [m.last, 'last week'], [m.awards.length, m.awards.length === 1 ? 'award' : 'awards']].forEach(([v, l]) => { const s2 = el('span'); s2.append(el('b', '', String(v)), el('small', '', l)); stats.append(s2); });
       body.append(stats);
@@ -179,7 +179,7 @@ window.CO_HOFINIT = function (api) {
       if (S2.cheerBtn) row.append(S2.cheerBtn('pw:' + m.name + ':' + mon, true));
       if (S2.state && S2.state.canAward) {
         const live = (S2.state.awards || []).length;
-        if (aw) row.append(btn('Remove from Hall of Fame', 'co-btn sm ghost', async () => { if (!confirm('Remove ' + m.name + ' from the Hall of Fame?')) return; try { await post({ action: 'awardDelete', id: aw.id }); S2.state.awards = S2.state.awards.filter((y) => y.id !== aw.id); W.key = ''; renderAll(); toast('Removed'); } catch (e) { toast(e.message, true); } }));
+        if (aw) row.append(btn('Remove', 'co-btn sm ghost', async () => { if (!confirm('Remove ' + m.name + ' from the Hall of Fame?')) return; try { await post({ action: 'awardDelete', id: aw.id }); S2.state.awards = S2.state.awards.filter((y) => y.id !== aw.id); W.key = ''; renderAll(); toast('Removed'); } catch (e) { toast(e.message, true); } }));
         else if (live < 3) row.append(btn('Feature in Hall of Fame', 'co-btn sm primary', () => { popClose(); S2.award({ who: m.name }); }));
       }
       if (aw && (aw.link || aw.link2)) { const L2 = [aw.link, aw.link2].filter(Boolean); const sc = el('div', 'hof2-shows'); sc.append(el('small', '', L2.length > 1 ? 'Showcase' : 'Showcase')); L2.forEach((u, k) => { const a = el('a', 'hof2-show', L2.length > 1 ? 'Creative ' + (k + 1) + ' ↗' : 'See the creative ↗'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; sc.append(a); }); body.append(sc); }
@@ -257,7 +257,7 @@ window.CO_HOFINIT = function (api) {
     let d = document.getElementById('hof-pl'); if (!d) { d = el('dialog', 'co-dialog pl-dlg'); d.id = 'hof-pl'; d.setAttribute('aria-labelledby', 'pl-t'); document.body.append(d); d.addEventListener('click', (e) => { if (e.target === d) d.close(); }); }
     const paint = () => {
       d.replaceChildren();
-      const h = el('div', 'pl-h'); const ht = el('div'); const t = el('h2', '', 'Team playlist'); t.id = 'pl-t'; ht.append(t, el('p', 'co-note', 'Trending songs the team is into, in any language. Suggest one, like the ones you love.'));
+      const h = el('div', 'pl-h'); const ht = el('div'); const t = el('h2', '', 'Team playlist'); t.id = 'pl-t'; ht.append(t, el('p', 'co-note', 'Trending songs the team is into, in any language. Songs open on YouTube, Spotify or similar under their own licences; nothing is played or stored here.'));
       const x = btn('', 'hof2-x', () => d.close()); x.setAttribute('aria-label', 'Close'); x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'; h.append(ht, x);
       // suggest
       const form = el('form', 'pl-form'); form.noValidate = true;
