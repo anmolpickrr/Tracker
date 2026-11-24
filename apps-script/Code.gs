@@ -32,7 +32,7 @@ const PAGE_KEYS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'report
 const OWNER_ONLY = { settings: 1, saveSettings: 1 };
 // The owner and everyone with the Admin role manage access and see the activity log and live team activity.
 const ADMIN_ONLY = { users: 1, setAccess: 1, audit: 1, presence: 1 };
-function isAdminUser_(u) { return !!u && (u.owner || isAdminUser_(u)); }
+function isAdminUser_(u) { return !!u && (u.owner || isOwner_(u.email) || u.role === 'Admin'); }
 function defaultPerms_(role) {
   // View only sees only their own work by default; Can edit and Admin see everyone's work (Creative Head, Nov 2026:
   // edit access means working with all tasks, brands and people, e.g. KAMs who are not on the designer team list).
