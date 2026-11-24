@@ -5,7 +5,7 @@
 window.CO_CONFIG = {
   // The dashboard served by Apps Script (shared with "Anyone within" the organisation). When set, this GitHub Pages
   // address forwards everyone there (add ?stay to the address to stay here, e.g. for testing).
-  appUrl: '',
+  appUrl: 'https://script.google.com/a/macros/pickrr.com/s/AKfycbx8xvohhaB7jNREyFxOT-7hC5tza6-iQUqTDNOlHcKPmQVchiph_fPlIXeorFmxEX0D/exec',
   webApp: 'https://script.google.com/macros/s/AKfycbzP5nZqk8GDs57IhDH5wKMGQukca6Kh55EtcmCnJ2frOUpEzl3wOXO6SI0j3E3TXmba/exec'
 };
 
