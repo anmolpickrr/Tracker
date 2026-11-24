@@ -155,8 +155,11 @@ function setup() {
   if (viewOnly.length) Logger.log('NEEDS EDIT ACCESS: ' + viewOnly.join(', ') + '. This account can only view those sheets, so the dashboard can read them but cannot detect edits instantly or save changes to them. Ask the owner to make ' + Session.getEffectiveUser().getEmail() + ' an Editor, then run setup() again.');
   const book = ensureAccessBook_();
   Logger.log('Access list, notes and audit log: ' + book.getUrl());
-  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'remindersTick') ScriptApp.deleteTrigger(t); });
-  if (authOn_()) {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'remindersTick' || t.getHandlerFunction() === 'updateTick') ScriptApp.deleteTrigger(t); });
+  if (secondary_()) {
+    ScriptApp.newTrigger('updateTick').timeBased().everyMinutes(10).create();
+    Logger.log('Second copy: serves this organisation with the shared sheets and access list. No emails or reminders are sent from here; it updates itself from GitHub every 10 minutes.');
+  } else if (authOn_()) {
     ScriptApp.newTrigger('remindersTick').timeBased().everyMinutes(10).create();
     snapshot_(Utilities.formatDate(new Date(), IST, 'yyyy-MM-dd'));
     Logger.log('Daily reminders: ' + REMIND.morning + ' and ' + REMIND.evening + ' IST' + (REMIND.email ? ', by email and on the dashboard' : ', on the dashboard only') + '. Note reminders are emailed within 10 minutes of their time.');
@@ -185,16 +188,23 @@ function createKey() {
 }
 
 const TRIGGER_FNS = ['onSheetChange', 'onSheetEdit'];
+/* A second copy of this project, owned by an account in another Google organisation (Shiprocket), serves that
+   organisation's people with the same sheets and access list: CONFIG.secondary = true in its Config.gs, plus
+   CONFIG.access.book = the link of the main copy's "Access & Audit Log" sheet. It sends no emails or reminders and
+   does not log sheet edits (the main copy does), and keeps itself updated from GitHub. */
+function secondary_() { return typeof CONFIG !== 'undefined' && !!CONFIG.secondary; }
 
 /** Trigger handler: a person edited one of the sheets. Moves the data version and records the edit in the audit log. */
 function onSheetEdit(e) {
   bumpVersion_(); clearCache_();
+  if (secondary_()) return; // the main copy logs edits
   try { auditSheetEdit_(e); } catch (err) { console.error('audit: ' + err); }
 }
 
 /** Trigger handler: rows or columns added or removed, or other changes. */
 function onSheetChange(e) {
   bumpVersion_(); clearCache_();
+  if (secondary_()) return;
   try {
     const t = e && e.changeType;
     const what = { INSERT_ROW: 'Rows added in sheet', REMOVE_ROW: 'Rows deleted in sheet', INSERT_COLUMN: 'Columns added in sheet', REMOVE_COLUMN: 'Columns deleted in sheet', INSERT_GRID: 'Tab added in sheet', REMOVE_GRID: 'Tab deleted in sheet' }[t];
@@ -1079,13 +1089,19 @@ function updateUser_(u, patch) {
 /* ---- the audit log (append-only) ---- */
 function hasAccessBook_() { return !!PropertiesService.getScriptProperties().getProperty('ACCESS_SHEET_ID'); }
 function accessBook_() {
-  const id = PropertiesService.getScriptProperties().getProperty('ACCESS_SHEET_ID');
+  const id = sharedBookId_() || PropertiesService.getScriptProperties().getProperty('ACCESS_SHEET_ID');
   if (!id) throw new Error('Run setup() once in Apps Script to create the access list.');
   return SpreadsheetApp.openById(id);
 }
+function sharedBookId_() { const b = typeof CONFIG !== 'undefined' && CONFIG.access && CONFIG.access.book; return b ? sheetId_(b) : ''; }
 function ensureAccessBook_() {
   const props = PropertiesService.getScriptProperties();
   let ss = null;
+  if (sharedBookId_()) { // the second copy uses the main copy's access list, never a new one
+    try { ss = SpreadsheetApp.openById(sharedBookId_()); } catch (err) { throw new Error('This account cannot open the shared "Access & Audit Log" sheet (CONFIG.access.book). Ask its owner to share it with you as Editor, then run setup again.'); }
+    props.setProperty('ACCESS_SHEET_ID', ss.getId());
+    return ss;
+  }
   const id = props.getProperty('ACCESS_SHEET_ID');
   if (id) { try { ss = SpreadsheetApp.openById(id); } catch (err) { ss = null; } }
   if (!ss) {
@@ -2775,6 +2791,8 @@ function autoUpdate_(log) {
     say('Automatic update failed: ' + m);
   }
 }
+/** The second copy's 10-minute job: only keeps itself up to date. */
+function updateTick() { autoUpdate_(false); }
 /** Run from the editor (choose updateNow, then Run) to install the newest version from GitHub straight away. */
 function updateNow() { autoUpdate_(true); }
 

@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-org-pick', date: '2026-11-24', kind: 'improved', who: 'all', title: 'Pick your company once',
+    what: 'The usual link now asks once whether you use a Pickrr or Shiprocket Google account, then always opens the right dashboard.',
+    does: 'Each company has its own company-only copy of the dashboard, with the same tasks, people and settings.',
+    how: 'Choose your company the first time. To change it later, open the link with ?switch at the end.'
+  },
+  {
     id: '2026-11-24-gas-host', date: '2026-11-24', kind: 'improved', who: 'all', title: 'The dashboard is moving to a company-only address',
     what: 'The dashboard can now also open from a Google Apps Script address that only @pickrr.com and @shiprocket.com accounts can reach.',
     does: 'Google signs you in with your company account, so there is no separate sign-in step. Everything else works as before; the old link will forward you there.',

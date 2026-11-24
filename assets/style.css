@@ -5222,3 +5222,16 @@ a.stu-print:hover { border-color: var(--primary); }
 .hof2-show .rx-pill:nth-child(n+2) { display: none; }
 .hof2-row .co-btn.sm { height: 30px; }
 .hof2-f { padding-top: 6px; }
+
+/* "Which company account?" on the GitHub Pages address (Nov 2026) */
+html[data-org-pick] body > *:not(.org-pick) { visibility: hidden; }
+.org-pick { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px; background: var(--bg, #f2f2f0); }
+.org-card { width: min(420px, 100%); display: grid; gap: 12px; padding: 28px; border-radius: 26px; background: var(--raised, #fff); border: 1px solid var(--line, #e5e5e5); box-shadow: 0 24px 60px -30px rgba(0,0,0,.35); }
+.org-t { font: 700 24px/1.15 var(--font-display, inherit); }
+.org-s, .org-n { margin: 0; color: var(--muted, #666); font-size: 14px; line-height: 1.45; }
+.org-n { font-size: 12px; }
+.org-btns { display: grid; gap: 8px; margin-top: 4px; }
+.org-b { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 56px; padding: 0 18px; border-radius: 16px; border: 1px solid var(--line, #ddd); background: var(--panel, #fafafa); color: var(--fg, #141414); font: 600 16px/1 var(--font-body, inherit); cursor: pointer; transition: border-color .15s, transform .15s; }
+.org-b small { color: var(--muted, #666); font-weight: 500; font-size: 13px; }
+.org-b:hover:not([disabled]), .org-b:focus-visible { border-color: var(--violet, #6b4dff); outline: none; transform: translateY(-1px); }
+.org-b[disabled] { opacity: .55; cursor: not-allowed; }
