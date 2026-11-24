@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-backend-file', date: '2026-11-24', kind: 'fixed', who: 'all', title: 'Open File links go to the Backend tab',
+    what: 'For the Marketing sheet, Open File links you submit are now saved on its Backend tab, on your task\'s row.',
+    does: 'The sheet\'s own script then copies them to the 2026 (Mkt Team) tab as before; the dashboard no longer writes there directly.',
+    how: 'Open a task > Links > Open File > paste the link > Save.'
+  },
+  {
     id: '2026-11-24-org-pick', date: '2026-11-24', kind: 'improved', who: 'all', title: 'Pick your company once',
     what: 'The usual link now asks once whether you use a Pickrr or Shiprocket Google account, then always opens the right dashboard.',
     does: 'Each company has its own company-only copy of the dashboard, with the same tasks, people and settings.',

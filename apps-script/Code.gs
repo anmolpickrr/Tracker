@@ -578,6 +578,15 @@ function updateTask_(body, mine, pm, contentMine) {
   const lastRow = sheet.getLastRow();
   const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function (h) { return clean_(h).toLowerCase(); });
   const c = taskColumns_(kindOf_(body.source), head);
+  // Sheets with a "Backend" tab (the Mkt sheet): Open File links go there, in its Open File column, on the row with
+  // this task's ID; the sheet's own script copies them to the main tab. The main tab's Open File column is never written.
+  let bk = null;
+  if (f.file != null) {
+    bk = backendFile_(sheet, id);
+    if (bk && bk.error) return { ok: false, error: bk.error };
+  }
+  const fileForBackend = bk ? String(f.file).trim() : null;
+  if (bk) delete f.file;
   // No "Open File" column yet: add one at the end of the header row, so the link has somewhere to go.
   if (f.file != null && String(f.file).trim() !== '' && c.file < 0) {
     sheet.getRange(1, lastCol + 1).setValue('Open File');
@@ -673,6 +682,13 @@ function updateTask_(body, mine, pm, contentMine) {
   if (f.priority != null) { const p = clean_(f.priority).toUpperCase(); track(c.priority, function (cell) { cell.setValue(p); }); written.priority = p; }
   if (f.link != null) { const l = String(f.link).trim(); track(c.link, function (cell) { cell.setValue(l); }); written.link = l; }
   if (f.file != null) { const l = String(f.file).trim(); track(c.file, function (cell) { cell.setValue(l); }); written.file = l; }
+  if (bk) {
+    if (fileForBackend && !/^https:\/\/[^\s"'<>]{4,1990}$/i.test(fileForBackend)) return { ok: false, error: 'The Open File link must be a full https:// address.' };
+    const cell = bk.sheet.getRange(bk.row, bk.col + 1), before = clean_(cellUrl_(cell));
+    if (fileForBackend) cell.setValue(fileForBackend); else cell.clearContent();
+    written.file = fileForBackend;
+    if (before !== fileForBackend) changes.push(Object.assign({}, where, { field: 'Open File (' + bk.sheet.getName() + ')', before: before, after: fileForBackend }));
+  }
   if (f.brief != null) { const l = String(f.brief).trim(); track(c.brief, function (cell) { cell.setValue(l); }); written.brief = l; }
   if (f.cstatus != null) {
     // the spelling the sheet already uses (its dropdown first, then the words the team writes)
@@ -688,6 +704,57 @@ function updateTask_(body, mine, pm, contentMine) {
     touched.forEach(function (ci) { if (rowD[ci] !== after[ci]) changes.push(Object.assign({}, where, { field: clean_(headers[ci]) || ('Column ' + (ci + 1)), before: rowD[ci], after: after[ci] })); });
   }
   return { ok: true, row: row, written: written, changes: changes };
+}
+
+
+
+/** One-off (run from the editor): Open File links that the dashboard wrote straight into a task tab are copied to the
+ *  same task's row on the Backend tab (only where Backend's Open File cell is still empty). The task tab is not changed:
+ *  check the log, then delete the extra "Open File" column from the task tab by hand if it was added by the dashboard. */
+function moveOpenFilesToBackend() {
+  Object.keys(CONFIG.sources).forEach(function (name) {
+    if (kindOf_(name) === 'team') return;
+    let sheet; try { sheet = openTab_(CONFIG.sources[name]); } catch (e) { return; }
+    const lastCol = sheet.getLastColumn(), lastRow = sheet.getLastRow(); if (lastRow < 2) return;
+    const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function (h) { return clean_(h).toLowerCase(); });
+    const c = taskColumns_(kindOf_(name), head); if (c.file < 0) return;
+    let moved = 0, kept = 0, missing = [];
+    for (let r = 2; r <= lastRow; r++) {
+      const link = clean_(cellUrl_(sheet.getRange(r, c.file + 1))); if (!/^https?:\/\//i.test(link)) continue;
+      const id = clean_(sheet.getRange(r, c.id + 1).getDisplayValue()); if (!id) continue;
+      const bk = backendFile_(sheet, id); if (!bk) return; // this spreadsheet has no Backend tab: nothing to do
+      if (bk.error) { missing.push(id); continue; }
+      const cell = bk.sheet.getRange(bk.row, bk.col + 1);
+      if (clean_(cellUrl_(cell))) { kept++; continue; }
+      cell.setValue(link); moved++;
+    }
+    Logger.log(name + ' (' + sheet.getName() + '): ' + moved + ' link(s) copied to Backend, ' + kept + ' already there' + (missing.length ? ', not on Backend: ' + missing.join(', ') : '') + '. Open File column on this tab: column ' + String.fromCharCode(65 + c.file) + ' (delete it by hand if the dashboard added it).');
+  });
+}
+
+/* The "Backend" tab next to a task tab: { sheet, row, col } for this task's Open File cell, null when the spreadsheet
+   has no Backend tab with an Open File column, or { error } when it has one but this ID is not on it. */
+function backendFile_(mainSheet, id) {
+  const bs = mainSheet.getParent().getSheets().filter(function (t) { return /^\s*backend\s*$/i.test(t.getName()); })[0];
+  if (!bs || bs.getSheetId() === mainSheet.getSheetId()) return null;
+  const lastCol = bs.getLastColumn(), lastRow = bs.getLastRow();
+  if (lastCol < 1 || lastRow < 1) return null;
+  // the header row: the first of the top 5 rows that has an "Open File" heading
+  const top = bs.getRange(1, 1, Math.min(5, lastRow), lastCol).getDisplayValues();
+  let hr = -1, fileCol = -1, idCol = -1;
+  for (let r = 0; r < top.length && hr < 0; r++) {
+    const h = top[r].map(function (x) { return clean_(x).toLowerCase(); });
+    const fc = h.indexOf('open file'); if (fc < 0) continue;
+    hr = r; fileCol = fc;
+    ['creative_id', 'creative id', 'req. id', 'req id', 'id'].some(function (n) { const k = h.indexOf(n); if (k >= 0) { idCol = k; return true; } return false; });
+  }
+  if (hr < 0) return null;
+  if (idCol < 0) return { error: 'The Backend tab has no ID column (Creative_id), so the Open File link cannot be matched to this task.' };
+  const ids = bs.getRange(hr + 2, idCol + 1, Math.max(1, lastRow - hr - 1), 1).getDisplayValues();
+  const hits = []; for (let i = 0; i < ids.length; i++) if (clean_(ids[i][0]) === id) hits.push(hr + 2 + i);
+  if (!hits.length) return { error: 'ID ' + id + ' is not on the Backend tab yet, so the Open File link cannot be saved. Add the task there first.' };
+  if (hits.length > 1) return { error: 'ID ' + id + ' appears ' + hits.length + ' times on the Backend tab. Fix it there.' };
+  return { sheet: bs, row: hits[0], col: fileCol };
 }
 
 /* The Creative Brief of a task, for people allowed to read briefs (and who can see the task). A Google Doc is read
