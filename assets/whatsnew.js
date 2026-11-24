@@ -7,7 +7,7 @@ window.CO_WHATSNEW = [
     id: '2026-11-24-gas-host', date: '2026-11-24', kind: 'improved', who: 'all', title: 'The dashboard is moving to a company-only address',
     what: 'The dashboard can now also open from a Google Apps Script address that only @pickrr.com and @shiprocket.com accounts can reach.',
     does: 'Google signs you in with your company account, so there is no separate sign-in step. Everything else works as before; the old link will forward you there.',
-    how: 'Nothing to do: keep using your usual link.'
+    how: 'Keep using your usual link. If it opens the Apps Script home page instead, your browser is signed in to several Google accounts: use a window or Chrome profile where your company account is the first (or only) one signed in.'
   },
   {
     id: '2026-11-24-studio-off', date: '2026-11-24', kind: 'improved', who: 'all', title: 'The Studio page is retired',
