@@ -443,7 +443,7 @@ function doPost(e) {
     // Writes: one at a time, each recorded in the audit log with before and after values.
     return json_(write_(body, user));
   } catch (err) {
-    try { if (!transient_(err && err.message || err)) issueLog_('Server', 'Request failed: ' + clean_(body.action || 'unknown'), String(err && err.message || err), 'web app'); } catch (e2) { /* never fail twice */ }
+    try { if (!transient_(err && err.message || err) && !/^That column is protected/.test(String(err && err.message || ''))) issueLog_('Server', 'Request failed: ' + clean_(body.action || 'unknown'), String(err && err.message || err), 'web app'); } catch (e2) { /* never fail twice */ }
     return json_({ ok: false, error: plainError_(String(err && err.message || err)) });
   }
 }
@@ -651,7 +651,9 @@ function updateTask_(body, mine, pm, contentMine) {
   const where = { action: 'Task updated', sheet: sheet.getParent().getName(), tab: sheet.getName(), record: id, row: row };
   const headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
   const touched = [];
-  const track = function (colIndex, fn) { fn(sheet.getRange(row, colIndex + 1)); touched.push(colIndex); };
+  // a write the sheet refuses (a protected column) says exactly where, so the owner knows which range to open up
+  const where_ = function (sh, col) { return sh.getParent().getName() + ' › ' + sh.getName() + ', column ' + colName_(col) + ' (' + (clean_(sh.getRange(1, col + 1).getDisplayValue()) || 'no heading') + '), row ' + row + ', task ' + id; };
+  const track = function (colIndex, fn) { try { fn(sheet.getRange(row, colIndex + 1)); } catch (e) { throw protectedErr_(e, where_(sheet, colIndex)); } touched.push(colIndex); };
   const written = {};
   if (f.designer != null) {
     // Checked before anything is written: a name outside the sheet's dropdown is refused.
@@ -685,7 +687,7 @@ function updateTask_(body, mine, pm, contentMine) {
   if (bk) {
     if (fileForBackend && !/^https:\/\/[^\s"'<>]{4,1990}$/i.test(fileForBackend)) return { ok: false, error: 'The Open File link must be a full https:// address.' };
     const cell = bk.sheet.getRange(bk.row, bk.col + 1), before = clean_(cellUrl_(cell));
-    if (fileForBackend) cell.setValue(fileForBackend); else cell.clearContent();
+    try { if (fileForBackend) cell.setValue(fileForBackend); else cell.clearContent(); } catch (e) { throw protectedErr_(e, bk.sheet.getParent().getName() + ' › ' + bk.sheet.getName() + ', column ' + colName_(bk.col) + ' (Open File), row ' + bk.row + ', task ' + id); }
     written.file = fileForBackend;
     if (before !== fileForBackend) changes.push(Object.assign({}, where, { field: 'Open File (' + bk.sheet.getName() + ')', before: before, after: fileForBackend }));
   }
@@ -734,6 +736,17 @@ function moveOpenFilesToBackend() {
   });
   Logger.log(report.join('\n') || 'Nothing to move.');
   return report;
+}
+
+
+function colName_(i) { let n = i + 1, s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+/* A refused write on a protected range becomes a clear issue in the "fix in the sheets" group, naming the range. */
+function protectedErr_(e, where) {
+  const m = String(e && e.message || e);
+  if (!/protected cell|protected range|trying to edit a protected/i.test(m)) return e;
+  let me = ''; try { me = Session.getEffectiveUser().getEmail(); } catch (x) { me = 'the dashboard\'s account'; }
+  try { issueLog_('Sheets', 'Protected column blocks saves: ' + where.split(', row')[0], 'The dashboard saves as ' + me + ', which is not allowed to edit ' + where + '. In the sheet: Data > Protect sheets and ranges > open the range covering that column > Set permissions > add ' + me + ' as an editor (or choose "Show a warning").', 'web app', { key: 'protected|' + where.split(', row')[0] }); } catch (x) { /* the save error still reaches the person */ }
+  return new Error('That column is protected in the sheet (' + where.split(', task')[0] + '), so the dashboard cannot save it. The Creative Head has been told which range to open up.');
 }
 
 /* The "Backend" tab next to a task tab: { sheet, row, col } for this task's Open File cell, null when the spreadsheet
@@ -2759,6 +2772,8 @@ function tuneGemini_(log) {
  * - pick the fastest working Gemini model when there is none yet, then once a week. */
 function maintenance_() {
   const p = PropertiesService.getScriptProperties();
+  // server errors that have not come back for 3 hours are fixed (usually by an update): close them
+  try { const cut = Date.now() - 3 * 3600e3; issueRows_().forEach(function (x) { if (x.status === 'Open' && x.area === 'Server' && /^Request failed/.test(x.title) && x.last && new Date(x.last).getTime() < cut) issueResolveKey_(x.key, 'Automatic check: not seen for 3 hours'); }); } catch (e) { console.log('stale issues: ' + e); }
   if (!p.getProperty('ROLES_2026_11_10')) { try { seedRoles_(); p.setProperty('ROLES_2026_11_10', new Date().toISOString()); } catch (e) { console.log('roles: ' + e); } }
   if (!p.getProperty('ROTATED_2026_11_10')) {
     p.setProperty('SESSION_SECRET', newSecret_());

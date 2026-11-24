@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-24-protected', date: '2026-11-24', kind: 'fixed', who: 'page:issues', title: 'Clearer Issues: protected columns and old errors',
+    what: 'A save refused by a protected column now names the exact sheet, tab and column, and lists it under Fix in the sheets.',
+    does: 'Server errors that have not come back for 3 hours close by themselves (the Maximum call stack ones were fixed this morning).',
+    how: 'Issues page: open the protected-column item and follow its steps.'
+  },
+  {
     id: '2026-11-24-backend-file', date: '2026-11-24', kind: 'fixed', who: 'all', title: 'Open File links go to the Backend tab',
     what: 'For the Marketing sheet, Open File links you submit are now saved on its Backend tab, on your task\'s row.',
     does: 'The sheet\'s own script then copies them to the 2026 (Mkt Team) tab as before; the dashboard no longer writes there directly.',

@@ -3831,7 +3831,7 @@
     sheet: ['Fix in the sheets or settings', 'Something in the sheets or a Google setting needs a change; each says what.'],
     auto: ['Fixing itself', 'Temporary errors. The dashboard retries and closes these on its own.']
   };
-  const issLane = (x) => (x.retry || /^Could not save/.test(x.title) || x.area === 'Actions' ? 'action' : /^(Data|Packages|Creative brief|Web app|Studio)$/.test(x.area) || x.fix === 'open-health' || x.fix === 'open-brands' || x.fix === 'open-pricing' ? 'sheet' : 'auto');
+  const issLane = (x) => (x.retry || /^Could not save/.test(x.title) || x.area === 'Actions' ? 'action' : /^(Data|Sheets|Packages|Creative brief|Web app|Studio)$/.test(x.area) || x.fix === 'open-health' || x.fix === 'open-brands' || x.fix === 'open-pricing' ? 'sheet' : 'auto');
   const ISS_F = { status: 'Status', eta: 'Design ETA', designer: 'Designer', link: 'Creative link', file: 'Open File', brief: 'Content', cstatus: 'Content status', priority: 'Priority', qty: 'Creatives' };
   const issRetryOf = (x) => { try { const r = JSON.parse(x.retry || ''); return r && r.action === 'updateTask' && r.fields ? r : null; } catch (e) { return null; } };
   const issVal = (k, v) => (v === '' || v == null ? '(blank)' : k === 'eta' ? CO.fmtDate(String(v)) : /^https?:\/\//.test(String(v)) ? String(v).replace(/^https?:\/\/(www\.)?/, '').slice(0, 34) + (String(v).length > 40 ? '…' : '') : String(v));
