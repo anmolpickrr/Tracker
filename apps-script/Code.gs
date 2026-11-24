@@ -708,28 +708,32 @@ function updateTask_(body, mine, pm, contentMine) {
 
 
 
-/** One-off (run from the editor): Open File links that the dashboard wrote straight into a task tab are copied to the
- *  same task's row on the Backend tab (only where Backend's Open File cell is still empty). The task tab is not changed:
- *  check the log, then delete the extra "Open File" column from the task tab by hand if it was added by the dashboard. */
+/** Open File links that the dashboard itself wrote straight into a task tab (they are in the activity log: field
+ *  "Open File", newest per task) are copied to that task's row on the Backend tab, only where Backend's Open File cell
+ *  is still empty. Nothing else in any sheet changes. Runs once by itself; can also be run from the editor. */
 function moveOpenFilesToBackend() {
+  const report = [];
+  if (!hasAccessBook_()) return report;
+  const au = accessBook_().getSheetByName('Audit'); if (!au || au.getLastRow() < 2) return report;
+  const rows = au.getRange(2, 1, au.getLastRow() - 1, AUDIT_HEAD.length).getValues();
+  const latest = {}; // "tab|id" -> link, newest wins (the log is in time order)
+  rows.forEach(function (r) { if (String(r[8]).toLowerCase() === 'open file' && String(r[6]) && /^https?:\/\//i.test(String(r[10] || ''))) latest[String(r[5]) + '|' + String(r[6])] = String(r[10]).trim(); });
   Object.keys(CONFIG.sources).forEach(function (name) {
     if (kindOf_(name) === 'team') return;
     let sheet; try { sheet = openTab_(CONFIG.sources[name]); } catch (e) { return; }
-    const lastCol = sheet.getLastColumn(), lastRow = sheet.getLastRow(); if (lastRow < 2) return;
-    const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function (h) { return clean_(h).toLowerCase(); });
-    const c = taskColumns_(kindOf_(name), head); if (c.file < 0) return;
-    let moved = 0, kept = 0, missing = [];
-    for (let r = 2; r <= lastRow; r++) {
-      const link = clean_(cellUrl_(sheet.getRange(r, c.file + 1))); if (!/^https?:\/\//i.test(link)) continue;
-      const id = clean_(sheet.getRange(r, c.id + 1).getDisplayValue()); if (!id) continue;
-      const bk = backendFile_(sheet, id); if (!bk) return; // this spreadsheet has no Backend tab: nothing to do
-      if (bk.error) { missing.push(id); continue; }
+    let moved = 0, kept = 0; const missing = [];
+    Object.keys(latest).forEach(function (k) {
+      const tab = k.split('|')[0], id = k.slice(tab.length + 1); if (tab !== sheet.getName()) return;
+      const bk = backendFile_(sheet, id); if (!bk) return;
+      if (bk.error) { missing.push(id); return; }
       const cell = bk.sheet.getRange(bk.row, bk.col + 1);
-      if (clean_(cellUrl_(cell))) { kept++; continue; }
-      cell.setValue(link); moved++;
-    }
-    Logger.log(name + ' (' + sheet.getName() + '): ' + moved + ' link(s) copied to Backend, ' + kept + ' already there' + (missing.length ? ', not on Backend: ' + missing.join(', ') : '') + '. Open File column on this tab: column ' + String.fromCharCode(65 + c.file) + ' (delete it by hand if the dashboard added it).');
+      if (clean_(cellUrl_(cell))) { kept++; return; }
+      cell.setValue(latest[k]); moved++;
+    });
+    if (moved || kept || missing.length) report.push(sheet.getName() + ': ' + moved + ' copied to Backend, ' + kept + ' already had a link' + (missing.length ? ', not on Backend: ' + missing.join(', ') : ''));
   });
+  Logger.log(report.join('\n') || 'Nothing to move.');
+  return report;
 }
 
 /* The "Backend" tab next to a task tab: { sheet, row, col } for this task's Open File cell, null when the spreadsheet
@@ -1557,6 +1561,11 @@ function prefs_(b, u) {
 /* Runs every 10 minutes (setup installs it). Sends the 10:00 and 18:00 IST emails once a day each, and note reminders when due. */
 function remindersTick() {
   TEAM_MEMO_ = null;
+  // once: Open File links the dashboard had written into task tabs are copied to the Backend tab (Nov 2026)
+  try {
+    const P = PropertiesService.getScriptProperties();
+    if (!P.getProperty('OPENFILE_BACKEND_V2')) { const rep = moveOpenFilesToBackend(); P.setProperty('OPENFILE_BACKEND_V2', new Date().toISOString()); audit_([{ who: 'Automatic change', role: 'System', action: 'Open File links moved to Backend', details: (rep || []).join(' | ') || 'nothing to move' }]); }
+  } catch (e) { console.log('open file move: ' + e); }
   try { linkMapBuild_(); } catch (e) { console.log('link map: ' + e); }
   try { maintenance_(); persistent_('jobs|maint', false); issueResolveKey_('Background jobs|Maintenance failed'); } catch (e) { console.log('maintenance: ' + e); try { if (persistent_('jobs|maint', true, transient_(e.message || e) ? 3 : 1)) issueLog_('Background jobs', 'Maintenance failed', String(e.message || e), 'schedule'); } catch (e2) { /* ignore */ } }
   if (!authOn_() || !hasAccessBook_()) return;
