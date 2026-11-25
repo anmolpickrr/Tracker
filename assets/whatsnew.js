@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-25-backend-all', date: '2026-11-25', kind: 'fixed', who: 'all', title: 'Marketing tasks save to the Backend tab',
+    what: 'Creative links, status and Open File links for Marketing (SRA) tasks failed because the 2026 (Mkt Team) tab is locked.',
+    does: 'Every change to a Marketing task is now saved on its row in the Backend tab, and the sheet copies it across as usual.',
+    how: 'Nothing to do. Failed saves on the Issues page can be retried.'
+  },
+  {
     id: '2026-11-25-paid-colp', date: '2026-11-25', kind: 'fixed', who: 'all', title: 'PAID sheet: Open File links stay in the Open File column',
     what: 'For external (PAID) tasks, the Open File link you save goes into the Open File column (column O) of the 2026 tab.',
     does: 'The dashboard reads it from the same column and never adds columns to that sheet.',

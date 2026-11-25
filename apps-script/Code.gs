@@ -580,17 +580,12 @@ function updateTask_(body, mine, pm, contentMine) {
   const lastRow = sheet.getLastRow();
   const head = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0].map(function (h) { return clean_(h).toLowerCase(); });
   const c = taskColumns_(kindOf_(body.source), head);
-  // Sheets with a "Backend" tab (the Mkt sheet): Open File links go there, in its Open File column, on the row with
-  // this task's ID; the sheet's own script copies them to the main tab. The main tab's Open File column is never written.
-  let bk = null;
-  if (f.file != null) {
-    bk = backendFile_(sheet, id);
-    if (bk && bk.error) return { ok: false, error: bk.error };
-  }
-  const fileForBackend = bk ? String(f.file).trim() : null;
-  if (bk) delete f.file;
-  // No "Open File" column yet: add one at the end of the header row, so the link has somewhere to go.
-  if (f.file != null && String(f.file).trim() !== '' && c.file < 0 && kindOf_(body.source) !== 'paid') {
+  // Sheets with a "Backend" tab (the Mkt sheet, whose main tab is locked): every edit goes to this task's row on Backend,
+  // in the column with the same heading; the sheet's own script copies it to the main tab. The main tab is only read.
+  const BKR = backendRow_(sheet, id);
+  if (BKR && BKR.error) return { ok: false, error: BKR.error };
+  // No "Open File" column yet (and no Backend tab): add one at the end of the header row, so the link has somewhere to go.
+  if (!BKR && f.file != null && String(f.file).trim() !== '' && c.file < 0 && kindOf_(body.source) !== 'paid') {
     sheet.getRange(1, lastCol + 1).setValue('Open File');
     c.file = lastCol; lastCol++;
   }
@@ -646,22 +641,30 @@ function updateTask_(body, mine, pm, contentMine) {
   if (was.link != null && f.link != null && c.link >= 0) { const cur = clean_(cellUrl_(sheet.getRange(row, c.link + 1))); if (cur !== clean_(was.link) && cur !== clean_(f.link)) return { ok: false, error: 'changed', field: 'Creative link', now: cur }; }
   if (was.eta != null && f.eta != null && c.eta >= 0) { const v = rowV[c.eta]; const cur = v instanceof Date ? Utilities.formatDate(v, IST, 'yyyy-MM-dd') : (CODATA.parseDate(clean_(v)) || ''); if (cur !== was.eta && cur !== String(f.eta)) return { ok: false, error: 'changed', field: 'Design ETA', now: cur }; }
 
-  const statusVal = f.status != null ? statusValue_(sheet, sheet.getRange(row, c.status + 1), c.status, String(f.status)) : null;
+  // Where the edits are written: the task's row on the Backend tab when there is one, else the task's own row.
+  const wS = BKR ? BKR.sheet : sheet, wR = BKR ? BKR.row : row, wc = BKR ? taskColumns_('mkt', BKR.head) : c, wHr = BKR ? BKR.hr : 1;
+  const wLast = BKR ? wS.getLastColumn() : lastCol, wRowD = BKR ? wS.getRange(wR, 1, 1, wLast).getDisplayValues()[0] : rowD;
+  if (BKR) {
+    const NAMES = { status: 'Design Status', eta: 'Design ETA', designer: 'Creator (designer)', priority: 'Priority', link: 'Creative Link', file: 'Open File', brief: 'Creative Brief', cstatus: 'Content Status', qty: 'No. of Creatives' };
+    const lack = Object.keys(f).filter(function (k) { return NAMES[k] && !(wc[k] >= 0); });
+    if (lack.length) return { ok: false, error: 'The Backend tab has no ' + lack.map(function (k) { return '"' + NAMES[k] + '"'; }).join(' or ') + ' column, so this cannot be saved there. Add the column to Backend (same heading as the main tab).' };
+  }
+  const statusVal = f.status != null ? statusValue_(wS, wS.getRange(wR, wc.status + 1), wc.status, String(f.status)) : null;
 
   // Every cell written is recorded with its value before and after.
   const changes = [];
-  const where = { action: 'Task updated', sheet: sheet.getParent().getName(), tab: sheet.getName(), record: id, row: row };
-  const headers = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  const where = { action: 'Task updated', sheet: wS.getParent().getName(), tab: wS.getName(), record: id, row: wR };
+  const headers = wS.getRange(wHr, 1, 1, wLast).getDisplayValues()[0];
   const touched = [];
   // a write the sheet refuses (a protected column) says exactly where, so the owner knows which range to open up
-  const where_ = function (sh, col) { return sh.getParent().getName() + ' › ' + sh.getName() + ', column ' + colName_(col) + ' (' + (clean_(sh.getRange(1, col + 1).getDisplayValue()) || 'no heading') + '), row ' + row + ', task ' + id; };
-  const track = function (colIndex, fn) { try { fn(sheet.getRange(row, colIndex + 1)); } catch (e) { throw protectedErr_(e, where_(sheet, colIndex)); } touched.push(colIndex); };
+  const where_ = function (sh, col) { return sh.getParent().getName() + ' › ' + sh.getName() + ', column ' + colName_(col) + ' (' + (clean_(sh.getRange(wHr, col + 1).getDisplayValue()) || 'no heading') + '), row ' + row + ', task ' + id; };
+  const track = function (colIndex, fn) { try { fn(wS.getRange(wR, colIndex + 1)); } catch (e) { throw protectedErr_(e, where_(wS, colIndex)); } touched.push(colIndex); };
   const written = {};
   let warn = '';
   if (f.designer != null) {
     // Checked before anything is written: a name outside the sheet's dropdown is refused.
     const name = clean_(f.designer).slice(0, 120);
-    const opts = listOptions_(sheet.getRange(row, c.designer + 1));
+    const opts = listOptions_(wS.getRange(wR, wc.designer + 1));
     let value = name;
     if (name && opts.length && opts.indexOf(name) < 0) {
       value = opts.filter(function (o) { return o.toLowerCase() === name.toLowerCase(); })[0];
@@ -672,11 +675,11 @@ function updateTask_(body, mine, pm, contentMine) {
   if (f.status != null) {
     // A creative link moves the task to Under review on its way; if the status column is protected, the link is still
     // saved (the protected column is reported to the owner) instead of losing the whole save.
-    try { track(c.status, function (cell) { cell.setValue(statusVal); written.status = statusVal; }); }
+    try { track(wc.status, function (cell) { cell.setValue(statusVal); written.status = statusVal; }); }
     catch (e) { if (f.link != null && /That column is protected/.test(String(e && e.message))) { warn = 'The link is saved, but the status column is protected, so the task could not move to Under review. The Creative Head has been told.'; } else throw e; }
   }
   if (f.eta != null) {
-    track(c.eta, function (cell) {
+    track(wc.eta, function (cell) {
       if (f.eta === '') cell.clearContent();
       else {
         const m = String(f.eta).match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -686,30 +689,23 @@ function updateTask_(body, mine, pm, contentMine) {
     });
     written.eta = f.eta;
   }
-  if (f.designer != null) { track(c.designer, function (cell) { cell.setValue(f.designer); }); written.designer = f.designer; }
-  if (f.priority != null) { const p = clean_(f.priority).toUpperCase(); track(c.priority, function (cell) { cell.setValue(p); }); written.priority = p; }
-  if (f.link != null) { const l = String(f.link).trim(); track(c.link, function (cell) { cell.setValue(l); }); written.link = l; }
-  if (f.file != null) { const l = String(f.file).trim(); track(c.file, function (cell) { cell.setValue(l); }); written.file = l; }
-  if (bk) {
-    if (fileForBackend && !/^https:\/\/[^\s"'<>]{4,1990}$/i.test(fileForBackend)) return { ok: false, error: 'The Open File link must be a full https:// address.' };
-    const cell = bk.sheet.getRange(bk.row, bk.col + 1), before = clean_(cellUrl_(cell));
-    try { if (fileForBackend) cell.setValue(fileForBackend); else cell.clearContent(); } catch (e) { throw protectedErr_(e, bk.sheet.getParent().getName() + ' › ' + bk.sheet.getName() + ', column ' + colName_(bk.col) + ' (Open File), row ' + bk.row + ', task ' + id); }
-    written.file = fileForBackend;
-    if (before !== fileForBackend) changes.push(Object.assign({}, where, { field: 'Open File (' + bk.sheet.getName() + ')', before: before, after: fileForBackend }));
-  }
-  if (f.brief != null) { const l = String(f.brief).trim(); track(c.brief, function (cell) { cell.setValue(l); }); written.brief = l; }
+  if (f.designer != null) { track(wc.designer, function (cell) { cell.setValue(f.designer); }); written.designer = f.designer; }
+  if (f.priority != null) { const p = clean_(f.priority).toUpperCase(); track(wc.priority, function (cell) { cell.setValue(p); }); written.priority = p; }
+  if (f.link != null) { const l = String(f.link).trim(); track(wc.link, function (cell) { cell.setValue(l); }); written.link = l; }
+  if (f.file != null) { const l = String(f.file).trim(); track(wc.file, function (cell) { cell.setValue(l); }); written.file = l; }
+  if (f.brief != null) { const l = String(f.brief).trim(); track(wc.brief, function (cell) { cell.setValue(l); }); written.brief = l; }
   if (f.cstatus != null) {
     // the spelling the sheet already uses (its dropdown first, then the words the team writes)
-    const cell0 = sheet.getRange(row, c.cstatus + 1), opts = listOptions_(cell0).map(String), want = f.cstatus === 'Done' ? ['DONE', 'Done', 'COMPLETED', 'Approved', 'APPROVED'] : ['SHARED', 'Shared'];
+    const cell0 = wS.getRange(wR, wc.cstatus + 1), opts = listOptions_(cell0).map(String), want = f.cstatus === 'Done' ? ['DONE', 'Done', 'COMPLETED', 'Approved', 'APPROVED'] : ['SHARED', 'Shared'];
     let v = ''; for (let i = 0; i < want.length && !v; i++) { const k = opts.map(function (o) { return o.trim().toLowerCase(); }).indexOf(want[i].toLowerCase()); if (k >= 0) v = opts[k].trim(); }
     v = v || want[0];
-    track(c.cstatus, function (cell) { cell.setValue(v); }); written.cstatus = v;
+    track(wc.cstatus, function (cell) { cell.setValue(v); }); written.cstatus = v;
   }
-  if (f.qty != null) { const q = parseInt(f.qty, 10); track(c.qty, function (cell) { cell.setValue(q); }); written.qty = q; }
+  if (f.qty != null) { const q = parseInt(f.qty, 10); track(wc.qty, function (cell) { cell.setValue(q); }); written.qty = q; }
   // what each written cell shows now (one read), for the activity log
   if (touched.length) {
-    const after = sheet.getRange(row, 1, 1, lastCol).getDisplayValues()[0];
-    touched.forEach(function (ci) { if (rowD[ci] !== after[ci]) changes.push(Object.assign({}, where, { field: clean_(headers[ci]) || ('Column ' + (ci + 1)), before: rowD[ci], after: after[ci] })); });
+    const after = wS.getRange(wR, 1, 1, wLast).getDisplayValues()[0];
+    touched.forEach(function (ci) { if (wRowD[ci] !== after[ci]) changes.push(Object.assign({}, where, { field: clean_(headers[ci]) || ('Column ' + (ci + 1)), before: wRowD[ci], after: after[ci] })); });
   }
   return { ok: true, row: row, written: written, changes: changes, warn: warn || undefined };
 }
@@ -755,31 +751,33 @@ function protectedErr_(e, where) {
   return new Error('That column is protected in the sheet (' + where.split(', task')[0] + '), so the dashboard cannot save it. The Creative Head has been told which range to open up.');
 }
 
-/* The "Backend" tab next to a task tab: { sheet, row, col } for this task's Open File cell, null when the spreadsheet
-   has no Backend tab with an Open File column, or { error } when it has one but this ID is not on it. */
-function backendFile_(mainSheet, id) {
+/* The "Backend" tab next to a task tab: { sheet, row, hr, head } for this task's row (hr = header row, head = its headings
+   in lower case), null when the spreadsheet has no Backend tab, or { error } when this ID is not on it (or twice). */
+function backendRow_(mainSheet, id) {
   const bs = mainSheet.getParent().getSheets().filter(function (t) { return /^\s*backend\s*$/i.test(t.getName()); })[0];
   if (!bs || bs.getSheetId() === mainSheet.getSheetId()) return null;
   const lastCol = bs.getLastColumn(), lastRow = bs.getLastRow();
   if (lastCol < 1 || lastRow < 1) return null;
-  // the header row: the first of the top 5 rows that has an "Open File" heading
+  // the header row: the first of the top 5 rows that has an ID heading
   const top = bs.getRange(1, 1, Math.min(5, lastRow), lastCol).getDisplayValues();
-  let hr = -1, fileCol = -1, idCol = -1;
+  let hr = -1, idCol = -1, head = null;
   for (let r = 0; r < top.length && hr < 0; r++) {
     const h = top[r].map(function (x) { return clean_(x).toLowerCase(); });
-    const fc = h.indexOf('open file'); if (fc < 0) continue;
-    hr = r; fileCol = fc;
     ['creative_id', 'creative id', 'req. id', 'req id', 'id'].some(function (n) { const k = h.indexOf(n); if (k >= 0) { idCol = k; return true; } return false; });
+    if (idCol >= 0) { hr = r; head = h; }
   }
-  if (hr < 0) return null;
-  if (idCol < 0) return { error: 'The Backend tab has no ID column (Creative_id), so the Open File link cannot be matched to this task.' };
+  if (hr < 0) return { error: 'The Backend tab has no ID column (Creative_id), so changes cannot be matched to this task.' };
   const ids = bs.getRange(hr + 2, idCol + 1, Math.max(1, lastRow - hr - 1), 1).getDisplayValues();
   const hits = []; for (let i = 0; i < ids.length; i++) if (clean_(ids[i][0]) === id) hits.push(hr + 2 + i);
-  if (!hits.length) return { error: 'ID ' + id + ' is not on the Backend tab yet, so the Open File link cannot be saved. Add the task there first.' };
+  if (!hits.length) return { error: 'ID ' + id + ' is not on the Backend tab yet, so this cannot be saved. Add the task there first.' };
   if (hits.length > 1) return { error: 'ID ' + id + ' appears ' + hits.length + ' times on the Backend tab. Fix it there.' };
-  return { sheet: bs, row: hits[0], col: fileCol };
+  return { sheet: bs, row: hits[0], hr: hr + 1, head: head };
 }
-
+/* The Open File cell of a task on the Backend tab (for moveOpenFilesToBackend). */
+function backendFile_(mainSheet, id) {
+  const b = backendRow_(mainSheet, id); if (!b || b.error) return b;
+  const col = b.head.indexOf('open file'); return col < 0 ? null : { sheet: b.sheet, row: b.row, col: col };
+}
 /* The Creative Brief of a task, for people allowed to read briefs (and who can see the task). A Google Doc is read
    through the dashboard's Google account (export as HTML, read-only access it already has) and returned for a clean
    in-dashboard view; any other link is returned as a link. Cached for 10 minutes. */
