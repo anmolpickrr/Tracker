@@ -65,9 +65,36 @@
     draw(name, fn) { if (fn) draws.set(name, fn); else runDraw(name); }
   };
   const visible = (el) => !el.closest('[hidden]');
+  /* Smooth background updates: a section that redraws while you are reading keeps its height during the redraw, and
+     the page scroll, every scrolled list or table inside it and any expanders you opened stay exactly where they were.
+     A redraw that produces the same content changes nothing on screen. A redraw you caused (a click, a key, a filter)
+     is left alone, so it can scroll as it should. */
+  const USER = { at: 0 };
+  ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => { USER.at = Date.now(); }, { capture: true, passive: true }));
+  const pathOf = (root, node) => { const p = []; for (let n = node; n && n !== root; n = n.parentElement) { const par = n.parentElement; p.unshift(par ? [...par.children].indexOf(n) : 0); } return p.join('.'); };
+  const atPath = (root, path) => { let n = root; if (!path) return n; for (const i of path.split('.')) { n = n && n.children[+i]; if (!n) return null; } return n; };
+  const keyOf = (n) => n.id || n.dataset.draw || n.dataset.k || n.dataset.tab || (typeof n.className === 'string' ? n.className.split(' ')[0] : '');
+  function keepPlace(el, fn) {
+    const background = Date.now() - USER.at > 700;
+    if (!background || !el.isConnected) { fn(); return; }
+    const before = el.innerHTML;
+    const sx = window.scrollX, sy = window.scrollY, h = el.offsetHeight;
+    const scrolled = [...el.querySelectorAll('*')].filter((n) => n.scrollTop > 0 || n.scrollLeft > 0).map((n) => ({ path: pathOf(el, n), key: keyOf(n), t: n.scrollTop, l: n.scrollLeft }));
+    const opened = [...el.querySelectorAll('details[open]')].map((n) => ({ path: pathOf(el, n), key: keyOf(n) }));
+    const focusPath = el.contains(document.activeElement) && document.activeElement !== el ? pathOf(el, document.activeElement) : null;
+    if (h) el.style.minHeight = h + 'px';
+    fn();
+    if (el.innerHTML === before) { el.style.minHeight = ''; window.scrollTo(sx, sy); return; } // nothing new
+    const find = (x) => { const n = atPath(el, x.path); return n && keyOf(n) === x.key ? n : null; };
+    scrolled.forEach((x) => { const n = find(x); if (n) { n.scrollTop = x.t; n.scrollLeft = x.l; } });
+    opened.forEach((x) => { const n = find(x); if (n && n.tagName === 'DETAILS') n.open = true; });
+    if (focusPath && !el.contains(document.activeElement)) { const n = atPath(el, focusPath); if (n && n.focus && /^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(n.tagName)) n.focus({ preventScroll: true }); }
+    if (window.scrollX !== sx || window.scrollY !== sy) window.scrollTo(sx, sy);
+    requestAnimationFrame(() => { el.style.minHeight = ''; if (window.scrollY !== sy && Date.now() - USER.at > 700) window.scrollTo(sx, sy); });
+  }
   function runDraw(name) {
     const fn = draws.get(name); if (!fn) return;
-    document.querySelectorAll('[data-draw="' + name + '"]').forEach((el) => { if (visible(el)) { try { fn(el); } catch (err) { console.error(name, err); drawFailed(el, name, err); } } });
+    document.querySelectorAll('[data-draw="' + name + '"]').forEach((el) => { if (visible(el)) { try { keepPlace(el, () => fn(el)); } catch (err) { el.style.minHeight = ''; console.error(name, err); drawFailed(el, name, err); } } });
   }
   // A part of the page that fails to draw says so (with a way to reload) instead of staying blank, and the cause is
   // reported to the Issues page so it can be fixed.
@@ -78,6 +105,7 @@
     } catch (e) { /* never fail twice */ }
   }
   let raf = 0;
+  window.CO_renderAll = () => renderAll(); // used by the automated checks
   function renderAll() {
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => {
@@ -137,7 +165,8 @@
     if (A.mode === 'auth' && !A.user) return;
     if (A.mode !== 'auth') { const { url, key } = conn(); if (!url || !key) { S.status = 'unconfigured'; renderAll(); return; } }
     if (S.status !== 'ok') S.status = 'loading';
-    S.refreshing = true; S.refreshAt = Date.now(); renderAll();
+    // a refresh of data already on screen only updates the sync pill (the page redraws once, when the new data is in)
+    const wasOk = S.status === 'ok'; S.refreshing = true; S.refreshAt = Date.now(); if (wasOk) { try { syncControls(); dash.draw('sync-text'); } catch (e) { renderAll(); } } else renderAll();
     try {
       const body = A.mode === 'auth' ? await callApi(Object.assign({ action: 'data', fresh: fresh === true }, fresh === 'recent' ? { maxAge: 90 } : {})) : await keyGet(fresh === true ? { fresh: '1' } : {});
       if (!body.ok) throw new Error(errText(body.error));
@@ -827,10 +856,18 @@
     if (!/^\d{8}[a-z]?$/.test(v) || v <= BUILD) return; // only ever move forward
     REL.next = v;
     let tried = ''; try { tried = sessionStorage.getItem('co.reloadFor') || ''; } catch (e) { /* ignore */ }
-    if (tried === v) { if (!REL.asked) { REL.asked = true; toast('A new version of the dashboard is ready.', false, { label: 'Reload', fn: goLatest }); } return; }
-    if (!busyNow()) { toast('Updating to the latest version…'); setTimeout(() => { if (!busyNow()) goLatest(); }, 1500); }
-    else if (!REL.asked) { REL.asked = true; toast('A new version is ready. It loads when you finish what you are doing.', false, { label: 'Reload now', fn: goLatest }); }
+    // Never reload under someone's eyes (it loses their place): a small "Update ready" button waits in the header, and
+    // the page updates by itself only after the tab has been in the background for 10 minutes.
+    REL.ready = true; relPill();
+    if (tried === v) return;
   }
+  function relPill() {
+    let b = document.getElementById('rel-pill'); if (!REL.ready) { if (b) b.hidden = true; return; }
+    if (!b) { b = document.createElement('button'); b.id = 'rel-pill'; b.type = 'button'; b.className = 'rel-pill'; b.title = 'A newer version of the dashboard is ready. Reload when it suits you; nothing you are doing is lost.'; b.innerHTML = '<i aria-hidden="true"></i><span>Update ready</span>'; b.addEventListener('click', goLatest); const r = document.getElementById('btn-refresh'); if (r && r.parentElement) r.parentElement.insertBefore(b, r); else document.body.append(b); }
+    b.hidden = false;
+  }
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') hiddenAt = Date.now(); else if (REL.ready && hiddenAt && Date.now() - hiddenAt > 10 * 60 * 1000 && !busyNow()) goLatest(); });
   setInterval(checkRelease, 2 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkRelease(); });
   setTimeout(checkRelease, 20 * 1000);

@@ -121,6 +121,8 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 **Creative link → Under review (Nov 2026):** submitting or replacing a creative link always sets the design status to UNDER REVIEW (the dashboard sends it, and the server adds it when a link arrives without a status). Links changed directly in the sheet are not affected.
 
+**Smooth updates (Nov 2026):** the dashboard never reloads itself while someone is using it. A newer release shows an **Update ready** button in the header (click to load it); the page only updates by itself after the tab has been in the background for 10 minutes. Background redraws (data checks, presence, day plan) keep each section's height while redrawing and restore the page scroll, scrolled lists and tables, open expanders and focus; a redraw with identical content changes nothing (`keepPlace` in `runDraw`). Redraws caused by the person (click, key, scroll) are left alone. A data refresh only updates the sync pill until the new data is in.
+
 ## How every number is counted
 
 These rules are the same on every page (Overview, Stand-up, My work, Team, Reports, Brands, packages) and are shown in the dashboard under Overview → *This month at a glance* → **How we count**.

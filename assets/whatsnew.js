@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-26-smooth', date: '2026-11-25', kind: 'improved', who: 'all', title: 'No more jumping back to the top',
+    what: 'The dashboard no longer reloads itself while you are working, and live updates keep your place.',
+    does: 'When a new version is out, an Update ready button appears next to Refresh: click it when it suits you. Live data updates keep your scroll position, scrolled lists and open sections.',
+    how: 'Nothing to do. Click Update ready whenever you like.'
+  },
+  {
     id: '2026-11-26-accuracy', date: '2026-11-25', kind: 'improved', who: 'all', title: 'My work shows today, and clearer numbers',
     what: 'My work now opens on Today: every task assigned to you with today\'s ETA, whatever its status (content still pending included), plus anything overdue.',
     does: 'The Overview has a new "This month at a glance" strip with a How we count panel. Messages now appear at the top of the screen in front of any pop-up, and buttons show a spinner while saving.',
