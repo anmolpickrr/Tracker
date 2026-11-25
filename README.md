@@ -123,7 +123,7 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 **Whole-domain access (Nov 2026):** on the Access page the owner can set an allowed domain to *View only* or *Can edit* (never Admin). Everyone signing in from it is approved straight away with that role (new people, and waiting requests at their next sign-in); people who were declined or removed stay out. Stored in the shared access sheet (tab *Domain access*), so every copy of the web app follows it; changes are in the activity log. Endpoints `domainRules` (Admins) and `domainRuleSave` (owner).
 
-**Open File, PAID sheet (Nov 2026):** for the PAID sheet the Open File link is always column **P** of its tab (`taskColumns_`: `c.file = 15`; `data.js`: `ix.file = 15`, falling back to the column headed "Open File" for older tasks). The dashboard never adds an Open File column to that sheet.
+**Open File, PAID sheet (Nov 2026):** Open File links are saved to and read from the column headed "Open File" (column O of the 2026 tab). The dashboard never adds an Open File column to that sheet.
 
 **Open File → Backend (Nov 2026):** when a task's spreadsheet has a tab named *Backend* with an *Open File* heading, Open File links are written there (matched by Creative_id), never to the task tab; the sheet's own script copies them on. `moveOpenFilesToBackend()` runs once by itself (10-minute job) and copies only the Open File links the dashboard itself had written into the task tab (found in the activity log) to Backend, where Backend is still empty; the result is in the activity log.
 
