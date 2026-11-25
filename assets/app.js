@@ -84,7 +84,8 @@
     const focusPath = el.contains(document.activeElement) && document.activeElement !== el ? pathOf(el, document.activeElement) : null;
     if (h) el.style.minHeight = h + 'px';
     fn();
-    if (el.innerHTML === before) { el.style.minHeight = ''; window.scrollTo(sx, sy); return; } // nothing new
+    el.querySelectorAll('.na-row.in, .tw-item.in').forEach((n) => n.classList.remove('in')); // no fade-in replay: updated rows just appear
+    if (el.innerHTML === before.replace(/ class="((?:na-row|tw-item)[^"]*?) in"/g, ' class="$1"')) { el.style.minHeight = ''; window.scrollTo(sx, sy); return; } // nothing new
     const find = (x) => { const n = atPath(el, x.path); return n && keyOf(n) === x.key ? n : null; };
     scrolled.forEach((x) => { const n = find(x); if (n) { n.scrollTop = x.t; n.scrollLeft = x.l; } });
     opened.forEach((x) => { const n = find(x); if (n && n.tagName === 'DETAILS') n.open = true; });
