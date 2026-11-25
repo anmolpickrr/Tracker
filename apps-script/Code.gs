@@ -657,6 +657,7 @@ function updateTask_(body, mine, pm, contentMine) {
   const where_ = function (sh, col) { return sh.getParent().getName() + ' › ' + sh.getName() + ', column ' + colName_(col) + ' (' + (clean_(sh.getRange(1, col + 1).getDisplayValue()) || 'no heading') + '), row ' + row + ', task ' + id; };
   const track = function (colIndex, fn) { try { fn(sheet.getRange(row, colIndex + 1)); } catch (e) { throw protectedErr_(e, where_(sheet, colIndex)); } touched.push(colIndex); };
   const written = {};
+  let warn = '';
   if (f.designer != null) {
     // Checked before anything is written: a name outside the sheet's dropdown is refused.
     const name = clean_(f.designer).slice(0, 120);
@@ -669,7 +670,10 @@ function updateTask_(body, mine, pm, contentMine) {
     f.designer = value;
   }
   if (f.status != null) {
-    track(c.status, function (cell) { cell.setValue(statusVal); written.status = statusVal; });
+    // A creative link moves the task to Under review on its way; if the status column is protected, the link is still
+    // saved (the protected column is reported to the owner) instead of losing the whole save.
+    try { track(c.status, function (cell) { cell.setValue(statusVal); written.status = statusVal; }); }
+    catch (e) { if (f.link != null && /That column is protected/.test(String(e && e.message))) { warn = 'The link is saved, but the status column is protected, so the task could not move to Under review. The Creative Head has been told.'; } else throw e; }
   }
   if (f.eta != null) {
     track(c.eta, function (cell) {
@@ -707,7 +711,7 @@ function updateTask_(body, mine, pm, contentMine) {
     const after = sheet.getRange(row, 1, 1, lastCol).getDisplayValues()[0];
     touched.forEach(function (ci) { if (rowD[ci] !== after[ci]) changes.push(Object.assign({}, where, { field: clean_(headers[ci]) || ('Column ' + (ci + 1)), before: rowD[ci], after: after[ci] })); });
   }
-  return { ok: true, row: row, written: written, changes: changes };
+  return { ok: true, row: row, written: written, changes: changes, warn: warn || undefined };
 }
 
 

@@ -3457,7 +3457,7 @@
         // treats a value already in the sheet as saved, so a retry after a slow first answer is safe.
         const temp = (e) => !(e instanceof AuthLost) && (e instanceof TypeError || /busy|try again|took too long|timed? ?out|failed to fetch|network|load failed|temporarily|unavailable|Service error|Internal error/i.test(String(e && e.message || e))) && !(e.body && e.body.error === 'changed');
         const tryPost = async () => { for (let i = 0; ; i++) { try { return await post(payload); } catch (e) { if (i >= 2 || !temp(e)) throw e; if (i === 0) toast('Google Sheets is busy, still saving…'); await new Promise((w) => setTimeout(w, i ? 4000 : 1500)); } } };
-        try { res = await tryPost(); }
+        try { res = await tryPost(); if (res && res.warn) setTimeout(() => toast(res.warn, true), 1200); }
         catch (err) {
           SAVING.delete(r.uid); savingPill();
           // put the task back as it was, then re-read the sheet (unless the same task was saved again meanwhile)
