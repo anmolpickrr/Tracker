@@ -658,7 +658,7 @@ function updateTask_(body, mine, pm, contentMine) {
   const touched = [];
   // a write the sheet refuses (a protected column) says exactly where, so the owner knows which range to open up
   const where_ = function (sh, col) { return sh.getParent().getName() + ' › ' + sh.getName() + ', column ' + colName_(col) + ' (' + (clean_(sh.getRange(wHr, col + 1).getDisplayValue()) || 'no heading') + '), row ' + row + ', task ' + id; };
-  const track = function (colIndex, fn) { try { fn(wS.getRange(wR, colIndex + 1)); } catch (e) { throw protectedErr_(e, where_(wS, colIndex)); } touched.push(colIndex); };
+  const track = function (colIndex, fn) { const cell = wS.getRange(wR, colIndex + 1); try { fn(cell); } catch (e) { throw protectedErr_(e, where_(wS, colIndex), cell); } touched.push(colIndex); };
   const written = {};
   let warn = '';
   if (f.designer != null) {
@@ -743,9 +743,20 @@ function moveOpenFilesToBackend() {
 
 function colName_(i) { let n = i + 1, s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
 /* A refused write on a protected range becomes a clear issue in the "fix in the sheets" group, naming the range. */
-function protectedErr_(e, where) {
+function protectedErr_(e, where, cell) {
   const m = String(e && e.message || e);
   if (!/protected cell|protected range|trying to edit a protected/i.test(m)) return e;
+  // which protection it is (name, range, who may edit), so the owner knows exactly what to open up
+  let info = '';
+  try {
+    if (cell) {
+      const sh = cell.getSheet(), r0 = cell.getRow(), c0 = cell.getColumn();
+      const hits = sh.getProtections(SpreadsheetApp.ProtectionType.RANGE).filter(function (p) { const g = p.getRange(); return g && r0 >= g.getRow() && r0 <= g.getLastRow() && c0 >= g.getColumn() && c0 <= g.getLastColumn(); })
+        .concat(sh.getProtections(SpreadsheetApp.ProtectionType.SHEET));
+      info = hits.slice(0, 3).map(function (p) { const g = p.getRange(); let eds = []; try { eds = p.getEditors().map(function (u) { return u.getEmail(); }); } catch (x) { /* not allowed to read */ } return '"' + (p.getDescription() || 'no name') + '" on ' + (p.getProtectionType() === SpreadsheetApp.ProtectionType.SHEET ? 'the whole tab' : g.getA1Notation()) + (eds.length ? ' (editors: ' + eds.slice(0, 6).join(', ') + ')' : ''); }).join('; ');
+    }
+  } catch (x) { info = ''; }
+  if (info) where = where + ' · protection ' + info;
   let me = ''; try { me = Session.getEffectiveUser().getEmail(); } catch (x) { me = 'the dashboard\'s account'; }
   try { issueLog_('Sheets', 'Protected column blocks saves: ' + where.split(', row')[0], 'The dashboard saves as ' + me + ', which is not allowed to edit ' + where + '. In the sheet: Data > Protect sheets and ranges > open the range covering that column > Set permissions > add ' + me + ' as an editor (or choose "Show a warning").', 'web app', { key: 'protected|' + where.split(', row')[0] }); } catch (x) { /* the save error still reaches the person */ }
   return new Error('That column is protected in the sheet (' + where.split(', task')[0] + '), so the dashboard cannot save it. The Creative Head has been told which range to open up.');
