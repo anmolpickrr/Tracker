@@ -215,7 +215,17 @@
     } catch (e) { S.health = null; }
     dash.draw('integration');
   }
+  // Every action shows it is working: the button that started a request (clicked just before it) gets a spinner and is
+  // disabled until the answer arrives; success and errors are then shown as a toast at the top of the screen.
+  const CLICK = { btn: null, at: 0 };
+  document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('button, .co-btn'); if (b) { CLICK.btn = b; CLICK.at = Date.now(); } }, true);
   async function post(payload) {
+    const btn = CLICK.btn && Date.now() - CLICK.at < 800 && CLICK.btn.isConnected && !CLICK.btn.disabled && !/^(beat|ver|me|feed|presence|inbox|data|issues|meetings|music|studio|notes|domainRules|daily|dayplan|history)$/.test(payload.action) ? CLICK.btn : null;
+    if (btn) { CLICK.btn = null; btn.disabled = true; btn.classList.add('is-busy'); btn.setAttribute('aria-busy', 'true'); }
+    try { return await postNow(payload); }
+    finally { if (btn) { btn.disabled = false; btn.classList.remove('is-busy'); btn.removeAttribute('aria-busy'); } }
+  }
+  async function postNow(payload) {
     let body;
     if (A.mode === 'auth') body = await callApi(payload);
     else {
@@ -784,12 +794,16 @@
     });
     { const all = document.createElement('button'); all.type = 'button'; all.className = 'co-link f-clear'; all.textContent = act.length > 1 ? 'Clear all' : 'Clear'; all.addEventListener('click', () => dash.setParams({ src: '', designer: '', brand: '', type: '' })); box.append(all); }
   }
+  window.CO_toast = (t, b) => toast(t, b);
   function toast(text, bad, action) {
     let t = document.querySelector('.co-toast');
-    if (!t) { t = document.createElement('div'); t.className = 'co-toast'; t.setAttribute('role', 'status'); document.body.append(t); }
-    t.replaceChildren(text); t.classList.toggle('bad', !!bad); t.hidden = false;
-    if (action) { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-toast-act'; b.textContent = action.label; b.addEventListener('click', () => { t.hidden = true; action.fn(); }); t.append(b); }
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; if (action && action.onTimeout) action.onTimeout(); }, action ? 5000 : 4000);
+    if (!t) { t = document.createElement('div'); t.className = 'co-toast'; t.setAttribute('role', bad ? 'alert' : 'status'); t.setAttribute('aria-live', 'polite'); document.body.append(t); }
+    t.replaceChildren(text); t.classList.toggle('bad', !!bad); t.hidden = false; t.setAttribute('role', bad ? 'alert' : 'status');
+    // Always in front: shown in the browser's top layer (above any open pop-up); older browsers get it inside the open pop-up.
+    const top = () => { if (t.popover !== undefined && typeof t.showPopover === 'function') { if (!t.hasAttribute('popover')) t.setAttribute('popover', 'manual'); try { if (t.matches(':popover-open')) t.hidePopover(); t.showPopover(); return; } catch (e) { /* fall through */ } } const dlg = [...document.querySelectorAll('dialog[open]')].pop(); (dlg || document.body).append(t); };
+    top();
+    if (action) { const b = document.createElement('button'); b.type = 'button'; b.className = 'co-toast-act'; b.textContent = action.label; b.addEventListener('click', () => { t.hidden = true; try { if (t.matches(':popover-open')) t.hidePopover(); } catch (e) { /* ignore */ } action.fn(); }); t.append(b); }
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; try { if (t.matches(':popover-open')) t.hidePopover(); } catch (e) { /* ignore */ } if (action && action.onTimeout) action.onTimeout(); }, action ? 6000 : bad ? 6000 : 4000);
   }
 
   /* ================= Everyone on the latest release =================
@@ -1511,10 +1525,65 @@
   const card = (title, note, count) => { const c = document.createElement('section'); c.className = 'co-card'; const hd = document.createElement('div'); hd.className = 'na-head'; const l = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = title; if (count != null) { const n = document.createElement('span'); n.className = 'na-count' + (count ? '' : ' ok'); n.textContent = count; h2.append(n); } const p = document.createElement('p'); p.className = 'co-note'; p.textContent = note; l.append(h2, p); hd.append(l); c.append(hd); return c; };
   const emptyLine = (text) => { const p = document.createElement('p'); p.className = 'mw-empty'; p.textContent = text; return p; };
 
+  /* ================= Overview: this month at a glance =================
+     Extra numbers for the month and the team's workload, each defined in "How we count" (the same rules every page uses). */
+  const OV_DEFS = [
+    ['Open with designers', 'Tasks assigned to someone whose design status is To be planned (TBP), WIP, Changes requested or Under review. Counted once per task; the creatives figure adds the "No. of Creatives" column (1 when blank).'],
+    ['Overdue', 'Open tasks whose Design ETA is before today (IST). Shared / with the client, Hold, Delivered, Rejected and Deprioritised are never overdue.'],
+    ['Due today', 'Open tasks whose Design ETA is today (IST).'],
+    ['WIP', 'Design status WIP. Changes requested is counted separately.'],
+    ['Shared with client', 'Design status Shared (or No update): finished and with the client, waiting for approval. Not counted as late.'],
+    ['Completed this month', 'Tasks whose design status is DONE (Delivered) with a delivery date in the current month (IST). The delivery date is the Delivered On column, else the Design ETA. Counted by creatives (No. of Creatives). Rejected and Deprioritised are not completed.'],
+    ['Delivered this week', 'Same rule as Completed, with a delivery date from Monday of this week to today.'],
+    ['Requested this month', 'Tasks whose request date (Req. Date) is in the current month, whatever their status.'],
+    ['Waiting to be picked up', 'Assigned tasks not started yet: To be planned (TBP), plus Awaiting brief (content still being written). Unassigned work is shown separately.'],
+    ['Unassigned', 'Open tasks with no designer / editor in the sheet.'],
+    ['Creative link missing', 'Tasks Under review, Shared or Delivered this month with an empty Creative Link.'],
+    ['Open File missing', 'Tasks delivered this month with an empty Open File (the editable source file).'],
+    ['Rejected this month', 'Tasks marked REJECTED with a date in the current month.'],
+    ['Both sheets', 'Every number combines the PAID (External) and Marketing (Internal) sheets, each task once. Rows without an ID or a date are left out and listed on Data health. The page filters (sheet, designer, brand, type) apply to every number.']
+  ];
+  function ovDefs() {
+    let d = document.getElementById('ov-defs');
+    if (!d) { d = document.createElement('dialog'); d.id = 'ov-defs'; d.className = 'co-dialog ov-defs'; d.setAttribute('aria-labelledby', 'ov-defs-t'); document.body.append(d); d.addEventListener('click', (e) => { if (e.target === d) d.close(); }); }
+    d.replaceChildren();
+    const h = document.createElement('div'); h.className = 'ov-defs-h'; const t2 = document.createElement('h2'); t2.id = 'ov-defs-t'; t2.textContent = 'How we count'; const x = document.createElement('button'); x.type = 'button'; x.className = 'co-btn'; x.textContent = 'Close'; x.addEventListener('click', () => d.close()); h.append(t2, x);
+    const dl = document.createElement('dl'); OV_DEFS.forEach(([k, v]) => { const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v; dl.append(dt, dd); });
+    d.append(h, dl); d.showModal();
+  }
+  dash.draw('ov-month', (el) => {
+    if (CO.notReady(el, 'box')) return;
+    el.replaceChildren();
+    const rs = CO.rows().filter((r) => !r.private), t = CO.today(), m0 = t.slice(0, 7) + '-01', wk = mondayOf(t);
+    const inM = (d) => d && d >= m0 && d <= t;
+    const delivered = (from) => rs.filter((r) => r.done && r.ddate && r.ddate >= from && r.ddate <= t);
+    const M = [
+      ['Requested this month', rs.filter((r) => inM(r.req)), 'tasks'],
+      ['Delivered this week', delivered(wk), 'done', 'delivered-week'],
+      ['Waiting to be picked up', rs.filter((r) => r.list.length && (r.stage === 'To be planned' || r.awaiting)), 'pick'],
+      ['Unassigned', rs.filter((r) => (r.open || r.awaiting) && !r.list.length), 'warn'],
+      ['Creative link missing', rs.filter((r) => !r.link && (r.review || r.shared || (r.done && inM(r.ddate)))), 'warn'],
+      ['Open File missing', rs.filter((r) => r.done && inM(r.ddate) && !r.file), 'warn'],
+      ['Rejected this month', rs.filter((r) => r.stage === 'Rejected' && inM(r.ddate || r.eta)), '']
+    ];
+    const head = document.createElement('div'); head.className = 'ov-m-h';
+    const ht = document.createElement('div'); const h2 = document.createElement('h2'); h2.className = 'co-h2'; h2.textContent = 'This month at a glance'; const p = document.createElement('p'); p.className = 'co-note'; p.textContent = new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', month: 'long', year: 'numeric' }) + ' · both sheets · tasks (creatives)'; ht.append(h2, p);
+    const how = document.createElement('button'); how.type = 'button'; how.className = 'co-btn sm'; how.textContent = 'How we count'; how.addEventListener('click', ovDefs);
+    head.append(ht, how); el.append(head);
+    const grid = document.createElement('div'); grid.className = 'ov-m-grid';
+    M.forEach(([label, list, tone]) => {
+      const b = document.createElement('div'); b.className = 'ov-m-cell' + (tone ? ' t-' + tone : '') + (list.length ? '' : ' zero');
+      const n = document.createElement('b'); n.textContent = CO.num(list.length); const q = CO.sumQty(list); if (q > list.length) { const sm = document.createElement('small'); sm.textContent = ' (' + CO.num(q) + ')'; n.append(sm); }
+      const sp = document.createElement('span'); sp.textContent = label; b.title = (OV_DEFS.find((d) => d[0] === label) || [])[1] || '';
+      b.append(n, sp); grid.append(b);
+    });
+    el.append(grid);
+  });
+
   /* ================= My work =================
      One person's day: overdue and due today first, then what is next, what is with the client and what they delivered
      this week. Team members land here; admins can view any team member. */
-  const MW = { per: LS.get('co.mwper', 'week'), st: LS.get('co.mwst', 'all') };
+  const MW = { per: LS.get('co.mwper3', 'today'), st: LS.get('co.mwst', 'all') };
   dash.draw('mine', (el) => {
     if (A.mode !== 'auth' || !A.user) { el.replaceChildren(); return; }
     if (CO.notReady(el, 'box')) return;
@@ -1541,12 +1610,15 @@
     const L = EF.load(who), rTxt = String(EF.role(who) || '').replace(/\s*\(not shown\)\s*/i, '').trim(); rl.textContent = [who === mine && isOwner() ? '' : rTxt || 'Role not set', open.length ? open.length + ' open' : 'nothing open', L.hours ? 'about ' + (L.days < 1 ? Math.round(L.hours) + ' h' : L.days.toFixed(1) + ' working days') + ' of work' + (L.content && !open.length ? ' (content writing)' : '') : ''].filter(Boolean).join(' · ');
     nm.append(h2, rl); id.append(av, nm); head.append(id);
     // Everything assigned to this person in the chosen period, by status, then grouped by date (Design ETA).
-    const per = MW.per === 'month' ? 'month' : 'week';
-    const p0 = per === 'week' ? wk : t.slice(0, 7) + '-01', p1 = per === 'week' ? CO.addDays(wk, 6) : CO.monthEnd(t.slice(0, 7));
-    const inPer = all.filter((r) => (r.eta && r.eta >= p0 && r.eta <= p1) || (r.open && (!r.eta || r.eta < p0)) || (r.shared && r.eta && r.eta < p0));
+    // Today (default) matches Stand-up: everything assigned with today's Design ETA, whatever its status (content still
+    // pending included), plus open or waiting-on-content work that is overdue. Week and month: by Design ETA in the period.
+    const per = MW.per === 'month' ? 'month' : MW.per === 'week' ? 'week' : 'today';
+    const p0 = per === 'today' ? t : per === 'week' ? wk : t.slice(0, 7) + '-01', p1 = per === 'today' ? t : per === 'week' ? CO.addDays(wk, 6) : CO.monthEnd(t.slice(0, 7));
+    const live = (r) => r.open || r.awaiting;
+    const inPer = all.filter((r) => (r.eta && r.eta >= p0 && r.eta <= p1) || (live(r) && r.eta && r.eta < p0) || (per !== 'today' && ((live(r) && !r.eta) || (r.shared && r.eta && r.eta < p0))));
     const ST = [
       ['all', 'Assigned', () => true, 'everything assigned to you'],
-      ['tbp', 'TBP', (r) => r.stage === 'To be planned', 'to be planned, not started'],
+      ['tbp', 'TBP', (r) => r.stage === 'To be planned' || r.stage === 'Awaiting brief', 'not started (incl. content pending)'],
       ['wip', 'WIP', (r) => r.stage === 'WIP' || r.stage === 'Changes requested', 'in progress, incl. changes'],
       ['review', 'Under review', (r) => r.stage === 'Under review', 'with the Creative Head'],
       ['shared', 'Shared', (r) => r.stage === 'Shared' || r.stage === 'No update', 'with the client'],
@@ -1555,12 +1627,12 @@
     if (!ST.some((x) => x[0] === MW.st)) MW.st = 'all';
     const day = document.createElement('div'); day.className = 'mw-day';
     const dh = document.createElement('div'); dh.className = 'mw-day-h';
-    const dt = document.createElement('b'); dt.textContent = (per === 'week' ? 'This week' : 'This month') + ', ' + CO.fmtDate(p0) + ' to ' + CO.fmtDate(p1);
+    const dt = document.createElement('b'); dt.textContent = per === 'today' ? 'Today, ' + new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'short' }) : (per === 'week' ? 'This week' : 'This month') + ', ' + CO.fmtDate(p0) + ' to ' + CO.fmtDate(p1);
     const dueToday = open.filter((r) => r.due === 'today').length, lateN = open.filter((r) => r.due === 'overdue').length;
     const ds = document.createElement('small'); ds.textContent = [dueToday ? dueToday + ' due today' : 'Nothing due today', lateN ? lateN + ' overdue' : ''].filter(Boolean).join(' · ');
     const dl = document.createElement('div'); dl.append(dt, ds); dh.append(dl);
     const sw = document.createElement('div'); sw.className = 'pm-seg mw-ds'; sw.setAttribute('role', 'radiogroup'); sw.setAttribute('aria-label', 'Period');
-    [['week', 'This week'], ['month', 'This month']].forEach(([v, tx]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-opt' + (per === v ? ' on' : ''); b.textContent = tx; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(per === v)); b.addEventListener('click', () => { MW.per = v; LS.set('co.mwper', v); dash.draw('mine'); }); sw.append(b); });
+    [['today', 'Today'], ['week', 'This week'], ['month', 'This month']].forEach(([v, tx]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-opt' + (per === v ? ' on' : ''); b.textContent = tx; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(per === v)); b.addEventListener('click', () => { MW.per = v; LS.set('co.mwper3', v); dash.draw('mine'); }); sw.append(b); });
     dh.append(sw); day.append(dh);
     const tiles = document.createElement('div'); tiles.className = 'mw-tiles mw-tiles6'; tiles.setAttribute('role', 'tablist'); tiles.setAttribute('aria-label', 'Status');
     ST.forEach(([k, l, fn, sub]) => {
@@ -1572,17 +1644,17 @@
     day.append(tiles); head.append(day); el.append(head);
     const grid = document.createElement('div'); grid.className = 'mw-grid mw-grid1';
     const cur = ST.find((x) => x[0] === MW.st), list = inPer.filter(cur[2]);
-    const c = card(cur[0] === 'all' ? 'All your tasks' : cur[1], 'By Design ETA, ' + (per === 'week' ? 'this week' : 'this month') + '. Open work from earlier and tasks without a date are listed first.', list.length); c.classList.add('mw-bucket');
-    if (!list.length) c.append(emptyLine(cur[0] === 'all' ? 'Nothing assigned to you ' + (per === 'week' ? 'this week.' : 'this month.') : 'No ' + cur[1] + ' tasks ' + (per === 'week' ? 'this week.' : 'this month.')));
+    const c = card(cur[0] === 'all' ? 'All your tasks' : cur[1], per === 'today' ? 'Everything assigned to you with today\'s Design ETA, whatever its status (content still pending included), and overdue work first. The same tasks the Creative Head sees for you in Stand-up.' : 'By Design ETA, ' + (per === 'week' ? 'this week' : 'this month') + '. Open work from earlier and tasks without a date are listed first.', list.length); c.classList.add('mw-bucket');
+    if (!list.length) { const when = per === 'today' ? 'today.' : per === 'week' ? 'this week.' : 'this month.'; c.append(emptyLine(cur[0] === 'all' ? 'Nothing assigned to you ' + when : 'No ' + cur[1] + ' tasks ' + when)); }
     const groups = new Map(); const gk = (r) => !r.eta ? '0' : r.eta < p0 ? '1' : '2' + r.eta;
     list.slice().sort((a, b) => gk(a).localeCompare(gk(b)) || (a.priority || 'P9').localeCompare(b.priority || 'P9')).forEach((r) => { const k = gk(r); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
-    const gName = (k) => { if (k === '0') return 'No Design ETA'; if (k === '1') return 'Earlier, still open'; const d = k.slice(1); const w = new Date(d + 'T00:00:00Z').toLocaleDateString('en-IN', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' }); return w + (d === t ? ' · Today' : d === CO.addDays(t, 1) ? ' · Tomorrow' : ''); };
+    const gName = (k) => { if (k === '0') return 'No Design ETA'; if (k === '1') return per === 'today' ? 'Overdue' : 'Earlier, still open'; const d = k.slice(1); const w = new Date(d + 'T00:00:00Z').toLocaleDateString('en-IN', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' }); return w + (d === t ? ' · Today' : d === CO.addDays(t, 1) ? ' · Tomorrow' : ''); };
     let i = 0;
     groups.forEach((rs, k) => {
       const g = document.createElement('div'); g.className = 'mw-grp' + (k.slice(1) === t ? ' today' : '') + (k === '1' ? ' late' : '');
       const h = document.createElement('h3'); h.className = 'mw-grp-h'; h.textContent = gName(k); const n = document.createElement('span'); n.textContent = rs.length; h.append(n);
       const ul = document.createElement('ul'); ul.className = 'na-list mw-list';
-      rs.forEach((r) => { const li = workRow(r, { who: false, done: r.done, waiting: r.shared, kind: r.due === 'overdue' ? 'late' : r.done ? 'done' : '' }); li.classList.add('in'); li.style.setProperty('--i', Math.min(i++, 10)); ul.append(li); });
+      rs.forEach((r) => { const li = workRow(r, { who: false, done: r.done, waiting: r.shared, kind: (r.due === 'overdue' || (r.awaiting && r.eta && r.eta < t)) ? 'late' : r.done ? 'done' : r.awaiting ? 'changes' : '' }); li.classList.add('in'); li.style.setProperty('--i', Math.min(i++, 10)); ul.append(li); });
       g.append(h, ul); c.append(g);
     });
     const cto = CT.of(who), isWriter = CT.writers().some((w) => w === who) || CT.contentOnly(who);
@@ -2150,13 +2222,13 @@
     rows.forEach((r) => {
       const sh = r.stage === 'Shared' || r.stage === 'No update', rj = r.stage === 'Rejected'; if (!sh && !rj) return;
       const list = byBrand.get(pkBrand(r.brand)); if (!list) return; const d = r.eta || r.req || '', cls = clsOf(r), tk = pkNorm(r.type);
-      list.forEach((x) => { if (x.p.status === 'Closed' || !(x.p.from === 'Both' || x.p.from === cls) || d < x.p.date || (x.p.end && d > x.p.end)) return; if (!fits(x, tk)) return; if (x.kind === 'Monthly') { const c = x.cycles[x.cycles.length - 1]; if (!c || d < c.from) return; } if (sh) x.shared++; else x.rejected++; });
+      list.forEach((x) => { if (x.p.status === 'Closed' || !pkCountsFrom(x.p, cls) || d < x.p.date || (x.p.end && d > x.p.end)) return; if (!fits(x, tk)) return; if (x.kind === 'Monthly') { const c = x.cycles[x.cycles.length - 1]; if (!c || d < c.from) return; } if (sh) x.shared++; else x.rejected++; });
     });
     rows.forEach((r) => {
       if (!r.open) return; const list = byBrand.get(pkBrand(r.brand)); if (!list) return;
       const tk = pkNorm(r.type), cls = clsOf(r);
       list.forEach((x) => {
-        if (!(x.p.from === 'Both' || x.p.from === cls)) return;
+        if (!pkCountsFrom(x.p, cls)) return;
         let items = x.items;
         if (x.kind === 'Monthly') { const c = x.cycles[x.cycles.length - 1]; if (!c || (r.req || '') < c.from) return; items = c.items; } else if ((r.req || '') < x.p.date) return;
         if (x.amount) { x.openN++; x.openCost += pkRateOf(x, r.type) || 0; return; }
@@ -2165,7 +2237,7 @@
     });
     rows.filter((r) => r.stage === 'Delivered' && r.ddate && byBrand.has(pkBrand(r.brand))).sort((a, b) => a.ddate.localeCompare(b.ddate)).forEach((r) => {
       const D = r.ddate, tk = pkNorm(r.type), cls = clsOf(r);
-      const cands = byBrand.get(pkBrand(r.brand)).filter((x) => x.p.status !== 'Closed' && x.p.date <= D && (!x.p.end || D <= x.p.end) && (x.p.from === 'Both' || x.p.from === cls));
+      const cands = byBrand.get(pkBrand(r.brand)).filter((x) => x.p.status !== 'Closed' && x.p.date <= D && (!x.p.end || D <= x.p.end) && pkCountsFrom(x.p, cls));
       let units = r.qty || 1, last = null;
       for (const x of cands) {
         const cyc = x.kind === 'Monthly' ? cycleOf(x, D) : null; if (x.kind === 'Monthly' && !cyc) continue;
@@ -2239,11 +2311,13 @@
   }
   /* Creatives for this brand in the order's current window (this month for a plan) that the order does not count, and
      why: delivered but in the other sheet, or not delivered yet (in review, with the client, in progress). */
+  // Every package counts deliveries for its brand from BOTH sheets (owner's rule, Nov 2026), whatever it was created with.
+  const pkCountsFrom = (p, cls) => true; // eslint-disable-line no-unused-vars
   function pkMissed(p, f) {
     const from = f.cycle ? f.cycle.from : p.date, to = [p.end, f.cycle ? f.cycle.to : '', CO.today()].filter(Boolean).sort()[0];
     const out = { other: 0, otherIds: [], otherSheet: '', review: 0, shared: 0, wip: 0 };
     (CO.rows(true) || []).forEach((r) => {
-      if (pkBrand(r.brand) !== pkBrand(p.brand)) return; const cls = r.source === 'Paid' ? 'External' : 'Internal', inSheet = p.from === 'Both' || p.from === cls;
+      if (pkBrand(r.brand) !== pkBrand(p.brand)) return; const cls = r.source === 'Paid' ? 'External' : 'Internal', inSheet = pkCountsFrom(p, cls);
       if (r.stage === 'Delivered') { if (!inSheet && r.ddate >= from && r.ddate <= to) { out.other++; out.otherIds.push((r.id || 'No ID') + ' · ' + (r.type || '') + ' · Design ETA ' + (r.eta ? CO.fmtDate(r.eta) : 'blank')); out.otherSheet = cls; } return; }
       const d = r.eta || r.req || ''; if (!inSheet || d < from || (p.end && d > p.end)) return;
       if (r.stage === 'Under review') out.review++; else if (r.stage === 'Shared' || r.stage === 'No update') out.shared++; else if (r.open) out.wip++;
@@ -2489,7 +2563,7 @@
     fact('Order ID', p.id);
     if (kind === 'Monthly') { fact('Billing', inr(p.amount) + ' + GST ' + f.gst + '% (' + inr(f.gstOf(p.amount)) + ') = ' + inr(p.amount + f.gstOf(p.amount)) + ' a month, from ' + CO.fmtDate(p.date, true) + (p.end ? ' to ' + CO.fmtDate(p.end, true) : ' (no end date)')); fact('Billed so far', inr(f.billed) + ' + GST ' + inr(f.gstOf(f.billed)) + ' = ' + inr(f.billed + f.gstOf(f.billed)) + ' for ' + (x.cycles ? x.cycles.length : 0) + ' month' + ((x.cycles || []).length === 1 ? '' : 's')); fact('Next bill', f.next ? CO.fmtDate(f.next, true) : f.ended ? 'Plan ended' : ''); fact('Carry forward', 'Extra delivered in a month counts toward the next month; unused creatives do not carry over'); }
     else fact('Amount', p.amount ? inr(p.amount) + ' + GST ' + f.gst + '% (' + inr(f.gstOf(p.amount)) + ') = ' + inr(p.amount + f.gstOf(p.amount)) : '');
-    fact('Counts from', p.from === 'Both' ? 'Internal + External sheets' : p.from + ' sheet'); fact('Notes', p.notes); fact('Added', (p.createdBy ? p.createdBy.split('@')[0] : '') + (p.created ? ' · ' + CO.fmtDate(String(p.created).slice(0, 10), true) : ''));
+    fact('Counts from', 'Internal + External sheets (both, always)'); fact('Notes', p.notes); fact('Added', (p.createdBy ? p.createdBy.split('@')[0] : '') + (p.created ? ' · ' + CO.fmtDate(String(p.created).slice(0, 10), true) : ''));
     left.append(meta);
     const side = pkEl('div', 'pk-det-side');
     side.append(pkEl('h3', 'pk-h3', o.of > 1 ? 'Order history · ' + o.of + ' orders' : 'Order history'));
@@ -3654,7 +3728,7 @@
   const wnSeen = () => { try { return new Set(JSON.parse(LS.get(wnKey(), '[]')) || []); } catch (e) { return new Set(); } };
   const wnCan = (it) => { const w = it.who || 'all'; if (w === 'all') return true; if (w === 'admin') return isAdmin(); if (w.startsWith('page:')) return pageOk(w.slice(5)); if (w.startsWith('perm:')) return isAdmin() || perm(w.slice(5)); return true; };
   const WN_WHO = { 'page:issues': 'For people with Issues', 'page:access': 'For Admins', 'perm:assign': 'For people who assign tasks', 'perm:briefs': 'For people who read briefs', 'page:brands': 'For people with Brands', 'page:notes': 'For people with Notes', admin: 'For Admins' };
-  const wnItems = () => (window.CO_WHATSNEW || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const wnItems = () => (window.CO_WHATSNEW || []).filter((x) => wnCan(x)).slice().sort((a, b) => b.date.localeCompare(a.date)); // each person sees only the updates that apply to them
   const WN_KIND = { new: ['New', 'k-new'], improved: ['Improved', 'k-imp'], fixed: ['Fixed', 'k-fix'] };
   const WN_IC = {
     what: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>',
@@ -4890,7 +4964,7 @@
           all.filter((r) => r.open && r.list.includes(me) && r.due === 'overdue').slice(0, 6).forEach((r) => out.push({ id: 'od-' + r.uid + '-' + t, icon: 'clock', tone: 'bad', t: 'Overdue: ' + r.brand + ' · ' + CO.topicText(r), s: (r.id || '') + ' · ' + CO.diffDays(r.eta, t) + 'd late · ' + r.stage, go: openTask(r) }));
           all.filter((r) => r.open && r.list.includes(me) && (r.eta === t || r.eta === tm)).slice(0, 6).forEach((r) => out.push({ id: 'due-' + r.uid + '-' + r.eta, icon: 'cal', tone: 'warn', t: (r.eta === t ? 'Due today: ' : 'Due tomorrow: ') + r.brand + ' · ' + CO.topicText(r), s: (r.id || '') + ' · ' + r.type + ' · ' + r.stage, go: openTask(r) }));
         }
-        if (isOwner() || !me) {
+        if (isOwner()) { // team-wide numbers are the Creative Head's, not everyone's
           const od = all.filter((r) => r.due === 'overdue').length, dt = all.filter((r) => r.due === 'today').length;
           if (od) out.push({ id: 'team-od-' + t + '-' + od, icon: 'clock', tone: 'bad', t: od + ' tasks overdue across the team', s: 'Oldest ' + Math.max(...all.filter((r) => r.due === 'overdue').map((r) => CO.diffDays(r.eta, t))) + ' days late', go: () => CO.goTasks('overdue', { designer: '' }) });
           if (dt) out.push({ id: 'team-dt-' + t + '-' + dt, icon: 'cal', tone: 'warn', t: dt + ' tasks due today', s: 'Across the team', go: () => CO.goTasks('today', { designer: '' }) });
@@ -4907,7 +4981,8 @@
       });
       // Meetings starting within 15 minutes (connected Google Calendar).
       (CAL.events || []).forEach((ev) => { const m = (new Date(ev.start) - Date.now()) / 60000; if (m <= 15 && m > -5) out.unshift({ id: 'mtg-' + ev.id + '-' + ev.start, icon: 'video', tone: 'lime', t: (m > 0 ? 'Starts ' + untilText(ev.start) + ': ' : 'Now: ') + ev.title, s: fmtRange(ev.start, ev.end) + (ev.people.length ? ' · ' + ev.people.length + ' people' : ''), go: () => { if (ev.meet) window.open(ev.meet, '_blank', 'noopener'); else dash.setParams({ tab: 'today' }); } }); });
-      if (pageOk('issues') && ISS.open) { const top = (ISS.list || []).filter((x) => x.status === 'Open')[0]; out.unshift({ id: 'iss-' + ISS.open + '-' + (top ? top.key + top.last : ''), icon: 'alert', tone: 'bad', t: ISS.open + (ISS.open === 1 ? ' open issue' : ' open issues'), s: top ? top.area + ': ' + top.title : 'See the Issues page', go: () => dash.setParams({ tab: 'issues' }) }); }
+      // Open issues: only for the Creative Head, listed quietly (no dot, no sound, not counted as new).
+      if (isOwner() && ISS.open) { const top = (ISS.list || []).filter((x) => x.status === 'Open')[0]; out.push({ quiet: true, id: 'iss-' + ISS.open + '-' + (top ? top.key + top.last : ''), icon: 'alert', tone: 'bad', t: ISS.open + (ISS.open === 1 ? ' open issue' : ' open issues'), s: top ? top.area + ': ' + top.title : 'See the Issues page', go: () => dash.setParams({ tab: 'issues' }) }); }
       if (isAdmin() && AX.pending) out.unshift({ id: 'access-' + AX.pending + '-' + t, icon: 'user', tone: 'violet', t: AX.pending + (AX.pending === 1 ? ' access request' : ' access requests') + ' waiting', s: 'Approve or reject on the Access page', go: () => dash.setParams({ tab: 'access' }) });
       NB.notes.forEach((n) => {
         if (n.reminder && n.reminder <= nowLocal && n.reminder.slice(0, 10) >= CO.addDays(t, -2) && (n.createdBy === A.user.email || (n.actions || []).some((a) => !a.done && a.email === A.user.email))) out.unshift({ id: 'rem-' + n.id + '-' + n.reminder, icon: 'bell', tone: 'bad', t: 'Reminder: ' + n.title, s: CO.istDateTime(n.reminder + ':00+05:30') + (n.followUps ? ' · ' + n.followUps.slice(0, 60) : ''), go: () => { dash.setParams({ tab: 'notes' }); NB.select(n.id); } });
@@ -4922,14 +4997,14 @@
       out.forEach((i) => { if (!i.kind) i.kind = /^(rem|act|od|due|brief|mtg)-/.test(i.id) ? 'reminder' : /^men-/.test(i.id) ? 'mention' : 'task'; });
       return out;
     };
-    const unread = () => items().filter((i) => !seen.includes(i.id)).length;
+    const unread = () => items().filter((i) => !i.quiet && !seen.includes(i.id)).length;
     /* New arrivals: a soft sound for its type (if the person allowed sounds), the bell rings and a small card slides in.
        What was already there when the page opened stays quiet. */
     const PRIO = ['achievement', 'mention', 'announcement', 'reminder', 'task'];
     let heard = null; const fresh = new Set();
     const arrivals = () => {
       if (A.mode !== 'auth' || !A.user || CO.status() !== 'ok') return;
-      const list = items().filter((i) => !seen.includes(i.id));
+      const list = items().filter((i) => !i.quiet && !seen.includes(i.id));
       if (!heard) { heard = new Set(list.map((i) => i.id)); return; }
       const nu = list.filter((i) => !heard.has(i.id)); if (!nu.length) return;
       nu.forEach((i) => { heard.add(i.id); fresh.add(i.id); });
@@ -4958,7 +5033,7 @@
       if (!list.length) { const e = document.createElement('p'); e.className = 'np-empty'; e.textContent = 'You are all caught up.'; el.append(e); return; }
       list.forEach((i) => {
         const row = document.createElement('div'); row.className = 'np-row k-' + i.kind + (NT.fresh.has(i.id) ? ' fresh' : '');
-        const b = document.createElement('button'); b.type = 'button'; b.className = 'np-item' + (seen.includes(i.id) ? '' : ' unread');
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'np-item' + (i.quiet || seen.includes(i.id) ? '' : ' unread');
         const ic = document.createElement('span'); ic.className = 'np-ico ' + (i.tone || ''); ic.append(svgIcon(ICONS[i.icon] || ICONS.bell));
         const tx = document.createElement('span'); const a = document.createElement('div'); a.className = 'np-t'; a.textContent = i.t; const z = document.createElement('div'); z.className = 'np-s'; z.textContent = i.s; tx.append(a, z);
         b.append(ic, tx); b.addEventListener('click', () => { markRead(i.id); close(); i.go(); });

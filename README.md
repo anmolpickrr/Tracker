@@ -121,6 +121,32 @@ The bell lists, for the signed-in person: their overdue tasks and tasks due toda
 
 **Creative link → Under review (Nov 2026):** submitting or replacing a creative link always sets the design status to UNDER REVIEW (the dashboard sends it, and the server adds it when a link arrives without a status). Links changed directly in the sheet are not affected.
 
+## How every number is counted
+
+These rules are the same on every page (Overview, Stand-up, My work, Team, Reports, Brands, packages) and are shown in the dashboard under Overview → *This month at a glance* → **How we count**.
+
+| Number | Rule |
+|---|---|
+| Open with designers | Assigned tasks in To be planned (TBP), WIP, Changes requested or Under review. Each task once; creatives = the "No. of Creatives" column (1 when blank). |
+| Overdue | Open tasks whose Design ETA is before today (IST). Shared, Hold, Delivered, Rejected and Deprioritised are never overdue. |
+| Due today | Open tasks with today's Design ETA. |
+| WIP | Design status WIP (Changes requested is separate). |
+| Shared with client | Design status Shared or No update; not counted as late. |
+| Completed this month | DONE (Delivered) with a delivery date in this month (Delivered On, else Design ETA), counted by creatives. Rejected and Deprioritised are not completed. |
+| Delivered this week | As Completed, from Monday of this week to today. |
+| Requested this month | Request date (Req. Date) in this month, any status. |
+| Waiting to be picked up | Assigned and not started: TBP plus Awaiting brief (content still being written). |
+| Unassigned | Open tasks with no designer / editor. |
+| Creative link missing | Under review, Shared, or delivered this month, with an empty Creative Link. |
+| Open File missing | Delivered this month with an empty Open File. |
+| Rejected this month | REJECTED with a date in this month. |
+| Brand packages | Count deliveries for the package's brand from **both** sheets, always. |
+| My work → Today | Everything assigned to the person with today's Design ETA, whatever its status (content pending included), plus overdue open or waiting-on-content work: the same tasks the Creative Head sees for them in Stand-up. |
+
+Both sheets are combined and each task counts once; rows without an ID or date are left out and listed on Data health, and **duplicate IDs** (the same ID on two rows) are listed there too so they can be fixed in the sheet. Page filters apply to every number.
+
+**Notifications and What's new (Nov 2026):** open issues are listed quietly for the Creative Head only (no dot or sound); team-wide overdue counts are the Creative Head's only. What's new shows each person only the updates that apply to them (`who`), and technical fixes are for Admins with Issues. Toasts appear at the top of the screen in the browser's top layer, in front of any open pop-up; any button that sends a change shows a spinner until the answer arrives.
+
 **Whole-domain access (Nov 2026):** on the Access page the owner can set an allowed domain to *View only* or *Can edit* (never Admin). Everyone signing in from it is approved straight away with that role (new people, and waiting requests at their next sign-in); people who were declined or removed stay out. Stored in the shared access sheet (tab *Domain access*), so every copy of the web app follows it; changes are in the activity log. Endpoints `domainRules` (Admins) and `domainRuleSave` (owner).
 
 **Open File, PAID sheet (Nov 2026):** Open File links are saved to and read from the column headed "Open File" (column O of the 2026 tab). The dashboard never adds an Open File column to that sheet.

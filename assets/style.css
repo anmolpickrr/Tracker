@@ -5242,3 +5242,39 @@ html[data-org-pick] body > *:not(.org-pick) { visibility: hidden; }
 .ax-dom-h { display: grid; gap: 2px; } .ax-dom-h b { font-weight: 600; } .ax-dom-h small { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
 .ax-dom-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 0 0; }
 .ax-dom-d { font-weight: 600; }
+
+/* Toasts: top of the screen, always in front (top layer via popover) */
+.co-toast, .co-toast[popover] { position: fixed; inset: auto; left: 50%; top: calc(16px + env(safe-area-inset-top, 0px)); bottom: auto; transform: translateX(-50%); margin: 0; border: 0; z-index: 2147483000; display: flex; align-items: center; gap: 4px; padding: 12px 20px; border-radius: 999px; background: var(--fg); color: var(--bg); box-shadow: 0 16px 40px -12px rgba(0,0,0,.45); max-width: min(640px, calc(100vw - 32px)); overflow: visible; animation: toastTop .3s cubic-bezier(.2,.8,.2,1); }
+.co-toast[hidden] { display: none !important; }
+.co-toast.bad { background: var(--bad); color: #fff; }
+@keyframes toastTop { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (max-width: 640px) { .co-toast, .co-toast[popover] { top: calc(10px + env(safe-area-inset-top, 0px)); bottom: auto; } }
+
+/* Working… state on any button that sent a request */
+button.is-busy, .co-btn.is-busy { position: relative; color: transparent !important; pointer-events: none; }
+button.is-busy > *, .co-btn.is-busy > * { visibility: hidden; }
+button.is-busy::after, .co-btn.is-busy::after { content: ""; position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid currentColor; border-color: var(--fg-2, #888) transparent var(--fg-2, #888) transparent; animation: btnSpin .7s linear infinite; visibility: visible; }
+.co-btn.primary.is-busy::after { border-color: #fff transparent #fff transparent; }
+@keyframes btnSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { button.is-busy::after, .co-btn.is-busy::after { animation-duration: 2s; } }
+
+/* Overview: this month at a glance */
+.ov-month { display: grid; gap: 12px; margin-bottom: 16px; }
+.ov-m-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.ov-m-h .co-note { margin: 2px 0 0; }
+.ov-m-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.ov-m-cell { display: grid; gap: 2px; padding: 12px 14px; border-radius: 16px; background: var(--sunken); cursor: help; }
+.ov-m-cell b { font: 700 22px/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
+.ov-m-cell b small { font: 500 12px var(--font-body); color: var(--muted); }
+.ov-m-cell span { font-size: 12.5px; color: var(--fg-2); line-height: 1.3; }
+.ov-m-cell.t-warn:not(.zero) b { color: var(--org-ink, #c2410c); }
+.ov-m-cell.t-done b { color: var(--good); }
+.ov-m-cell.zero b { color: var(--muted); }
+@media (max-width: 1200px) { .ov-m-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .ov-m-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ov-defs { width: min(680px, calc(100vw - 32px)); }
+.ov-defs-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.ov-defs-h h2 { margin: 0; font: 700 22px/1.2 var(--font-display); }
+.ov-defs dl { margin: 0; display: grid; gap: 4px; max-height: 65vh; overflow: auto; }
+.ov-defs dt { margin-top: 10px; font-weight: 600; }
+.ov-defs dd { margin: 0; color: var(--fg-2); font-size: 14px; line-height: 1.5; }

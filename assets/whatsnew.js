@@ -4,13 +4,19 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
-    id: '2026-11-25-backend-all', date: '2026-11-25', kind: 'fixed', who: 'all', title: 'Marketing tasks save to the Backend tab',
+    id: '2026-11-26-accuracy', date: '2026-11-25', kind: 'improved', who: 'all', title: 'My work shows today, and clearer numbers',
+    what: 'My work now opens on Today: every task assigned to you with today\'s ETA, whatever its status (content still pending included), plus anything overdue.',
+    does: 'The Overview has a new "This month at a glance" strip with a How we count panel. Messages now appear at the top of the screen in front of any pop-up, and buttons show a spinner while saving.',
+    how: 'Open My work for your day; on the Overview, click How we count for exact definitions.'
+  },
+  {
+    id: '2026-11-25-backend-all', date: '2026-11-25', kind: 'fixed', who: 'page:issues', title: 'Marketing tasks save to the Backend tab',
     what: 'Creative links, status and Open File links for Marketing (SRA) tasks failed because the 2026 (Mkt Team) tab is locked.',
     does: 'Every change to a Marketing task is now saved on its row in the Backend tab, and the sheet copies it across as usual.',
     how: 'Nothing to do. Failed saves on the Issues page can be retried.'
   },
   {
-    id: '2026-11-25-paid-colp', date: '2026-11-25', kind: 'fixed', who: 'all', title: 'PAID sheet: Open File links stay in the Open File column',
+    id: '2026-11-25-paid-colp', date: '2026-11-25', kind: 'fixed', who: 'page:issues', title: 'PAID sheet: Open File links stay in the Open File column',
     what: 'For external (PAID) tasks, the Open File link you save goes into the Open File column (column O) of the 2026 tab.',
     does: 'The dashboard reads it from the same column and never adds columns to that sheet.',
     how: 'Open your task > Links > Open File > paste the link > Save.'
@@ -28,7 +34,7 @@ window.CO_WHATSNEW = [
     how: 'Issues page: open the protected-column item and follow its steps.'
   },
   {
-    id: '2026-11-24-backend-file', date: '2026-11-24', kind: 'fixed', who: 'all', title: 'Open File links go to the Backend tab',
+    id: '2026-11-24-backend-file', date: '2026-11-24', kind: 'fixed', who: 'page:issues', title: 'Open File links go to the Backend tab',
     what: 'For the Marketing sheet, Open File links you submit are now saved on its Backend tab, on your task\'s row.',
     does: 'The sheet\'s own script then copies them to the 2026 (Mkt Team) tab as before; the dashboard no longer writes there directly.',
     how: 'Open a task > Links > Open File > paste the link > Save.'
@@ -46,7 +52,7 @@ window.CO_WHATSNEW = [
     how: 'Keep using your usual link. If it opens the Apps Script home page instead, your browser is signed in to several Google accounts: use a window or Chrome profile where your company account is the first (or only) one signed in.'
   },
   {
-    id: '2026-11-24-studio-off', date: '2026-11-24', kind: 'improved', who: 'all', title: 'The Studio page is retired',
+    id: '2026-11-24-studio-off', date: '2026-11-24', kind: 'improved', who: 'page:issues', title: 'The Studio page is retired',
     what: 'The old Studio page can no longer be opened, even from an old link or notification.',
     does: 'Award notifications and old Studio links now open the Hall of Fame pop-up beside the clock instead.',
     how: 'Click the Hall of Fame beside the clock.'
@@ -130,7 +136,7 @@ window.CO_WHATSNEW = [
     how: 'Nothing to do.'
   },
   {
-    id: '2026-11-23-alerts-on', date: '2026-11-23', kind: 'improved', who: 'all', title: 'Sounds and alerts are now on for everyone',
+    id: '2026-11-23-alerts-on', date: '2026-11-23', kind: 'improved', who: 'page:issues', title: 'Sounds and alerts are now on for everyone',
     what: 'Notification sounds, desktop alerts, reminders and briefing emails are switched on by default.',
     does: 'Your browser may ask once to allow notifications after your first click: choose Allow. The Studio radio still plays only when you press play.',
     how: 'Turn anything off from the bell > Sounds & music, or the switches below the notifications.'
@@ -148,7 +154,7 @@ window.CO_WHATSNEW = [
     how: 'Open My work. It shows only your own tasks; the filters and View as are gone from this page.'
   },
   {
-    id: '2026-11-23-open-file-col', date: '2026-11-23', kind: 'fixed', who: 'all', title: 'Open File links now save on every sheet',
+    id: '2026-11-23-open-file-col', date: '2026-11-23', kind: 'fixed', who: 'page:issues', title: 'Open File links now save on every sheet',
     what: 'Saving an Open File link failed on sheets that had no Open File column.',
     does: 'The dashboard now adds an "Open File" column at the end of that sheet the first time a link is saved.',
     how: 'Nothing to do. Failed saves on the Issues page can simply be retried.'
