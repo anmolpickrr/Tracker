@@ -590,7 +590,7 @@ function updateTask_(body, mine, pm, contentMine) {
   const fileForBackend = bk ? String(f.file).trim() : null;
   if (bk) delete f.file;
   // No "Open File" column yet: add one at the end of the header row, so the link has somewhere to go.
-  if (f.file != null && String(f.file).trim() !== '' && c.file < 0) {
+  if (f.file != null && String(f.file).trim() !== '' && c.file < 0 && kindOf_(body.source) !== 'paid') {
     sheet.getRange(1, lastCol + 1).setValue('Open File');
     c.file = lastCol; lastCol++;
   }
@@ -868,6 +868,7 @@ function taskColumns_(kind, head) {
     c.id = 0; c.eta = col('design eta', 0);
     c.status = col('design eta', 1) >= 0 ? col('design eta', 1) : any('design status');
     c.designer = any('designer/editor', 'designer', 'creator');
+    c.file = 15; // Open File links live in column P of the PAID sheet (Nov 2026, owner's rule), whatever its heading says
   } else {
     const idc = any('creative_id', 'req. id', 'id');
     c.id = idc >= 0 ? idc : 0; c.eta = any('design eta'); c.status = any('design status');
@@ -2199,6 +2200,7 @@ function testRead() {
       link: any('creative link'), file: any('open file'), live: any('live status'), liveDate: any('status live date', 'live status date'),
       qty: find(QTY)
     });
+    if (name === 'paid') { ix.file0 = ix.file; ix.file = 15; } // PAID sheet: Open File links are in column P (owner's rule, Nov 2026); older ones may still be under the "Open File" heading
     const v = (r, k) => (ix[k] >= 0 && r[ix[k]] != null ? clean(r[ix[k]]) : '');
     const rowNums = Array.isArray(src.rowNums) ? src.rowNums : [];
     return src.rows.map((r, i) => {
@@ -2208,7 +2210,7 @@ function testRead() {
         id: v(r, 'id'), req_date: parseDate(v(r, 'req')), req_text: v(r, 'req'), type: v(r, 'type'), brand: v(r, 'brand'), topic: v(r, 'topic'),
         channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: csNorm(v(r, 'cstatus')),
         eta: parseDate(v(r, 'eta')), eta_text: v(r, 'eta'), creative_link: v(r, 'link'), design_status: v(r, 'dstatus'), designer: v(r, 'designer'),
-        open_file: v(r, 'file'), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')),
+        open_file: v(r, 'file') || (ix.file0 != null && ix.file0 !== ix.file ? v(r, 'file0') : ''), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')),
         qty: qn > 0 ? qn : null
       };
     });

@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-25-paid-colp', date: '2026-11-25', kind: 'fixed', who: 'all', title: 'PAID sheet: Open File links go to column P',
+    what: 'For external (PAID) tasks, the Open File link you save now goes into column P of the 2026 tab.',
+    does: 'The dashboard reads the link from column P too (falling back to the older Open File column for earlier tasks), and never adds columns to that sheet.',
+    how: 'Open your task > Links > Open File > paste the link > Save.'
+  },
+  {
     id: '2026-11-25-domain-access', date: '2026-11-25', kind: 'new', who: 'page:access', title: 'Give a whole company access at once',
     what: 'Access now has Whole-domain access: switch @shiprocket.com (or @pickrr.com) to View only or Can edit.',
     does: 'Everyone signing in with that kind of work account gets in straight away with that level, no request needed. People you removed or declined stay out, and you can still change anyone one by one.',

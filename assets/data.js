@@ -58,6 +58,7 @@
       link: any('creative link'), file: any('open file'), live: any('live status'), liveDate: any('status live date', 'live status date'),
       qty: find(QTY)
     });
+    if (name === 'paid') { ix.file0 = ix.file; ix.file = 15; } // PAID sheet: Open File links are in column P (owner's rule, Nov 2026); older ones may still be under the "Open File" heading
     const v = (r, k) => (ix[k] >= 0 && r[ix[k]] != null ? clean(r[ix[k]]) : '');
     const rowNums = Array.isArray(src.rowNums) ? src.rowNums : [];
     return src.rows.map((r, i) => {
@@ -67,7 +68,7 @@
         id: v(r, 'id'), req_date: parseDate(v(r, 'req')), req_text: v(r, 'req'), type: v(r, 'type'), brand: v(r, 'brand'), topic: v(r, 'topic'),
         channel: v(r, 'channel'), priority: v(r, 'priority'), brief: v(r, 'brief'), owner: v(r, 'owner'), content_status: csNorm(v(r, 'cstatus')),
         eta: parseDate(v(r, 'eta')), eta_text: v(r, 'eta'), creative_link: v(r, 'link'), design_status: v(r, 'dstatus'), designer: v(r, 'designer'),
-        open_file: v(r, 'file'), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')),
+        open_file: v(r, 'file') || (ix.file0 != null && ix.file0 !== ix.file ? v(r, 'file0') : ''), live_status: v(r, 'live'), live_date: parseDate(v(r, 'liveDate')),
         qty: qn > 0 ? qn : null
       };
     });
