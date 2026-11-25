@@ -4217,6 +4217,28 @@
       card.append(info, act); box.append(card);
     });
   });
+  /* Whole-domain access: everyone from a chosen domain gets in without a request (owner switches it; Admins see it). */
+  const DOMR = { rules: null, domains: [], busy: false, err: '' };
+  const domLoad = () => { if (DOMR.busy) return; DOMR.busy = true; post({ action: 'domainRules' }).then((r) => { DOMR.rules = r.rules || []; DOMR.domains = r.domains || []; DOMR.err = ''; }).catch((e) => { DOMR.rules = DOMR.rules || []; DOMR.err = /unknown/i.test(e.message) ? 'Switches on after the next web app update.' : e.message; }).finally(() => { DOMR.busy = false; dash.draw('ax-domain'); }); };
+  dash.draw('ax-domain', (el) => {
+    el.replaceChildren(); if (A.mode !== 'auth' || !isAdmin()) return;
+    if (DOMR.rules == null) { domLoad(); return; }
+    const mk = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+    const head = mk('div', 'ax-dom-h'); head.append(mk('b', '', 'Whole-domain access'), mk('small', '', 'Everyone signing in with these work accounts gets in straight away, no request needed. People you removed or declined stay out; you can still change anyone one by one below.'));
+    el.append(head);
+    if (DOMR.err) el.append(mk('p', 'co-note', DOMR.err));
+    (DOMR.domains.length ? DOMR.domains : A.domains).forEach((d) => {
+      const cur = (DOMR.rules.find((r) => r.domain === d) || {}).role || '';
+      const row = mk('div', 'ax-dom-row'); row.append(mk('span', 'ax-dom-d', '@' + d));
+      const seg = mk('div', 'pm-seg'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', 'Access for everyone at @' + d);
+      [['', 'Off'], ['Viewer', 'View only'], ['Editor', 'Can edit']].forEach(([v, t]) => {
+        const b = mk('button', 'pm-opt' + (cur === v ? ' on' : ''), t); b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(cur === v)); b.disabled = !isOwner();
+        b.addEventListener('click', async () => { if (cur === v) return; if (v && !confirm('Give everyone with an @' + d + ' Google account ' + t + ' access to the dashboard?')) return; try { const r = await post({ action: 'domainRuleSave', domain: d, role: v }); DOMR.rules = r.rules || []; toast(v ? 'Everyone at @' + d + ' can now get in (' + t + ').' : 'Whole-domain access for @' + d + ' is off; new people send a request again.'); } catch (e) { toast('Not saved: ' + e.message, true); } dash.draw('ax-domain'); });
+        seg.append(b);
+      });
+      row.append(seg); if (!isOwner()) row.append(mk('small', 'co-note', 'Only the Creative Head can change this.')); el.append(row);
+    });
+  });
   /* People with access: filter by level or search, then one row per person (no access at the bottom). */
   const AXU = { lv: '', q: '' };
   const axLevel = (u) => (u.status !== 'Approved' ? 'none' : u.owner ? 'Admin' : u.role);

@@ -29,7 +29,7 @@ const ROLES = { Viewer: 1, Editor: 2, Admin: 3 };
  * which pages they see, and whether they can edit tasks, download data, see workload estimates and other people's
  * work, manage the team list and use Fasty, and whether they see all tasks or only their own. */
 const PAGE_KEYS = ['mine', 'today', 'standup', 'tasks', 'notes', 'team', 'reports', 'brands', 'studio', 'health', 'issues'];
-const OWNER_ONLY = { settings: 1, saveSettings: 1 };
+const OWNER_ONLY = { settings: 1, saveSettings: 1, domainRuleSave: 1 };
 // The owner and everyone with the Admin role manage access and see the activity log and live team activity.
 const ADMIN_ONLY = { users: 1, setAccess: 1, audit: 1, presence: 1 };
 function isAdminUser_(u) { return !!u && (u.owner || isOwner_(u.email) || u.role === 'Admin'); }
@@ -95,7 +95,7 @@ function allowed_(u, action) {
   if (action === 'packageSave' || action === 'packageDelete') return p.packages === 'edit';
   return true;
 }
-const NEEDS = { inbox: 'Viewer', soundPrefs: 'Viewer', notifySend: 'Viewer', studio: 'Viewer', charImage: 'Viewer', charMake: 'Viewer', profileSave: 'Viewer', awardSave: 'Viewer', awardDelete: 'Viewer', cheer: 'Viewer', music: 'Viewer', musicAdd: 'Viewer', musicDel: 'Viewer', me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Viewer', issueAct: 'Viewer', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
+const NEEDS = { inbox: 'Viewer', soundPrefs: 'Viewer', notifySend: 'Viewer', studio: 'Viewer', charImage: 'Viewer', charMake: 'Viewer', profileSave: 'Viewer', awardSave: 'Viewer', awardDelete: 'Viewer', cheer: 'Viewer', domainRules: 'Admin', domainRuleSave: 'Admin', music: 'Viewer', musicAdd: 'Viewer', musicDel: 'Viewer', me: 'Viewer', ver: 'Viewer', data: 'Viewer', signout: 'Viewer', directory: 'Viewer', notes: 'Viewer', noteSave: 'Viewer', noteDelete: 'Viewer', noteRestore: 'Viewer', noteTrash: 'Viewer', noteFile: 'Viewer', noteFileUpload: 'Viewer', noteAction: 'Viewer', noteDone: 'Viewer', prefs: 'Viewer', feed: 'Viewer', history: 'Viewer', assist: 'Viewer', speak: 'Viewer', meetings: 'Viewer', daily: 'Viewer', beat: 'Viewer', dayplan: 'Viewer', packages: 'Viewer', pricing: 'Viewer', pricingSave: 'Viewer', packageSave: 'Viewer', packageDelete: 'Viewer', presence: 'Admin', updateTask: 'Viewer', brief: 'Viewer', issueReport: 'Viewer', issues: 'Viewer', issueAct: 'Viewer', settings: 'Admin', saveSettings: 'Admin', setMember: 'Admin', health: 'Admin', users: 'Admin', setAccess: 'Admin', audit: 'Admin' };
 /* Daily reminders (IST). Optional overrides in Config.gs: reminders: { morning: 10, evening: 18, email: true } */
 /* Admin settings (saved from the dashboard's Access page) override Config.gs, which overrides these defaults. */
 const SETTING_DEFAULTS = { morning: '10:00', evening: '18:00', email: true, chat: '', presence: true, model: 'auto' };
@@ -491,6 +491,8 @@ function write_(body, user) {
     else if (body.action === 'awardDelete') out = awardDelete_(body, user);
     else if (body.action === 'cheer') out = cheer_(body, user);
     else if (body.action === 'music') out = music_(user);
+    else if (body.action === 'domainRules') out = { ok: true, rules: domainRules_(), domains: CONFIG.access.domains };
+    else if (body.action === 'domainRuleSave') out = domainRuleSave_(body, user);
     else if (body.action === 'musicAdd') out = musicAdd_(body, user);
     else if (body.action === 'musicDel') out = musicDel_(body, user);
     else if (body.action === 'soundPrefs') out = soundPrefs_(body, user);
@@ -1003,10 +1005,24 @@ function signin_(body, trusted) {
       audit_([{ who: u.email, role: u.role, action: 'Signed in' }]);
       return { ok: true, status: 'approved', session: makeSession_(u.email), user: publicUser_(u) };
     }
+    // Whole-domain access: a waiting request from a domain the owner opened up is approved at once.
+    if (u && u.status === 'Pending' && domainRule_(u.email)) {
+      const rr = domainRule_(u.email); updateUser_(u, { status: 'Approved', role: rr.role, decidedBy: 'Whole-domain access (@' + rr.domain + ')', decidedOn: now });
+      u = userByEmail_(u.email); audit_([{ who: u.email, role: rr.role, action: 'Access approved', record: u.email, details: 'Automatically: everyone at @' + rr.domain + ' has access' }]);
+      return { ok: true, status: 'approved', session: makeSession_(u.email), user: publicUser_(u) };
+    }
     if (u && u.status === 'Pending') return { ok: true, status: 'pending', user: publicUser_(u) };
     if (u) {
       audit_([{ who: u.email, role: 'No access', action: 'Sign-in blocked', record: u.email, details: u.status === 'Denied' ? 'Request was declined' : 'Access was revoked' }]);
       return { ok: true, status: u.status === 'Denied' ? 'denied' : 'revoked', user: publicUser_(u) };
+    }
+    // Whole-domain access: someone new from a domain the owner opened up gets in straight away, with that domain's role.
+    const rule = domainRule_(g.email);
+    if (rule) {
+      appendUser_({ email: g.email, name: g.name, role: rule.role, status: 'Approved', note: 'Whole-domain access (@' + rule.domain + ')', requestedOn: now, decidedBy: 'Whole-domain access (@' + rule.domain + ')', decidedOn: now, lastSignIn: now, photo: photo });
+      const nu = userByEmail_(g.email);
+      audit_([{ who: g.email, role: rule.role, action: 'Access approved', record: g.email, details: 'Automatically: everyone at @' + rule.domain + ' has access' }]);
+      return { ok: true, status: 'approved', session: makeSession_(g.email), user: publicUser_(nu) };
     }
     // Someone new, from an allowed domain: whether they chose Log in or Sign up, they become a
     // pending request. They get no session and no data until an admin approves them.
@@ -1058,6 +1074,33 @@ function gasSignin_(body) {
   if (!email) return { ok: false, error: 'no_email' };
   const u0 = userByEmail_(email);
   return signin_(body || {}, { email: email, name: (u0 && u0.name) || email.split('@')[0].split(/[._-]+/).map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' '), hd: email.split('@')[1], picture: '' });
+}
+
+/* ---- Whole-domain access: everyone signing in from a chosen domain is approved with that domain's role. Stored in the
+   shared access list (tab "Domain access"), so every copy of the web app follows it. People the owner removed or
+   declined stay out. Only the owner changes it. ---- */
+const DOMAIN_HEAD = ['Domain', 'Role', 'Changed by', 'Changed on'];
+function domainRules_() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('domrules'); if (hit) { try { return JSON.parse(hit); } catch (e) { /* read again */ } }
+  let out = [];
+  try { out = studioRows_('Domain access', DOMAIN_HEAD).rows.filter(function (r) { return r[0] && ROLES[String(r[1])]; }).map(function (r) { return { domain: String(r[0]).toLowerCase().trim(), role: String(r[1]), by: String(r[2] || ''), on: iso_(r[3]) }; }); } catch (e) { out = []; }
+  try { cache.put('domrules', JSON.stringify(out), 60); } catch (e) { /* only a speed-up */ }
+  return out;
+}
+function domainRule_(email) {
+  const d = String(email || '').split('@')[1] || ''; if (!d || !domainOk_(email)) return null;
+  return domainRules_().filter(function (r) { return r.domain === d.toLowerCase() && r.role !== 'Admin'; })[0] || null;
+}
+function domainRuleSave_(b, u) {
+  const domain = clean_(b.domain).toLowerCase().replace(/^@/, ''), role = String(b.role || '');
+  if (CONFIG.access.domains.map(function (x) { return x.toLowerCase(); }).indexOf(domain) < 0) return { ok: false, error: 'Only ' + CONFIG.access.domains.join(' and ') + ' can be opened up.' };
+  if (role && ['Viewer', 'Editor'].indexOf(role) < 0) return { ok: false, error: 'Whole-domain access can be View only or Can edit (Admins are added one by one).' };
+  const T = studioRows_('Domain access', DOMAIN_HEAD), i = T.rows.findIndex(function (r) { return String(r[0]).toLowerCase().trim() === domain; });
+  const before = i >= 0 ? String(T.rows[i][1]) : '';
+  if (i >= 0) T.sh.getRange(i + 2, 1, 1, 4).setValues([[domain, role || 'Off', u.email, new Date()]]); // "Off" keeps who switched it off, and when
+  else if (role) T.sh.appendRow([domain, role, u.email, new Date()]);
+  try { CacheService.getScriptCache().remove('domrules'); } catch (e) { /* ignore */ }
+  return { ok: true, rules: domainRules_(), changes: [{ action: role ? 'Whole-domain access on' : 'Whole-domain access off', sheet: 'Domain access', record: '@' + domain, field: 'Role', before: before || 'Off', after: role || 'Off' }] };
 }
 function profile_(p) {
   const t = clean_(p && p.team).slice(0, 80), n = clean_(p && p.note).slice(0, 300);

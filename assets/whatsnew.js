@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-25-domain-access', date: '2026-11-25', kind: 'new', who: 'page:access', title: 'Give a whole company access at once',
+    what: 'Access now has Whole-domain access: switch @shiprocket.com (or @pickrr.com) to View only or Can edit.',
+    does: 'Everyone signing in with that kind of work account gets in straight away with that level, no request needed. People you removed or declined stay out, and you can still change anyone one by one.',
+    how: 'Access > People with access > Whole-domain access. Only the Creative Head can switch it.'
+  },
+  {
     id: '2026-11-24-protected', date: '2026-11-24', kind: 'fixed', who: 'page:issues', title: 'Clearer Issues: protected columns and old errors',
     what: 'A save refused by a protected column now names the exact sheet, tab and column, and lists it under Fix in the sheets.',
     does: 'Server errors that have not come back for 3 hours close by themselves (the Maximum call stack ones were fixed this morning).',

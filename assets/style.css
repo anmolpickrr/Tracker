@@ -5235,3 +5235,10 @@ html[data-org-pick] body > *:not(.org-pick) { visibility: hidden; }
 .org-b small { color: var(--muted, #666); font-weight: 500; font-size: 13px; }
 .org-b:hover:not([disabled]), .org-b:focus-visible { border-color: var(--violet, #6b4dff); outline: none; transform: translateY(-1px); }
 .org-b[disabled] { opacity: .55; cursor: not-allowed; }
+
+/* Whole-domain access (Access page) */
+.ax-dom { display: grid; gap: 8px; margin: 4px 0 14px; padding: 14px 16px; border-radius: 18px; background: var(--sunken); }
+.ax-dom:empty { display: none; }
+.ax-dom-h { display: grid; gap: 2px; } .ax-dom-h b { font-weight: 600; } .ax-dom-h small { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.ax-dom-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 0 0; }
+.ax-dom-d { font-weight: 600; }
