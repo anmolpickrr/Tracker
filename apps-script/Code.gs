@@ -344,12 +344,36 @@ function cellUrl_(cell) {
   return /^https?:\/\//i.test(u) ? u : shown;
 }
 
+
+/* Sheets with a Backend tab: the dashboard (and the team) edit Backend, and the sheet's own script copies the values to the
+   locked main tab only on typed edits. So when reading, Backend's value wins for the columns people edit, matched by ID:
+   a link or status saved a moment ago shows straight away, whatever the copy script does. */
+const BACKEND_COLS = ['creative link', 'open file', 'design status', 'design eta', 'creator', 'designer/editor', 'designer', 'priority', 'creative brief', 'content status', 'content owner'];
+function backendOverlay_(mainSheet, values, name) {
+  const bs = mainSheet.getParent().getSheets().filter(function (t) { return /^\s*backend\s*$/i.test(t.getName()); })[0];
+  if (!bs || !values.length) return;
+  const bv = bs.getDataRange().getDisplayValues(); if (bv.length < 2) return;
+  let hr = -1, bid = -1;
+  for (let r = 0; r < Math.min(5, bv.length) && hr < 0; r++) { const h = bv[r].map(function (x) { return clean_(x).toLowerCase(); }); ['creative_id', 'creative id', 'req. id', 'req id', 'id'].some(function (n) { const k = h.indexOf(n); if (k >= 0) { bid = k; hr = r; return true; } return false; }); }
+  if (hr < 0) return;
+  const bh = bv[hr].map(function (x) { return clean_(x).toLowerCase(); }), mh = values[0].map(function (x) { return clean_(x).toLowerCase(); });
+  const mc = taskColumns_(kindOf_(name), mh); if (!(mc.id >= 0)) return;
+  const pairs = []; BACKEND_COLS.forEach(function (n) { const a = mh.indexOf(n), b = bh.indexOf(n); if (a >= 0 && b >= 0) pairs.push([a, b]); });
+  if (!pairs.length) return;
+  const byId = {}; for (let r = hr + 1; r < bv.length; r++) { const k = clean_(bv[r][bid]); if (k) byId[k] = bv[r]; }
+  for (let r = 1; r < values.length; r++) {
+    const brow = byId[clean_(values[r][mc.id])]; if (!brow) continue;
+    pairs.forEach(function (p) { const v = brow[p[1]]; if (clean_(v) !== '') values[r][p[0]] = v; });
+  }
+}
+
 function readTab_(s, name) {
   const sheet = openTab_(s);
   const values = sheet.getDataRange().getDisplayValues();
   const headers = values.length ? values[0] : [];
   // links behind labels come from the map the 10-minute job keeps (reading cell formatting here made every sync slow)
   if (name) linkApply_(name, values);
+  if (name && kindOf_(name) !== 'team') { try { backendOverlay_(sheet, values, name); } catch (e) { console.log('backend overlay ' + name + ': ' + e); } }
   const rows = [], rowNums = [];
   for (let i = 1; i < values.length; i++) {
     const r = values[i];
