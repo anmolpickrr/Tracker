@@ -360,7 +360,9 @@
     } catch (e) { /* a missed check is retried on the next tick */ }
     checking = false;
   }
-  setInterval(checkForChanges, 30 * 1000);
+  // Changes reach everyone within about 10 seconds (a light check: the data itself only reloads when something changed).
+  setInterval(checkForChanges, 10 * 1000);
+  window.addEventListener('focus', () => { if (S.loadedAt) checkForChanges(); });
   // Safety net every 2 minutes: data at most 90 seconds old, even for edits the change trigger never sees.
   setInterval(() => { if (document.visibilityState === 'visible' && S.status === 'ok' && !S.refreshing) load('recent'); }, 2 * 60 * 1000);
   // Back to the tab: anything older than a minute is reloaded (90 seconds at most), otherwise a quick change check.
@@ -6087,6 +6089,13 @@
   async function start() {
     if (GAS) {
       A.url = 'gas'; A.mode = 'auth'; A.domains = ['pickrr.com', 'shiprocket.com']; document.body.dataset.mode = 'auth'; document.body.dataset.gas = '1'; S.status = 'loading'; renderAll();
+      // Signed in before on this device: show the dashboard at once (saved person and data), and check the session meanwhile.
+      let me0 = null; try { me0 = JSON.parse(LS.get('co.me', 'null')); } catch (e) { me0 = null; }
+      if (A.session && me0 && me0.email) {
+        signedIn(me0);
+        callApi({ action: 'me' }).then((r) => { if (r.ok && JSON.stringify(r.user) !== JSON.stringify(me0)) { A.user = r.user; LS.set('co.me', JSON.stringify(r.user)); renderAll(); } }).catch(() => { /* an ended session is handled by lostAccess */ });
+        return;
+      }
       if (A.session) { try { const me = await callApi({ action: 'me' }); if (me.ok) { signedIn(me.user); return; } } catch (e) { if (e instanceof AuthLost) return; } }
       let out = false; try { out = sessionStorage.getItem('co.gasOut') === '1'; sessionStorage.removeItem('co.gasOut'); } catch (e) { /* ignore */ }
       if (out) { showGate('You are signed out.'); return; }

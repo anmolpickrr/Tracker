@@ -1062,7 +1062,7 @@ function appPage_() {
     const r = UrlFetchApp.fetch(PAGES_URL + 'index.html?t=' + Date.now(), { muteHttpExceptions: true });
     if (r.getResponseCode() !== 200) return HtmlService.createHtmlOutput('<p style="font:16px sans-serif;padding:40px">The dashboard could not be loaded from GitHub Pages (HTTP ' + r.getResponseCode() + '). Reload in a minute.</p>');
     html = r.getContentText();
-    try { cache.put('apppage', html, 60); } catch (e) { /* bigger than the cache allows: fetch each time */ }
+    try { cache.put('apppage', html, 600); } catch (e) { /* bigger than the cache allows: fetch each time */ } // 10 minutes; a newer release shows "Update ready"
   }
   let url = ''; try { url = ScriptApp.getService().getUrl(); } catch (e) { url = ''; }
   html = html
