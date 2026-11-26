@@ -1055,15 +1055,17 @@ function signin_(body, trusted) {
  * and people are recognised by their signed-in Google account (gasSignin_), so the web app can be shared with
  * "Anyone within <organisation>" only. Every request still goes through doPost's checks (session, role, permissions). */
 const PAGES_URL = 'https://anmolpickrr.github.io/Tracker/';
+/* The page, kept ready on Google's side (refreshed by the 10-minute job), so opening the dashboard never waits for GitHub. */
+function appPageWarm_() {
+  const r = UrlFetchApp.fetch(PAGES_URL + 'index.html?t=' + Date.now(), { muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) return '';
+  const html = r.getContentText();
+  try { CacheService.getScriptCache().put('apppage', html, 21600); } catch (e) { /* too big for the cache: fetched on each visit */ }
+  return html;
+}
 function appPage_() {
-  const cache = CacheService.getScriptCache();
-  let html = cache.get('apppage');
-  if (!html) {
-    const r = UrlFetchApp.fetch(PAGES_URL + 'index.html?t=' + Date.now(), { muteHttpExceptions: true });
-    if (r.getResponseCode() !== 200) return HtmlService.createHtmlOutput('<p style="font:16px sans-serif;padding:40px">The dashboard could not be loaded from GitHub Pages (HTTP ' + r.getResponseCode() + '). Reload in a minute.</p>');
-    html = r.getContentText();
-    try { cache.put('apppage', html, 600); } catch (e) { /* bigger than the cache allows: fetch each time */ } // 10 minutes; a newer release shows "Update ready"
-  }
+  let html = CacheService.getScriptCache().get('apppage') || appPageWarm_();
+  if (!html) return HtmlService.createHtmlOutput('<p style="font:16px sans-serif;padding:40px">The dashboard could not be loaded from GitHub Pages. Reload in a minute.</p>');
   let url = ''; try { url = ScriptApp.getService().getUrl(); } catch (e) { url = ''; }
   html = html
     .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/i, '') // Apps Script serves the page in its own sandbox
@@ -1630,6 +1632,7 @@ function prefs_(b, u) {
 /* Runs every 10 minutes (setup installs it). Sends the 10:00 and 18:00 IST emails once a day each, and note reminders when due. */
 function remindersTick() {
   TEAM_MEMO_ = null;
+  try { appPageWarm_(); } catch (e) { console.log('page warm: ' + e); } // keeps the dashboard page ready for the next visitor
   // once: Open File links the dashboard had written into task tabs are copied to the Backend tab (Nov 2026)
   try {
     const P = PropertiesService.getScriptProperties();
@@ -2939,7 +2942,7 @@ function autoUpdate_(log) {
   }
 }
 /** The second copy's 10-minute job: only keeps itself up to date. */
-function updateTick() { autoUpdate_(false); }
+function updateTick() { try { appPageWarm_(); } catch (e) { /* next time */ } autoUpdate_(false); }
 /** Run from the editor (choose updateNow, then Run) to install the newest version from GitHub straight away. */
 function updateNow() { autoUpdate_(true); }
 

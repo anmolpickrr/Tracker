@@ -651,6 +651,8 @@
   let shownTab = null;
   // The loading screen stays until the FASTRR reveal has landed (or 2.5 s at most), then fades.
   const bootLanded = new Promise((res) => { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return res(); setTimeout(res, Math.max(0, 950 - performance.now())); });
+  // What the opening screen is doing, in words (so it never looks stuck); it steps aside as soon as there is a page to show.
+  const bootMsg = (t) => { const m = document.getElementById('boot-msg'); if (m) m.textContent = t; };
   const hideBoot = () => { const b = document.getElementById('boot'); if (!b || b.dataset.leaving) return; b.dataset.leaving = '1'; bootLanded.then(() => { b.classList.add('done'); setTimeout(() => b.remove(), 500); }); };
   let landed = false;
   function syncControls() {
@@ -5902,6 +5904,7 @@
       const box = document.createElement('div'); box.className = 'cal-empty';
       const p = document.createElement('p'); p.textContent = (CAL.serverErr === 'not_shared' ? 'Your calendar is not shared inside the company, so connect it here (or ask the admin to turn on company-wide calendar sharing). ' : '') + (LS.get('co.cal', '') === '1' ? 'Reconnect to show your next meetings (Google asks again every hour or so).' : 'See your next meeting, who is in it and a Join button for Google Meet. Read-only; only you see your calendar.');
       const b = document.createElement('button'); b.type = 'button'; b.className = 'co-btn primary'; b.textContent = LS.get('co.cal', '') === '1' ? 'Show my meetings' : 'Connect Google Calendar'; b.addEventListener('click', calConnect);
+      if (GAS) { p.textContent = CAL.serverErr === 'not_shared' ? 'Your calendar is not shared inside the company, so meetings cannot be shown here. Ask the admin to turn on company-wide calendar sharing.' : 'Your meetings could not be read from Google Calendar right now. They will appear here once they can.'; box.append(p); el.append(box); return; } // the connect button needs Google sign-in, which cannot run inside Apps Script
       box.append(p, b); if (CAL.err) { const e = document.createElement('p'); e.className = 'co-note bad'; e.textContent = CAL.err; box.append(e); }
       el.append(box); return;
     }
@@ -6044,11 +6047,12 @@
     if (body.status === 'denied') return gateState('Request declined', 'The request for ' + who.email + ' was declined. Talk to the Creative Head if you need access.', false);
     return gateState('Access removed', 'Access for ' + who.email + ' has been removed. Talk to the Creative Head if you need it back.', false);
   }
-  async function gasSignin(intent) {
-    gateMsg('Checking your access…');
+  async function gasSignin(intent, quiet) {
+    if (quiet) bootMsg('Signing you in with your Google account…'); else gateMsg('Checking your access…');
     let body;
     try { body = parse(await gasRun({ action: 'gasSignin', intent: intent || 'login', profile: intent === 'signup' ? { team: $g('gate-team').value, note: ($g('gate-note') || {}).value || '' } : undefined }, 60000)); }
-    catch (e) { gateMsg('Could not reach the dashboard server. Reload the page to try again.', true); return; }
+    catch (e) { if (quiet) await showGate(); gateMsg('Could not reach the dashboard server. Reload the page to try again.', true); return; }
+    if (quiet && !(body.ok && body.status === 'approved')) await showGate(); // a request to send, waiting, declined: show the card
     signinResult(body);
   }
   document.querySelectorAll('[data-gtab]').forEach((b) => b.addEventListener('click', () => { gateTab(b.dataset.gtab); gateMsg(''); }));
@@ -6058,6 +6062,8 @@
 
   function signedIn(user) {
     A.user = user; gate.hidden = true; delete document.body.dataset.gate;
+    // Signed in: show the dashboard straight away (sections show their own loading state, or the copy saved on this device)
+    bootMsg('Loading your tasks…'); setTimeout(hideBoot, 600);
     LS.set('co.me', JSON.stringify(user));
     renderAll();
     DC.get(user.email).then((c) => { if (c && c.body && c.body.ok && S.status !== 'ok') { try { applyData(c.body); S.cached = true; S.refreshing = true; renderAll(); } catch (e) { /* ignore a bad copy */ } } });
@@ -6088,7 +6094,7 @@
 
   async function start() {
     if (GAS) {
-      A.url = 'gas'; A.mode = 'auth'; A.domains = ['pickrr.com', 'shiprocket.com']; document.body.dataset.mode = 'auth'; document.body.dataset.gas = '1'; S.status = 'loading'; renderAll();
+      A.url = 'gas'; A.mode = 'auth'; A.domains = ['pickrr.com', 'shiprocket.com']; document.body.dataset.mode = 'auth'; document.body.dataset.gas = '1'; S.status = 'loading'; renderAll(); bootMsg('Signing you in with your Google account…');
       // Signed in before on this device: show the dashboard at once (saved person and data), and check the session meanwhile.
       let me0 = null; try { me0 = JSON.parse(LS.get('co.me', 'null')); } catch (e) { me0 = null; }
       if (A.session && me0 && me0.email) {
@@ -6099,7 +6105,7 @@
       if (A.session) { try { const me = await callApi({ action: 'me' }); if (me.ok) { signedIn(me.user); return; } } catch (e) { if (e instanceof AuthLost) return; } }
       let out = false; try { out = sessionStorage.getItem('co.gasOut') === '1'; sessionStorage.removeItem('co.gasOut'); } catch (e) { /* ignore */ }
       if (out) { showGate('You are signed out.'); return; }
-      showGate(); gasSignin('login'); return;
+      gasSignin('login', true); return; // the opening screen says "Signing you in"; the sign-in card only appears if it is needed
     }
     const url = conn().url;
     if (!url) { A.mode = 'key'; document.body.dataset.mode = 'key'; S.status = 'unconfigured'; renderAll(); return; }

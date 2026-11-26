@@ -5285,3 +5285,8 @@ button.is-busy::after, .co-btn.is-busy::after { content: ""; position: absolute;
 .rel-pill[hidden] { display: none; }
 .rel-pill:hover { background: color-mix(in srgb, var(--violet, #6b4dff) 24%, var(--panel)); }
 @media (max-width: 900px) { .rel-pill span { display: none; } .rel-pill { width: 40px; padding: 0; justify-content: center; } }
+
+/* Opening screen: says what it is doing */
+.boot-msg { position: absolute; left: 0; right: 0; top: calc(50% + 78px); margin: 0; text-align: center; font: 500 14px/1.4 var(--font-body); color: var(--muted); animation: bootMsgIn .4s ease both .3s; }
+@keyframes bootMsgIn { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .boot-msg { animation: none; } }
