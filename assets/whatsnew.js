@@ -162,7 +162,7 @@ window.CO_WHATSNEW = [
   {
     id: '2026-11-23-open-file-col', date: '2026-11-23', kind: 'fixed', who: 'page:issues', title: 'Open File links now save on every sheet',
     what: 'Saving an Open File link failed on sheets that had no Open File column.',
-    does: 'The dashboard now adds an "Open File" column at the end of that sheet the first time a link is saved.',
+    does: 'The save now says clearly when a sheet has no Open File column. (The dashboard never adds columns to the sheets.)',
     how: 'Nothing to do. Failed saves on the Issues page can simply be retried.'
   },
   {

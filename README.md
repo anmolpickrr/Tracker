@@ -298,7 +298,7 @@ Click any task to open its panel. At the top: where the task is, its title and a
 
 **Links by role (written straight to the sheet).** Each person sees the steps that are theirs:
 
-- **Designers and editors**: *Submit the creative link* (Creative Link column; open work moves to **Under review**) and **Open File**: the original, editable file or its folder (Open File column), so source files are always one click away. If a sheet has no Open File column yet, the first save adds one at the end of its header row.
+- **Designers and editors**: *Submit the creative link* (Creative Link column; open work moves to **Under review**) and **Open File**: the original, editable file or its folder (Open File column), so source files are always one click away. The dashboard never adds or changes columns in the sheets; if a sheet has no Open File column, the save says so.
 - **Content writers** (Jahanvi, Gul, Anmol, and anyone named in the task's **Content Owner** cell): *Submit the content*: the script or content doc goes to the **Creative Brief** column (so the designer reads it in the panel) and the **Content Status** is set to **Done** or **Shared**, whichever they pick. The sheet's own spelling is used (its dropdown first).
 - Admins see every step. The web app checks each link (full https:// address), that the task is the person's own (the Content Owner for the content step), and that the sheet has not changed since the panel opened.
 

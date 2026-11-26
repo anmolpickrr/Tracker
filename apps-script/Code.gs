@@ -608,11 +608,7 @@ function updateTask_(body, mine, pm, contentMine) {
   // in the column with the same heading; the sheet's own script copies it to the main tab. The main tab is only read.
   const BKR = backendRow_(sheet, id);
   if (BKR && BKR.error) return { ok: false, error: BKR.error };
-  // No "Open File" column yet (and no Backend tab): add one at the end of the header row, so the link has somewhere to go.
-  if (!BKR && f.file != null && String(f.file).trim() !== '' && c.file < 0 && kindOf_(body.source) !== 'paid') {
-    sheet.getRange(1, lastCol + 1).setValue('Open File');
-    c.file = lastCol; lastCol++;
-  }
+  // The dashboard never adds or changes columns in the sheets (owner's rule): a missing column is reported, not created.
 
   // Locate the row: trust the hint only if the ID there still matches.
   let row = Number(body.row) || 0;
