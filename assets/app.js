@@ -140,7 +140,7 @@
     const sentWith = A.session;
     // Every request has a time limit (a laptop waking up or a network switch can leave one hanging for ever, which used
     // to freeze the live updates until a manual refresh). Loading all the data gets longer than the small checks.
-    const ctl = typeof AbortController === 'function' ? new AbortController() : null, lim = payload.action === 'data' ? 90000 : /^(updateTask|noteSave|packageSave|setMember|setAccess)$/.test(payload.action) ? 60000 : 30000, tm = ctl ? setTimeout(() => ctl.abort(), lim) : 0;
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null, lim = (payload.action === 'data' ? 90000 : /^(updateTask|noteSave|packageSave|setMember|setAccess)$/.test(payload.action) ? 60000 : 30000) * (GAS ? 2 : 1) /* Apps Script answers more slowly inside the company dashboard */, tm = ctl ? setTimeout(() => ctl.abort(), lim) : 0;
     try { res = GAS ? { text: await gasRun(Object.assign({ session: A.session }, payload), lim) } : await fetch(A.url, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ session: A.session }, payload)), signal: ctl ? ctl.signal : undefined }); }
     catch (e) { clearTimeout(tm); ISS.net(false); throw (e && e.name === 'AbortError' ? new Error('The web app took too long to answer; trying again shortly.') : e); }
     clearTimeout(tm);
@@ -5174,7 +5174,10 @@
         const [n, d] = await Promise.all([callApi({ action: 'notes' }, true), st.people.length && !force ? Promise.resolve({ ok: true, people: st.people }) : callApi({ action: 'directory' }, true)]);
         if (n.ok) { st.notes = n.notes; st.loaded = true; }
         if (d.ok) st.people = d.people;
-      } catch (e) { if (!(e instanceof AuthLost)) toast('Notes could not load: ' + e.message, true); }
+      } catch (e) {
+        // background refreshes retry quietly; only someone looking at an empty Notes page is told, and it tries again by itself
+        if (!(e instanceof AuthLost)) { if (!st.loaded && curTab() === 'notes') toast('Notes are taking a while to load. Trying again…'); setTimeout(() => { st.loading = false; load(true); }, 8000); }
+      }
       st.at = Date.now();
       st.loading = false;
       if (!st.editing) dash.draw('qn-board');
