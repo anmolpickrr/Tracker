@@ -3169,13 +3169,17 @@ function teamMatch_(user, members) {
   let hit = email && members.filter(function (m) { return aliasesOf(m).indexOf(email) >= 0; })[0];
   if (hit) return hit;
   const tries = [gname, parts.join(' '), local].filter(function (x) { return x && x.length > 1; });
-  hit = members.filter(function (m) { const n = nm(m), al = aliasesOf(m); return tries.some(function (t) { return t === n || al.indexOf(t) >= 0; }); })[0];
+  // An Active person always wins over an Inactive row: a Google profile named "T - Inactive User" must never pull
+  // trishla.raj@ onto an old inactive row while "Trishla" is Active on the list.
+  const named = members.filter(function (m) { const n = nm(m), al = aliasesOf(m); return tries.some(function (t) { return t === n || al.indexOf(t) >= 0; }); });
+  hit = named.filter(function (m) { return m.status !== 'Inactive'; })[0];
   if (hit) return hit;
-  const firsts = [gname.split(' ')[0], parts[0]].filter(function (x) { return x && x.length > 2; });
-  if (!firsts.length) return null;
+  const firsts = [parts[0], gname.split(' ')[0]].filter(function (x) { return x && x.length > 2 && !/^(inactive|user)$/.test(x); });
   const fit = function (m) { const f = nm(m).split(' ')[0]; return firsts.indexOf(f) >= 0 || aliasesOf(m).some(function (a) { return firsts.indexOf(a.split(' ')[0]) >= 0 && a.indexOf('@') < 0; }); };
-  const act = members.filter(function (m) { return m.status !== 'Inactive' && fit(m); });
+  const act = firsts.length ? members.filter(function (m) { return m.status !== 'Inactive' && fit(m); }) : [];
   if (act.length === 1) return act[0];
+  if (named[0]) return named[0];
+  if (!firsts.length) return null;
   const any = members.filter(fit);
   return any.length === 1 ? any[0] : null;
 }
