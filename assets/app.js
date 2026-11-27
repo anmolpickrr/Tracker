@@ -4469,9 +4469,10 @@
       (AX.log || []).map((e) => [e.when, e.who, e.role, e.action, e.sheet, e.tab, e.record, e.row, e.field, e.before, e.after, e.details, e.via]));
   });
   // Section picker on the "add a person" form; follows the chosen access level until changed by hand.
-  const AXP = secPicker(DEF_PAGES('Viewer'));
+  const TEAM_PAGES = ['mine', 'today', 'tasks', 'notes', 'brands']; // the team default (server: TEAM_PERMS)
+  const AXP = secPicker(TEAM_PAGES);
   document.getElementById('ax-role').after(AXP);
-  document.getElementById('ax-role').addEventListener('change', (e) => { if (!AXP.touched) AXP.set(DEF_PAGES(e.target.value)); });
+  document.getElementById('ax-role').addEventListener('change', (e) => { if (!AXP.touched) AXP.set(e.target.value === 'Viewer' ? TEAM_PAGES : DEF_PAGES(e.target.value)); });
   document.getElementById('ax-add').addEventListener('submit', (e) => {
     e.preventDefault();
     const email = document.getElementById('ax-email').value.trim().toLowerCase(), role = document.getElementById('ax-role').value, perms = permsFor(role, AXP.read());
@@ -4480,7 +4481,7 @@
     const exists = (AX.users || []).find((u) => u.email === email);
     msg.textContent = '';
     setAccess(email, Object.assign({ status: 'Approved', role }, perms ? { perms } : {}), email + ' can now sign in: ' + ROLE_LABEL[role]);
-    e.target.reset(); AXP.touched = false; AXP.set(DEF_PAGES('Viewer'));
+    e.target.reset(); AXP.touched = false; AXP.set(TEAM_PAGES);
   });
 
   /* Reminder times (IST minutes since midnight); the web app sends the admin's settings with every check. */

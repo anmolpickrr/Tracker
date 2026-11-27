@@ -1137,6 +1137,26 @@ function domainRuleSave_(b, u) {
   try { CacheService.getScriptCache().remove('domrules'); } catch (e) { /* ignore */ }
   return { ok: true, rules: domainRules_(), changes: [{ action: role ? 'Whole-domain access on' : 'Whole-domain access off', sheet: 'Domain access', record: '@' + domain, field: 'Role', before: before || 'Off', after: role || 'Off' }] };
 }
+
+/* ---- Team default access (owner's rule, Nov 2026) ----
+   Every team member gets this unless the owner set them up differently: My work, Overview, Tasks, Notes and Brands
+   (view); only their own tasks; no task fields to edit by hand (submitting a creative link still moves work to Under
+   review); read briefs, submit creative links and use Fasty. New joiners get it when approved or added; the current
+   team got it once (TEAM_PERMS_2026_11_27). The owner and the people in TEAM_EXCEPT keep their own access. */
+const TEAM_PERMS = { pages: ['mine', 'today', 'tasks', 'notes', 'brands'], scope: 'own', edit: false, team: false, export: false, load: false, fasty: true, pricing: false, status: false, briefs: true, links: true, eta: false, delivery: false, assign: false, details: false, issueFix: false, packages: '', hof: '', studioSet: true };
+const TEAM_EXCEPT = /^(abhist|sagun|manuj|manorama|manorma)\b/i;
+function teamExcept_(u) { const nm = clean_(u && u.name), loc = String(u && u.email || '').split('@')[0].replace(/[._-]+/g, ' '); return isOwner_(u && u.email) || TEAM_EXCEPT.test(nm) || TEAM_EXCEPT.test(loc); }
+function teamPerms_(pages) { const p = JSON.parse(JSON.stringify(TEAM_PERMS)); if (Array.isArray(pages) && pages.length) p.pages = pages; return cleanPerms_(p); }
+function applyTeamDefaults_() {
+  const done = [];
+  (users_().list || []).forEach(function (u) {
+    if (u.status !== 'Approved' || teamExcept_(u)) return;
+    updateUser_(u, { perms: JSON.stringify(teamPerms_()) }); done.push(u.name || u.email);
+  });
+  try { CacheService.getScriptCache().remove('users'); } catch (e) { /* ignore */ }
+  audit_([{ who: 'Automatic change', role: 'System', action: 'Permissions changed', field: 'Team default access', details: 'Applied to ' + done.length + ': ' + done.join(', ') + '. Kept as they were: the owner, Abhist, Sagun, Manuj, Manorama.' }]);
+  return done;
+}
 function profile_(p) {
   const t = clean_(p && p.team).slice(0, 80), n = clean_(p && p.note).slice(0, 300);
   return { team: t, note: n };
@@ -1161,7 +1181,8 @@ function setAccess_(body, admin) {
     const name = clean_(body.name).slice(0, 80);
     if (name && !plain_(name)) return { ok: false, error: 'Names cannot start with = + - or @' };
     appendUser_({ email: email, name: name, role: role || 'Viewer', status: status || 'Approved', note: 'Added by ' + admin.email, requestedOn: now, decidedBy: admin.email, decidedOn: now });
-    if (body.perms) { const nu = userByEmail_(email); if (nu) updateUser_(nu, { perms: JSON.stringify(cleanPerms_(Object.assign({}, body.perms, { studioSet: true })) || {}) }); }
+    if ((role || 'Viewer') === 'Viewer' && !teamExcept_({ email: email, name: name })) { const nu0 = userByEmail_(email); if (nu0) updateUser_(nu0, { perms: JSON.stringify(teamPerms_(body.perms && body.perms.pages)) }); }
+    else if (body.perms) { const nu = userByEmail_(email); if (nu) updateUser_(nu, { perms: JSON.stringify(cleanPerms_(Object.assign({}, body.perms, { studioSet: true })) || {}) }); }
     changes.push(Object.assign({}, base, { action: 'User added by admin', field: 'Access', before: '', after: (role || 'Viewer') + ', ' + (status || 'Approved') }));
     u = userByEmail_(email);
     if ((status || 'Approved') === 'Approved') notifyApproved_(u);
@@ -1173,6 +1194,7 @@ function setAccess_(body, admin) {
       const action = status === 'Approved' ? (u.status === 'Pending' ? 'Access approved' : 'Access restored') : status === 'Denied' ? 'Access denied' : 'Access revoked';
       changes.push(Object.assign({}, base, { action: action, field: 'Status', before: u.status, after: status }));
       if (status !== 'Approved') patch.validFrom = now.getTime(); // ends every session they have
+      if (status === 'Approved' && u.status === 'Pending' && !u.perms && body.perms === undefined && (role || u.role) === 'Viewer' && !teamExcept_(u)) patch.perms = JSON.stringify(teamPerms_());
     }
     if (body.perms !== undefined) {
       const np = body.perms === null ? null : cleanPerms_(Object.assign({}, body.perms, { studioSet: true }));
@@ -2851,6 +2873,7 @@ function tuneGemini_(log) {
  * - pick the fastest working Gemini model when there is none yet, then once a week. */
 function maintenance_() {
   const p = PropertiesService.getScriptProperties();
+  if (!secondary_() && !p.getProperty('TEAM_PERMS_2026_11_27')) { try { applyTeamDefaults_(); p.setProperty('TEAM_PERMS_2026_11_27', new Date().toISOString()); } catch (e) { console.log('team defaults: ' + e); } }
   // server errors that have not come back for 3 hours are fixed (usually by an update): close them
   try { const cut = Date.now() - 3 * 3600e3; issueRows_().forEach(function (x) { if (x.status === 'Open' && x.area === 'Server' && /^Request failed/.test(x.title) && x.last && new Date(x.last).getTime() < cut) issueResolveKey_(x.key, 'Automatic check: not seen for 3 hours'); }); } catch (e) { console.log('stale issues: ' + e); }
   if (!p.getProperty('ROLES_2026_11_10')) { try { seedRoles_(); p.setProperty('ROLES_2026_11_10', new Date().toISOString()); } catch (e) { console.log('roles: ' + e); } }

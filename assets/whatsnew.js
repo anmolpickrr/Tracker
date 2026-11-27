@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-27-team-default', date: '2026-11-27', kind: 'improved', who: 'page:access', title: 'One standard access for the team',
+    what: 'Team members, including new joiners you approve or add, now get the same access automatically.',
+    does: 'My work, Overview, Tasks, Notes and Brands; only their own tasks; read briefs, submit creative links and use Fasty. Abhist, Sagun, Manuj and Manorama keep their own settings.',
+    how: 'Approve requests or use Add a person as usual. Change anyone one by one under Permissions.'
+  },
+  {
     id: '2026-11-26-smooth', date: '2026-11-25', kind: 'improved', who: 'all', title: 'No more jumping back to the top',
     what: 'The dashboard no longer reloads itself while you are working, and live updates keep your place.',
     does: 'When a new version is out, an Update ready button appears next to Refresh: click it when it suits you. Live data updates keep your scroll position, scrolled lists and open sections.',
