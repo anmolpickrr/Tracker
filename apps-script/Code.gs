@@ -2869,11 +2869,27 @@ function tuneGemini_(log) {
   else if (log) console.log('No Gemini model answered. Check the key in AI Studio (it should start with AIza) and the Rate Limit page.');
   return best;
 }
+/* One-time, asked for by the owner on 27 Nov 2026: Trishla Raj (trishla.raj@shiprocket.com) on the team list as an
+ * Editor, also written as "Trishla" and her email, with the team's default access. Her Google profile name reads
+ * "T - Inactive User"; the team-list name is shown instead. */
+function trishlaSetup_() {
+  const email = 'trishla.raj@shiprocket.com', name = 'Trishla Raj', aliases = 'Trishla, ' + email;
+  const out = setMember_({ name: name, status: 'Active', role: 'Editor', aliases: aliases });
+  if (!out.ok) throw new Error(out.error);
+  const sheet = openTab_(teamSource_()), v = sheet.getDataRange().getValues();
+  const head = v[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  const cN = head.findIndex(function (h) { return /^name/.test(h); }), cA = head.findIndex(function (h) { return /also|alias/.test(h); });
+  for (let i = 1; i < v.length; i++) if (cA >= 0 && String(v[i][cN]).trim().toLowerCase() === name.toLowerCase() && String(v[i][cA]).trim() !== aliases) sheet.getRange(i + 1, cA + 1).setValue(aliases);
+  const u = userByEmail_(email);
+  if (u) updateUser_(u, { name: name, role: 'Editor', status: 'Approved', perms: JSON.stringify(teamPerms_()) });
+  audit_([Object.assign({ who: 'system', role: 'Admin', action: 'Team member set up', record: name, details: 'Editor; also written as ' + aliases + '; team default access' })]);
+}
 /* Housekeeping on the 10-minute timer, so nobody has to run anything by hand:
  * - once: replace SESSION_SECRET and API_KEY (their values were shared in a screenshot on 10 Nov 2026; everyone signs in again);
  * - pick the fastest working Gemini model when there is none yet, then once a week. */
 function maintenance_() {
   const p = PropertiesService.getScriptProperties();
+  if (!secondary_() && !p.getProperty('TRISHLA_2026_11_27')) { try { trishlaSetup_(); p.setProperty('TRISHLA_2026_11_27', new Date().toISOString()); } catch (e) { console.log('trishla: ' + e); } }
   if (!secondary_() && p.getProperty('TEAM_PERMS_2026_11_27') && !p.getProperty('TEAM_PERMS_2026_11_27b')) { try { applyTeamDefaults_(/^(trishla|shivam)/i); p.setProperty('TEAM_PERMS_2026_11_27b', new Date().toISOString()); } catch (e) { console.log('team defaults b: ' + e); } }
   if (!secondary_() && !p.getProperty('TEAM_PERMS_2026_11_27')) { try { applyTeamDefaults_(); p.setProperty('TEAM_PERMS_2026_11_27', new Date().toISOString()); } catch (e) { console.log('team defaults: ' + e); } }
   // server errors that have not come back for 3 hours are fixed (usually by an update): close them

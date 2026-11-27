@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-27-trishla', date: '2026-11-27', kind: 'fixed', who: 'page:access', title: 'Trishla Raj set up as an Editor',
+    what: 'Trishla Raj (also written as Trishla) is now on the team list as an Editor, with the same access as the rest of the team.',
+    does: 'She is listed by her team-list name instead of her Google profile name, and sees only the tasks assigned to her.',
+    how: 'Nothing to do. It applies automatically within about 10 minutes.'
+  },
+  {
     id: '2026-11-27-team-default', date: '2026-11-27', kind: 'improved', who: 'page:access', title: 'One standard access for the team',
     what: 'Team members, including new joiners you approve or add, now get the same access automatically.',
     does: 'My work, Overview, Tasks, Notes and Brands; only their own tasks; read briefs, submit creative links and use Fasty. Abhist, Sagun, Manuj and Manorama keep their own settings.',
