@@ -26,7 +26,7 @@ window.CO_CONFIG = {
       var box = document.createElement('div'); box.className = 'org-pick'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'Choose your company account');
       var h = '<div class="org-card"><b class="org-t">Open Creative Ops</b><p class="org-s">Which Google account do you use for work? We will remember your choice on this device.</p><div class="org-btns">';
       (c.apps || []).forEach(function (a) { h += '<button type="button" class="org-b" data-d="' + a.domain + '"' + (a.url ? '' : ' disabled') + '><span>' + a.org + '</span><small>@' + a.domain + (a.url ? '' : ' · coming soon') + '</small></button>'; });
-      h += '</div><p class="org-n">Opens best in a window where your work account is the first Google account signed in.</p></div>';
+      h += '</div><p class="org-n">Pick the company of the Google account you sign in with (@pickrr.com or @shiprocket.com). Picked the wrong one, or see "Sorry, unable to open the file"? Open this page with ?switch at the end of the address to choose again. Opens best in a window where your work account is the first Google account signed in.</p></div>';
       box.innerHTML = h; document.body.appendChild(box);
       box.addEventListener('click', function (e) { var b = e.target.closest && e.target.closest('.org-b'); if (!b || b.disabled) return; var a = (c.apps || []).filter(function (x) { return x.domain === b.getAttribute('data-d'); })[0]; try { localStorage.setItem(KEY, a.domain); } catch (er) { /* ignore */ } location.replace(a.url); });
       var f = box.querySelector('.org-b:not([disabled])'); if (f) f.focus();
