@@ -2890,11 +2890,27 @@ function trishlaSetup_() {
   if (u) updateUser_(u, { name: name, role: 'Editor', status: 'Approved', perms: JSON.stringify(teamPerms_()) });
   audit_([Object.assign({ who: 'system', role: 'Admin', action: 'Team member set up', record: name, details: 'Editor; also written as ' + aliases + '; team default access' })]);
 }
+/* One-time, asked for by the owner on 27 Nov 2026: delete the old Inactive team-list row "T - Inactive User" (Trishla's
+ * Google profile name, so she was matched to it). Only that exact row, only when it is Inactive and no task names it. */
+function dropOldTrishla_() {
+  const sh = openTab_(teamSource_()), v = sh.getDataRange().getValues(), hd = v[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  const cn = hd.findIndex(function (h) { return /^name/.test(h); }), cs = hd.findIndex(function (h) { return /^status/.test(h); });
+  const norm = function (x) { return String(x).replace(/[\u2010-\u2015]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase(); };
+  for (let i = v.length - 1; i >= 1; i--) {
+    if (norm(v[i][cn]) !== 't - inactive user' || !/inactive/i.test(String(v[i][cs]))) continue;
+    const used = (norm(JSON.stringify(readAll_().sources)).split('t - inactive user').length - 1) > 1; // once is the team list itself
+    if (used) throw new Error('tasks still name T - Inactive User');
+    sh.deleteRow(i + 1);
+    audit_([{ who: 'system', role: 'Admin', action: 'Team member removed', sheet: sh.getParent().getName(), tab: sh.getName(), record: 'T - Inactive User', row: i + 1, details: 'Old inactive row for Trishla, removed at the owner\'s request' }]);
+  }
+  clearCache_(); bumpVersion_();
+}
 /* Housekeeping on the 10-minute timer, so nobody has to run anything by hand:
  * - once: replace SESSION_SECRET and API_KEY (their values were shared in a screenshot on 10 Nov 2026; everyone signs in again);
  * - pick the fastest working Gemini model when there is none yet, then once a week. */
 function maintenance_() {
   const p = PropertiesService.getScriptProperties();
+  if (!secondary_() && !p.getProperty('TRISHLA_2026_11_27c')) { try { dropOldTrishla_(); p.setProperty('TRISHLA_2026_11_27c', new Date().toISOString()); } catch (e) { console.log('trishla old row: ' + e); } }
   if (!secondary_() && !p.getProperty('TRISHLA_2026_11_27b')) { try { trishlaSetup_(); p.setProperty('TRISHLA_2026_11_27b', new Date().toISOString()); } catch (e) { console.log('trishla: ' + e); } }
   if (!secondary_() && p.getProperty('TEAM_PERMS_2026_11_27') && !p.getProperty('TEAM_PERMS_2026_11_27b')) { try { applyTeamDefaults_(/^(trishla|shivam)/i); p.setProperty('TEAM_PERMS_2026_11_27b', new Date().toISOString()); } catch (e) { console.log('team defaults b: ' + e); } }
   if (!secondary_() && !p.getProperty('TEAM_PERMS_2026_11_27')) { try { applyTeamDefaults_(); p.setProperty('TEAM_PERMS_2026_11_27', new Date().toISOString()); } catch (e) { console.log('team defaults: ' + e); } }

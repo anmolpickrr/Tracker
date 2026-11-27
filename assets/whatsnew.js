@@ -6,7 +6,7 @@ window.CO_WHATSNEW = [
   {
     id: '2026-11-27-trishla', date: '2026-11-27', kind: 'fixed', who: 'page:access', title: 'Trishla set up as an Editor',
     what: 'Trishla (also written as Trishla Raj) is now on the team list as an Editor, with the same access as the rest of the team.',
-    does: 'She is listed by her team-list name instead of her Google profile name, and sees only the tasks assigned to her.',
+    does: 'The old inactive "T - Inactive User" row is removed from the team list. She sees only the tasks assigned to her.',
     how: 'Nothing to do. It applies automatically within about 10 minutes.'
   },
   {
