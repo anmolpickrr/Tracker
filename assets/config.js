@@ -9,7 +9,7 @@ window.CO_CONFIG = {
   // This GitHub Pages address asks once which account the person uses and forwards them (?stay keeps you here).
   apps: [
     { org: 'Pickrr', domain: 'pickrr.com', url: 'https://script.google.com/a/macros/pickrr.com/s/AKfycbx8xvohhaB7jNREyFxOT-7hC5tza6-iQUqTDNOlHcKPmQVchiph_fPlIXeorFmxEX0D/exec' },
-    { org: 'Shiprocket', domain: 'shiprocket.com', url: '' }
+    { org: 'Shiprocket', domain: 'shiprocket.com', url: 'https://script.google.com/a/macros/shiprocket.com/s/AKfycbxzeJ9hQqM6d-BB4F8FfMbqMlxhJTqwMBJsrsrLbovwi0WAlxXs2IJyL1jG6xcOObR9/exec' }
   ]
 };
 (function () {
