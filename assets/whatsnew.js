@@ -4,6 +4,12 @@
    go: the section the "Open" button takes you to (optional). Write for the people using the dashboard: plain words. */
 window.CO_WHATSNEW = [
   {
+    id: '2026-11-27-docs-api', date: '2026-11-27', kind: 'fixed', who: 'page:issues', title: 'No more false "Turn on the Google Docs API" issue',
+    what: 'The Docs API is already on for the main dashboard. The repeated issue came from the Shiprocket copy, where Google does not let it be switched on.',
+    does: 'That copy now skips the Docs API quietly; briefs still open as before.',
+    how: 'Mark the old issue resolved once. It will not come back.'
+  },
+  {
     id: '2026-11-27-trishla', date: '2026-11-27', kind: 'fixed', who: 'page:access', title: 'Trishla set up as an Editor',
     what: 'Trishla (also written as Trishla Raj) is now on the team list as an Editor, with the same access as the rest of the team.',
     does: 'The old inactive "T - Inactive User" row is removed from the team list. She sees only the tasks assigned to her.',
