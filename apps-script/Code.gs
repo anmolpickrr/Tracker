@@ -2869,11 +2869,17 @@ function tuneGemini_(log) {
   else if (log) console.log('No Gemini model answered. Check the key in AI Studio (it should start with AIza) and the Rate Limit page.');
   return best;
 }
-/* One-time, asked for by the owner on 27 Nov 2026: Trishla Raj (trishla.raj@shiprocket.com) on the team list as an
- * Editor, also written as "Trishla" and her email, with the team's default access. Her Google profile name reads
+/* One-time, asked for by the owner on 27 Nov 2026: Trishla (trishla.raj@shiprocket.com) on the team list as an
+ * Editor, also written as "Trishla Raj" and her email, with the team's default access. Her Google profile name reads
  * "T - Inactive User"; the team-list name is shown instead. */
 function trishlaSetup_() {
-  const email = 'trishla.raj@shiprocket.com', name = 'Trishla Raj', aliases = 'Trishla, ' + email;
+  const email = 'trishla.raj@shiprocket.com', name = 'Trishla', aliases = 'Trishla Raj, ' + email;
+  { // the owner asked for "Trishla": rename a "Trishla Raj" row from the first run instead of adding a second one
+    const sh = openTab_(teamSource_()), w = sh.getDataRange().getValues(), hd = w[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    const cn = hd.findIndex(function (h) { return /^name/.test(h); });
+    const has = w.some(function (r, i) { return i > 0 && String(r[cn]).trim().toLowerCase() === 'trishla'; });
+    if (cn >= 0 && !has) for (let i = 1; i < w.length; i++) if (String(w[i][cn]).trim().toLowerCase() === 'trishla raj') { sh.getRange(i + 1, cn + 1).setValue(name); break; }
+  }
   const out = setMember_({ name: name, status: 'Active', role: 'Editor', aliases: aliases });
   if (!out.ok) throw new Error(out.error);
   const sheet = openTab_(teamSource_()), v = sheet.getDataRange().getValues();
@@ -2889,7 +2895,7 @@ function trishlaSetup_() {
  * - pick the fastest working Gemini model when there is none yet, then once a week. */
 function maintenance_() {
   const p = PropertiesService.getScriptProperties();
-  if (!secondary_() && !p.getProperty('TRISHLA_2026_11_27')) { try { trishlaSetup_(); p.setProperty('TRISHLA_2026_11_27', new Date().toISOString()); } catch (e) { console.log('trishla: ' + e); } }
+  if (!secondary_() && !p.getProperty('TRISHLA_2026_11_27b')) { try { trishlaSetup_(); p.setProperty('TRISHLA_2026_11_27b', new Date().toISOString()); } catch (e) { console.log('trishla: ' + e); } }
   if (!secondary_() && p.getProperty('TEAM_PERMS_2026_11_27') && !p.getProperty('TEAM_PERMS_2026_11_27b')) { try { applyTeamDefaults_(/^(trishla|shivam)/i); p.setProperty('TEAM_PERMS_2026_11_27b', new Date().toISOString()); } catch (e) { console.log('team defaults b: ' + e); } }
   if (!secondary_() && !p.getProperty('TEAM_PERMS_2026_11_27')) { try { applyTeamDefaults_(); p.setProperty('TEAM_PERMS_2026_11_27', new Date().toISOString()); } catch (e) { console.log('team defaults: ' + e); } }
   // server errors that have not come back for 3 hours are fixed (usually by an update): close them
